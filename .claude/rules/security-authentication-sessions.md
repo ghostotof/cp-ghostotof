@@ -190,7 +190,7 @@ paths:
     (`smoke-test-preprod`, behind the Basic Auth the test container lacks): a random `BEARER` on a public read gets 200
     and no `Set-Cookie` for `BEARER` nor `XSRF-TOKEN`; on `/api/me` a 401 that expires both.
     Its plumbing (the Basic Auth file, exits 1 and 2) is `tools/lib/smoke-http.sh`'s, described once in
-    `.claude/rules/deploiement-nginx.md`; offline tests
+    `.claude/rules/outillage-smoke.md`; offline tests
     `tools/tests/smoke-dead-session-cookie.test.sh` and `tools/tests/smoke-http.test.sh`.
     **Accepted limit (C5-1, the author's decision of 2026-10-30)**: a closed session (the password changed since) kept by a
     legitimate tab writes one `session-refused-after-credentials-change` line per public request until that tab's next

@@ -1,0 +1,54 @@
+---
+paths:
+  - "tools/lib/smoke-http.sh"
+  - "tools/smoke-*.sh"
+  - "tools/audit-prod.sh"
+  - "tools/tests/smoke-*.test.sh"
+  - "tools/tests/audit-prod.test.sh"
+  - "tools/tests/lib/smoke-cases.sh"
+---
+
+# Smokes and audit tooling — the shared library, the Basic Auth, the guards
+
+> Moved from `.claude/rules/deploiement-nginx.md` (#748, D5 of the thirteenth review), the bullet « Nine nginx rate-limit zones »,
+> which keeps what these scripts check of the zones and the headers. The index of every rule is at the top of `.claude/CLAUDE.md`.
+
+The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
+It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
+`smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
+The file writer `_smoke_write_auth_config` is private (R148): nothing outside the library calls it.
+The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
+The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
+Once the file is written the variable is no longer exported (`export -n`): curl, dig and openssl started later do not receive it.
+`export -n` does not wipe the shell's own copy of its environment, which `/proc/<pid>/environ` still shows (R148b).
+A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
+A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
+A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
+An undefined one sends no Basic Auth.
+`smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
+It adds `--proto-redir =https` after the `-K`: curl follows a redirect only to `https://`.
+It refuses a `-K` on a URL that is not `https://` (exit 2, « non https:// »): curl sends `Authorization: Basic` on the first request.
+With a `-K`, it also refuses an argument of `"$@"` that is `-L`, `--location`, `--location-trusted`, `--url`, `--url=…`, a short-option
+cluster carrying `L`, or that holds `://` without starting with `https://` (exit 2, « option de redirection ou URL non https:// »).
+With a `-K`, it also refuses `--proto`, `--proto-redir` and their `--name=value` forms in `"$@"` (exit 2, « option de protocole », R148b).
+Why: curl keeps the last value given, so a caller's would win over the `--proto-redir =https` set before it.
+A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
+Nothing was verified in those cases.
+`audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
+outside the library's `set +x`).
+The library's header is the only place that names the variable and lists every refused value; the scripts' `Env :` headers point to it.
+`smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
+The first: the word `AUDIT_BASIC_AUTH` appears only as `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
+The second: no line lists the environment or reads a variable by name: `declare -p`, `printenv`, `env`, bare `set`, `export -p`, `${!`.
+The second guard also covers the library, except the body of `_smoke_write_auth_config`, the only reader of the value.
+Its one reading by name is allowed there; a line that reads `/proc/…/environ` (`self`, `$$`, a pid) is refused everywhere (R148b).
+Each guard is proven on altered copies of a script: every bypass is refused, its neighbours (`set -e`, `set +x`, `environment`) pass.
+A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
+(#748, C6-7); the production audit, with the variable undefined, never reads it.
+Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
+on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
+Every call that carries the `-K` follows redirects on `https` only (`--proto-redir =https`, R134), and none without it carries the option.
+A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
+instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
+A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
+Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
