@@ -395,6 +395,7 @@ describe('AdminAnonymousCvPage', () => {
       await buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), 'Modifier').trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
+    dirtyOrder: (wrapper) => dragRow(wrapper, 0, 2),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()

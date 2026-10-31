@@ -1044,6 +1044,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
+      dirtyOrder: (wrapper) => dragRow(wrapper, SITE, 0, 2),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
@@ -1075,6 +1076,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
+      dirtyOrder: (wrapper) => dragRow(wrapper, ME_TABLE.technical, 0, 2),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
@@ -1200,6 +1202,70 @@ describe('AdminAboutPage', () => {
       expect(textsDescribing(wrapper, button())).toEqual([])
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(button().attributes('disabled')).toBeUndefined()
+    })
+
+    // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
+    // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
+    const SETTINGS_PROPOSAL_LOCKED_HINT = '#admin-about-settings-proposal-locked-help'
+    const SETTINGS_PROPOSAL_LOCKED_TEXT =
+      "Verrouillé par la proposition de traduction affichée : enregistrez-la, ou changez de langue pour l'abandonner."
+    const emitSettingsTranslate = (wrapper: VueWrapper, target: 'fr' | 'en'): void => {
+      wrapper.findAllComponents(AdminAboutSettingsForm)[0].findComponent(TranslateEntryButton).vm.$emit('translate', target)
+    }
+
+    it("réglages, un enregistrement en vol : un « translate » émis ne lance rien (#748, R127)", async () => {
+      const settingsRepository = createSettingsRepository({ update: vi.fn(() => new Promise<AdminAboutSettings>(() => {})) })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledOnce()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+
+      emitSettingsTranslate(wrapper, 'en')
+      await flushPromises()
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+    })
+
+    it("réglages, un ordre modifié ailleurs : un « translate » émis ne lance rien (#748, R127)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+
+      await dragRow(wrapper, SITE, 0, 2)
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+
+      emitSettingsTranslate(wrapper, 'en')
+      await flushPromises()
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+    })
+
+    it("réglages, une proposition affichée : bouton désactivé et décrit, un « translate » émis ne lance rien (#748, R127)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+      expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([])
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(translation.translate).toHaveBeenCalledOnce()
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+
+      const button = translateEntryButton(wrapper, SETTINGS_FORM)
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(textsDescribing(wrapper, button)).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
+      await expectNoAccessibilityViolation(wrapper)
+
+      emitSettingsTranslate(wrapper, 'fr')
+      await flushPromises()
+
+      expect(translation.translate).toHaveBeenCalledOnce()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
     })
 
     // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en

@@ -42,7 +42,7 @@ const {
   translate,
   discard: discardTranslation,
 } = useAdminTranslation({
-  isRefused: () => lock.isProposalLocked,
+  isRefused: () => lock.isProposalLocked || isOrderDirty.value,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({

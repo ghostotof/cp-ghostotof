@@ -7,6 +7,7 @@ import { applyTranslationProposal, collectProseFields } from '../../../applicati
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
+import { describedBy } from '../../ui/admin/useEntryFormLock'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
@@ -53,12 +54,17 @@ const errorText = computed(() => {
  */
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 // Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
+// Le composable refuse de lui-même tout ce que le bouton refuse (R127) : un enregistrement en vol, le verrou d'ordre de la
+// page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
 const {
   isTranslating,
   isDiscardPending,
   errorReason: translationErrorReason,
   translate,
-} = useAdminTranslation({ formIdentity: () => ({ locale: props.locale }) })
+} = useAdminTranslation({
+  isRefused: () => isAnySaving.value || props.isLocked || isProposalShown.value,
+  formIdentity: () => ({ locale: props.locale }),
+})
 const pendingProposal = ref<TranslationProposal | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
@@ -71,6 +77,8 @@ const isProposalShown = computed(() => isLoaded.value && proposal.value?.target 
 // Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
 // n'existe que pendant elle, avec le texte, jamais pendante.
 const PROSE_READONLY_HINT_ID = 'admin-about-settings-prose-readonly-hint'
+// Pendant une proposition affichée, le bouton de traduction est verrouillé et désigne ce texte, rendu seulement alors (R127).
+const PROPOSAL_LOCKED_HINT_ID = 'admin-about-settings-proposal-locked-help'
 const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
@@ -249,10 +257,17 @@ async function handleSubmit(): Promise<void> {
           :is-translating="isTranslating"
           :is-discard-pending="isDiscardPending"
           hint-id="admin-about-settings-translation-hint"
-          :disabled="!hasProseToTranslate || isAnySaving || isLocked"
-          :aria-describedby="lockedHintId"
+          :disabled="!hasProseToTranslate || isAnySaving || isLocked || isProposalShown"
+          :aria-describedby="describedBy(lockedHintId, isProposalShown ? PROPOSAL_LOCKED_HINT_ID : undefined)"
           @translate="handleTranslate"
         />
+        <p
+          v-if="isProposalShown"
+          :id="PROPOSAL_LOCKED_HINT_ID"
+          class="form-text mb-0"
+        >
+          {{ t('admin.about.settingsProposalLockedHelp') }}
+        </p>
       </div>
 
       <TranslationReadonlyHint

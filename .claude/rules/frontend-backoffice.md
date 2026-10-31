@@ -192,8 +192,9 @@ extra gesture, and a `role="status"` banner names the proposal's source locale; 
 holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
 of the eighth review: a second translation took the form back to the source locale, group kept; `useAdminTranslation`
-refuses the call itself, not only the disabled button: during a proposal (`isRefused`, the form's lock) and while a
-call is in flight, and a response whose form no longer has the identity read at send time (the entry, the locale,
+refuses the call itself, not only the disabled button: whenever that button is disabled (`isRefused`: the form's lock
+during a proposal and a dirty order draft; for the About settings a save in flight, the page's order lock and a proposal
+shown, R127) and while a call is in flight, and a response whose form no longer has the identity read at send time (the entry, the locale,
 the source group: `formIdentity`, never the prose) is discarded, whatever gesture replaced it and even if the form later
 regains that identity, a deleted entry being discarded by `discard()` (R124); **one model call in flight per form**: a discarded
 call still running refuses the next one (`isDiscardPending`, R125, decision 2 of the eleventh review: no `AbortSignal`, the
@@ -214,7 +215,9 @@ semantics is gone with the page-level selector (one locale per form, see above).
 the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
 would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
-not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
+not save would burn quota for nothing) and, for the settings, while a proposal is shown (a second translation would
+replace it with no gesture to drop it, Q5 of the eleventh review), said by `admin.about.settingsProposalLockedHelp`
+(R127). Never use `v-html` on text coming back from the model: it goes
 through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
 closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
 version" copies nothing and the assistant sends all five fields.

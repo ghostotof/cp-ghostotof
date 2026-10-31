@@ -688,6 +688,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Revue systématique'), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
+      dirtyOrder: (wrapper) => dragRow(wrapper, PRINCIPLES, 0, 2),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
@@ -718,6 +719,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable'), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
+      dirtyOrder: (wrapper) => dragRow(wrapper, TRAITS, 0, 2),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()

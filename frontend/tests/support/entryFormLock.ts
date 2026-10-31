@@ -124,6 +124,8 @@ export interface EntryFormLockCase {
    * est simulé à `true` par le support, qui le rétablit ensuite.
    */
   readonly deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>
+  /** Modifie l'ordre d'un tableau de la page (glisser une ligne) sans l'enregistrer : le brouillon d'ordre est sale. */
+  readonly dirtyOrder: (wrapper: VueWrapper) => Promise<void>
 }
 
 /**
@@ -287,6 +289,22 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe(localeBefore)
     expect(headingOf(wrapper)).toBe(lockCase.heading)
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(true)
+  })
+
+  // Décision 5 de la onzième relecture (R127) : le bouton est désactivé pendant un brouillon d'ordre (une proposition que le
+  // formulaire verrouillé ne pourrait pas enregistrer brûlerait du quota) ; un « translate » émis par programme l'est aussi.
+  it(`${prefix}un ordre modifié : un « translate » émis ne lance aucune traduction`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    await lockCase.dirtyOrder(wrapper)
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
   })
 
   it(`${prefix}deux « translate » avant la première réponse : une seule traduction`, async () => {

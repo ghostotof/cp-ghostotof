@@ -143,6 +143,7 @@
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
+      "settingsProposalLockedHelp": "Locked by the translation proposal shown: save it, or switch language to discard it.",
       "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
       "translationOfLabel": "Version of",
       "translationOfNone": "— none —",

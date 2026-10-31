@@ -30,7 +30,10 @@ export interface UseAdminTranslationResult {
 }
 
 export interface UseAdminTranslationOptions {
-  /** Vrai quand la page ne veut aucune traduction (une proposition est déjà affichée) : `translate()` ne lance rien. */
+  /**
+   * Vrai quand la page ne veut aucune traduction, ce que son bouton refuse déjà (une proposition affichée, un brouillon
+   * d'ordre, un enregistrement en vol…) : `translate()` ne lance rien.
+   */
   readonly isRefused?: () => boolean
   /**
    * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source. Comparée par son contenu
