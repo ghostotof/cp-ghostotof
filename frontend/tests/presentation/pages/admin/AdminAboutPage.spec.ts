@@ -1176,7 +1176,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(settingsRepository)
 
       expect(settingsRepository.get).toHaveBeenCalledWith('fr')
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('À propos de ce site')
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('À propos de ce site')
     })
 
     it('affiche un message si le chargement des réglages échoue', async () => {
@@ -1235,7 +1235,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(textsDescribing(wrapper, button())).toEqual([])
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(button().attributes('disabled')).toBeUndefined()
     })
 
@@ -1336,7 +1336,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
       expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
       // Sous le FR, le formulaire porte les réglages FR enregistrés, ni avis ni verrou de la proposition de l'EN.
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
 
       await wrapper.get('#admin-about-locale').setValue('en')
@@ -1386,7 +1386,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation, { attach: true })
       await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       const englishReads = (): number =>
         vi.mocked(settingsRepository.get).mock.calls.filter(([locale]) => 'en' === locale).length
       expect(englishReads()).toBe(1)
@@ -1397,8 +1397,8 @@ describe('AdminAboutPage', () => {
       // Le formulaire de la langue montrée est relu du serveur : les valeurs enregistrées reviennent.
       expect(englishReads()).toBe(2)
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SAVED_EN.siteEyebrow)
-      expect(valueOf(wrapper, '#admin-about-me-eyebrow')).toBe(SAVED_EN.meEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SAVED_EN.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-me-eyebrow')).toBe(SAVED_EN.meEyebrow)
       // Le verrou, son texte, l'avis et le bouton d'abandon sont partis ; « Proposer » est libre.
       expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
@@ -1406,14 +1406,14 @@ describe('AdminAboutPage', () => {
       expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
       expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([])
       // Le bouton a disparu sous le focus : il revient au premier champ du formulaire relu, jamais à `body`.
-      expect(document.activeElement).toBe(wrapper.get('#admin-about-site-eyebrow').element)
+      expect(document.activeElement).toBe(wrapper.get('#admin-about-settings-site-eyebrow').element)
       expect(translation.translate).toHaveBeenCalledOnce()
       await expectNoAccessibilityViolation(wrapper)
     })
 
     // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en
     // lecture seule, décrits par le texte d'aide ; la réponse remplace une prose que personne n'a pu changer.
-    const SETTINGS_PROSE_IDS = ABOUT_SETTINGS_PROSE_FIELDS.map((field) => proseFieldId('admin-about', field))
+    const SETTINGS_PROSE_IDS = ABOUT_SETTINGS_PROSE_FIELDS.map((field) => proseFieldId('admin-about-settings', field))
 
     it("pendant une traduction, la prose des réglages est en lecture seule et décrite par le texte d'aide (#748, R126)", async () => {
       let answer!: (proposal: TranslationProposal) => void
@@ -1445,6 +1445,22 @@ describe('AdminAboutPage', () => {
       expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
     })
 
+    // Un seul préfixe d'identifiants pour les réglages, celui de leurs textes d'aide (`admin-about-settings-…`) : les cartes
+    // gardent `admin-about-site-card-…` et `admin-about-me-card-…`, et l'ancien `admin-about-site-eyebrow` s'y confondait.
+    it("réglages : chaque identifiant du panneau porte le même préfixe, celui des textes d'aide (#748, R157)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
+        translate: vi.fn(() => new Promise<TranslationProposal>(() => {})),
+      })
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+
+      const ids = panelOf(wrapper, SETTINGS_PANEL).findAll('[id]').map((element) => element.attributes('id') as string)
+
+      expect(ids.length).toBeGreaterThan(SETTINGS_PROSE_IDS.length)
+      expect(ids.filter((id) => !id.startsWith('admin-about-settings-'))).toEqual([])
+    })
+
     it("une traduction des réglages en échec : prose modifiable et intacte, l'erreur survit à la frappe (#748, R126)", async () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
         translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),
@@ -1458,10 +1474,10 @@ describe('AdminAboutPage', () => {
         expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
       }
       expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
 
-      await wrapper.get('#admin-about-site-eyebrow').setValue('Corrigé après l\'échec')
+      await wrapper.get('#admin-about-settings-site-eyebrow').setValue('Corrigé après l\'échec')
       await flushPromises()
 
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
@@ -1471,7 +1487,7 @@ describe('AdminAboutPage', () => {
       const settingsRepository = createSettingsRepository()
       const { wrapper } = await mountPage(settingsRepository)
 
-      await wrapper.get('#admin-about-site-eyebrow').setValue('Nouveau titre')
+      await wrapper.get('#admin-about-settings-site-eyebrow').setValue('Nouveau titre')
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
 
@@ -1497,18 +1513,18 @@ describe('AdminAboutPage', () => {
       })
       const { wrapper } = await mountPage(settingsRepository)
 
-      await wrapper.get('#admin-about-site-eyebrow').setValue('Nouveau titre')
+      await wrapper.get('#admin-about-settings-site-eyebrow').setValue('Nouveau titre')
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await wrapper.get('#admin-about-locale').setValue('en')
       await flushPromises()
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
 
       answerFrenchSave({ ...SETTINGS, siteEyebrow: 'Nouveau titre' })
       await flushPromises()
 
       // Le formulaire reste celui de l'anglais : la réponse française n'a rien à y poser.
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
-      expect(valueOf(wrapper, '#admin-about-me-eyebrow')).toBe(TRANSLATED_SETTINGS.meEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-me-eyebrow')).toBe(TRANSLATED_SETTINGS.meEyebrow)
 
       // Et un « Enregistrer » ensuite n'écrit que l'anglais, jamais le français sous l'en-tête anglais.
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
@@ -1553,7 +1569,7 @@ describe('AdminAboutPage', () => {
         const state = settingsPanelState(wrapper)
         // Jamais le français sous l'en-tête anglais : un « Enregistrer » ici écraserait les réglages EN.
         expect(state.values).toEqual([])
-        expect(wrapper.find('#admin-about-site-eyebrow').exists()).toBe(false)
+        expect(wrapper.find('#admin-about-settings-site-eyebrow').exists()).toBe(false)
         expect(state.saveButton).toBe(false)
         expect(state.translateButton).toBe(false)
         expect(state.text).toContain('Contenu non chargé')
@@ -1575,7 +1591,7 @@ describe('AdminAboutPage', () => {
         await signInAgain()
 
         expect(settingsRepository.get).toHaveBeenLastCalledWith('en')
-        expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
         expect(settingsPanelState(wrapper).text).not.toContain('Contenu non chargé')
 
         // « Enregistrer » ne touche que l'EN, avec ses propres valeurs.
@@ -1614,8 +1630,8 @@ describe('AdminAboutPage', () => {
         await signInAgain()
 
         // Au retour : la lecture EN aboutit, et la proposition se pose par-dessus, comme au premier passage.
-        expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('Proposed site')
-        expect(valueOf(wrapper, '#admin-about-hobbies-subtitle')).toBe('Proposed hobbies')
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('Proposed site')
+        expect(valueOf(wrapper, '#admin-about-settings-hobbies-subtitle')).toBe('Proposed hobbies')
         expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
         state = settingsPanelState(wrapper)
         expect(state.saveButton).toBe(true)
@@ -1643,8 +1659,8 @@ describe('AdminAboutPage', () => {
       expect(settingsRepository.get).toHaveBeenCalledWith('en')
       // Le rechargement des réglages EN (le stub rend les valeurs FR) ne doit
       // pas écraser la proposition : celle-ci est appliquée une fois la locale chargée.
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('About this site')
-      expect(valueOf(wrapper, '#admin-about-hobbies-subtitle')).toBe('Outside work')
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('About this site')
+      expect(valueOf(wrapper, '#admin-about-settings-hobbies-subtitle')).toBe('Outside work')
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
       expect(settingsRepository.update).not.toHaveBeenCalled()
 
@@ -1711,7 +1727,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 
@@ -1767,7 +1783,7 @@ describe('AdminAboutPage', () => {
       // Les réglages du FR sont arrivés sous le FR, qui n'est pas la cible : ils retirent la proposition de l'EN (R141b), ce
       // que le DOM ne dit pas. Il montre le formulaire du FR, qui porte les réglages rendus par le serveur, sans avis.
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 
@@ -1800,7 +1816,7 @@ describe('AdminAboutPage', () => {
 
       await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
 
       await wrapper.get('#admin-about-locale').setValue('fr')
@@ -1808,9 +1824,90 @@ describe('AdminAboutPage', () => {
       await wrapper.get('#admin-about-locale').setValue('en')
       await flushPromises()
 
-      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('Server EN')
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('Server EN')
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
+
+    // Une proposition en attente (la page est passée à la cible, dont les réglages se lisent) ne survit pas à ce qui la
+    // rendrait posée sur un formulaire que la personne n'attendait plus : un retour à une autre langue, ou une lecture de
+    // la cible qui échoue (une erreur ordinaire, un refus 403). Au chargement suivant de la cible, rien n'est posé.
+    // Une lecture interrompue par une fin de session la garde : voir « une proposition en attente ne se pose pas sur un
+    // formulaire non chargé, elle se pose au retour », ci-dessous.
+    const SERVER_EN = { ...SETTINGS_EN, siteEyebrow: 'Server EN' }
+
+    it(
+      "réglages : une proposition en attente, un retour à la langue source avant la cible, puis la cible : rien n'est posé (#748, R157)",
+      async () => {
+        // La première lecture EN reste en vol le temps du retour au FR ; les suivantes sont servies.
+        let releaseFirstEnglish!: () => void
+        const firstEnglishRead = new Promise<void>((resolve) => { releaseFirstEnglish = resolve })
+        let englishReads = 0
+        const settingsRepository = createSettingsRepository({
+          get: vi.fn(async (locale: string) => {
+            if ('en' !== locale) return SETTINGS
+            englishReads += 1
+            if (1 === englishReads) await firstEnglishRead
+
+            return SERVER_EN
+          }),
+        })
+        const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+        const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+        await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+        await flushPromises()
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+
+        await wrapper.get('#admin-about-locale').setValue('fr')
+        await flushPromises()
+        releaseFirstEnglish()
+        await flushPromises()
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+
+        await wrapper.get('#admin-about-locale').setValue('en')
+        await flushPromises()
+
+        expect(englishReads).toBe(2)
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SERVER_EN.siteEyebrow)
+        expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+      },
+    )
+
+    it.each([
+      ['une erreur ordinaire', () => new Error('unavailable')],
+      ['un refus 403', () => new AccessForbiddenError()],
+    ])(
+      "réglages : une proposition en attente dont la lecture de la cible échoue (%s) n'est pas posée au chargement suivant (#748, R157)",
+      async (_label, failure) => {
+        let englishReads = 0
+        const settingsRepository = createSettingsRepository({
+          get: vi.fn(async (locale: string) => {
+            if ('en' !== locale) return SETTINGS
+            englishReads += 1
+            if (1 === englishReads) throw failure()
+
+            return SERVER_EN
+          }),
+        })
+        const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+        const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+        await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+        await flushPromises()
+        // La lecture de la cible a échoué : pas de formulaire, donc rien de posé.
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+        expect(panelOf(wrapper, SETTINGS_PANEL).find('form').exists()).toBe(false)
+
+        await wrapper.get('#admin-about-locale').setValue('fr')
+        await flushPromises()
+        await wrapper.get('#admin-about-locale').setValue('en')
+        await flushPromises()
+
+        expect(englishReads).toBe(2)
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SERVER_EN.siteEyebrow)
+        expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+      },
+    )
 
     // La relecture de la cible refusée (403) ou interrompue laisse les réglages nuls : le formulaire n'est pas rendu, et
     // avec lui ni l'avis de la proposition, ni son verrou, ni « Abandonner » : tout vit dans le formulaire.

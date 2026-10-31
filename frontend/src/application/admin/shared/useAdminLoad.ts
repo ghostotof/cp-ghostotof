@@ -1,4 +1,4 @@
-import { ref, shallowRef, type Ref } from 'vue'
+import { computed, ref, shallowRef, type Ref } from 'vue'
 import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import { onSessionRestored } from '../../auth/useAuth'
@@ -50,6 +50,12 @@ export interface AdminLoadOptions<T, K> {
  * mécanisme qui relirait la session (la revérification au `focus`) n'a qu'à la rétablir, il ne relit jamais les
  * listes lui-même, et il ne peut pas doubler cette relecture.
  *
+ * **`isInterrupted` dit cette attente** (R157) : vrai tant que la dernière lecture a fini en session finie et attend le retour,
+ * retombé dès qu'une lecture part (la plus récente remplace l'interrompue, le rejeu au retour en est une), aboutit ou s'écrit.
+ * Une page qui garde quelque chose pour « quand la lecture aura fini » (la proposition de traduction des réglages) le lit pour
+ * distinguer une lecture qui finit **sans valeur** parce qu'elle attend le retour (elle garde) d'une qui échoue (erreur ou
+ * refus : elle lâche) — `hasError` ne le dit pas, il reste bas pour un refus.
+ *
  * **La clé courante a une source, ici** (R20) : la dernière clé passée à `load()`, que la page montre ou est en train
  * de lire. `isCurrentKey(clé)` la dit (réactive) ; `write(clé, valeur)` pose la réponse d'une **écriture** si c'est
  * la clé courante, et périme alors toute lecture en vol : un `GET` servi avant le COMMIT d'un `PUT` rendrait les
@@ -59,7 +65,12 @@ export interface AdminLoadOptions<T, K> {
  */
 export function useAdminLoad<T, K = void>(
   options: AdminLoadOptions<T, K>,
-): AdminLoadState & { load: (key: K) => Promise<void>; write: (key: K, value: T) => boolean; isCurrentKey: (key: K) => boolean } {
+): AdminLoadState & {
+  isInterrupted: Readonly<Ref<boolean>>
+  load: (key: K) => Promise<void>
+  write: (key: K, value: T) => boolean
+  isCurrentKey: (key: K) => boolean
+} {
   const isLoading = ref(true)
   const hasError = ref(false)
   const isLoaded = ref(false)
@@ -67,7 +78,9 @@ export function useAdminLoad<T, K = void>(
   // La clé de la valeur détenue (dans une boîte : `void` et `undefined` sont des clés valables), ou `null`.
   let held: { key: K } | null = null
   // La lecture qu'une session finie a interrompue, à relire au retour ; `null` dès qu'une lecture a abouti.
-  let interrupted: { key: K } | null = null
+  // Réactive : `isInterrupted` la dit à la page (R157).
+  const interrupted = shallowRef<{ key: K } | null>(null)
+  const isInterrupted = computed(() => null !== interrupted.value)
   // La dernière clé demandée (dans une boîte, comme `held`). Réactive : `isCurrentKey` se lit dans un `computed`.
   const requested = shallowRef<{ key: K } | null>(null)
 
@@ -77,7 +90,7 @@ export function useAdminLoad<T, K = void>(
     isLoading.value = true
     hasError.value = false
     // Une lecture plus récente remplace l'interrompue : c'est elle, pas l'ancienne, qui sera relue au retour.
-    interrupted = null
+    interrupted.value = null
 
     if (null !== held && !Object.is(held.key, key)) {
       options.clear?.()
@@ -91,12 +104,12 @@ export function useAdminLoad<T, K = void>(
       options.apply(value)
       // Après `apply` : un observateur synchrone d'`isLoaded` trouve déjà la valeur posée et recopiée.
       held = { key }
-      interrupted = null
+      interrupted.value = null
       isLoaded.value = true
     } catch (error) {
       if (requestGuard.isCurrent(token)) {
         if (error instanceof SessionEndedError) {
-          interrupted = { key }
+          interrupted.value = { key }
         } else if (!(error instanceof AccessForbiddenError)) {
           hasError.value = true
         }
@@ -115,7 +128,7 @@ export function useAdminLoad<T, K = void>(
     requestGuard.begin()
     options.apply(value)
     held = { key }
-    interrupted = null
+    interrupted.value = null
     hasError.value = false
     isLoading.value = false
     isLoaded.value = true
@@ -124,11 +137,11 @@ export function useAdminLoad<T, K = void>(
   }
 
   onSessionRestored(() => {
-    if (null === interrupted) return
-    const { key } = interrupted
-    interrupted = null
+    if (null === interrupted.value) return
+    const { key } = interrupted.value
+    interrupted.value = null
     void load(key)
   })
 
-  return { isLoading, hasError, isLoaded, load, write, isCurrentKey }
+  return { isLoading, hasError, isLoaded, isInterrupted, load, write, isCurrentKey }
 }

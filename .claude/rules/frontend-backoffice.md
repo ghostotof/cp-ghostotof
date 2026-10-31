@@ -246,7 +246,10 @@ and what to do with the proposal.
   "page-locale" semantics is gone with the page-level selector (one locale per form, see above).
 - About *settings* is the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on
   the return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
-  overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could not save would burn
+  overwrite it), dropped when the page goes to another language than its target or when the target's read fails or is
+  refused, kept through a read interrupted by an ended session (`useAdminLoad`'s `isInterrupted`: the read ended with no
+  value and no error, and runs again on return; R157, D6 of the thirteenth review).
+  The button is disabled while an order draft is dirty (a proposal the locked form could not save would burn
   quota for nothing) and, for the settings, while a proposal is shown (a second translation would replace it with no «
   Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
   (`admin.about.settings.proposalDiscard`, R127c, R141): a `type="button"` shown only during the proposal, no confirmation,

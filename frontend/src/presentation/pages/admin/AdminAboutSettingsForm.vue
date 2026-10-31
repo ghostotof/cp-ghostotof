@@ -29,7 +29,7 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isAnySaving } = useAdminAboutSettings()
+const { settings, isLoading, hasError, isLoaded, isInterrupted, errorMessage, load, save, isSaving, isAnySaving } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const errorText = computed(() => {
@@ -50,6 +50,12 @@ const errorText = computed(() => {
  * lecture en session finie ne lève ni erreur ni valeur, et ne finit qu'au retour
  * de la session, lancée alors par le composable lui-même. La proposition attend
  * donc ce retour, jamais posée sur un formulaire non chargé.
+ *
+ * `pendingProposal` part de trois façons (R157, décision 6 de la treizième relecture) : **posée** sur le formulaire de sa
+ * cible une fois lue ; **retirée** quand la page va à une autre langue que sa cible, ou quand la lecture de la cible
+ * finit sans valeur ni attente du retour (une erreur ordinaire, un refus 403), sans quoi elle se poserait au prochain
+ * chargement de la cible, bien plus tard ; **abandonnée** par « Abandonner » (`handleDiscardProposal`). Une lecture de la
+ * cible interrompue par une fin de session la **garde** jusqu'au retour de la session (`isInterrupted`).
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).
@@ -114,12 +120,33 @@ watch(
 
 // Changer de locale vide les réglages de l'ancienne (`clear` du composable) avant de lire : le formulaire
 // n'est rendu que si `isLoaded`, jamais avec les champs d'une autre langue sous l'en-tête de celle-ci.
+// La page qui ne va pas à la cible de la proposition en attente la retire (R157) : `handleTranslate` n'a changé la langue
+// que pour la poser, et un retour à l'autre langue dit que la personne n'attend plus cette traduction.
 watch(
   () => props.locale,
   (locale) => {
+    if (pendingProposal.value && locale !== pendingProposal.value.targetLocale) {
+      pendingProposal.value = null
+    }
+
     void load(locale)
   },
   { immediate: true },
+)
+
+// Une lecture qui finit sans valeur : ni `isLoaded` ni l'attente du retour de la session, donc une erreur ordinaire ou un
+// refus. La proposition en attente est retirée (R157) : la cible ne se lira pas, et un chargement ultérieur de la cible
+// la poserait sans que personne l'attende. `isInterrupted` la garde : la lecture reprend au retour, comme `isLoaded` le dit.
+// `flush: 'sync'` : `isLoading` retombe après `isLoaded` (`finally`), et le `watch` d'`isLoaded` ci-dessous a déjà posé la
+// proposition d'une lecture réussie.
+watch(
+  isLoading,
+  (loading) => {
+    if (!loading && !isLoaded.value && !isInterrupted.value) {
+      pendingProposal.value = null
+    }
+  },
+  { flush: 'sync' },
 )
 
 // Les réglages de `props.locale` viennent d'être posés et recopiés dans le formulaire : la proposition en
@@ -241,35 +268,35 @@ async function handleSubmit(): Promise<void> {
       @submit.prevent="handleSubmit"
     >
       <BaseTextInput
-        id="admin-about-site-eyebrow"
+        id="admin-about-settings-site-eyebrow"
         v-model="form.siteEyebrow"
         v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.siteEyebrowLabel')"
         required
       />
       <BaseTextInput
-        id="admin-about-me-eyebrow"
+        id="admin-about-settings-me-eyebrow"
         v-model="form.meEyebrow"
         v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.meEyebrowLabel')"
         required
       />
       <BaseTextInput
-        id="admin-about-technical-subtitle"
+        id="admin-about-settings-technical-subtitle"
         v-model="form.technicalSubtitle"
         v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.technicalSubtitleLabel')"
         required
       />
       <BaseTextInput
-        id="admin-about-personal-subtitle"
+        id="admin-about-settings-personal-subtitle"
         v-model="form.personalSubtitle"
         v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.personalSubtitleLabel')"
         required
       />
       <BaseTextInput
-        id="admin-about-hobbies-subtitle"
+        id="admin-about-settings-hobbies-subtitle"
         v-model="form.hobbiesSubtitle"
         v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.hobbiesSubtitleLabel')"
