@@ -17,7 +17,7 @@ defineOptions({ inheritAttrs: false })
  * traduire. Rien ne doit être persisté par ce chemin (ADR 0004, D4).
  *
  * Après « Annuler » (ou tout geste qui périme la traduction), l'appel déjà parti continue côté serveur et le composable
- * refuse le suivant : `isDiscardPending` désactive alors le bouton et rend, sous l'identifiant `hintId`, le texte qui dit
+ * refuse le suivant : `isExpiredCallPending` désactive alors le bouton et rend, sous l'identifiant `hintId`, le texte qui dit
  * pourquoi il attend ; le bouton le désigne par `aria-describedby`, à la suite de la référence que la page lui passe, et
  * seulement pendant l'attente (aucune référence pendante).
  */
@@ -26,7 +26,7 @@ const props = withDefaults(
     formLocale: Locale
     isTranslating: boolean
     /** Un appel périmé n'a pas encore répondu : le bouton attend et le dit. */
-    isDiscardPending?: boolean
+    isExpiredCallPending?: boolean
     /** Identifiant du texte de l'attente, unique dans la page (une page porte plusieurs formulaires). */
     hintId: string
     disabled?: boolean
@@ -37,7 +37,7 @@ const props = withDefaults(
     ariaDescribedby?: string
   }>(),
   {
-    isDiscardPending: false,
+    isExpiredCallPending: false,
     disabled: false,
     ariaDescribedby: undefined,
   },
@@ -51,7 +51,7 @@ const attrs = useAttrs()
 
 const targetLocale = computed<Locale>(() => otherLocale(props.formLocale))
 const buttonDescribedBy = computed(() =>
-  describedBy(props.ariaDescribedby, props.isDiscardPending ? props.hintId : undefined),
+  describedBy(props.ariaDescribedby, props.isExpiredCallPending ? props.hintId : undefined),
 )
 </script>
 
@@ -60,7 +60,7 @@ const buttonDescribedBy = computed(() =>
     type="button"
     class="btn btn-outline-light d-inline-flex align-items-center gap-2"
     v-bind="attrs"
-    :disabled="disabled || isTranslating || isDiscardPending"
+    :disabled="disabled || isTranslating || isExpiredCallPending"
     :aria-busy="isTranslating ? 'true' : 'false'"
     :aria-describedby="buttonDescribedBy"
     @click="emit('translate', targetLocale)"
@@ -74,10 +74,10 @@ const buttonDescribedBy = computed(() =>
     <span v-else>{{ t('admin.translation.proposeVersion', { locale: targetLocale.toUpperCase() }) }}</span>
   </button>
   <p
-    v-if="isDiscardPending"
+    v-if="isExpiredCallPending"
     :id="hintId"
     class="form-text mb-0"
   >
-    {{ t('admin.translation.discardPending') }}
+    {{ t('admin.translation.expiredCallPending') }}
   </p>
 </template>

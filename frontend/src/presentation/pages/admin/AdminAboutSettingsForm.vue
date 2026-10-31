@@ -59,7 +59,7 @@ const errorText = computed(() => {
 // le verrou d'ordre de la page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
 const {
   isTranslating,
-  isDiscardPending,
+  isExpiredCallPending,
   isRefused: isTranslationRefused,
   errorText: translationErrorText,
   translate,
@@ -286,7 +286,7 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :is-discard-pending="isDiscardPending"
+          :is-expired-call-pending="isExpiredCallPending"
           :hint-id="translationHintId"
           :disabled="isTranslationRefused"
           :aria-describedby="describedBy(lockedHintId, isProposalShown ? PROPOSAL_LOCKED_HINT_ID : undefined)"

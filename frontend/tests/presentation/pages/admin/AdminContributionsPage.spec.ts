@@ -152,14 +152,6 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
   await tableRows[to].trigger('drop')
 }
 
-/**
- * Descend la première ligne d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au glisser-déposer : le
- * brouillon d'ordre devient sale sans geste de souris.
- */
-async function moveFirstRowDown(wrapper: VueWrapper): Promise<void> {
-  await rows(wrapper)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
-}
-
 describe('AdminContributionsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -396,16 +388,11 @@ describe('AdminContributionsPage', () => {
       hint: 'admin-contribution-entry-lock-help',
     },
     proseFields: CONTRIBUTION_PROSE_FIELDS,
-    fieldIdPrefix: 'admin-contribution',
     heading: 'Ajouter une contribution',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Supprimer').trigger('click')
-    },
-    // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-    deleteSourceEntry: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Supprimer').trigger('click')
     },
     startEditOther: async (wrapper) => {
@@ -416,7 +403,6 @@ describe('AdminContributionsPage', () => {
       await buttonLabelled(actionsForLine(wrapper, 'An npm lock in the manifest'), 'Supprimer').trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
-    dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()

@@ -189,7 +189,7 @@ and what to do with the proposal.
 
 - `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` returns `hasProse`, `errorText`
   (`admin.translation.errors.<reason>`), `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`,
-  `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar `discard` (R153, D4 of the thirteenth
+  `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar `expire` (R153, D4 of the thirteenth
   review). The page keeps its form and its gestures (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a
   delete and the template block — `TranslateEntryButton`, `TranslationReadonlyHint`, the error alert —, which each page
   writes because each of its bindings carries a value of the page (the form's locale, the lock's help, its `describedBy`). A
@@ -213,23 +213,24 @@ and what to do with the proposal.
   in flight, a dirty order draft or the page's order lock, the form's proposal lock (for the About settings, a proposal
   shown, R127, R127b); the composable adds the absence of prose (`hasProse`). The button's `:disabled` reads the `isRefused`
   the composable exposes (R137), never a copy of the predicate.
-- A response is discarded when its form changed. The form's identity is `FormIdentity`: the entry, the locale, the source
-  group and the form's generation, compared field by field by `sameFormIdentity`, never the prose. A response whose form no
-  longer has the identity read at send time is discarded, whatever gesture replaced it and even if the form later regains
-  that identity (R124). Every gesture that fills or empties the form (a reset, « Modifier », « Créer la version XX »)
-  advances its generation, `renewForm()` of `useTranslatedForm`, called first by each `resetForm`, `startEdit` and
-  `startCreateVersion` (R139, decision 1 of the twelfth review; R152, D1 of the thirteenth): a blank form saved during a
-  translation, or a « Modifier » or a « Créer la version XX » clicked again on the same entry or line, keeps its entry,
-  locale and group, and only the generation tells it from the form the call left. What no identity sees, a deletion, goes
-  through `discardIfDeleted()` of `useTranslatedForm`: the entry being edited, or the source of a creation attached to its
-  group (R124, R140). A page deletes through `removeEntry(entry, remove)`, which calls it first and then awaits `remove`: a
-  refused deletion still discards the translation (accepted, D7 of the thirteenth review: discarding after the success would
-  let an answer that arrived during the `DELETE` land on a deleted entry); deleting another member of the edited entry's
-  group changes nothing.
-- One model call in flight per mounted form: a discarded call still running refuses the next one (`isDiscardPending`, R125,
+- A response is expired when its form changed. The form's identity is `FormIdentity` (`application/admin/translation/`, an
+  interface state the domain does not carry, R154): the entry, the locale, the source group and the form's generation,
+  compared field by field by `sameFormIdentity`, never the prose. A response whose form no longer has the identity read at
+  send time is expired, whatever gesture replaced it and even if the form later regains that identity (R124). Every gesture
+  that fills or empties the form (a reset, « Modifier », « Créer la version XX ») advances its generation, `renewForm()` of
+  `useTranslatedForm`, called first by each `resetForm`, `startEdit` and `startCreateVersion` (R139, decision 1 of the
+  twelfth review; R152, D1 of the thirteenth): a blank form saved during a translation, or a « Modifier » or a
+  « Créer la version XX » clicked again on the same entry or line, keeps its entry, locale and group, and only the
+  generation tells it from the form the call left. What no identity sees, a deletion, goes through `expireIfDeleted()` of
+  `useTranslatedForm`: the entry being edited, or the source of a creation attached to its group (R124, R140). A page deletes
+  through `removeEntry(entry, remove)`, which calls it first and then awaits `remove`: a refused deletion still expires the
+  translation (accepted, D7 of the thirteenth review: expiring after the success would let an answer that arrived during the
+  `DELETE` land on a deleted entry); deleting another member of the edited entry's group changes nothing.
+- One model call in flight per mounted form: an expired call still running refuses the next one (`isExpiredCallPending`, R125,
   decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened,
   or a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a
-  text referenced by `aria-describedby` only while it waits, `admin.translation.discardPending`.
+  text referenced by `aria-describedby` only while it waits, `admin.translation.expiredCallPending`. « Expire » is the word for
+  a translation made stale (`expire`, `expireIfDeleted`); « discard » names only the settings' dropped proposal (R154, Q7).
 - While a translation runs, the form's prose fields are `readonly` (not `disabled`: readable and focusable), each described
   by `admin.translation.proseReadonly` (`TranslationReadonlyHint`), rendered only then — `useTranslatedForm` writes that once
   (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one `hintIdPrefix`), the field lists

@@ -5,11 +5,11 @@ import {
   useAdminTranslation,
   type UseAdminTranslationResult,
 } from '../../../application/admin/translation/useAdminTranslation'
-import type { FormIdentity } from '../../../domain/admin/translation/entities/FormIdentity'
+import type { FormIdentity } from '../../../application/admin/translation/FormIdentity'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { describedBy } from './describedBy'
 
-/** Ce que `discardIfDeleted` et `removeEntry` lisent d'une entrée qu'on supprime : sa clé et son groupe de traduction. */
+/** Ce que `expireIfDeleted` et `removeEntry` lisent d'une entrée qu'on supprime : sa clé et son groupe de traduction. */
 export type DeletableEntry = { readonly id: string; readonly translationGroup: string | null }
 
 export interface UseTranslatedFormOptions<F extends string> {
@@ -38,7 +38,13 @@ export interface UseTranslatedFormOptions<F extends string> {
   readonly isRefused: () => boolean
 }
 
-export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult, 'discard'> {
+/** Ce que chaque champ de prose reçoit par `v-bind` : lecture seule et référence au texte d'aide, pendant la traduction. */
+export interface ProseFieldAttrs {
+  readonly readonly: boolean
+  readonly 'aria-describedby': string | undefined
+}
+
+export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult, 'expire'> {
   /**
    * Fait avancer la génération du formulaire : à appeler en premier par **chaque** geste qui remplit ou vide le formulaire —
    * remise à zéro (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…), « Modifier » (`startEdit`…), « Créer la version
@@ -46,7 +52,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * vierge, « Modifier » de l'entrée déjà éditée, « Créer la version XX » de la même ligne), et la réponse d'une traduction
    * partie avant lui poserait sa proposition sur le formulaire vidé ou rechargé : la génération, elle, change, et périme la
    * traduction en vol comme elle efface l'échec (ce qu'aucune identité ne voit, la suppression d'une entrée, passe par
-   * `discardIfDeleted`).
+   * `expireIfDeleted`).
    */
   readonly renewForm: () => void
   /**
@@ -57,7 +63,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * éditée, ou une entrée d'un autre groupe, ne change rien : la traduction garde son entrée. Une page supprime par
    * `removeEntry`, qui l'appelle.
    */
-  readonly discardIfDeleted: (entry: DeletableEntry) => void
+  readonly expireIfDeleted: (entry: DeletableEntry) => void
   /** Un champ de `proseFields` du formulaire n'est pas blanc : sans prose, rien à traduire (le refus exposé le contient). */
   readonly hasProse: Readonly<Ref<boolean>>
   /** Le texte, traduit, de l'échec de la dernière traduction (`admin.translation.errors.<raison>`), `null` sans échec. */
@@ -72,7 +78,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    */
   readonly proposeFrom: (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void) => Promise<void>
   /**
-   * Supprime une entrée : périme d'abord la traduction qui lui est rattachée (`discardIfDeleted`), puis attend `remove`. La
+   * Supprime une entrée : périme d'abord la traduction qui lui est rattachée (`expireIfDeleted`), puis attend `remove`. La
    * page garde le `window.confirm`, dont le texte lui est propre. Limite acceptée (D7) : une suppression refusée périme quand
    * même la traduction — la périmer après le succès laisserait une réponse arrivée pendant le `DELETE` se poser sur une entrée
    * supprimée.
@@ -86,7 +92,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * Ce que chaque champ de prose reçoit, lié par `v-bind` : en lecture seule (`readonly`, pas `disabled` : lisible et
    * focusable) et décrit par le texte d'aide, pendant la traduction. `helpId` est l'aide propre du champ, gardée devant.
    */
-  readonly proseFieldAttrs: (helpId?: string) => { readonly: boolean; 'aria-describedby': string | undefined }
+  readonly proseFieldAttrs: (helpId?: string) => ProseFieldAttrs
 }
 
 /**
@@ -95,7 +101,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
  * de l'échec, et ce que la prose en tire — lecture seule pendant la traduction, décrite par un texte d'aide, jamais
  * d'identifiant pendant. Écrit une fois pour les neuf formulaires.
  *
- * Il appelle `useAdminTranslation` et en rend ce qu'une page lit, sans `discard` : un geste de page périme par son identité
+ * Il appelle `useAdminTranslation` et en rend ce qu'une page lit, sans `expire` : un geste de page périme par son identité
  * (`renewForm`) ou par `removeEntry`. La page garde ce qui lui est propre : le formulaire et ses gestes (`startEdit`,
  * `startCreateVersion`, l'enregistrement), ses champs de prose (`proseFields.ts`), le `window.confirm` de la suppression, et le
  * bloc de gabarit — `TranslateEntryButton`, `TranslationReadonlyHint`, l'alerte d'erreur —, que chaque page écrit : chacune de
@@ -108,25 +114,25 @@ export function useTranslatedForm<F extends string>(options: UseTranslatedFormOp
   // Le numéro du formulaire : un geste qui le remplit ou le vide le fait avancer, et rien d'autre (voir `renewForm`).
   const generation = ref(0)
   const hasProse = computed(() => options.proseFields.some((field) => '' !== options.form[field].trim()))
-  const { discard, ...translation } = useAdminTranslation({
+  const { expire, ...translation } = useAdminTranslation({
     isRefused: () => !hasProse.value || options.isRefused(),
     formIdentity: () => ({ ...options.identity(), generation: generation.value }),
   })
   const renewForm = (): void => {
     generation.value += 1
   }
-  const discardIfDeleted = (entry: DeletableEntry): void => {
+  const expireIfDeleted = (entry: DeletableEntry): void => {
     const { entry: editingId, group } = options.identity()
     const isEdited = entry.id === editingId
     // Une création rattachée : aucune entrée éditée, un groupe source. L'entrée de ce groupe qu'on supprime en est la source.
     const isSourceOfAttachedCreation = null === editingId && null !== group && entry.translationGroup === group
 
     if (isEdited || isSourceOfAttachedCreation) {
-      discard()
+      expire()
     }
   }
   const removeEntry = async (entry: DeletableEntry, remove: () => Promise<unknown>): Promise<void> => {
-    discardIfDeleted(entry)
+    expireIfDeleted(entry)
 
     await remove()
   }
@@ -148,7 +154,7 @@ export function useTranslatedForm<F extends string>(options: UseTranslatedFormOp
 
   const proseReadonlyHintId = `${options.hintIdPrefix}-prose-readonly-hint`
   const translationHintId = `${options.hintIdPrefix}-translation-hint`
-  const proseFieldAttrs = (helpId?: string) => ({
+  const proseFieldAttrs = (helpId?: string): ProseFieldAttrs => ({
     readonly: translation.isTranslating.value,
     // La référence n'existe que pendant la traduction, avec le texte : jamais pendante.
     'aria-describedby': describedBy(helpId, translation.isTranslating.value ? proseReadonlyHintId : undefined),
@@ -157,7 +163,7 @@ export function useTranslatedForm<F extends string>(options: UseTranslatedFormOp
   return {
     ...translation,
     renewForm,
-    discardIfDeleted,
+    expireIfDeleted,
     hasProse,
     errorText,
     proposeFrom,

@@ -204,14 +204,6 @@ async function dragRow(wrapper: VueWrapper, which: number, from: number, to: num
   await rows[to].trigger('drop')
 }
 
-/**
- * Descend la première ligne d'un tableau d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au
- * glisser-déposer : le brouillon d'ordre devient sale sans geste de souris.
- */
-async function moveFirstRowDown(wrapper: VueWrapper, which: number): Promise<void> {
-  await rowsOf(wrapper, which)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
-}
-
 describe('AdminQualityPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -693,17 +685,12 @@ describe('AdminQualityPage', () => {
         hint: 'admin-quality-principle-entry-lock-help',
       },
       proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
-      fieldIdPrefix: 'admin-quality-principle',
       heading: 'Ajouter un principe',
       permanentHelp: LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
-      },
-      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
@@ -714,7 +701,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
-      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, PRINCIPLES),
+      orderTable: PRINCIPLES,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
@@ -739,17 +726,12 @@ describe('AdminQualityPage', () => {
         hint: 'admin-quality-trait-entry-lock-help',
       },
       proseFields: QUALITY_TRAIT_PROSE_FIELDS,
-      fieldIdPrefix: 'admin-quality-trait',
       heading: 'Ajouter un trait',
       permanentHelp: LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
-      },
-      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
@@ -760,7 +742,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
-      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, TRAITS),
+      orderTable: TRAITS,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()

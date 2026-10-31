@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { DISCARD_PENDING_FR } from '../../../support/adminTranslationTexts'
+import { EXPIRED_CALL_PENDING_FR } from '../../../support/adminTranslationTexts'
 
 type Props = InstanceType<typeof TranslateEntryButton>['$props']
 
@@ -66,12 +66,12 @@ describe('TranslateEntryButton', () => {
   })
 
   it("pendant l'attente d'un appel annulé, le bouton est désactivé et décrit par le texte de l'attente (#748, R125, décision 2)", () => {
-    const wrapper = mountButton({ formLocale: 'fr', isTranslating: false, isDiscardPending: true }, { 'aria-describedby': 'aide-page' })
+    const wrapper = mountButton({ formLocale: 'fr', isTranslating: false, isExpiredCallPending: true }, { 'aria-describedby': 'aide-page' })
 
     const button = wrapper.get('button')
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.attributes('aria-describedby')).toBe(`aide-page ${HINT_ID}`)
-    expect(wrapper.get(`#${HINT_ID}`).text()).toBe(DISCARD_PENDING_FR)
+    expect(wrapper.get(`#${HINT_ID}`).text()).toBe(EXPIRED_CALL_PENDING_FR)
   })
 
   it("hors attente, aucun texte d'attente et aucune référence vers lui (#748, R125)", () => {
@@ -84,6 +84,6 @@ describe('TranslateEntryButton', () => {
   })
 
   it("ne présente aucune violation d'accessibilité pendant l'attente d'un appel annulé (#748, R125)", async () => {
-    await expectNoAccessibilityViolation(mountButton({ formLocale: 'fr', isTranslating: false, isDiscardPending: true }))
+    await expectNoAccessibilityViolation(mountButton({ formLocale: 'fr', isTranslating: false, isExpiredCallPending: true }))
   })
 })

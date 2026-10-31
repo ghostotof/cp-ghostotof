@@ -44,7 +44,7 @@ import {
 } from '../../../support/entryFormLock'
 import {
   ABOUT_LOCALE_HELP_FR,
-  DISCARD_PENDING_FR,
+  EXPIRED_CALL_PENDING_FR,
   ENTRY_LOCK_PROPOSAL_FR,
   PROSE_READONLY_FR,
   SETTINGS_PROPOSAL_LOCKED_FR,
@@ -331,14 +331,6 @@ async function dragRow(wrapper: VueWrapper, which: number, from: number, to: num
   await rows[from].trigger('dragstart')
   await rows[to].trigger('dragover')
   await rows[to].trigger('drop')
-}
-
-/**
- * Descend la première ligne d'un tableau d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au
- * glisser-déposer : le brouillon d'ordre devient sale sans geste de souris.
- */
-async function moveFirstRowDown(wrapper: VueWrapper, which: number): Promise<void> {
-  await rowsOf(wrapper, which)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
 }
 
 describe('AdminAboutPage', () => {
@@ -1056,17 +1048,12 @@ describe('AdminAboutPage', () => {
         hint: 'admin-about-site-card-entry-lock-help',
       },
       proseFields: SITE_CARD_PROSE_FIELDS,
-      fieldIdPrefix: 'admin-about-site-card',
       heading: 'Ajouter une carte',
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
-      },
-      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
@@ -1077,7 +1064,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
-      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, SITE),
+      orderTable: SITE,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
@@ -1102,17 +1089,12 @@ describe('AdminAboutPage', () => {
         hint: 'admin-about-me-card-entry-lock-help',
       },
       proseFields: ME_CARD_PROSE_FIELDS,
-      fieldIdPrefix: 'admin-about-me-card',
       heading: 'Ajouter une carte',
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
-      },
-      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
@@ -1123,7 +1105,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
-      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, ME_TABLE.technical),
+      orderTable: ME_TABLE.technical,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
@@ -1243,7 +1225,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledTimes(1)
-      expect(textsDescribing(wrapper, button())).toEqual([DISCARD_PENDING_FR])
+      expect(textsDescribing(wrapper, button())).toEqual([EXPIRED_CALL_PENDING_FR])
       await expectNoAccessibilityViolation(wrapper)
 
       answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })

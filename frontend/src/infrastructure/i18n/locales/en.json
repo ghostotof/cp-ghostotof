@@ -396,7 +396,7 @@
     "translation": {
       "proposeVersion": "Suggest the {locale} version",
       "inProgress": "Translating…",
-      "discardPending": "The previous translation, abandoned, is still finishing on the server: this button comes back as soon as it answers, and the answer changes nothing in the form.",
+      "expiredCallPending": "The previous translation, abandoned, is still finishing on the server: this button comes back as soon as it answers, and the answer changes nothing in the form.",
       "proseReadonly": "Translation in progress: the text fields are read-only until the answer, which replaces them with the proposal; the saved entry does not change.",
       "proposalNotice": "AI-generated suggestion from the {locale} version: review and correct it before saving. Nothing is saved until you click Save.",
       "errors": {

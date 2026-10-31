@@ -7,7 +7,11 @@ import type { TranslationProposal } from '../../../../src/domain/admin/translati
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import type { Locale } from '../../../../src/domain/portfolio/entities/Locale'
 import { createAppI18n } from '../../../../src/presentation/i18n'
-import { useTranslatedForm, type UseTranslatedFormOptions } from '../../../../src/presentation/ui/admin/useTranslatedForm'
+import {
+  useTranslatedForm,
+  type UseTranslatedFormOptions,
+  type UseTranslatedFormResult,
+} from '../../../../src/presentation/ui/admin/useTranslatedForm'
 import { TRANSLATION_UNAVAILABLE_FR } from '../../../support/adminTranslationTexts'
 
 const PREFIX = 'admin-incident'
@@ -19,8 +23,19 @@ const PROPOSAL: TranslationProposal = { sourceLocale: 'fr', targetLocale: 'en', 
 type Field = 'title' | 'impact'
 const PROSE_FIELDS: readonly Field[] = ['title', 'impact']
 
+/** Ce que rend `mountTranslatedForm` : le composable, son formulaire, son dépôt et la réponse que le test libère. */
+interface MountedTranslatedForm {
+  readonly form: UseTranslatedFormResult
+  readonly fields: { title: string; impact: string; note: string }
+  readonly repository: AdminTranslationRepository
+  readonly release: (proposal: TranslationProposal) => void
+}
+
 /** Monte le composable dans un hôte, avec un dépôt dont la réponse attend `release()`. */
-function mountTranslatedForm(options: Partial<UseTranslatedFormOptions<Field>> = {}, failing?: AdminTranslationRepository) {
+function mountTranslatedForm(
+  options: Partial<UseTranslatedFormOptions<Field>> = {},
+  failing?: AdminTranslationRepository,
+): MountedTranslatedForm {
   let release!: (proposal: TranslationProposal) => void
   const repository: AdminTranslationRepository = failing ?? {
     translate: vi.fn(() => new Promise<TranslationProposal>((resolve) => { release = resolve })),
@@ -155,7 +170,7 @@ describe('useTranslatedForm', () => {
 
   // Supprimer une entrée ne change rien au formulaire : la page le dit au composable, qui juge si la traduction en vol y
   // était rattachée — l'entrée éditée, ou la source d'une création rattachée à son groupe (#748, R140).
-  describe('discardIfDeleted', () => {
+  describe('expireIfDeleted', () => {
     const GROUP = 'groupe-source'
     const OTHER_GROUP = 'autre-groupe'
 
@@ -163,11 +178,11 @@ describe('useTranslatedForm', () => {
     async function deleteDuringTranslation(
       identity: { entry: string | null; group: string | null },
       deleted: { id: string; translationGroup: string | null },
-    ) {
+    ): Promise<{ form: UseTranslatedFormResult; answer: TranslationProposal | null }> {
       const { form, release } = mountTranslatedForm({ identity: () => ({ ...identity, locale: 'fr' }) })
       const pending = form.translate('fr', 'en', { title: 'Panne' })
 
-      form.discardIfDeleted(deleted)
+      form.expireIfDeleted(deleted)
 
       release(PROPOSAL)
       return { form, answer: await pending }

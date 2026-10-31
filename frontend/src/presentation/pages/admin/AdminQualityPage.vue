@@ -172,7 +172,7 @@ const traitLock = useEntryFormLock({
  */
 const {
   isTranslating: isTranslatingPrinciple,
-  isDiscardPending: isDiscardPendingPrinciple,
+  isExpiredCallPending: isExpiredCallPendingPrinciple,
   isRefused: isPrincipleTranslationRefused,
   errorText: principleTranslationErrorText,
   proposeFrom: proposePrincipleFrom,
@@ -196,7 +196,7 @@ const {
 })
 const {
   isTranslating: isTranslatingTrait,
-  isDiscardPending: isDiscardPendingTrait,
+  isExpiredCallPending: isExpiredCallPendingTrait,
   isRefused: isTraitTranslationRefused,
   errorText: traitTranslationErrorText,
   proposeFrom: proposeTraitFrom,
@@ -593,7 +593,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           <TranslateEntryButton
             :form-locale="principleForm.locale"
             :is-translating="isTranslatingPrinciple"
-            :is-discard-pending="isDiscardPendingPrinciple"
+            :is-expired-call-pending="isExpiredCallPendingPrinciple"
             :hint-id="principleTranslationHintId"
             :disabled="isPrincipleTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, principleLock.proposalDescribedBy)"
@@ -859,7 +859,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           <TranslateEntryButton
             :form-locale="traitForm.locale"
             :is-translating="isTranslatingTrait"
-            :is-discard-pending="isDiscardPendingTrait"
+            :is-expired-call-pending="isExpiredCallPendingTrait"
             :hint-id="traitTranslationHintId"
             :disabled="isTraitTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, traitLock.proposalDescribedBy)"

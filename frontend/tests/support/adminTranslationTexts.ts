@@ -14,8 +14,8 @@ export const ENTRY_LOCK_EDITING_FR: string = fr.admin.entryLock.editing
 /** `admin.entryLock.proposal` : le verrou d'une proposition — langue, « Version de », bouton de traduction, catégorie « moi ». */
 export const ENTRY_LOCK_PROPOSAL_FR: string = fr.admin.entryLock.proposal
 
-/** `admin.translation.discardPending` : l'attente d'un appel abandonné ; le bouton de traduction le désigne jusqu'à sa réponse. */
-export const DISCARD_PENDING_FR: string = fr.admin.translation.discardPending
+/** `admin.translation.expiredCallPending` : l'attente d'un appel abandonné ; le bouton de traduction le désigne jusqu'à sa réponse. */
+export const EXPIRED_CALL_PENDING_FR: string = fr.admin.translation.expiredCallPending
 
 /** `admin.translation.proseReadonly` : l'aide des champs de prose pendant une traduction ; chacun le désigne jusqu'à la réponse. */
 export const PROSE_READONLY_FR: string = fr.admin.translation.proseReadonly

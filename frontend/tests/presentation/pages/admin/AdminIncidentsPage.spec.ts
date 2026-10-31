@@ -155,14 +155,6 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
   await tableRows[to].trigger('drop')
 }
 
-/**
- * Descend la première ligne d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au glisser-déposer : le
- * brouillon d'ordre devient sale sans geste de souris.
- */
-async function moveFirstRowDown(wrapper: VueWrapper): Promise<void> {
-  await rows(wrapper)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
-}
-
 describe('AdminIncidentsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -415,16 +407,11 @@ describe('AdminIncidentsPage', () => {
       hint: 'admin-incident-entry-lock-help',
     },
     proseFields: INCIDENT_PROSE_FIELDS,
-    fieldIdPrefix: 'admin-incident',
     heading: 'Ajouter un incident',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Supprimer').trigger('click')
-    },
-    // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
-    deleteSourceEntry: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Supprimer').trigger('click')
     },
     startEditOther: async (wrapper) => {
@@ -435,7 +422,6 @@ describe('AdminIncidentsPage', () => {
       await buttonLabelled(actionsForLine(wrapper, 'RabbitMQ broker outage'), 'Supprimer').trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
-    dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()

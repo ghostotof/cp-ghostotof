@@ -1,6 +1,6 @@
 import { isFnExpressionBrowser, isMemberExpressionBrowser, NodeTypes, type ExpressionNode } from '@vue/compiler-dom'
 import ts from 'typescript'
-import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
+import { parse, type SFCDescriptor, type SFCTemplateBlock } from 'vue/compiler-sfc'
 
 /**
  * Le lecteur de source des gardes de `tests/` (#748).
@@ -96,6 +96,19 @@ export function stringLiterals(source: string): string[] {
 }
 
 /**
+ * Le descripteur d'un `.vue`, tel que le compilateur de composants le lit. Un `.vue` qu'il ne sait pas lire est refusé, avec
+ * le chemin et ses erreurs : une garde qui sauterait ce fichier le laisserait sans garde.
+ */
+function descriptorOf(path: string, source: string): SFCDescriptor {
+  const { descriptor, errors } = parse(source, { filename: path })
+  if (errors.length > 0) {
+    throw new Error(`${path} : ${errors.map((error) => error.message).join(' ; ')}`)
+  }
+
+  return descriptor
+}
+
+/**
  * La partie JavaScript de `source` : pour un chemin en `.vue`, le contenu de ses blocs `<script>` et `<script setup>`,
  * **à leur place** — tout le reste (le `<template>`, le `<style>`, les balises) est remplacé par des espaces, les fins de
  * ligne gardées, de sorte qu'une position ou un numéro de ligne reste celui de la source. Tout autre chemin : la source
@@ -107,10 +120,7 @@ export function scriptOf(path: string, source: string): string {
     return source
   }
 
-  const { descriptor, errors } = parse(source, { filename: path })
-  if (errors.length > 0) {
-    throw new Error(`${path} : ${errors.map((error) => error.message).join(' ; ')}`)
-  }
+  const descriptor = descriptorOf(path, source)
 
   let code = source.replace(/[^\r\n]/g, ' ')
   for (const block of [descriptor.script, descriptor.scriptSetup]) {
@@ -143,10 +153,7 @@ export function templateFragmentsOf(path: string, source: string): string[] {
     return []
   }
 
-  const { descriptor, errors } = parse(source, { filename: path })
-  if (errors.length > 0) {
-    throw new Error(`${path} : ${errors.map((error) => error.message).join(' ; ')}`)
-  }
+  const descriptor = descriptorOf(path, source)
   if (null === descriptor.template) {
     return []
   }

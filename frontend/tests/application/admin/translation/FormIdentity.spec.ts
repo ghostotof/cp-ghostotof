@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sameFormIdentity, type FormIdentity } from '../../../../src/domain/admin/translation/entities/FormIdentity'
+import { sameFormIdentity, type FormIdentity } from '../../../../src/application/admin/translation/FormIdentity'
 
 const BASE: FormIdentity = { entry: 'a', locale: 'fr', group: 'g', generation: 0 }
 

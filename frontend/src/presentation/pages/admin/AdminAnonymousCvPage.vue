@@ -94,7 +94,7 @@ const lock = useEntryFormLock({
 // Après le formulaire : le composable en lit l'objet dès l'appel.
 const {
   isTranslating,
-  isDiscardPending,
+  isExpiredCallPending,
   isRefused: isTranslationRefused,
   errorText: translationErrorText,
   proposeFrom,
@@ -369,7 +369,7 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
-            :is-discard-pending="isDiscardPending"
+            :is-expired-call-pending="isExpiredCallPending"
             :hint-id="translationHintId"
             :disabled="isTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
