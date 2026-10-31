@@ -9,13 +9,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R102 et suivantes**, la section
-  « Corrections de la neuvième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R112 et suivantes**, la section
+  « Corrections de la dixième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
   vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
-  des fichiers), puis **ta tâche**. (R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
+  des fichiers), puis **ta tâche**. (R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
   relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième
   relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de
-  la série : `tasks/relectures-748/relecture-9-constats.md`. Les sections passées
+  la série : `tasks/relectures-748/relecture-10-constats.md`. Les sections passées
   sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
@@ -39,8 +39,9 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   commit `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`, tous à 0.
   Jamais npm sur l'hôte.
 - Backend, toujours `-u dev` : ciblé `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis
-  `make back-test; echo "exit=$?"` et `make back-quality; echo "exit=$?"` ; `rm -rf var/cache/test` après un changement de
-  service ou de configuration. Jamais de secret littéral dans un test (`TestCredentials`, `TestKeys::material()`, une
+  `make back-test; echo "exit=$?"` et `make back-quality; echo "exit=$?"` ; après un changement de service ou de
+  configuration, le cache de test se vide **dans le conteneur** (`docker compose exec -u dev backend rm -rf
+  var/cache/test`), jamais par `rm -rf` sur l'hôte, qui désynchronise le montage (R108). Jamais de secret littéral dans un test (`TestCredentials`, `TestKeys::material()`, une
   valeur aléatoire).
 - Outillage : `bash tools/tests/<script>.test.sh; echo "exit=$?"` hors ligne, et shellcheck dans l'image épinglée du job
   `tools-tests` (commande exacte dans les contraintes de la section du plan).
