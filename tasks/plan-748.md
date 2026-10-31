@@ -9400,6 +9400,983 @@ sa raison ; une recherche sans ligne se dit « 0 ». **« ≤ 140 » est la long
 ---
 
 
+## Corrections de la treizième relecture (2026-10-31)
+
+R137 à R151, R141b et R148b sont faites (après 902bd8b8, jusqu'à ab8c24fd ; constats de la treizième relecture :
+4b016eaf, décisions : 2a5cb860). Leurs cases restent non cochées, par convention des séries : cette phrase dit qu'elles
+sont faites.
+
+Quatre relectures du diff 4fa9d3da...ab8c24fd (`/code-review medium` CR13-*, audit de sécurité C13-*, axe Standards
+St13-*, axe Spec Sp13-*) : aucun critique ni haut ; moyens : CR13-1, St13-15, St13-34 = Sp13-1 = C13-4, St13-35,
+St13-39 = C13-3, St13-60. Constats complets et décisions : `tasks/relectures-748/relecture-13-constats.md` (la source de
+vérité). Tous sont traités ici par R152 à R167, avant les tâches 11 et 12 : corrigés, ou écartés avec leur raison
+(ci-dessous).
+
+**Numérotation.** Les huit décisions de l'utilisateur (questions Q1 à Q8 du fichier de constats) sont citées ici **D1 à
+D8** ; les questions que ce plan pose sont **Q1 à Q14** (« Questions à l'auteur »). La douzième section portait deux
+« Q1 » (la décision « Q1 (b) » et la question « Q1 (R140) ») : la présente section n'en a qu'une suite.
+
+### Ce que la douzième série a réellement fait *(rectifié le 2026-10-31)*
+
+La section « Corrections de la douzième relecture » est l'archive de son moment et n'est pas réécrite. Sur HEAD
+2a5cb860, ce qui y est devenu faux (écarts déclarés, jugés par la relecture Spec, et commits de la série) :
+
+- **R137** conforme ; aucun cas d'intégration ne change l'identité par le seul groupe (Sp13-4, traité par R152).
+- **R138** (choix 4) : les options `fieldIdPrefix` et `proseFields` ne sont pas créées ; `useTranslatedForm` prend
+  `hintIdPrefix`, `identity` et `isRefused`, les identifiants des champs restent écrits en littéral dans les gabarits.
+  `proseFieldId` vit dans `frontend/tests/support/proseFieldId.ts` (ajout 1 de R151), plus dans le composable.
+  `proseDescribedBy` est rendu mais lu par un spec seul (St13-23, traité par R153).
+- **R139** (choix 6) : le guetteur qui efface l'échec est **unique et tardif** — né à la première traduction, dans la
+  portée du composant (la zone morte temporelle interdit de le poser au montage avant l'identité) —, pas un guetteur
+  permanent posé au montage. La preuve rouge est passée par les cas partagés. Jugé acceptable.
+- **R140** (choix 7) : `discardIfDeleted(entry)` prend **un** argument et lit l'identité du formulaire (le choix disait
+  deux) ; meilleur que le plan. Le voisin « supprimer la sœur ne périme pas » n'existe qu'au spec du composable, pas
+  dans les cas partagés (Sp13-3, traité par R152).
+- **R141b** et **R148b** sont des décisions de l'auteur consignées après coup, sans `**Files :**` ni étapes ; R148b a
+  été exécutée **après** R149 (commit 955f2a65 après d162c1e1).
+- **R143** : `RefusalModuleState` conforme ; la mutation (b) du Step 4 était impossible telle qu'écrite (une remise
+  `{ ...INITIAL_STATE, … }` remet tous les champs : on ne peut pas « oublier » `isLandingOpen`) ; le plan se trompait.
+- **R145** : `dirtyOrder` descend la première ligne par la flèche « ↓ » de sa poignée, par un `moveFirstRowDown` recopié
+  dans six specs (St13-17, traité par R154).
+- **R150** : la méthode rejouée a donné **187** lignes (pas 190) : 159 coupées, 28 laissées (un littéral seul, dit le
+  commit ; cinq ne le sont pas, Sp13-7). Des noms de tests ont été raccourcis contre la lettre du Step 3 (« aucun nom
+  ne change »), sur consigne du brief du fil principal : seize selon le commit b40ddc21, dix-neuf selon la relecture
+  Spec ; D8 les accepte, R166 rétablit ce qui a perdu du sens et fait le compte.
+- **R151** conforme à ses cinq ajouts, sauf des moignons laissés ou créés par le recollage (St13-61).
+
+### Décisions de l'utilisateur (2026-10-31)
+
+Les huit recommandations, toutes :
+
+1. **D1** : `renewForm()` en tête de `startCreateVersion` et `startEdit`, dans les huit formulaires par entrée (neuf
+   sites avec les deux de Qualité), et un cas partagé de la régression. R152.
+2. **D2** : `--proto =https` avec chaque `-K` (`smoke_fetch`, `CURL_OPTS` de l'audit) ; refus des options **par
+   préfixe** dans `"$@"` et dans `SMOKE_CURL_OPTS` ; un argument refusé s'il **commence** par un schéma autre que
+   `https://` (plus de `*://*`). R163.
+3. **D3** : la garde des vidages étendue, l'exemption réduite à la seule ligne de lecture par nom, le faux positif
+   `${env}` corrigé, et la limite écrite : la garde vise les fautes de bonne foi, pas un contournement délibéré. R164.
+4. **D4** : le bloc de traduction porté dans `useTranslatedForm` (`errorText`, `hasProse`, `proposeFrom(...)`), tâche
+   dédiée. R153.
+5. **D5** : une règle dédiée à l'outillage des smokes et de l'audit, l'ancienne puce gardant un renvoi. R162.
+6. **D6** : `pendingProposal` des réglages remis à `null` à tout changement de langue qui ne mène pas à la cible et sur
+   un échec de la lecture. R157.
+7. **D7** : l'ordre `discardIfDeleted` puis `remove()` gardé, la limite écrite. R153.
+8. **D8** : les raccourcis de noms de R150 acceptés et consignés (ci-dessus) ; rétablir ce qui a perdu du sens
+   (« désactivé », « palier de confiance », la référence R67 si elle tient sous 140). R166.
+
+Toujours valables : les décisions et « Sans suite » des séries précédentes (douzième section, décision 5) ; critère
+d'arrêt **tout jusqu'à zéro**. CR13-8 est écarté (raison ci-dessous).
+
+### Vérification de chaque constat dans le code (HEAD 2a5cb860)
+
+- **CR13-1, confirmé.** `AdminIncidentsPage.vue:235-250` : `startCreateVersion` pose `editingId = null`, la langue, le
+  groupe et vide la prose sans `renewForm()` ; `resetForm()` (l. 192-194) l'appelle. Un second « Créer la version XX »
+  de la même ligne et de la même langue pendant une traduction garde l'identité `{ null, locale, groupe, génération }` :
+  `handleTranslate` (l. 286-299) pose la proposition sur la prose vidée. `startEdit` (l. 209) : même chose pour la même
+  entrée. Les sept autres fichiers ont la même forme.
+- **St13-15, confirmé.** Chaque formulaire recopie `hasProseToTranslate` (sept `computed` identiques, `hasPrincipleProse`
+  et `hasTraitProse` dans Qualité), `translationErrorText` (neuf), `handleTranslate` (collecte, `translate`, retour sur
+  `null`, bascule du formulaire, `applyTranslationProposal`) et `handleDelete` (`confirm`, `discardIfDeleted`,
+  `remove`). Le bloc de gabarit `TranslateEntryButton` + `TranslationReadonlyHint` + alerte d'erreur est recopié neuf
+  fois, mais chaque liaison y porte une valeur de la page (`form.locale`, `lockedHintId`, `lock.proposalDescribedBy`).
+- **St13-6, confirmé en partie.** `QUALITY_TRAIT_PROSE_FIELDS` vaut `['label']` : `hasTraitProse` lit le même champ, mais
+  sans lire la liste ; le commentaire de `proseFields.ts:3-4` (« la liste est lue … ce qui la rend traduisible ») devient
+  vrai quand `hasProse` lit la liste dans le composable (R153).
+- **St13-34 = Sp13-1 = C13-4, St13-35, St13-46, confirmés.** `smoke-http.test.sh:814-846` : `pat_listing` exige une
+  option `-…p` ; `declare`, `typeset`, `local`, `export`, `readonly` seuls, `declare -x`, `compgen`, `eval`, `declare -n`,
+  `ps … e` ne sont pas lus ; `in_reader` exempte tout le corps de `_smoke_write_auth_config` de tous les motifs sauf
+  `/proc/…/environ` ; `pat_env` refuse `x="${env}"` (le `{` n'est pas exclu avant `env`).
+- **C13-5, confirmé.** `smoke-http.sh:162-174` : `export -n` après `mktemp -d` ; `audit-prod.sh:69` lance `dirname`
+  avant de sourcer la bibliothèque, la variable encore exportée.
+- **St13-39 = C13-3, C13-1, C13-2 = CR13-2 = St13-40, Sp13-2 = St13-41, CR13-4 = C13-6, C13-7, confirmés.**
+  `smoke-http.sh:253-273` : noms exacts, `-[[:alpha:]]*L*` (ne voit pas `-0L`, `-4L`, `-#L`), `*://*` sur toute valeur
+  (refuse `-H 'Origin: https://…'` suivi d'un corps qui cite `http://`) ; `SMOKE_CURL_OPTS` n'est jamais jugé ; aucun
+  `--proto` : une URL sans schéma dans `"$@"` part en `http://` ; `-K`, `--config`, `--next`, `--variable`,
+  `--expand-*`, `-k`, `--resolve`, `--connect-to` non jugés. `audit-prod.sh:75` : `-K … --proto-redir =https`, sans
+  `--proto`. Le runner `ubuntu-latest` (24.04) a curl 8.5.0, qui accepte une abréviation non ambiguë.
+- **St13-60, St13-53, confirmés.** `deploiement-nginx.md:119-157` : la plomberie de la bibliothèque dans la puce des
+  zones ; `smoke-dead-session-cookie.sh` et son test sont hors de ses `paths:` (ils sont dans ceux de
+  `security-authentication-sessions.md`, qui renvoie à `deploiement-nginx.md`, l. 189-192).
+- **C13-10, confirmé.** `AdminAboutSettingsForm.vue:153-168` : `pendingProposal` n'est remis à `null` que par
+  `applyPendingProposal` et « Abandonner » ; un retour à l'autre langue avant `isLoaded`, ou un échec de la lecture de
+  la cible (`hasError`), le laisse, et il se pose au prochain chargement de la cible.
+- **CR13-3 = Sp13-10, confirmé.** `sourceText.ts:273-352` : un `watch` n'est différé que s'il porte `flush: 'post'` ;
+  un `watch` sans `immediate` (son rappel ne court jamais dans `setup`) n'est pas lu ; `onUpdated`, `onActivated`,
+  `onBeforeUpdate` absents de `DEFERRED_HOOKS`. `sourceText.ts:402` : `as ts.ArrowFunction | ts.FunctionExpression`.
+- **CR13-5, confirmé.** `vueCompilerAlignment.spec.ts:46` : la commande proposée installe `@<version de vue>`, que npm
+  écrit `^<version>`, alors que le test compare les intervalles déclarés.
+- **CR13-6 = St13-7, confirmé.** `admin.translation.proseReadonly` dit « qui les remplace par la proposition » : faux
+  pour un échec, une réponse périmée, et les réglages (la proposition se pose sur l'autre langue).
+- **CR13-7, confirmé** ; D7 garde l'ordre.
+- **CR13-9 = C13-8 = St13-55, confirmé.** `PathIsDecidedCanonicallyTest.php:218-234` : dernier segment comparé sans
+  namespace, alias non lu, `T_DOUBLE_COLON` testé en `$index + 1` puis `MemberCalls::isCallAt($tokens, $index + 2)` qui
+  le relit, expression `strtolower(substr(strrchr(…)))` sans nom.
+- **St13-54, confirmé.** `CookieConstructions.php:129-139`, `PlainPasswordInputs.php:59` écrivent leur forme d'appel.
+- **St13-1 à St13-3 = Sp13-13, confirmés.** `accessRefusalTexts.ts` n'exporte que deux textes FR ; les specs cités
+  recopient les textes de refus en dur.
+- **St13-23 / C13-9, confirmé.** `currentRefusalScope()` : défini dans `backofficeAccessRefusal.ts`, lu par trois specs
+  seulement ; `proseDescribedBy` : lu par `useTranslatedForm.spec.ts` seul ; `qualityProviders` : un appelant.
+- **St13-27, St13-29, St13-30, confirmés.** `sourceText.ts:112` et `:148` (diagnostics de compilation → `throw`) ;
+  `entryFormLock.ts:458-459` (« la page périme la traduction elle-même », c'est le composable) ;
+  `useAdminTranslation.spec.ts:108` et `:124`.
+- **Sp13-9, confirmé.** `backofficeAccessRefusal.ts:119` (« autrefois »), `useTranslatedForm.ts:59-60` (« recopiait »).
+- **Sp13-6, confirmé.** Trois noms ont perdu du sens dans b40ddc21 : « isAnySaving dit un enregistrement en vol dans
+  toute langue… » (sens gardé, accepté), « … ôte la confiance d'un compte rétrogradé » (était « le palier de
+  confiance »), « enregistrement EN en vol, page FR : « Proposer la version EN » inactif … » (était « désactivé »,
+  « (#748, R67) » perdu).
+- **CR13-8, réfuté** (voir « Constats écartés »).
+- Les autres constats faibles et « Info » sont pris tels que le fichier de constats les situe ; chaque tâche relit la
+  ligne citée avant d'écrire (une tâche précédente de la série a pu la déplacer).
+
+### Pourquoi cet ordre
+
+- **D1 (R152) avant D4 (R153).** Les deux touchent les huit fichiers de formulaires. D1 est un correctif de
+  comportement : son test rouge doit échouer sur le code tel qu'il est, pour la raison nommée (la proposition posée sur
+  la prose vidée), et sa correction tient en une ligne par site, dans `startCreateVersion` et `startEdit`. D4 est un
+  refactoring : il déplace `handleTranslate`, `translationErrorText`, `hasProse…` et `handleDelete` dans le composable,
+  **pas** `startEdit` ni `startCreateVersion`, qui restent à la page (ils remplissent son formulaire). Les lignes de D1
+  ne sont donc jamais réécrites par D4. L'inverse aurait fait porter la preuve rouge de D1 sur du code fraîchement
+  déplacé (une régression du refactoring et le bogue se seraient confondus) ; dans cet ordre, le cas partagé de D1
+  rejoint le filet de D4. Aucun site n'est écrit deux fois.
+- **R154 à R156 après R153** : les noms (`discard` → `expire`, Q7), le type de l'entrée supprimée et les textes des
+  specs portent sur la forme que R153 laisse.
+- **D5 (R162) avant D2 (R163) et D3 (R164)** : les deux tâches d'outillage réécrivent les phrases de la bibliothèque ;
+  la règle nouvelle existe d'abord, avec ses `paths:`, pour qu'elles écrivent dans la bonne règle et que leurs agents
+  la chargent en lisant un fichier de `tools/`. R162 est un déplacement à l'octet près, sans changement de fond.
+- **D2 avant D3** : D2 change `smoke_fetch` et ses refus ; D3 change la garde du test et le lecteur. La garde de D3
+  relit la bibliothèque une fois D2 posé (un nouveau motif ne doit pas rougir sur le code de D2).
+- **R165** (hygiène des tests d'outillage) après les deux : elle factorise les cas que R163 et R164 ont ajoutés.
+- **R166** (D8, lignes > 140) puis **R167** (balayage) en dernier : ils relisent ce que toute la série a écrit.
+
+### Choix de conception tranchés
+
+1. **D1 (R152).** `renewForm()` est la première instruction de `startEdit` et de `startCreateVersion` dans
+   `AdminIncidentsPage`, `AdminContributionsPage`, `AdminCaseStudiesPage`, `AdminAnonymousCvPage`,
+   `AdminAboutSiteCardsSection`, `AdminAboutMeCardsSection` et, dans `AdminQualityPage`, `startEditPrinciple`,
+   `startCreatePrincipleVersion`, `startEditTrait`, `startCreateTraitVersion` (noms à relire dans le fichier).
+   Docblock de `renewForm` : « chaque geste qui remplit ou vide le formulaire » (remise à zéro, « Modifier »,
+   « Créer la version XX »), plus seulement les remises.
+2. **D4 (R153), forme du composable** (Q1, Q2 : le plan suit les recommandations).
+   `UseTranslatedFormOptions<F extends string>` gagne `form: Readonly<Record<F, string>>` (l'objet réactif du
+   formulaire) et `proseFields: readonly F[]` ; `UseTranslatedFormResult` gagne :
+   - `hasProse: Readonly<Ref<boolean>>` — un champ de `proseFields` non blanc ; le refus exposé devient
+     `!hasProse.value || options.isRefused()`, et les pages retirent `!hasProseToTranslate.value` de leur prédicat ;
+   - `errorText: Readonly<Ref<string | null>>` — `t('admin.translation.errors.<raison>')` ou `null` (`useI18n()` dans
+     le composable, couche présentation) ;
+   - `proposeFrom(targetLocale: Locale, switchForm: (sourceLocale: Locale) => void): Promise<void>` — lit la langue
+     source dans `options.identity().locale`, envoie `collectProseFields(form, proseFields)`, rend sans rien faire sur
+     `null`, sinon appelle `switchForm(source)` (la page met `editingId`, la langue, le groupe, l'avis de proposition)
+     puis `applyTranslationProposal(form, proseFields, proposal)` ;
+   - `removeEntry(entry: DeletableEntry, remove: () => Promise<unknown>): Promise<void>` — `discardIfDeleted(entry)`
+     puis `await remove()` ; la page garde le `window.confirm` (son texte lui est propre). Docblock : la limite de D7
+     (« une suppression refusée périme quand même la traduction : la périmer après le succès laisserait une réponse
+     arrivée pendant le `DELETE` se poser sur une entrée supprimée ; accepté »).
+   - `type DeletableEntry = { readonly id: string; readonly translationGroup: string | null }`, exporté, lu par
+     `discardIfDeleted` et `removeEntry` (St13-24).
+   - Retirés du résultat : `discard` (`Omit<UseAdminTranslationResult, 'discard'>`, St13-22) et `proseDescribedBy`
+     (interne, St13-23 ; le spec lit `proseFieldAttrs()`).
+   Les réglages gardent leur `handleTranslate` (proposition différée : `translate` direct, `hasProse` et `errorText`
+   du composable) ; leur `form` passe à `form`/`proseFields` comme les autres. Le bloc de gabarit reste dans chaque
+   page (Q3) : le docblock du composable dit pourquoi (chaque liaison porte une valeur de la page).
+3. **St13-19 (R153).** `application/admin/translation/proseFields.ts` (les deux fonctions de copie) devient
+   `proseFieldCopy.ts` ; `presentation/pages/admin/proseFields.ts` (les listes) garde son nom.
+4. **St13-25 (R154).** `FormIdentity` et `sameFormIdentity` quittent `domain/admin/translation/entities/` pour
+   `application/admin/translation/FormIdentity.ts` : la génération est un état d'interface, le domaine n'en porte pas ;
+   son spec suit au chemin miroir.
+5. **Q7 (R154), « périmer » a son mot.** `discard` → `expire`, `isDiscardPending` → `isExpiredCallPending`,
+   `discardIfDeleted` → `expireIfDeleted`, la clé `admin.translation.discardPending` → `admin.translation.expiredCallPending`
+   (textes FR et EN inchangés) ; « discard » ne nomme plus que l'abandon de la proposition des réglages
+   (`handleDiscardProposal`, `admin.about.settings.proposalDiscard`).
+6. **D6 (R157).** Dans `AdminAboutSettingsForm.vue` : le guetteur de `props.locale` remet `pendingProposal` à `null` quand
+   la nouvelle langue n'est pas `pendingProposal.targetLocale`. Pour l'échec de la lecture : `hasError` ne suffit pas,
+   `useAdminLoad` ne le lève ni pour `SessionEndedError` ni pour `AccessForbiddenError` (`useAdminLoad.ts:96-102`), et
+   un refus réel est aussi un échec. `useAdminLoad` expose donc `isInterrupted: Readonly<Ref<boolean>>` (la dernière
+   lecture a fini sur `SessionEndedError` et attend le retour : la `ref` de son `interrupted`), relayé par
+   `useAdminAboutSettings` ; le formulaire remet `pendingProposal` à `null` quand une lecture de la cible se termine
+   (`isLoading` retombe) sans `isLoaded` ni `isInterrupted` — une erreur ou un refus. Une lecture interrompue par une
+   fin de session garde la proposition jusqu'au retour, comme le docblock le promet (Q10).
+7. **St13-21 (R157).** Les identifiants des champs des réglages prennent le préfixe de leurs textes :
+   `admin-about-settings-<champ en kebab>` (étiquettes `for` et `proseFieldId` du spec suivent).
+8. **CR13-3 (R159).** `DEFERRED_HOOKS` gagne `onUpdated`, `onBeforeUpdate`, `onActivated` ; un `watch` est différé
+   **sauf** si son objet d'options porte `immediate: true` (sa première exécution est alors synchrone dans `setup`, quel
+   que soit `flush` — à vérifier dans `node_modules/@vue/reactivity` avant d'écrire, et par un cas qui mesure l'ordre) ;
+   `watchEffect` reste immédiat, `watchPostEffect` différé. `flush: 'post'` + `immediate: true` n'est plus refusé.
+   Une variable d'options (non littérale) compte comme différée (prudent, dit au docblock).
+9. **CR13-5 (R160).** Le message propose `npm pkg set "devDependencies.@vue/compiler-dom=<intervalle de vue>" && npm
+   install` : `npm pkg set` écrit l'intervalle tel quel, celui que le test compare.
+10. **CR13-9 (R161).** `canonicalReadsIn` compte un `CanonicalPath::of(` dont le nom **résout** vers
+    `App\Shared\Infrastructure\Http\CanonicalPath` : nom complet `\App\…\CanonicalPath`, nom court ou alias lié par un
+    `use` du fichier (`use App\…\CanonicalPath as CP` → `CP::of(` compte), nom qualifié relatif au namespace du
+    fichier ; `\Other\CanonicalPath::of(` → 0. La résolution est une fonction nommée de `tests/Support/`
+    (`ImportedNames::resolve(array $tokens, int $index): ?string`, lue des `T_USE` de tête) ; le `::` n'est plus testé
+    qu'une fois (par `MemberCalls::isCallAt`).
+11. **D5 (R162).** `.claude/rules/outillage-smoke.md` (Q5), `paths:` : `tools/lib/smoke-http.sh`, `tools/smoke-*.sh`,
+    `tools/audit-prod.sh`, `tools/tests/smoke-*.test.sh`, `tools/tests/audit-prod.test.sh`, `tools/tests/lib/smoke-cases.sh`.
+    Contenu : les lignes 119-157 de `deploiement-nginx.md` (bibliothèque, Basic Auth, refus de `smoke_fetch`, les deux
+    gardes, sondes de l'audit), déplacées à l'octet près puis recollées où un moignon existe (St13-61) ; la puce des
+    zones garde une phrase : « Its plumbing (the library, the Basic Auth, the guards) is `.claude/rules/outillage-smoke.md`. »
+    `deploiement-nginx.md` garde `tools/audit-prod.sh`, `tools/smoke-mcp.sh`, `tools/smoke-login-throttling.sh` et leurs
+    tests dans ses `paths:` (ce qu'ils vérifient des zones et des en-têtes y reste), retire `tools/lib/smoke-http.sh`,
+    `tools/tests/smoke-http.test.sh` et `tools/tests/lib/smoke-cases.sh` ; `security-authentication-sessions.md:189-192`
+    renvoie à la règle nouvelle ; une ligne d'index dans `.claude/CLAUDE.md`.
+12. **D2 (R163).** Dans `tools/lib/smoke-http.sh` :
+    - `_smoke_auth=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")` ; `CURL_OPTS+=(-K … --proto "=https"
+      --proto-redir "=https")` dans `audit-prod.sh`. `--proto` borne aussi la première requête : une URL sans schéma
+      (`hôte/chemin`, que curl devine en `http://`), un `--url http://…`, une URL d'un second `-K` sont refusées par curl
+      lui-même. La garantie ne dépend plus de la version de curl pour le schéma.
+    - `_smoke_is_refused_arg <argument>` remplace `_smoke_is_redirect_or_plain_url_arg` et `_smoke_is_protocol_arg` ;
+      vrai (0) pour :
+      - `--` seul (la fin des options : ce qui suit est une URL) ;
+      - une option longue `--<nom>[=valeur]` dont le nom est **un préfixe** d'un nom de `_SMOKE_REFUSED_LONG`
+        (`location`, `location-trusted`, `url`, `proto`, `proto-redir`, `config`, `next`, `variable`, `insecure`,
+        `resolve`, `connect-to`) ou commence par `expand-` ou en est un préfixe (`--exp`, `--expand-url`) : c'est la
+        règle d'abréviation de curl 8.5 (un préfixe non ambigu vaut le nom), appliquée de façon prudente (un préfixe
+        ambigu, que curl refuserait, est refusé aussi). Voisins permis : `--progress-bar`, `--proto-default`,
+        `--connect-timeout`, `--max-time`, `--expect100-timeout`, `--compressed`, `--data`, `--header` ;
+      - une grappe d'options courtes `-[!-]*` qui porte `L`, `K`, `k` ou `:` (`-L`, `-sL`, `-0L`, `-4L`, `-#L`, `-K`,
+        `-k`, `-:`) — limite écrite (Q11) : une valeur collée à une option courte (`-HAccept-Language: fr`) qui contient
+        une de ces lettres est refusée à tort ; aucun appelant ne colle de valeur ;
+      - une valeur qui **commence** par un schéma autre que `https://` (`^[A-Za-z][A-Za-z0-9+.-]*://`, sauf `https://`) ;
+        une valeur qui contient `://` plus loin (`-H 'Origin: https://…'`, un corps JSON) passe (CR13-4).
+    - Le même jugement s'applique à chaque élément de `SMOKE_CURL_OPTS` (St13-40), avec son propre message.
+    - Messages (Q9) : « <libellé> : option ou URL refusée avec la Basic Auth (redirection, URL, configuration, protocole
+      ou hôte) — rien de vérifié » pour `"$@"`, « <libellé> : SMOKE_CURL_OPTS porte une option refusée avec la Basic
+      Auth — rien de vérifié » ; l'argument n'est jamais cité.
+13. **D3 (R164).** `env_dump_lines` (`smoke-http.test.sh`) refuse, partout (lecteur compris sauf sa ligne de lecture) :
+    `declare`, `typeset`, `local`, `export`, `readonly` **seuls** (rien d'autre qu'un blanc ou un séparateur après eux)
+    ou suivis d'une grappe d'options qui porte `p`, `x` seul, `n` (nameref : `declare -n`, `local -n`) ; `compgen`
+    avec `-v`, `-e` ou `-A variable`/`-A export` ; `set` seul ou suivi d'une redirection ou d'un tube ; `eval` ;
+    `printenv`, `env` (commande) ; `${!` ; `ps` avec une option qui porte `e` (`ps e`, `ps eww`, `ps -e…`) ; toute
+    occurrence du mot `environ` hors de `environment` (`/proc/…/environ`, `$p/environ`, `cd /proc/self && cat environ`,
+    `"/proc"/self/environ`). Faux positif corrigé : `env` précédé de `{` (`"${env}"`) n'est pas la commande.
+    **L'exemption est une ligne** : la ligne exacte `  _smoke_value="${!_smoke_name:-}"` du lecteur, comparée par
+    égalité, plus un corps entier. Commentaire de tête de la garde et règle : « elle vise les fautes de bonne foi (une
+    trace de débogage oubliée) ; une liste par motifs n'est jamais complète contre un contournement délibéré, que la
+    relecture du diff arrête ».
+14. **C13-5 (R164).** `export -n -- "$_smoke_name"` suit immédiatement la ligne de lecture (avant toute validation et
+    tout `mktemp`), pour toute valeur lue, refusée comprise ; `audit-prod.sh` calcule le dossier de la bibliothèque par
+    `${BASH_SOURCE[0]%/*}` et `cd`/`pwd` (builtins), sans `dirname`, avant le `source`.
+
+### Questions à l'auteur
+
+Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
+
+- **Q1 (R153), forme de `proposeFrom`.** (A) recommandé : `proposeFrom(target, switchForm)`, le composable collecte,
+  traduit, appelle `switchForm(source)` puis applique la prose ; (B) `proposeFrom` rend la proposition, la page
+  l'applique (moins de code retiré, l'application recopiée huit fois) ; (C) un rappel `(proposal, source) => void` qui
+  fait tout (la page garde `applyTranslationProposal`).
+- **Q2 (R153), la suppression.** Recommandé : `removeEntry(entry, remove)` dans le composable (l'ordre de D7 écrit une
+  fois) ; sinon `handleDelete` reste recopié avec `discardIfDeleted`.
+- **Q3 (R153), le bloc de gabarit.** Recommandé : le laisser dans chaque page (chaque liaison porte une valeur de la
+  page, deux composants existent déjà), raison écrite au docblock ; option : un composant `FormTranslationControls.vue`
+  (bouton, aide de lecture seule, alerte) qui reçoit le résultat du composable.
+- **Q4 (R155), `AdminQualityPage.vue` (1 093 lignes, St13-26).** Recommandé : deux sections,
+  `AdminQualityPrinciplesSection.vue` et `AdminQualityTraitsSection.vue`, sur le modèle des sections d'« À propos »,
+  la page gardant le titre et le verrou d'ordre commun ; option : rien (la longueur écrite comme limite).
+- **Q5 (R162), nom et `paths:` de la règle.** Recommandé : `outillage-smoke.md`, les `paths:` du choix 11 ;
+  option : `deploiement-smokes.md`, indexée par `deploiement.md` comme ses quatre sœurs.
+- **Q6 (R156), `admin.translation.proseReadonly`.** Recommandé : FR « Traduction en cours : les champs de texte sont en
+  lecture seule jusqu'à la réponse. Si elle aboutit, la proposition s'ouvre dans la langue cible ; rien n'est
+  enregistré. » EN “Translation in progress: the text fields are read-only until the answer. If it succeeds, the
+  proposal opens in the target language; nothing is saved.”
+- **Q7 (R154), « discard » → « expire ».** Recommandé : oui (choix 5) ; option : garder les noms, la double
+  signification écrite au docblock.
+- **Q8 (R158), `currentRefusalScope()`.** Recommandé : (B) les specs lisent la portée que le faux client reçoit (le
+  `sentAt` d'une lecture estampillée) là où ils envoient une lecture, l'export retiré si aucun lecteur ne reste ;
+  (A) le garder, l'exception écrite dans `frontend-session-refus.md` (« une requête pure, exportée pour les specs »).
+- **Q9 (R163), les messages des refus.** Recommandé : les deux messages du choix 12 ; option : un message par famille
+  (redirection, URL, configuration, protocole, hôte).
+- **Q10 (R157), une lecture de la cible interrompue par une fin de session.** Recommandé : la proposition attend le
+  retour de la session (comme aujourd'hui) ; option : la retirer aussi.
+- **Q11 (R163), valeur collée à une option courte.** Recommandé : refusée à tort, limite écrite ; option : lire la
+  grappe comme curl (s'arrêter à la première option qui prend une valeur), une table de plus à tenir.
+- **Q12 (R163), mesure sur curl 8.5.0.** Recommandé : `curlimages/curl:8.5.0` tiré une fois (réseau de l'hôte), épinglé
+  par son digest, lancé `--network none` (choix de la tâche) ; option : ne rien mesurer, la garantie étant `--proto`
+  pour le schéma et le refus syntaxique pour le reste.
+- **Q13 (R166), les noms de tests de D8.** Recommandé : rétablir « désactivé » et « le palier de confiance », et
+  « (#748, R67) » si la ligne tient sous 140 caractères, le littéral seul sur sa ligne ; sinon la référence en
+  commentaire au-dessus du `it`.
+- **Q14 (R167), les écarts réels de la série.** Recommandé : l'agent du balayage écrit une sous-section
+  « Ce que la treizième série a réellement fait » à la fin de cette section, seule exception au « ne touche pas à
+  `tasks/` » du brief ; option : le fil principal l'écrit lui-même après le balayage.
+
+### Review Focus (treizième relecture)
+
+1. **Un second « Créer la version XX » de la même ligne et de la même langue pendant une traduction**, puis la réponse
+   du modèle : rien n'est posé, la prose reste vide, aucun avis de proposition. Idem « Modifier » de l'entrée déjà
+   éditée. Test : R152.
+2. **Un smoke avec la Basic Auth appelé avec `--locat`, `-4L`, `hôte/chemin`, `-K autre.conf`, `--next`, ou un
+   `SMOKE_CURL_OPTS` qui porte `--location-trusted`** : sortie 2, curl jamais appelé, l'argument jamais cité ; un
+   `-H 'Origin: https://x'` et un corps JSON qui cite `http://` passent. Test : R163.
+3. **Les réglages : traduction FR→EN, retour en FR avant que l'anglais soit chargé, puis EN** : aucune proposition
+   posée, aucun avis. Test : R157.
+4. **Une page future qui charge par `watch(route, () => load())` (sans `immediate`) ou dans `onUpdated`** : la garde
+   rougit en nommant le fichier et l'appel ; `watch(() => props.locale, load, { immediate: true })` passe. Test : R159.
+5. **Une trace de débogage oubliée dans la bibliothèque : `declare` seul, `compgen -v`, `printenv` dans le corps du
+   lecteur, `cat environ` après un `cd /proc/self`** : la garde rougit ; `x="${env}"` passe. Test : R164.
+
+### Contraintes propres aux tâches R152 à R167
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent (« Contraintes propres aux tâches
+  R137 à R151 », reprises ici sauf ce qui suit). Exécution : **un agent par tâche, successifs dans l'ordre R152 → R167**,
+  qui lit d'abord `tasks/relectures-748/brief-commun-agents.md`, puis **cette section** en entier jusqu'à la première
+  tâche, `tasks/relectures-748/relecture-13-constats.md`, puis sa tâche.
+- Rien ne se coche ; jamais `git commit --amend`, `git reset`, `git checkout-index` ; mutations en place par
+  `python3 -I`, restaurées depuis une copie vérifiée par `cmp`.
+- **« ≤ 140 » est la longueur d'une ligne, en caractères** (`awk 'length>140'`) ; toute ligne écrite ou touchée par la
+  série y est soumise, règles comprises (tables Markdown et JSON exceptés, dits au rendu). **Une coupe ne laisse aucun
+  moignon** : après toute coupe ou tout recollage dans une règle, `awk 'length<=45 && NF' <règle>` et
+  `grep -nE '^[[:space:]]*[,;:.)»]' <règle>` sont relus, chaque ligne gardée justifiée (fin de paragraphe, élément de
+  liste court).
+- **Un nom de test** ne contient aucun identifiant de constat ; s'il se raccourcit, il garde chaque terme qui porte le
+  sens (l'état vérifié, le palier, la tâche citée).
+- **Une affirmation sur un outil** (version, option, comportement) se vérifie sur la version **du runner** du job qui
+  l'exécute (`ubuntu-latest` = 24.04, curl 8.5.0), pas sur celle de l'hôte ou d'un conteneur de dev ; si elle ne se
+  mesure pas hors ligne, la tâche dit la méthode ou écrit la limite.
+- Frontend (R152 à R160) : lire avec `Read` `frontend.md`, `frontend-a11y.md`, `frontend-backoffice.md` (et `ai.md`
+  avant `useAdminTranslation.ts`, `frontend-session-refus.md` avant R158 et R159) ; ciblé `docker compose exec -T
+  frontend npm test -- <chemins>`, puis `make front-test`, `make front-lint`, `make front-build`, codes lus sans pipe ;
+  `docker compose restart frontend` après un fichier créé, déplacé ou un renommage de masse.
+- Backend (R161) : lire avec `Read` un fichier de `backend/tests/Security/` et `security-authentication.md` ; ciblé
+  `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test`, `make back-quality` ;
+  `make back-style-fix` après un import.
+- Outillage (R162 à R165) : lire avec `Read` les scripts touchés et, à partir de R163, `outillage-smoke.md` ; chaque
+  test hors ligne touché, `; echo "exit=$?"` ; shellcheck dans l'image épinglée du job `tools-tests` (commande de la
+  onzième série : `docker run --rm --entrypoint shellcheck -v "$PWD":/repo:ro -w /repo
+  rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -x --severity=warning
+  <fichiers>`).
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; tailles au départ (HEAD 2a5cb860) :
+  `frontend-backoffice.md` 32 750, `frontend-session-refus.md` 16 366, `frontend-session.md` 16 057,
+  `frontend-a11y.md` 13 060, `frontend.md` 19 683, `frontend-session-retour.md` 17 773, `frontend-session-bandeau.md`
+  12 855, `security-authentication.md` 10 286, `security-authentication-sessions.md` 22 295, `deploiement-nginx.md`
+  32 147, `mcp-oauth-revocation-personne.md` 39 855, `.claude/CLAUDE.md` 34 756, **`security-user.md` 47 922**
+  (R166 seule peut y toucher), **`backoffice-api.md` 39 834** (non touchée).
+
+### Fichiers (tâches R152 à R167)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| les huit fichiers de formulaires, `useTranslatedForm.ts` (docblock), `frontend/tests/support/entryFormLock.ts`, `useTranslatedForm.spec.ts` | `renewForm()` dans « Modifier » et « Créer la version XX » ; cas partagés manquants | R152 |
+| `useTranslatedForm.ts`, les huit fichiers, `application/admin/translation/proseFields.ts` → `proseFieldCopy.ts`, `presentation/pages/admin/proseFields.ts` (commentaire), `useAdminTranslation.ts` (commentaire), `useTranslatedForm.spec.ts`, `frontend-backoffice.md` | le bloc de traduction dans le composable | R153 |
+| `useAdminTranslation.ts`, `FormIdentity.ts` (déplacé), `describedBy.ts` + spec (créé), `entryFormLock.ts`, six specs, `useAdminTranslation.spec.ts`, `fr.json`/`en.json` (clé renommée), `frontend-backoffice.md` | hygiène de la traduction, « périmer » nommé | R154 |
+| `AdminQualityPage.vue`, `AdminQualityPrinciplesSection.vue`, `AdminQualityTraitsSection.vue` (créés), `AdminQualityPage.spec.ts` | Qualité en deux sections | R155 |
+| `fr.json`/`en.json`, `accessRefusalTexts.ts`, `adminTranslationTexts.ts`, `entryFormLockTexts.ts` (créé), `tests/infrastructure/i18n/adminTranslationTexts.spec.ts` (déplacé), les specs de refus cités, `AdminAboutPage.spec.ts` | textes justes, lus de `fr.json`/`en.json` | R156 |
+| `AdminAboutSettingsForm.vue`, `AdminAboutPage.spec.ts`, `frontend-backoffice.md` | proposition en attente retirée ; préfixe unique | R157 |
+| `backofficeAccessRefusal.ts`, ses specs, `AdminLayout.sessionEnded.spec.ts`, `sessionEndedLoad.spec.ts`, `frontend-session-refus.md` | lecture pure, état lisible, specs compacts | R158 |
+| `frontend/tests/support/sourceText.ts`, `sourceText.spec.ts`, `noLoadInOnMounted.spec.ts`, `frontend-session-refus.md` | la garde voit les `watch` et les hooks de mise à jour | R159 |
+| `frontend/tests/support/vueCompilerAlignment.spec.ts`, `frontend.md` | commande qui réaligne vraiment | R160 |
+| `PathIsDecidedCanonicallyTest.php`, `tests/Support/{MemberCalls,ImportedNames,CookieConstructions,PlainPasswordInputs,AuthorizationSites}.php`, `MemberCallsTest.php` (créé) | la lecture canonique résolue ; la forme d'appel partagée | R161 |
+| `.claude/rules/outillage-smoke.md` (créé), `deploiement-nginx.md`, `security-authentication-sessions.md`, `.claude/CLAUDE.md` | la règle de l'outillage | R162 |
+| `tools/lib/smoke-http.sh`, `tools/audit-prod.sh`, `tools/tests/{smoke-http,audit-prod}.test.sh`, `tools/tests/lib/smoke-cases.sh`, `outillage-smoke.md` | `--proto =https`, refus par préfixe | R163 |
+| `tools/tests/smoke-http.test.sh`, `tools/lib/smoke-http.sh`, `tools/audit-prod.sh`, `outillage-smoke.md` | garde des vidages, export retiré tôt | R164 |
+| `tools/tests/*.test.sh`, `tools/tests/lib/smoke-cases.sh`, `tools/lib/smoke-http.sh`, `tools/audit-prod.sh` | hygiène des tests d'outillage | R165 |
+| fichiers désignés par la méthode de R150 et par Sp13-6/Sp13-7 | noms rétablis, lignes > 140 | R166 |
+| `.claude/rules/*`, fichiers désignés, cette section du plan (Q14) | balayage | R167 |
+
+---
+
+### Task R152 : Traduction assistée — « Modifier » et « Créer la version XX » périment la traduction en vol (D1 : CR13-1 ; Sp13-3, Sp13-4, Sp13-5)
+
+**Files :**
+- Modify : les huit fichiers de formulaires (choix 1), `frontend/src/presentation/ui/admin/useTranslatedForm.ts`
+  (docblock de `renewForm`)
+- Test : `frontend/tests/support/entryFormLock.ts`, `frontend/tests/presentation/ui/admin/useTranslatedForm.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Every reset of the form advances its generation »)
+
+**Interfaces :**
+- Consumes : `renewForm()` (R139). `EntryFormLockCase` gagne `createVersionAgain: (wrapper: VueWrapper) =>
+  Promise<void>` (reclique « Créer la version XX » de la même ligne et de la même langue) et `editSameEntry`
+  (reclique « Modifier » de l'entrée éditée), si les clics existants ne s'y prêtent pas.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 1). `entryFormLock.ts`, neuf sites :
+  `it(\`${prefix}« Créer la version XX » recliqué pendant une traduction : la réponse ne pose rien\`)` (« Créer la
+  version XX », prose saisie, traduction différée, `createVersionAgain`, réponse, `flushPromises()` → prose vide, aucun
+  avis `role="status"` de proposition) ; `it(\`${prefix}« Modifier » de l'entrée éditée recliqué pendant une
+  traduction : la réponse ne pose rien\`)` (prose rechargée de l'entrée, aucun avis). Sp13-3 :
+  `it(\`${prefix}supprimer l'autre langue de l'entrée éditée pendant une traduction : la proposition est posée\`)`
+  (voisin de R140, vert d'emblée). Sp13-5 : le cas « un formulaire vierge enregistré pendant une traduction » lit aussi
+  le bouton pendant l'attente (`isTranslating` : `aria-busy="true"`) **puis** son retour (`aria-busy` absent, bouton
+  actif dès qu'une prose est saisie). Run : `docker compose exec -T frontend npm test -- tests/presentation/pages/admin`.
+  Expected : FAIL sur les deux premiers, chaque fois parce que la proposition est posée sur la prose vidée ou rechargée.
+- [ ] **Step 2 : Sp13-4, au composable** — `useTranslatedForm.spec.ts` : `it("une identité qui ne change que par son
+  groupe périme la traduction (#748, R152)")` (une `ref` de groupe basculée pendant l'appel, réponse → `translate()`
+  rend `null`). Vert d'emblée ; vu rouge par la mutation `a.group === b.group` retirée de `sameFormIdentity` ;
+  restauré. Le rendu dit pourquoi aucun cas d'intégration ne l'isole : depuis R152, chaque geste qui change le groupe
+  avance aussi la génération.
+- [ ] **Step 3 : implémenter** selon le choix 1 ; docblock de `renewForm` (« chaque geste qui remplit ou vide le
+  formulaire ») ; commentaire de tête de chaque `startEdit`/`startCreateVersion` : une ligne, sans recopier le docblock.
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : l'appel retiré du seul
+  `startCreateVersion` d'`AdminContributionsPage.vue` → seul son cas « recliqué » rougit ; restauré.
+- [ ] **Step 5 : règle** — « Every reset of the form advances its generation » → « Every gesture that fills or empties
+  the form (a reset, « Modifier », « Créer la version XX ») advances its generation » (R152, D1 de la treizième
+  relecture). Lignes ≤ 140, pas de moignon. Taille notée.
+- [ ] **Step 6 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -c "renewForm()" <chaque fichier>` : remises +
+  `startEdit*` + `startCreate*`.
+- [ ] **Step 7 : commit** — `fix(frontend): « Modifier » et « Créer la version XX » périment la traduction en vol (#748)`.
+
+---
+
+### Task R153 : Traduction assistée — le bloc de traduction d'un formulaire dans `useTranslatedForm` (D4 : St13-15 ; St13-16, St13-6, St13-12, St13-19, St13-22, St13-23 pour `proseDescribedBy`, St13-24, St13-63, Sp13-9 pour ce fichier ; D7 : CR13-7 ; refactoring)
+
+**Files :**
+- Modify : `frontend/src/presentation/ui/admin/useTranslatedForm.ts`, les huit fichiers de formulaires,
+  `frontend/src/application/admin/translation/proseFields.ts` → `proseFieldCopy.ts` (`git mv`, imports suivis),
+  `frontend/src/presentation/pages/admin/proseFields.ts` (commentaire de tête), `useAdminTranslation.ts` (commentaire
+  l. 112 : `watchIdentity()`, St13-12)
+- Test : `frontend/tests/presentation/ui/admin/useTranslatedForm.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant »)
+
+**Interfaces :**
+- Consumes : R152. Produces : choix 2 et 3 — `hasProse`, `errorText`, `proposeFrom`, `removeEntry`, `DeletableEntry`,
+  options `form`/`proseFields` ; `proseDescribedBy` et `discard` retirés du résultat.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests du composable, rouges** — `useTranslatedForm.spec.ts` : `hasProse` faux pour une prose de blancs,
+  vrai dès un champ de la liste rempli, insensible à un champ hors liste ; `errorText` vaut le texte FR de
+  `admin.translation.errors.unavailable` après un rejet `AdminTranslationError('unavailable')`, `null` sinon ;
+  `proposeFrom('en', switchForm)` : un appel au dépôt avec la langue de l'identité et la prose collectée, `switchForm`
+  appelé une fois avec `'fr'` **avant** que la prose soit remplacée (lu dans `switchForm`), aucun appel sur `null` ;
+  `removeEntry(entrée éditée, remove)` : traduction périmée puis `remove` appelé une fois, et périmée même si `remove`
+  rejette (D7). Expected : FAIL, membres introuvables.
+- [ ] **Step 3 : implémenter** selon les choix 2 et 3 : chaque page perd `hasProseToTranslate` (ou `hasPrincipleProse`,
+  `hasTraitProse`), `translationErrorText`, le corps de `handleTranslate` (réduit à `proposeFrom(target, (source) =>
+  { … })`) et celui de `handleDelete` (le `confirm` puis `removeEntry`). Docblock du composable : ce qu'il tient, ce
+  que la page garde (le formulaire, ses gestes, le bloc de gabarit — Q3, raison), la limite de D7 ; plus aucun récit au
+  passé (Sp13-9). St13-63 : le paragraphe « Translation assistant » de la règle est **réécrit** en une phrase
+  d'entrée suivie de puces (une par mécanisme : le refus, l'identité, un appel en vol, la prose en lecture seule, les
+  réglages), sans pseudo-titre en gras ; il nomme `proposeFrom`, `removeEntry` et, pour St13-16, la liste de ce
+  qu'un formulaire traduit nouveau écrit (sa liste de champs, son identité, son refus, son `switchForm`, son bloc de
+  gabarit, son cas `EntryFormLockCase`).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `applyTranslationProposal` appelé
+  **avant** `switchForm` dans `proposeFrom` → les cas partagés « une proposition remplit la prose » rougissent sur les
+  huit (la bascule de langue efface ou recopie) ou, s'ils restent verts, le cas du composable (lecture dans
+  `switchForm`) rougit — le rendu dit lequel ; (b) `discardIfDeleted` retiré de `removeEntry` → les cas partagés de R124
+  et R140 rougissent sur les huit ; (c) `hasProse` qui lit tous les champs du formulaire → le cas « un champ hors liste »
+  rougit ; restaurés.
+- [ ] **Step 5 : verts** — même nombre + les cas du composable (dits) ; `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "translationErrorText\|hasProseToTranslate\|hasPrincipleProse\|hasTraitProse\|proseDescribedBy\|translation/proseFields'"
+  frontend/src` : vide ; `grep -c "applyTranslationProposal" frontend/src/presentation/pages/admin/*.vue` : 0 sauf
+  `AdminAboutSettingsForm.vue` (proposition différée). Taille de la règle notée.
+- [ ] **Step 6 : commit** — `refactor(frontend): le bloc de traduction d'un formulaire tient dans useTranslatedForm (#748)`.
+
+---
+
+### Task R154 : Traduction assistée — « périmer » a son mot, l'identité dans la couche application, des specs sans recopie (Q7 : St13-20 pour « discard » ; St13-4, St13-9, St13-13, St13-14, St13-17, St13-24 pour `fieldIdPrefix`, St13-25, St13-26 pour `describeEntryFormLock`, St13-27, St13-28, St13-29, St13-30, St13-31 ; refactoring)
+
+**Files :**
+- Modify : `useAdminTranslation.ts`, `useTranslatedForm.ts`, `TranslateEntryButton.vue` (prop `isExpiredCallPending`), les
+  huit fichiers (noms), `fr.json`/`en.json` (clé renommée), `domain/admin/translation/entities/FormIdentity.ts` →
+  `application/admin/translation/FormIdentity.ts` (`git mv`), `frontend/tests/support/sourceText.ts` (St13-27 seul),
+  `describedBy.ts` (docblock : tous ses appelants, St13-13)
+- Test : `entryFormLock.ts` (`moveFirstRowDown` et `deleteSourceEntry` écrits une fois, St13-17 ; `describeEntryFormLock`
+  découpé en fonctions par famille de cas, St13-26 ; répétitions St13-28 ; commentaire l. 458-459, St13-29 ;
+  `fieldIdPrefix` redondant avec `ids.*` retiré, St13-24), les six specs qui déclaraient ces aides,
+  `useAdminTranslation.spec.ts` (St13-30 : les deux cas `isRefused` en un `it.each` ; St13-31 : `watchIdentity` hors
+  d'une portée et dans une portée arrêtée), `FormIdentity.spec.ts` (déplacé), `frontend/tests/presentation/ui/admin/describedBy.spec.ts`
+  (créé, St13-4)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md`
+
+**Interfaces :**
+- Consumes : R153. Produces : choix 4 et 5 (`expire`, `isExpiredCallPending`, `expireIfDeleted`,
+  `admin.translation.expiredCallPending`).
+- St13-9 : types de retour annoncés sur `proseFieldAttrs`, `mountTranslatedForm`, `deleteDuringTranslation` (et
+  `qualityProviders` si R158 ne le retire pas). St13-14 : les docblocks de `useAdminTranslation.ts` et de `FormIdentity.ts`
+  ne nomment plus une fonction de `presentation/` (« la page », « le formulaire »).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests nouveaux** — `describedBy.spec.ts` : `describedBy()` → `undefined` ; `describedBy('a')` → `'a'` ;
+  `describedBy('a', undefined, 'b')` → `'a b'` ; St13-31 : `watchIdentity` appelé hors portée ne lève rien et périme à
+  l'appel suivant, dans une portée arrêtée n'installe rien (les deux branches). Verts d'emblée ; chacun vu rouge par une
+  mutation de sa branche ; restaurés.
+- [ ] **Step 3 : refactorer** selon les interfaces ; renommages par `python3 -I`, puis `docker compose restart frontend`.
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `moveFirstRowDown` (désormais unique) qui
+  clique « ↑ » → les cas « un ordre modifié » des six specs rougissent ; restauré.
+- [ ] **Step 5 : verts** — même nombre ± les cas nouveaux (dits) ; `make front-lint; echo "exit=$?"` (la règle i18n
+  voit la clé renommée), `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "isDiscardPending\|discardIfDeleted\|discardPending\|domain/admin/translation/entities/FormIdentity\|fieldIdPrefix"
+  frontend/src frontend/tests .claude/rules` : vide ; `grep -rln "function moveFirstRowDown" frontend/tests` : un fichier.
+- [ ] **Step 6 : commit** — `refactor(frontend): la traduction périmée a son nom, l'identité du formulaire vit dans la couche application, les aides des specs écrites une fois (#748)`.
+
+---
+
+### Task R155 : `AdminQualityPage.vue` en deux sections (Q4 : St13-26 pour la page ; refactoring)
+
+**Files :**
+- Create : `frontend/src/presentation/pages/admin/AdminQualityPrinciplesSection.vue`,
+  `frontend/src/presentation/pages/admin/AdminQualityTraitsSection.vue`
+- Modify : `AdminQualityPage.vue` (titre, verrou d'ordre commun `isAnyOrderDirty`, garde de sortie, les deux sections),
+  `frontend/tests/presentation/pages/admin/AdminQualityPage.spec.ts` et les cas partagés qui montent Qualité
+  (`mountAdminQuality`), seulement là où un sélecteur change
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Existing resources » : quality, deux sections)
+
+**Interfaces :**
+- Sur le modèle d'`AdminAboutPage.vue` et de ses sections : chaque section reçoit `isLocked: boolean` (l'ordre modifié
+  de l'autre section) et émet `orderDirty: boolean` ; ses identifiants DOM sont gardés à l'octet près (`grep` avant et
+  après, comme R138 Step 1) ; la garde de sortie (`useUnsavedOrderGuard`) reste à la page.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté ; identifiants relevés dans le scratchpad.
+- [ ] **Step 2 : refactorer** ; `docker compose restart frontend`.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : le verrou commun ignoré dans la section des
+  traits (`isLocked` jamais lu) → le cas « un ordre modifié des principes verrouille les traits » rougit (l'écrire au
+  Step 1 s'il n'existe pas) ; restauré.
+- [ ] **Step 4 : verts** — même nombre ; identifiants identiques (`diff` vide) ; `wc -l` des trois fichiers (dit) ;
+  `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `refactor(frontend): la page Qualité en deux sections, principes et traits (#748)`.
+
+---
+
+### Task R156 : Les textes — `proseReadonly` juste, les specs lisent `fr.json` et `en.json` (CR13-6 = St13-7, Q6 ; St13-1, St13-2, St13-3 = Sp13-13 ; St13-5 ; St13-20 pour les textes ; Sp13-12)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.translation.proseReadonly`),
+  `frontend/tests/support/accessRefusalTexts.ts` (les textes EN, St13-1), `frontend/tests/support/adminTranslationTexts.ts`
+  (textes de la traduction seuls), `frontend/tests/support/entryFormLockTexts.ts` (créé : `ENTRY_LOCK_*`,
+  `QUALITY_LOCALE_HELP_FR` — l'ancien `LOCALE_HELP_FR` —, `ABOUT_LOCALE_HELP_FR`)
+- Move : `frontend/tests/support/adminTranslationTexts.spec.ts` → `frontend/tests/infrastructure/i18n/adminTranslationTexts.spec.ts`
+- Test : `AdminLayout.sessionEnded.spec.ts:374,379` et ses cinq `toContain`, `McpConnectionsPage.spec.ts:128,130`,
+  `AssistantPage.spec.ts:333,338`, `OAuthConsentPage.spec.ts:179,181`, `AccessRefusedNotice.spec.ts:235`,
+  `AdminAboutPage.spec.ts:1852`
+
+**Interfaces :**
+- Chaque constante lue de sa clé (`fr.common.…`, `en.common.…`), jamais recopiée ; Q6 : les textes FR et EN, mot pour
+  mot. Le spec des textes ne verrouille plus un mot (`toContain('remplace')`) : il vérifie que la clé existe dans les
+  deux langues, que les deux diffèrent, et que le FR ne contient ni « n'est perdu » ni « les remplace par la
+  proposition ».
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : refactorer** les constantes et les specs (St13-1 à 3, St13-5, St13-20, Sp13-12) ; suite verte, même
+  nombre ; rouge vu par mutation (Python, copie vérifiée par `cmp`) : `common.accessRefused` changé dans `en.json` → les
+  cas EN des specs de refus rougissent ; restauré.
+- [ ] **Step 3 : test du texte, rouge** — `adminTranslationTexts.spec.ts` (déplacé) : `PROSE_READONLY_FR` ne contient pas
+  « les remplace par la proposition ». Expected : FAIL sur le texte actuel.
+- [ ] **Step 4 : textes** de Q6 ; vert.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"` ; `grep -rnE "toContain\('[^']{40,}'\)|toBe\('[^']{40,}'\)" frontend/tests` relu : chaque texte d'interface
+  restant en dur est justifié au rendu ; `grep -rn "Abandonner'" frontend/tests` : vide.
+- [ ] **Step 6 : commit** — `fix(frontend): le texte de la prose en lecture seule dit ce qui arrive vraiment ; les specs lisent leurs textes de fr.json et en.json (#748)`.
+
+---
+
+### Task R157 : Réglages « À propos » — une proposition en attente ne survit ni à un retour sur l'autre langue ni à une lecture en échec ; un préfixe d'identifiants (D6 : C13-10, Q10 ; St13-21)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue`,
+  `frontend/src/application/admin/shared/useAdminLoad.ts` (`isInterrupted`),
+  `frontend/src/application/admin/about/useAdminAboutSettings.ts` (relais)
+- Test : `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts`, le spec de `useAdminLoad` (`isInterrupted`
+  levé par `SessionEndedError`, retombé au `load()` suivant et au rejeu)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« parked in `pendingProposal`, applied on the return of `load()`
+  for the target locale »)
+
+**Interfaces :**
+- Choix 6 et 7.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 3). `AdminAboutPage.spec.ts` :
+  `it("réglages : une proposition en attente, un retour à la langue source avant la cible, puis la cible : rien n'est
+  posé (#748, R157)")` (traduction FR→EN servie, lecture EN différée, retour FR, puis EN servie → champs EN = les
+  réglages lus, aucun avis) ; `it("réglages : une proposition en attente dont la lecture de la cible échoue n'est pas
+  posée au chargement suivant (#748, R157)")` (lecture EN rejetée en erreur ordinaire, retour FR, puis EN servie → aucun
+  avis) ; le même avec un 403 (`AccessForbiddenError`) ; voisin, vert : une lecture EN interrompue par une fin de
+  session puis rejouée au retour pose la proposition (Q10). Expected : FAIL sur les trois premiers, la proposition
+  posée au chargement suivant.
+- [ ] **Step 2 : implémenter** selon le choix 6 ; docblock de `pendingProposal` : les trois façons dont elle part
+  (posée, retirée par un changement de langue ou une lecture en échec, « Abandonner »). Puis St13-21 (choix 7) :
+  identifiants relevés avant et après (seul le préfixe des champs change, dit au rendu).
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le guetteur de fin de lecture
+  retiré → le cas « erreur ordinaire » et le cas 403 rougissent ; (b) `isInterrupted` jamais levé → le voisin de la
+  fin de session rougit ; restaurés.
+- [ ] **Step 4 : règle** — la phrase « parked in `pendingProposal` … » gagne : « dropped when the page goes to another
+  language than its target or when the target's read fails or is refused; kept through a read interrupted by an ended session (R157,
+  D6 of the thirteenth review) ». Lignes ≤ 140. Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -rn '"admin-about-[a-z]' frontend/src` : seulement
+  `admin-about-settings-*` pour les réglages.
+- [ ] **Step 6 : commit** — `fix(frontend): réglages « À propos », une proposition en attente part avec un changement de langue ou une lecture en échec (#748)`.
+
+---
+
+### Task R158 : Le refus du backoffice — une lecture pure sans export pour les specs, un état lisible, des specs compacts (Q8 : St13-23 = C13-9 ; St13-23 pour `qualityProviders` ; St13-32 ; St13-18 ; Sp13-9 pour ce fichier)
+
+**Files :**
+- Modify : `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`
+- Test : `backofficeAccessRefusal.spec.ts`, `AccessRefusedNotice.spec.ts`, `AdminLayout.sessionEnded.spec.ts`
+  (`qualityProviders` inliné, St13-23), `frontend/tests/application/admin/sessionEndedLoad.spec.ts` (`standardCase(…)`,
+  St13-18)
+- Modify (règle) : `.claude/rules/frontend-session-refus.md` (section « Tests », si Q8 (A))
+
+**Interfaces :**
+- Q8 (B) : les specs qui lisent la portée lisent celle que le faux `BackofficeHttpClient` reçoit avec la lecture
+  (`sentAt`) ; `currentRefusalScope` cesse d'être exporté si aucun lecteur ne reste (`grep`) ; sinon (A) pour les lecteurs
+  restants, dit au rendu. St13-32 : `resetTo(scope: number, epoch: number): RefusalModuleState` nommé, à la place de
+  `{ ...INITIAL_STATE, scope, epoch }` répété. St13-18 : `standardCase(name: string, overrides?: Partial<Case>): Case` ;
+  les douze entrées redeviennent une ligne chacune (≤ 140). Sp13-9 : le docblock de la l. 119 au présent.
+
+- [ ] **Step 1 : filet** — specs ciblés, nombre noté.
+- [ ] **Step 2 : refactorer** ; même nombre, verts.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : la portée envoyée par
+  `stampBackofficeRead()` décalée de 1 → les cas qui lisaient `currentRefusalScope()` rougissent par la lecture
+  observée ; restauré.
+- [ ] **Step 4 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -rn "autrefois\|qualityProviders" frontend` : vide.
+- [ ] **Step 5 : commit** — `refactor(frontend): le refus du backoffice se lit dans ce qu'il envoie, ses specs en une ligne par cas (#748)`.
+
+---
+
+### Task R159 : La garde des chargements voit un `watch` sans `immediate` et les hooks de mise à jour (CR13-3 = Sp13-10 ; St13-10, St13-11, St13-26 pour `sourceText.ts` ; Sp13-11)
+
+**Files :**
+- Modify : `frontend/tests/support/sourceText.ts`, `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts`
+  (docblock)
+- Test : `frontend/tests/support/sourceText.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session-refus.md` (phrase de R121/R144 ; Sp13-11 : « a function declared in
+  the file » → la règle exacte, un nom qui commence par `load`)
+
+**Interfaces :**
+- Choix 8. St13-10 : `isFunctionLike(node): node is ts.ArrowFunction | ts.FunctionExpression` remplace l'assertion `as`.
+  St13-11 : docblock de `callbackOf` réécrit sur ce qu'il rend. St13-26 : `deferredCallsOf` et `fragmentsOfTemplateAst`
+  découpés en fonctions nommées de moins de 40 lignes chacune.
+
+- [ ] **Step 0 : lire** dans `frontend/node_modules/@vue/reactivity/dist/reactivity.cjs.js` (fonction `watch`) quand un
+  rappel `immediate` court avec `flush: 'post'` ; noter la ligne au rendu.
+- [ ] **Step 1 : tests, rouges** (Review Focus 4) — `sourceText.spec.ts` : `watch(route, () => load())` → `['load']` ;
+  `watch(x, () => a(), { immediate: true })` → `[]` ; `watch(x, () => b(), { flush: 'post', immediate: true })` → `[]` ;
+  `watch(x, cb, opts)` (variable) → `['cb']` ; `onUpdated(() => c())`, `onBeforeUpdate(d)`, `onActivated(() => e())` →
+  `['c']`, `['d']`, `['e']` ; `watchEffect(() => f())` → `[]`. Expected : FAIL sur les sans-`immediate` et les trois hooks.
+- [ ] **Step 2 : implémenter** ; puis le garde-fou du spec (au moins un hook trouvé) relu : les pages admin qui ont un
+  `watch(…, { immediate: true })` restent vertes.
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `watch(() => props.locale, () =>
+  load(props.locale))` sans `immediate` ajouté à `AdminAboutSettingsForm.vue` → la garde rougit en nommant fichier et
+  appel ; (b) `onUpdated(() => load())` dans `AdminIncidentsPage.vue` → rouge ; restaurés.
+- [ ] **Step 4 : règle** — ce que la garde lit, en une phrase par famille ; taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -n " as ts\." frontend/tests/support/sourceText.ts` :
+  vide.
+- [ ] **Step 6 : commit** — `test(frontend): la garde des chargements après le montage voit un watch sans immediate et les hooks de mise à jour (#748)`.
+
+---
+
+### Task R160 : `@vue/compiler-dom` — la commande proposée réaligne ce que le test compare (CR13-5)
+
+**Files :**
+- Modify : `frontend/tests/support/vueCompilerAlignment.spec.ts`
+- Modify (règle) : `.claude/rules/frontend.md` (« Toolchain history » : la commande)
+
+**Interfaces :**
+- Choix 9 ; `alignmentProblems` reste pure.
+
+- [ ] **Step 1 : test, rouge** — `it("la commande proposée écrit l'intervalle de vue, celui que le test compare (#748,
+  R160)")` : `alignmentProblems` d'un manifeste où `vue` vaut `~3.5.40` et le compilateur `^3.5.44` → chaque message
+  contient `npm pkg set "devDependencies.@vue/compiler-dom=~3.5.40"`. Expected : FAIL, le message propose `@3.5.x`.
+- [ ] **Step 2 : implémenter** ; vert. Vérification à la main **dans le conteneur, sur une copie** du dossier
+  (`cp -a` de `package.json` et `package-lock.json` dans le scratchpad, `npm pkg set` lancé avec `--prefix` sur la
+  copie) : l'intervalle écrit est celui de `vue` ; rien de réel touché (`git diff` vide).
+- [ ] **Step 3 : règle** — taille notée.
+- [ ] **Step 4 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `test(frontend): l'alignement du compilateur propose la commande qui écrit l'intervalle de vue (#748)`.
+
+---
+
+### Task R161 : Backend — la lecture canonique résolue par ses imports, la forme d'appel partagée partout (CR13-9 = C13-8 = St13-55 ; St13-54, St13-56, St13-57, St13-58, St13-59)
+
+**Files :**
+- Create : `backend/tests/Support/ImportedNames.php`, `backend/tests/Support/MemberCallsTest.php` (au chemin miroir que
+  les tests du dossier suivent : `grep` d'abord), `ImportedNamesTest.php`
+- Modify : `backend/tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php`,
+  `backend/tests/Support/{CookieConstructions,PlainPasswordInputs,AuthorizationSites}.php`
+
+**Interfaces :**
+- Choix 10. St13-54 : `CookieConstructions.php:139` et `PlainPasswordInputs.php:59,215` passent par
+  `MemberCalls` (un prédicat `MemberCalls::isMemberAccessAt(array $tokens, int $index): bool` s'il faut, nommé au rendu) ;
+  St13-56 : `CLASS_NAMES` ne contient que des types de jetons, nommé `CLASS_NAME_TOKENS` ; St13-57 : `AuthorizationSites`
+  une seule forme de signature, `$previous` calculé une fois ; St13-58 : `MemberCallsTest` (`->`, `?->`, `::` suivis de
+  `(` ; un nom sans parenthèse ; un `::class`) ; St13-59 : le docblock retouché hors sujet par R147 rétabli
+  (`git show be33fe11` le désigne).
+
+- [ ] **Step 1 : tests, rouges** — `testTheCanonicalReadCounterSeesEachForm` : `use App\Shared\Infrastructure\Http\CanonicalPath
+  as CP; CP::of(` → 1 ; `\Other\CanonicalPath::of(` → 0 ; `use Other\CanonicalPath; CanonicalPath::of(` → 0 ;
+  `namespace App\Shared\Infrastructure; Http\CanonicalPath::of(` → 1. Run : `docker compose exec -u dev backend php
+  bin/phpunit tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php`. Expected : FAIL sur l'alias et l'autre
+  namespace.
+- [ ] **Step 2 : implémenter** ; `make back-style-fix`.
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`, cache vidé dans le conteneur) :
+  `MemberCalls::isCallAt` qui ignore `?->` → un cas de `MemberCallsTest`, le cas nullsafe d'`AuthorizationLivesInAccessControlTest`
+  **et** un cas nullsafe des cookies rougissent ; restauré.
+- [ ] **Step 4 : verts** — `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `test(security): la lecture canonique se résout par les imports du fichier, la forme d'appel partagée par les trois recensements (#748)`.
+
+---
+
+### Task R162 : La règle de l'outillage des smokes et de l'audit (D5, Q5 : St13-60, St13-53 ; St13-61 pour `deploiement-nginx.md`)
+
+**Files :**
+- Create : `.claude/rules/outillage-smoke.md`
+- Modify : `.claude/rules/deploiement-nginx.md`, `.claude/rules/security-authentication-sessions.md` (l. 189-192),
+  `.claude/CLAUDE.md` (index)
+
+**Interfaces :**
+- Choix 11. En-tête de la règle sur le modèle des règles découpées (« Split out of `.claude/rules/deploiement-nginx.md`
+  (#748, D5 of the thirteenth review) … The index of every rule is at the top of `.claude/CLAUDE.md`. »). Ligne d'index :
+  `| \`outillage-smoke.md\` | the smokes' and the audit's shared library: the Basic Auth, \`smoke_fetch\`'s refusals, the
+  guards of \`smoke-http.test.sh\` | touching \`tools/lib/smoke-http.sh\`, a \`tools/smoke-*.sh\`, \`tools/audit-prod.sh\`'s
+  Basic Auth or their tests |`.
+
+- [ ] **Step 1 : relever** les lignes 119-157 de `deploiement-nginx.md` dans le scratchpad (`sed -n`), puis lire la
+  règle avec `Read`.
+- [ ] **Step 2 : déplacer** : la règle créée porte ces lignes à l'octet près, puis seuls les moignons sont recollés
+  (sans changer un mot : la suite de mots est la même avant et après, `tr -s '[:space:]' '\n'` comparé) ; la puce des
+  zones garde la phrase de renvoi ; `git add .claude/rules/outillage-smoke.md` avant `check-claude-rules`.
+- [ ] **Step 3 : preuve** — `tools/check-claude-rules.sh; echo "exit=$?"` à 0 ; mutation (Python, copie vérifiée par
+  `cmp`) : un glob de `paths:` changé en `tools/smoke-absent.sh` → `check-claude-rules` rougit (« glob sans fichier
+  suivi ») ; restauré. Tailles avant et après des quatre fichiers.
+- [ ] **Step 4 : commit** — `docs(rules): l'outillage des smokes et de l'audit a sa règle (#748)`.
+
+---
+
+### Task R163 : Outillage — `--proto =https` avec chaque `-K`, les options refusées par préfixe dans les arguments et dans `SMOKE_CURL_OPTS`, un schéma refusé seulement en tête (D2, Q9, Q11, Q12 : C13-1, C13-2 = CR13-2 = St13-40, Sp13-2 = St13-41, CR13-4 = C13-6, St13-39 = C13-3, C13-7, St13-38)
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh`, `tools/audit-prod.sh`
+- Test : `tools/tests/smoke-http.test.sh`, `tools/tests/lib/smoke-cases.sh`, `tools/tests/audit-prod.test.sh`
+- Modify (règle) : `.claude/rules/outillage-smoke.md`
+
+**Interfaces :**
+- Choix 12. St13-38 : le docblock de `smoke_fetch` dit chaque refus et le code 2 tel qu'il est (« un refus avant
+  l'appel, ou le fichier de la Basic Auth absent ») ; l'en-tête de la bibliothèque ne liste plus que les fonctions.
+
+- [ ] **Step 1 : filet** — les tests hors ligne de l'outillage à 0, sorties notées.
+- [ ] **Step 2 : tests, rouges** (Review Focus 2) — `smoke-http.test.sh`, avec `SMOKE_AUTH_CONFIG` posé, faux curl qui
+  note ses appels : chaque argument refusé → 2, curl jamais appelé, l'argument absent de stderr : `--locat`,
+  `--location-t`, `--proto-r`, `--pro`, `--ur`, `--conf x`, `--next`, `--var x=y`, `--expand-url`, `--exp`, `--ins`,
+  `--res h:443:1.2.3.4`, `--connect-to x`, `--`, `-0L`, `-4L`, `-#L`, `-sK`, `-k`, `-:`, `http://y`, `ftp://y`,
+  `HTTP://y` ; `SMOKE_CURL_OPTS=(--location-trusted)` → 2, message de `SMOKE_CURL_OPTS`. Voisins → l'appel part :
+  `--progress-bar`, `--proto-default https`, `--connect-timeout 5`, `--expect100-timeout 1`, `-H 'Origin: https://x'`,
+  `--data '{"url":"http://x"}'`, `-sS`. L'appel porte `-K … --proto =https --proto-redir =https`.
+  `audit-prod.test.sh` : chaque `curl` qui porte le `-K` porte aussi `--proto =https`. Expected : FAIL (abréviations,
+  grappes, `SMOKE_CURL_OPTS`, `--proto`, faux positif de `-H`).
+- [ ] **Step 3 : implémenter** selon le choix 12 ; `check_*` de `smoke-cases.sh` pour les nouveaux refus.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `--proto "=https"` retiré de
+  `_smoke_auth` → le cas « l'appel porte » rougit ; (b) la règle de préfixe ramenée aux noms exacts → les cas
+  d'abréviation rougissent ; (c) `SMOKE_CURL_OPTS` non jugé → son cas rougit ; restaurés.
+- [ ] **Step 5 : mesure sur curl 8.5.0** (Q12 ; aucun secret : fichier `-K` factice `user = "u:p"` dans le scratchpad) —
+  `docker pull curlimages/curl:8.5.0`, digest noté (`docker inspect --format '{{index .RepoDigests 0}}'`), puis
+  `docker run --rm --network none curlimages/curl@<digest> --proto-r =all --version; echo "exit=$?"` (0 : l'abréviation
+  est acceptée — la menace est réelle sur le runner) et `docker run --rm --network none -v <scratch>:/w:ro
+  curlimages/curl@<digest> -K /w/fake.conf --proto =https --proto-r =all http://127.0.0.1:9/; echo "exit=$?"` (1,
+  « Protocol "http" not supported or disabled » : `--proto` tient même si l'abréviation passe). Sorties au rendu. Si
+  l'image ne se tire pas : le dire, et écrire dans la règle que la garantie du schéma est `--proto`, celle du reste le
+  refus syntaxique, sans mesure sur 8.5.
+- [ ] **Step 6 : règle** — les phrases de `smoke_fetch` **remplacées** (une par fait) : `--proto` et `--proto-redir`,
+  la règle de préfixe et sa raison (curl 8.5.0 du runner accepte une abréviation), la liste des noms, les grappes et
+  leur limite (Q11), le schéma en tête, `SMOKE_CURL_OPTS` jugé ; la mesure du Step 5 citée (version, date). Lignes ≤ 140,
+  pas de moignon. Taille notée.
+- [ ] **Step 7 : verts** — tous les tests hors ligne de l'outillage à 0 ; shellcheck (image épinglée) sur la
+  bibliothèque, l'audit, les tests et `smoke-cases.sh` ; `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -n "_smoke_is_redirect_or_plain_url_arg\|_smoke_is_protocol_arg" tools -r` : vide.
+- [ ] **Step 8 : commit** — `fix(tools): --proto =https avec chaque -K, les options de curl refusées par préfixe avec la Basic Auth, SMOKE_CURL_OPTS compris (#748)`.
+
+---
+
+### Task R164 : Outillage — la garde des vidages d'environnement étendue, l'exemption réduite à une ligne, l'export retiré dès la lecture (D3 : St13-34 = Sp13-1 = C13-4, St13-35, St13-46 ; C13-5 ; St13-36, St13-37)
+
+**Files :**
+- Modify : `tools/tests/smoke-http.test.sh` (`env_dump_lines` et ses cas), `tools/lib/smoke-http.sh` (`export -n` après la
+  lecture ; docblocks : St13-36 « seule smoke_use_auth_config l'appelle ; le test l'appelle aussi, pour ses cas »,
+  St13-37 « le seul fichier des scripts à nommer la variable, avec la règle »), `tools/audit-prod.sh` (le dossier de la
+  bibliothèque sans `dirname`)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (les deux gardes, l'export)
+
+**Interfaces :**
+- Choix 13 et 14.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 5) — `dump_forbidden` gagne : `declare`, `typeset`, `local`, `export`,
+  `readonly` seuls, `declare -x`, `declare -n ref=X`, `local -n ref=X`, `compgen -v`, `compgen -e`, `compgen -A export`,
+  `set 2>/dev/null`, `eval "v=\$$n"`, `ps eww -p $$`, `ps -ef`, `cd /proc/self && cat environ`, `"/proc"/self/environ`,
+  `cat "$p/environ"` ; un `printenv` et un `declare -p X` **dans le corps** de `_smoke_write_auth_config` (copie
+  modifiée de la bibliothèque) → refusés. `dump_allowed` gagne : `x="${env}"`, `local name="$1"`, `export -n -- "$n"`,
+  `readonly LIMIT=3`, `declare -a list=()`, `echo environment`. Cas C13-5 : un faux `mktemp` qui écrit `env` dans un
+  fichier → la variable n'y figure pas. Expected : FAIL sur chaque nouveau refus, sur `${env}` (refusé à tort) et sur le
+  faux `mktemp`.
+- [ ] **Step 2 : implémenter** selon les choix 13 et 14 ; commentaire de tête de la garde : la limite « bonne foi » de D3.
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) l'exemption rendue au corps entier →
+  le cas `printenv` dans le lecteur rougit ; (b) `export -n` replacé après `mktemp` → le cas C13-5 rougit ; restaurés.
+- [ ] **Step 4 : règle** — les phrases des gardes **remplacées** : ce que la seconde garde refuse (familles), l'exemption
+  d'une ligne, la limite de bonne foi ; « no line lists the environment » ne reste que sous cette limite. `export -n`
+  dès la lecture, l'audit sans processus avant lui. Lignes ≤ 140. Taille notée.
+- [ ] **Step 5 : verts** — tests hors ligne à 0 ; shellcheck (image épinglée) ; `tools/check-claude-rules.sh; echo
+  "exit=$?"` ; `grep -n "dirname" tools/audit-prod.sh` : les seules lignes après la bibliothèque, dites.
+- [ ] **Step 6 : commit** — `fix(tools): la garde des vidages d'environnement voit les listes nues, compgen, eval et ps, son exemption tient en une ligne ; l'export retiré dès la lecture (#748)`.
+
+---
+
+### Task R165 : Hygiène des tests d'outillage (St13-42, St13-43, St13-44, St13-45, St13-47, St13-48, St13-49, St13-50, St13-51, St13-52, Sp13-15 ; refactoring)
+
+**Files :**
+- Modify : `tools/tests/lib/smoke-cases.sh`, `tools/tests/smoke-http.test.sh`, les tests qui appellent les `check_*`,
+  `tools/lib/smoke-http.sh` (St13-50 : commentaires des l. 90-91 et 121-123 refondus), `tools/audit-prod.sh` (St13-51,
+  St13-52, en-tête `Env :` de Sp13-15)
+
+**Interfaces :**
+- St13-43 : `run_case <check> <label> <rc> [<var>=<valeur>…]` pose les six `CASE_*` en local et appelle le `check_*` ;
+  St13-42 : `CASE_VALUE` jamais exporté (`local`) ; St13-44 : `${CASE_RC:?}` remplacé par un `fail` nommé ; St13-45 :
+  la ligne morte `smoke-http.test.sh:917` retirée ; St13-47 : les commentaires appauvris pour passer la garde du mot
+  disent de nouveau « la variable de la Basic Auth » ; St13-48 : les noms en `…plain_url…` renommés d'après la règle
+  de R163 ; St13-49 : « garde du mot » dit « la sous-chaîne `AUDIT_BASIC_AUTH` » ; St13-51 : `audit_with_basic_auth` se
+  lit de `[ -n "$SMOKE_AUTH_CONFIG" ]` ou disparaît (un seul état) ; St13-52 : `${target:-}` → `$target` ; Sp13-15 : en-tête
+  `Env :` d'`audit-prod.sh` sur le modèle des trois smokes.
+
+- [ ] **Step 1 : filet** — tous les tests hors ligne de l'outillage à 0, nombre de `pass` de chacun noté.
+- [ ] **Step 2 : refactorer** ; mêmes nombres de `pass`, codes 0.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `run_case` qui ne passe pas `<rc>` → les
+  cas de refus rougissent ; restauré.
+- [ ] **Step 4 : verts** — shellcheck (image épinglée) ; `grep -c "CASE_LABEL=" tools/tests/*.sh` : un par fichier au plus.
+- [ ] **Step 5 : commit** — `test(tools): les cas partagés de l'outillage en un appel, leurs commentaires disent ce qu'ils gardent (#748)`.
+
+---
+
+### Task R166 : Les noms de tests rétablis, les lignes de plus de 140 caractères qui ne sont pas un littéral seul (D8, Q13 : Sp13-6 ; Sp13-7 ; St13-33 ; les débordements de R150)
+
+**Files :** ceux que les recherches désignent.
+
+- [ ] **Step 1 : noms** — `git show b40ddc21 -- frontend backend tools | grep -E "^[-+].*(it\(|test\(|function test|pass \")"`
+  : le rendu donne le compte réel des noms raccourcis et, pour chacun, « sens gardé » ou « rétabli ». Rétablis (Q13) :
+  « … ôte le palier de confiance d'un compte rétrogradé », « … « Proposer la version EN » désactivé jusqu'à la
+  réponse … » avec « (#748, R67) » si la ligne tient sous 140 (le littéral seul sur sa ligne), sinon un commentaire
+  `// #748, R67` au-dessus du `it`.
+- [ ] **Step 2 : lignes** — `smoke-http.test.sh:132,402`, `smoke-dead-session-cookie.test.sh:149,252`,
+  `sourceText.spec.ts:111` (numéros à relire) coupées ; la méthode de R150 rejouée : le rendu liste **chaque** ligne
+  > 140 restante (fichier:ligne, raison : littéral seul), pour que R167 la consigne au plan.
+- [ ] **Step 3 : St13-33** — les coupes de b40ddc21 relues : `if` sans accolades rendus à la forme du fichier, apostrophes
+  typographiques `’` remplacées par `'` là où le fichier écrit `'` (dans le code ; un texte d'interface garde sa
+  typographie) ; `git diff -w b40ddc21^ b40ddc21 -- frontend/src/application/auth/useAuth.ts
+  frontend/tests/application/admin/sessionEndedLoad.spec.ts` relu : une ligne ≤ 140 recoupée sans besoin est rendue à sa
+  forme d'avant si le fichier n'a pas changé depuis à cet endroit.
+- [ ] **Step 4 : verts** — même nombre de tests partout ; `make front-test`, `make front-lint`, `make front-build`,
+  `make back-test`, `make back-quality`, les tests hors ligne des scripts touchés, shellcheck,
+  `tools/check-claude-rules.sh`, chaque code lu sans pipe.
+- [ ] **Step 5 : commit** — `style: les noms de tests qui avaient perdu leur sens rétablis, les lignes trop longues restantes coupées (#748)`.
+
+---
+
+### Task R167 : Balayage documentaire de la treizième série — avec la liste des recherches et de leurs résultats, et le plan tenu à jour (St13-61, St13-62, St13-64 = Sp13-8 = Sp13-14 ; Q14)
+
+Le rendu donne, pour **chaque** recherche, la commande exacte, le nombre de lignes rendues et, pour chaque ligne gardée,
+sa raison ; une recherche sans ligne se dit « 0 ». **Exception au brief (Q14)** : cette tâche écrit dans
+`tasks/plan-748.md`, et seulement la sous-section « Ce que la treizième série a réellement fait » à la fin de cette
+section (avant « ### Task 11 »), sans cocher de case ni toucher au reste.
+
+**Files :** ceux que le balayage désigne ; `tasks/plan-748.md` (la sous-section).
+
+- [ ] **Step 1 : recherches** (secrets et `node_modules` exclus ; périmètre `.claude docs frontend/src frontend/tests
+  backend/src backend/tests tools`) :
+  1. Noms disparus : `grep -rn -e translationErrorText -e hasProseToTranslate -e proseDescribedBy -e isDiscardPending
+     -e discardIfDeleted -e discardPending -e "_smoke_is_redirect_or_plain_url_arg" -e "_smoke_is_protocol_arg"
+     -e "translation/proseFields'" -e "domain/admin/translation/entities/FormIdentity"`.
+  2. Vocabulaire : `grep -rn -e "les remplace par la proposition" -e "replaces them with the proposal" -e "autrefois"
+     -e "recopiait" -e "no line lists the environment"` — chaque ligne gardée justifiée.
+  3. Identifiants de constat dans les noms de tests : la recherche de R135, rejouée.
+  4. Récits au passé dans les fichiers que `git diff --name-only 2a5cb860...HEAD -- frontend backend tools .claude`
+     liste : `grep -nE "(depuis R[0-9]+|n'est plus|n'a plus|ne .* plus |restait|recopiait|autrefois|voyait|lisait|était là|used to|no longer)"`.
+  5. Longueurs : `awk 'length>140'` sur chaque fichier que `git diff --name-only 2a5cb860...HEAD` liste ; aucune ligne
+     > 140 écrite par la série (commit de `git blame` dans `2a5cb860..HEAD`) hors tables, JSON et littéraux listés par
+     R166.
+  6. Moignons, dans chaque règle touchée par la série et dans `mcp-oauth-revocation-personne.md` (l. 312, 328-329,
+     331, 341), `frontend-session-refus.md` (l. 26-27) — St13-61 : `awk 'length<=45 && NF {print FILENAME":"FNR": "$0}'`
+     et `grep -nE '^[[:space:]]*[,;:.)»]'` ; chaque moignon recollé sans changer un mot (suite de mots comparée).
+     `frontend-session-bandeau.md:120-128` (St13-62) : les continuations de puce indentées comme le reste du fichier.
+  7. Règles touchées : relire avec `Read` `frontend-backoffice.md` (« Translation assistant », réglages),
+     `frontend-session-refus.md`, `frontend.md`, `outillage-smoke.md`, `deploiement-nginx.md`,
+     `security-authentication-sessions.md` : toute phrase fausse sur HEAD **remplacée**.
+  8. Docblock d'en-tête de chaque fichier de `src/`, `tests/support/`, `backend/tests/Support/` et `tools/` modifié par
+     R152 à R166 relu contre son code.
+- [ ] **Step 2 : plan tenu à jour** (St13-64 = Sp13-8 = Sp13-14, Q14) — la sous-section « Ce que la treizième série a
+  réellement fait *(rectifié le …)* » écrite à la fin de cette section : pour chaque tâche R152 à R166, une ligne
+  « conforme » ou l'écart réel (ce que le rendu de l'agent a déclaré, ce que le commit montre), les questions Q1 à Q14
+  et la réponse suivie, la liste des lignes > 140 restantes que R166 a rendue. Aucune autre ligne du plan ne change.
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; taille de chaque règle touchée par la série,
+  toutes < 50 000, `backoffice-api.md` à 39 834 ; `make front-test` / `make back-test` / tests hors ligne selon les
+  fichiers changés, codes lus sans pipe.
+- [ ] **Step 4 : commit** — `docs: le balayage de la treizième relecture de #748`.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| CR13-1 | R152 (D1) |
+| St13-15 | R153 (D4, Q1, Q2, Q3) |
+| St13-34 = Sp13-1 = C13-4 | R164 (D3) |
+| St13-35 | R164 (D3) |
+| St13-39 = C13-3 | R163 (D2, Q12) |
+| St13-60 | R162 (D5, Q5) |
+| C13-1 | R163 (`--proto =https`) |
+| C13-2 = CR13-2 = St13-40 | R163 |
+| Sp13-2 = St13-41 | R163 |
+| C13-5 | R164 (choix 14) |
+| C13-10 | R157 (D6, Q10) |
+| CR13-3 = Sp13-10 | R159 |
+| CR13-4 = C13-6 | R163 |
+| CR13-5 | R160 |
+| CR13-6 = St13-7 | R156 (Q6) |
+| CR13-7 | R153 (D7, limite écrite) |
+| CR13-8 | écarté (réfuté) |
+| CR13-9 = C13-8 = St13-55 | R161 |
+| St13-1 = St13-2 = St13-3 = Sp13-13 | R156 |
+| St13-4 | R154 |
+| St13-5 | R156 |
+| St13-6 | R153 |
+| St13-8 | écarté (conformité à R141b) |
+| St13-9 | R154 |
+| St13-10, St13-11 | R159 |
+| St13-12 | R153 |
+| St13-13, St13-14 | R154 |
+| St13-16 | R153 (règle : ce qu'un formulaire nouveau écrit) |
+| St13-17 | R154 |
+| St13-18 | R158 |
+| St13-19 | R153 (choix 3) |
+| St13-20 | R154 (« discard », Q7), R156 (`LOCALE_HELP_FR`, textes du verrou) |
+| St13-21 | R157 (choix 7) |
+| St13-22 | R153 |
+| St13-23 | R153 (`proseDescribedBy`), R158 (`currentRefusalScope`, `qualityProviders`, Q8) |
+| St13-24 | R153 (`DeletableEntry`), R154 (`fieldIdPrefix`) |
+| St13-25 | R154 (choix 4) |
+| St13-26 | R154 (`describeEntryFormLock`), R155 (`AdminQualityPage.vue`, Q4), R159 (`sourceText.ts`) |
+| St13-27 à St13-31 | R154 |
+| St13-32 | R158 |
+| St13-33 | R166 |
+| St13-36, St13-37 | R164 |
+| St13-38 | R163 |
+| St13-42 à St13-45, St13-47 à St13-52 | R165 |
+| St13-46 | R164 |
+| St13-53 | R162 |
+| St13-54, St13-56 à St13-59 | R161 |
+| St13-61 | R162 (`deploiement-nginx.md`), R167 (les autres règles) |
+| St13-62 | R167 |
+| St13-63 | R153 |
+| St13-64 = Sp13-8 = Sp13-14 | commit de ce plan (« Ce que la douzième série a réellement fait »), R167 (Q14) |
+| C13-7 | R163 |
+| C13-9 | R158 (Q8) |
+| Sp13-3, Sp13-4, Sp13-5 | R152 |
+| Sp13-6 | R166 (D8, Q13) |
+| Sp13-7 | R166 |
+| Sp13-9 | R153 (`useTranslatedForm.ts`), R158 (`backofficeAccessRefusal.ts`) |
+| Sp13-11 | R159 |
+| Sp13-12 | R156 |
+| Sp13-15 | R165 |
+| Débordements de R150 (`diff -w`) | R166 |
+
+### Constats écartés, avec leur raison
+
+- **CR13-8** : réfuté sur le code. Pendant une traduction FR→EN des réglages, la prose FR est en lecture seule
+  (`proseFieldAttrs()`, `AdminAboutSettingsForm.vue`) : un enregistrement FR réussi enregistre le texte même qui est
+  traduit, et la proposition EN qui arrive reste juste. Rien à périmer.
+- **St13-8** : le constat établit que le cas de R141b ne peut pas rougir, ce que la décision R141b de l'auteur et la
+  règle (« invisible … no spec pins it ») disent déjà ; rien à corriger.
+
+---
+
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :

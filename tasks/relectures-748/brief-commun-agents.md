@@ -9,13 +9,16 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R137 et suivantes**, la section
-  « Corrections de la douzième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
-  vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
-  des fichiers), puis **ta tâche**. (R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
-  relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième
-  relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de
-  la série : `tasks/relectures-748/relecture-12-constats.md` (R121–R136 : `relecture-11-constats.md`). Les sections passées
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R152 et suivantes**, la section
+  « Corrections de la treizième relecture (2026-10-31) » en entier jusqu'à la première tâche (ce que la série précédente
+  a réellement fait, décisions D1 à D8, vérification des constats, ordre, choix tranchés, questions Q1 à Q14, Review
+  Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R137–R151, R141b, R148b : « … douzième
+  relecture » ; R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 :
+  « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la
+  septième relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 :
+  « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 :
+  « Corrections de relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-13-constats.md`
+  (R137–R151 : `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les sections passées
   sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
@@ -26,10 +29,20 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   qui décrit un comportement que ta tâche modifie se corrige dans le même commit que le comportement** (St6-2 et Sp6-1
   sont nés de docs laissées en arrière) : avant le commit, cherche (`grep`) le nom de chaque fonction ou état touché
   dans `.claude/rules/` et dans les docblocks voisins. Un identifiant de constat (`CR11-3`, `A3-10`) est permis dans un
-  commentaire, jamais dans un nom de test (décision 4 de la onzième relecture). Une règle ne dépasse pas
+  commentaire, jamais dans un nom de test (décision 4 de la onzième relecture). **Un nom de test se raccourcit sans
+  perdre un terme qui porte le sens** (l'état vérifié — « désactivé », pas « inactif » —, le palier, la tâche citée) ;
+  s'il ne tient pas sous 140, le littéral va seul sur sa ligne, ou la référence en commentaire au-dessus du `it`. Une règle ne dépasse pas
   50 000 octets (`security-user.md` en fait 47 914 : n'y ajoute rien ; `backoffice-api.md` 39 834 : n'y ajoute rien sans
   retirer d'abord) ; donne dans ton rendu la taille de chaque règle
   touchée.
+- **Une règle se coupe ou se recolle sans moignon ni mot changé** : un balayage de moignons recolle sans en créer ;
+  après chaque coupe ou recollage, relis `awk 'length<=45 && NF' <règle>` et `grep -nE '^[[:space:]]*[,;:.)»]' <règle>`
+  (une ligne courte ou qui commence par une ponctuation est un moignon, sauf fin de paragraphe ou élément de liste), et
+  compare la suite de mots avant et après (`tr -s '[:space:]' '\n'`). Une continuation de puce garde l'indentation du
+  fichier.
+- **Une affirmation sur un outil** (une version, une option, un comportement de curl, bash, npm, Vue) se vérifie sur la
+  version **du runner** du job qui l'exécute (`ubuntu-latest` = Ubuntu 24.04 : curl 8.5.0), jamais sur celle de l'hôte
+  ou d'un conteneur de dev ; si elle ne se mesure pas hors ligne, dis la méthode employée ou écris la limite.
 - **Un fichier créé ou déplacé qui entre dans les `paths:` d'une règle est indexé (`git add <fichier>`) avant
   `tools/check-claude-rules.sh`**, qui ne voit que les fichiers suivis (sinon : « glob sans fichier suivi »).
 
@@ -82,11 +95,13 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` ; ne coche rien — **aucune case `- [ ]` de `tasks/plan-748.md`**,
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R167 écrit la sous-section « Ce que la treizième
+série a réellement fait » du plan, Q14) ; ne coche rien — **aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
 comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur : arrête-toi et rends la question.
 
 ## Rendu
 Fichiers touchés, SHA du commit, preuve : commande et extrait du test rouge (raison de l'échec, ou mutation), lignes de
 résumé et codes de sortie des cibles make, des tests hors ligne et de check-claude-rules, taille des règles touchées,
-écarts au plan, questions ouvertes.
+**écarts au plan, chacun nommé** (ce que la tâche disait, ce que le code fait, pourquoi : R167 les reporte au plan —
+la treizième relecture a reproché au plan de les avoir perdus), questions ouvertes.
