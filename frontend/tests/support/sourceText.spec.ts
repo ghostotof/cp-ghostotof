@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  expressionsOfTemplate,
+  fragmentsOfTemplateAst,
   scriptOf,
   stringLiterals,
   syntaxErrorsOf,
@@ -168,6 +168,39 @@ describe('templateExpressionsOf', () => {
       expect(fragmentsOf('<button @click="a(); b(\'omit\')">x</button>')).toEqual(["() => {\na(); b('omit')\n}"])
     })
 
+    it("lit la valeur d'un attribut statique : un mode=\"omit\" écrit en dur dans le gabarit est vu (#748, R119)", () => {
+      expect(literalsOf('<Fetcher mode="omit" />')).toContain('omit')
+      expect(fragmentsOf('<Fetcher mode="omit" />')).toEqual(['"omit"'])
+    })
+
+    it('refuse un <template> sans arbre (lang, src) en nommant son chemin : une garde qui le sauterait le laisserait sans garde', () => {
+      expect(() => templateExpressionsOf('X.vue', '<template lang="pug">p x</template>')).toThrow('X.vue')
+      expect(() => templateExpressionsOf('X.vue', '<template src="./x.html"></template>')).toThrow('X.vue')
+      expect(templateExpressionsOf('X.vue', '<template lang="html"><p :a="b" /></template>')).toEqual(['(b)'])
+    })
+
+    it('lit un v-on sans argument (objet de gestionnaires) comme une expression : ce n\'est pas un bloc étiqueté', () => {
+      const fragments = fragmentsOf('<C v-on="{ click: a, keydown: b }" />')
+
+      expect(fragments).toEqual(['({ click: a, keydown: b })'])
+      expect(syntaxErrorsOf(fragments[0] ?? '')).toEqual([])
+    })
+
+    it("lit un gestionnaire écrit en fonction comme une expression, et y voit le 'omit' qu'il porte", () => {
+      const fragments = fragmentsOf('<button @click="function () { b(\'omit\') }">x</button>')
+
+      expect(fragments).toEqual(["(function () { b('omit') })"])
+      expect(syntaxErrorsOf(fragments[0] ?? '')).toEqual([])
+      expect(literalsOf('<button @click="function () { b(\'omit\') }">x</button>')).toContain('omit')
+    })
+
+    it("lit un gestionnaire qui est une suite d'instructions comme un corps de fonction, et y voit le 'omit'", () => {
+      const template = '<button @click="a(); b(\'omit\')">x</button>'
+
+      expect(literalsOf(template)).toContain('omit')
+      expect(fragmentsOf(template)).toEqual(["() => {\na(); b('omit')\n}"])
+    })
+
     it("lit une interpolation et un argument dynamique entre parenthèses, et ne rend pas un argument statique", () => {
       expect(fragmentsOf("<p :title=\"t\" :[dyn]=\"u\">{{ 'd' }}</p>")).toEqual(['(t)', '(u)', '(dyn)', "('d')"])
       expect(fragmentsOf('<p :title="t" />')).toEqual(['(t)'])
@@ -192,10 +225,10 @@ describe('syntaxErrorsOf', () => {
   })
 })
 
-describe('expressionsOfTemplate', () => {
+describe('fragmentsOfTemplateAst', () => {
   it("ne visite jamais un contenu nul ou absent (CR9-6) : `typeof null` est 'object'", () => {
     const root = { type: 0, children: [{ type: 5, content: null }, { type: 5 }] } as unknown as TemplateRoot
 
-    expect(expressionsOfTemplate(root)).toEqual([])
+    expect(fragmentsOfTemplateAst(root)).toEqual([])
   })
 })

@@ -250,9 +250,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
 
     for (const [name, allowed] of Object.entries(WRITERS)) {
       for (const file of allowed) {
-        const source = SRC_SCRIPTS[file]
-        const imported = source === undefined ? [] : namesImportedFromSessionState(source)
-        if (!imported.includes(name)) {
+        if (!namesImportedFromSessionState(sourceOf(file)).includes(name)) {
           dead.push(`${file} n'importe pas ${name}`)
         }
       }

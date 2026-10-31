@@ -20,10 +20,11 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_EXPRESSIONS } from '../../support/srcSources'
  * la lecture de la règle (`.claude/rules/frontend.md`) et la relecture restent le filet de ces cas.
  *
  * Elle lit deux choses d'un fichier : ses littéraux de script (un `.vue` n'y a que ses blocs `<script>`) **et** les
- * expressions de son `<template>` (directives, gestionnaires en ligne, interpolations, `v-for` et `v-slot` compris), et
- * les parties fixes d'un gabarit comptent comme des littéraux (`` `${''}omit` `` contient `omit`). Un gabarit `${x}omit`
- * est donc signalé sans être exactement `'omit'` : faux positif bruyant, aucun dans `src/`. Chaque expression est lue
- * comme le fragment JavaScript que Vue compile, et un test vérifie que tout fragment de `src/` est de la syntaxe valide.
+ * expressions de son `<template>` (directives, gestionnaires en ligne, interpolations, `v-for`, `v-slot` et valeurs
+ * d'attributs statiques compris), et les parties fixes d'un gabarit comptent comme des littéraux (`` `${''}omit` `` contient
+ * `omit`). Un gabarit `${x}omit` est donc signalé sans être exactement `'omit'` : faux positif bruyant, aucun dans
+ * `src/`. Chaque expression est lue comme le fragment JavaScript que Vue compile, et un test vérifie que tout fragment
+ * de `src/` est de la syntaxe valide.
  *
  * Les fichiers sont lus une fois pour les gardes de `src/` par `tests/support/srcSources.ts` (R97).
  */
@@ -39,7 +40,7 @@ function writesOmit(literals: readonly string[]): boolean {
 }
 
 /** Les littéraux lus de chaque fichier de `src/`, par chemin relatif à `src/`. */
-const sources = Object.fromEntries(
+const literalsByFile = Object.fromEntries(
   Object.entries(SRC_SCRIPTS).map(([path, script]) => [path, literalsOf(script, SRC_TEMPLATE_EXPRESSIONS[path] ?? [])]),
 ) as Record<string, string[]>
 
@@ -54,7 +55,7 @@ function offendsWithOmit(source: string, path = 'x.ts'): boolean {
 
 describe("aucun credentials: 'omit' dans src/", () => {
   it('lit bien les sources (la glob ne doit pas être vide)', () => {
-    expect(Object.keys(sources).length).toBeGreaterThan(100)
+    expect(Object.keys(literalsByFile).length).toBeGreaterThan(100)
   })
 
   it("le détecteur voit une valeur typée hors de l'objet d'options", () => {
@@ -85,7 +86,7 @@ describe("aucun credentials: 'omit' dans src/", () => {
   })
 
   it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod, C1)", () => {
-    const offenders = Object.entries(sources)
+    const offenders = Object.entries(literalsByFile)
       .filter(([, literals]) => writesOmit(literals))
       .map(([path]) => path)
       .sort()
