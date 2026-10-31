@@ -93,7 +93,10 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     section rendered later by a `v-if`, a watcher, a replay (R143, CR12-4). **A backoffice page starts its load in `setup`**
     (or an `immediate` watcher), both stamped before the alert's `onMounted`: a read sent from the page's own `onMounted`
     would carry the new epoch and say `common.accessRefused` for the earlier save. `noLoadInOnMounted.spec.ts` refuses a
-    load or a repository call in an `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh review).
+    load or a repository call that runs after the mount, in `presentation/pages/admin` and `presentation/ui/admin` (R121, R144):
+    the function or the name passed to `onMounted` (under its import alias too), `nextTick`, `setTimeout`, `queueMicrotask`,
+    `requestAnimationFrame`, `watchPostEffect`, or a `watch` / `watchEffect` with `flush: 'post'`. What it cannot see (an
+    `await`, a hook held in a variable, a function declared in the file) is listed in its docblock.
     Any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the
     letter of decision 1 of the ninth: no load window, no counter).
   - **Accepted limits** (Q3 (a) of the twelfth review, R143): the module cannot tell a read the person relaunched from one
@@ -149,6 +152,6 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
     `backofficeSessionExpiry.spec.ts`, `AdminLayout.sessionEnded.spec.ts`); another account read outside an ended session
     advances the generation before the signal (`useAuth.spec.ts`).
 - For the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched; `followRefusal`: ended and still shown, replaced meanwhile, held, R27), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement).
-- `noLoadInOnMounted.spec.ts` (R121: no load or repository call in an `onMounted` of a backoffice page, which would carry the
-  mounted alert's epoch).
+- `noLoadInOnMounted.spec.ts` (R121, R144: no load or repository call after the mount of a backoffice page or component, which
+  would carry the mounted alert's epoch; one fake file per form it sees, in `tests/support/sourceText.spec.ts` for the reader).
 - The reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.

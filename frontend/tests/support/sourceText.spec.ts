@@ -2,7 +2,8 @@ import { NodeTypes } from '@vue/compiler-dom'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'vue/compiler-sfc'
 import {
-  callsInsideHook,
+  deferredCallsOf,
+  destructuredAliasesOf,
   fragmentsOfTemplateAst,
   scriptOf,
   stringLiterals,
@@ -252,19 +253,78 @@ describe('fragmentsOfTemplateAst', () => {
   })
 })
 
-describe('callsInsideHook', () => {
-  it('callsInsideHook rend le callee de chaque appel des fonctions passées au hook, imbriquées comprises (#748, R121)', () => {
-    expect(callsInsideHook('onMounted(() => { a(); x.y(); const f = () => load() }) ; b()', 'onMounted')).toEqual(['a', 'x.y', 'load'])
+describe('deferredCallsOf', () => {
+  it('deferredCallsOf rend le callee de chaque appel des fonctions passées à onMounted, imbriquées comprises (#748, R121, R144)', () => {
+    expect(deferredCallsOf('onMounted(() => { a(); x.y(); const f = () => load() }) ; b()')).toEqual(['a', 'x.y', 'load'])
   })
 
-  it("callsInsideHook ne rend rien pour une référence passée au hook, ni pour un autre appel qui reçoit une fonction (#748, R121)", () => {
-    expect(callsInsideHook('onMounted(go)', 'onMounted')).toEqual([])
-    expect(callsInsideHook('other(() => a())', 'onMounted')).toEqual([])
+  it('deferredCallsOf rend le nom passé par référence, simple ou membre, et ignore les autres arguments (#748, R144)', () => {
+    expect(deferredCallsOf('onMounted(load)')).toEqual(['load'])
+    expect(deferredCallsOf('onMounted(page.load)')).toEqual(['page.load'])
+    expect(deferredCallsOf('setTimeout(load, delay)')).toEqual(['load'])
+    expect(deferredCallsOf('watch(source, load, { flush: "post" })')).toEqual(['load'])
   })
 
-  it('callsInsideHook rend les appels de chaque appel du hook, dans l\'ordre du source, `function` comprise (#748, R121)', () => {
+  it("deferredCallsOf ne rend rien pour un appel qui n'est pas un hook différé (#748, R121, R144)", () => {
+    expect(deferredCallsOf('other(() => a())')).toEqual([])
+    expect(deferredCallsOf('other(load)')).toEqual([])
+    expect(deferredCallsOf('x.onMounted(() => a())')).toEqual([])
+  })
+
+  it("deferredCallsOf lit onMounted sous l'alias de son import de vue, et non un autre module (#748, R144)", () => {
+    expect(deferredCallsOf("import { onMounted as whenMounted } from 'vue'\nwhenMounted(() => go())")).toEqual(['go'])
+    expect(deferredCallsOf("import { nextTick as tick } from 'vue'\ntick(load)")).toEqual(['load'])
+    expect(deferredCallsOf("import { onMounted as whenMounted } from './elsewhere'\nwhenMounted(() => go())")).toEqual([])
+  })
+
+  it('deferredCallsOf rend les appels de chaque appel du hook, dans l\'ordre du source, `function` comprise (#748, R121, R144)', () => {
     const source = 'onMounted(function () { first() })\nonMounted(async () => { await second.call() })'
 
-    expect(callsInsideHook(source, 'onMounted')).toEqual(['first', 'second.call'])
+    expect(deferredCallsOf(source)).toEqual(['first', 'second.call'])
+  })
+
+  it('deferredCallsOf lit nextTick, les minuteurs et les rappels de frame (#748, R144)', () => {
+    expect(deferredCallsOf('nextTick(() => a())')).toEqual(['a'])
+    expect(deferredCallsOf('setTimeout(() => b(), 0)')).toEqual(['b'])
+    expect(deferredCallsOf('window.setTimeout(load, 0)')).toEqual(['load'])
+    expect(deferredCallsOf('queueMicrotask(() => c())')).toEqual(['c'])
+    expect(deferredCallsOf('requestAnimationFrame(() => d())')).toEqual(['d'])
+    expect(deferredCallsOf('watchPostEffect(() => e())')).toEqual(['e'])
+  })
+
+  it("deferredCallsOf ne lit un watch ou un watchEffect que s'il est posté après le rendu (#748, R144)", () => {
+    expect(deferredCallsOf("watch(x, () => b(), { flush: 'post' })")).toEqual(['b'])
+    expect(deferredCallsOf("watch(x, () => b(), { immediate: true, flush: 'post' })")).toEqual(['b'])
+    expect(deferredCallsOf("watchEffect(() => c(), { flush: 'post' })")).toEqual(['c'])
+    expect(deferredCallsOf('watch(x, () => b())')).toEqual([])
+    expect(deferredCallsOf('watch(x, () => b(), { immediate: true })')).toEqual([])
+    expect(deferredCallsOf("watch(x, () => b(), { flush: 'sync' })")).toEqual([])
+    expect(deferredCallsOf('watchEffect(() => c())')).toEqual([])
+  })
+
+  it('deferredCallsOf lit la source de watch ni comme un rappel, ni comme un appel du hook (#748, R144)', () => {
+    expect(deferredCallsOf("watch(() => source(), () => b(), { flush: 'post' })")).toEqual(['b'])
+  })
+
+  it("deferredCallsOf lit aussi un hook posé dans la fonction d'un autre hook (#748, R144)", () => {
+    expect(deferredCallsOf('onMounted(() => { nextTick(load) })')).toEqual(['nextTick', 'load'])
+  })
+})
+
+describe('destructuredAliasesOf', () => {
+  it('destructuredAliasesOf rend le nom local lié à une clé, pas la clé laissée telle quelle (#748, R144)', () => {
+    const source = 'const { load: refresh, reload: again, other: x, load2 } = useX()'
+
+    expect([...destructuredAliasesOf(source, ['load', 'reload'])]).toEqual(['refresh', 'again'])
+  })
+
+  it('destructuredAliasesOf lit un paramètre déstructuré et une valeur par défaut (#748, R144)', () => {
+    expect([...destructuredAliasesOf('const f = ({ load: refresh = noop }) => refresh()', ['load'])]).toEqual(['refresh'])
+  })
+
+  it("destructuredAliasesOf ne prend pas un type, un littéral objet ni une chaîne pour un alias (#748, R144)", () => {
+    expect([...destructuredAliasesOf('const f: { load: () => void } = x', ['load'])]).toEqual([])
+    expect([...destructuredAliasesOf('const o = { load: refresh }', ['load'])]).toEqual([])
+    expect([...destructuredAliasesOf("const s = 'const { load: refresh } = y'", ['load'])]).toEqual([])
   })
 })

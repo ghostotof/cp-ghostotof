@@ -19,7 +19,8 @@ import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
  *
  * Qui l'appelle : `srcSources.ts` lit une fois les fichiers de `src/` pour `noOmittedCredentials.spec.ts` et
  * `sessionStateEncapsulation.spec.ts`.
- * `noLoadInOnMounted.spec.ts` lit, par `callsInsideHook`, les appels écrits dans un `onMounted` des pages du backoffice.
+ * `noLoadInOnMounted.spec.ts` lit, par `deferredCallsOf` et `destructuredAliasesOf`, ce que les pages et composants du backoffice
+ * appellent après leur montage.
  *
  * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…), de
  * celle de `vue/compiler-sfc` (`parse`) et de celle de `@vue/compiler-dom` (`NodeTypes`, `isMemberExpressionBrowser`…).
@@ -263,38 +264,181 @@ export function syntaxErrorsOf(fragment: string): string[] {
 }
 
 /** L'arbre de `source`, lu comme du TypeScript (parents posés : `getChildren` en a besoin). */
-export function syntaxTreeOf(source: string): ts.SourceFile {
+function syntaxTreeOf(source: string): ts.SourceFile {
   return ts.createSourceFile('source.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 }
 
 /**
- * Le texte du *callee* de chaque appel écrit dans une fonction passée à `hook(…)`, dans l'ordre du source, fonctions
- * imbriquées comprises (`onMounted(() => { a(); x.y() })` donne `['a', 'x.y']`). Une référence (`onMounted(go)`) ne rend rien.
+ * Où un hook différé range la fonction qu'il rappellera (`callback`, l'index de l'argument), où il range ses options
+ * (`options`) et s'il ne s'exécute après le rendu que posté (`postedOnly`, `{ flush: 'post' }` : un `watch` ou un
+ * `watchEffect` sans lui s'exécute dans le `setup`, ou de façon synchrone, jamais après le montage).
  */
-export function callsInsideHook(source: string, hook: string): string[] {
+interface DeferredHook {
+  readonly callback: number
+  readonly options?: number
+  readonly postedOnly?: boolean
+}
+
+/** Les hooks de `vue` dont le rappel s'exécute après le montage, et les appels globaux qui différent une fonction. */
+const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
+  ['onMounted', { callback: 0 }],
+  ['nextTick', { callback: 0 }],
+  ['watchPostEffect', { callback: 0 }],
+  ['watch', { callback: 1, options: 2, postedOnly: true }],
+  ['watchEffect', { callback: 0, options: 1, postedOnly: true }],
+  ['setTimeout', { callback: 0 }],
+  ['queueMicrotask', { callback: 0 }],
+  ['requestAnimationFrame', { callback: 0 }],
+])
+
+/** Les appels globaux, qui s'écrivent aussi `window.setTimeout(…)`. */
+const GLOBAL_DEFERRALS: ReadonlySet<string> = new Set(['setTimeout', 'queueMicrotask', 'requestAnimationFrame'])
+const GLOBAL_OBJECTS: ReadonlySet<string> = new Set(['window', 'globalThis', 'self'])
+
+/** Le nom importé de chaque nom local d'une importation nommée de `vue` (`onMounted as whenMounted` : `whenMounted` donne `onMounted`). */
+function vueImportsOf(file: ts.SourceFile): ReadonlyMap<string, string> {
+  const imported = new Map<string, string>()
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || 'vue' !== statement.moduleSpecifier.text) {
+      continue
+    }
+    const bindings = statement.importClause?.namedBindings
+    if (undefined === bindings || !ts.isNamedImports(bindings)) {
+      continue
+    }
+    for (const specifier of bindings.elements) {
+      imported.set(specifier.name.text, (specifier.propertyName ?? specifier.name).text)
+    }
+  }
+
+  return imported
+}
+
+/** Vrai si `options` est un littéral objet qui porte `flush: 'post'` (une variable d'options n'est pas lue). */
+function isPostedOptions(options: ts.Expression | undefined): boolean {
+  if (undefined === options || !ts.isObjectLiteralExpression(options)) {
+    return false
+  }
+
+  return options.properties.some(
+    (property) =>
+      ts.isPropertyAssignment(property) &&
+      (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) &&
+      'flush' === property.name.text &&
+      ts.isStringLiteralLike(property.initializer) &&
+      'post' === property.initializer.text,
+  )
+}
+
+/**
+ * Le texte du *callee* de chaque appel qui s'exécute après le rendu d'un composant, dans l'ordre du source :
+ *
+ * - les appels écrits dans une fonction passée à un hook différé, fonctions imbriquées comprises
+ *   (`onMounted(() => { a(); x.y() })` donne `['a', 'x.y']`) ;
+ * - le nom passé **par référence** à un tel hook (`onMounted(load)` donne `['load']`, `onMounted(page.load)` donne `['page.load']`),
+ *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`).
+ *
+ * Les hooks différés sont `onMounted`, `nextTick`, `watchPostEffect`, `watch` et `watchEffect` quand leurs options portent
+ * `flush: 'post'`, puis `setTimeout`, `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`, `globalThis`,
+ * `self`). Les hooks de `vue` se lisent sous le nom que leur importation leur donne (`import { onMounted as whenMounted }
+ * from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est lu tel qu'il est écrit, pour qu'une source
+ * sans importation (un fichier de test) se lise de même. Seul l'argument qui est le rappel est lu : le délai d'un
+ * `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
+ *
+ * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`), une
+ * option d'un `watch` passée par une variable, un module importé en espace de noms (`Vue.onMounted(…)`), une fonction déclarée
+ * dans le fichier et passée par référence (vue par son nom seul, non par ce qu'elle appelle).
+ */
+export function deferredCallsOf(source: string): string[] {
   const file = syntaxTreeOf(source)
+  const imported = vueImportsOf(file)
   const callees: string[] = []
 
+  /** Le hook différé que `call` pose, ou `null` : son nom est lu par l'importation, puis `window.` ou `globalThis.` des minuteurs. */
+  const hookOf = (call: ts.CallExpression): DeferredHook | null => {
+    const callee = call.expression
+    let name: string | null = null
+    if (ts.isIdentifier(callee)) {
+      name = imported.get(callee.text) ?? callee.text
+    } else if (
+      ts.isPropertyAccessExpression(callee) &&
+      ts.isIdentifier(callee.expression) &&
+      GLOBAL_OBJECTS.has(callee.expression.text) &&
+      GLOBAL_DEFERRALS.has(callee.name.text)
+    ) {
+      name = callee.name.text
+    }
+    const hook = null === name ? undefined : DEFERRED_HOOKS.get(name)
+    if (undefined === hook || (true === hook.postedOnly && !isPostedOptions(call.arguments[hook.options ?? -1]))) {
+      return null
+    }
+
+    return hook
+  }
+
+  /** Le rappel d'un hook, s'il est écrit comme une fonction ou comme une référence (`undefined` sinon : un appel n'est pas un rappel). */
+  const callbackOf = (call: ts.CallExpression, hook: DeferredHook): ts.Expression | undefined => call.arguments[hook.callback]
+  const isReference = (node: ts.Expression): boolean => ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)
+  const isFunction = (node: ts.Expression): boolean => ts.isArrowFunction(node) || ts.isFunctionExpression(node)
+
+  // Tout appel écrit dans la fonction d'un hook, y compris ceux d'un hook qu'elle pose à son tour (dont la référence compte).
   const collect = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       callees.push(node.expression.getText(file))
+      const hook = hookOf(node)
+      const callback = null === hook ? undefined : callbackOf(node, hook)
+      if (undefined !== callback && isReference(callback)) {
+        callees.push(callback.getText(file))
+      }
     }
     ts.forEachChild(node, collect)
   }
 
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && hook === node.expression.text) {
-      for (const argument of node.arguments) {
-        if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) {
-          collect(argument.body)
-        }
-      }
+    if (ts.isCallExpression(node)) {
+      const hook = hookOf(node)
+      const callback = null === hook ? undefined : callbackOf(node, hook)
+      if (undefined !== callback && isFunction(callback)) {
+        collect((callback as ts.ArrowFunction | ts.FunctionExpression).body)
 
-      return
+        return
+      }
+      if (undefined !== callback && isReference(callback)) {
+        callees.push(callback.getText(file))
+
+        return
+      }
     }
     ts.forEachChild(node, visit)
   }
   visit(file)
 
   return callees
+}
+
+/**
+ * Les noms locaux liés à l'une des `keys` par une déstructuration d'objet (`const { load: refresh } = useX()` donne
+ * `refresh` pour la clé `load`) : une liaison de l'arbre (`BindingElement` d'un `ObjectBindingPattern`, sa `propertyName`),
+ * non un texte `load: x` — un type (`{ load: () => void }`), un littéral objet ou une chaîne n'en créent pas. Une clé gardée
+ * sous son nom (`const { load } = …`) n'a pas d'alias. Un alias posé par une affectation (`const refresh = load`) n'est pas lu.
+ */
+export function destructuredAliasesOf(source: string, keys: readonly string[]): Set<string> {
+  const aliases = new Set<string>()
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBindingElement(node) &&
+      ts.isObjectBindingPattern(node.parent) &&
+      undefined !== node.propertyName &&
+      (ts.isIdentifier(node.propertyName) || ts.isStringLiteral(node.propertyName)) &&
+      keys.includes(node.propertyName.text) &&
+      ts.isIdentifier(node.name)
+    ) {
+      aliases.add(node.name.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(syntaxTreeOf(source))
+
+  return aliases
 }
