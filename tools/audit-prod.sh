@@ -67,8 +67,12 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 audit_with_basic_auth=0   # 1 si l'audit porte la Basic Auth (préprod) : l'indice du 401 de la section 3 en dépend
 if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+  # Le dossier se calcule sans `dirname` : la variable est encore exportée ici (la bibliothèque la retire dès qu'elle la
+  # lit), aucun processus ne doit être lancé avant (C13-5). `cd` et `pwd` sont des commandes internes de bash.
+  _audit_dir="${BASH_SOURCE[0]}"
+  case "$_audit_dir" in */*) _audit_dir="${_audit_dir%/*}" ;; *) _audit_dir=. ;; esac
   # shellcheck source=tools/lib/smoke-http.sh
-  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
+  source "$(cd "$_audit_dir" && pwd)/lib/smoke-http.sh" || {
     echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
     exit 2
   }

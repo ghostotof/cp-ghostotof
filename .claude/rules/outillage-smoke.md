@@ -16,10 +16,11 @@ paths:
 The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
 It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
 `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
-The file writer `_smoke_write_auth_config` is private (R148): nothing outside the library calls it.
+The file writer `_smoke_write_auth_config` is private (R148): only `smoke_use_auth_config` calls it; the test calls it too, for its cases.
 The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
 The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
-Once the file is written the variable is no longer exported (`export -n`): curl, dig and openssl started later do not receive it.
+As soon as the value is read, before any validation and before the `mktemp`, the variable is no longer exported (`export -n`, C13-5):
+no process started afterwards (`mktemp`, curl, dig, openssl) receives it, whatever the value, a refused one included.
 `export -n` does not wipe the shell's own copy of its environment, which `/proc/<pid>/environ` still shows (R148b).
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
@@ -52,13 +53,26 @@ With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 «
 `--proto =https` holds whatever the abbreviation: it is what closes the scheme, the refusals above close the rest.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
 outside the library's `set +x`).
-The library's header is the only place that names the variable and lists every refused value; the scripts' `Env :` headers point to it.
+It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
+still exported there, and no process may start before the library removes the export.
+Its offline test records the environment of a fake `dirname`.
+Of the audit, the smokes and the library, the library's header is the only file that describes the variable
+and lists every refused value. This rule names it too, and the scripts' `Env :` headers point to the header.
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
 The first: the word `AUDIT_BASIC_AUTH` appears only as `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
-The second: no line lists the environment or reads a variable by name: `declare -p`, `printenv`, `env`, bare `set`, `export -p`, `${!`.
-The second guard also covers the library, except the body of `_smoke_write_auth_config`, the only reader of the value.
-Its one reading by name is allowed there; a line that reads `/proc/…/environ` (`self`, `$$`, a pid) is refused everywhere (R148b).
-Each guard is proven on altered copies of a script: every bypass is refused, its neighbours (`set -e`, `set +x`, `environment`) pass.
+The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth review).
+It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options only: `declare -x`)
+and, with a `p` option, `declare -p`, `export -p`; `declare`, `typeset` and `local` with an `n` option (a nameref reads a variable by name);
+`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` bare or followed by a redirection or a pipe; `eval`; `printenv`;
+`env` as a command; `${!`; `ps` with an option that carries `e` (`ps e`, `ps eww`, `ps -ef`); and the word `environ`,
+however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b).
+`export -n -- NAME`, `readonly LIMIT=3`, `local name="$1"`, `set -e`, `set +x`, `x="${env}"` and `environment` pass.
+**The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
+`_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
+and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence) is rephrased.
+Limit: the guard aims at good-faith slips (a debug trace left behind). A list of patterns is never complete against a
+deliberate bypass, which the review of the diff stops; « no line lists the environment » holds under that limit only.
+Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`

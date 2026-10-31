@@ -31,14 +31,15 @@
 # mettent un faux) : un seul nom, lu ici seulement.
 #
 # La Basic Auth d'un appelant se lit dans une variable que ses scripts nomment AUDIT_BASIC_AUTH :
-# ce fichier est le seul à citer ce nom (l'audit et les trois smokes l'écrivent en deux formes
-# seulement, voir tools/tests/smoke-http.test.sh). Valeurs refusées, sortie 2, jamais citées :
+# de l'audit, des smokes et de cette bibliothèque, ce fichier est le seul à la décrire (l'audit et les trois
+# smokes ne l'écrivent qu'en deux formes, voir tools/tests/smoke-http.test.sh ; la règle
+# .claude/rules/outillage-smoke.md la nomme aussi). Valeurs refusées, sortie 2, jamais citées :
 #   - une valeur avec un retour à la ligne ou un CR (elle ouvrirait une directive du fichier `-K`) ;
 #   - une valeur non vide sans « : » (des blancs compris) ;
 #   - un utilisateur ou un mot de passe vide, ou fait seulement de blancs (`:`, `:p`, `u:`, ` :p`, `u: `) ;
 #   - une variable définie mais vide (le secret de préprod manquant) : « secret de Basic Auth vide ».
-# Une variable non définie n'envoie aucune Basic Auth (la prod, un smoke local). Une fois le fichier
-# écrit, la variable n'est plus exportée : aucun processus lancé ensuite (curl, dig, openssl) ne la reçoit.
+# Une variable non définie n'envoie aucune Basic Auth (la prod, un smoke lancé à la main). Dès qu'elle est lue,
+# la variable n'est plus exportée : aucun processus lancé ensuite (mktemp, curl, dig, openssl) ne la reçoit.
 # Cela n'efface pas la valeur du processus lui-même : sa copie d'environnement, lisible sous /proc, la porte
 # encore. Aucune ligne de l'audit, des smokes ni de cette bibliothèque ne lit cette copie (R148b, garde de
 # tools/tests/smoke-http.test.sh).
@@ -86,7 +87,7 @@ _smoke_is_variable_name() {
 
 # _smoke_write_auth_config <nom d'une variable valant "utilisateur:mot_de_passe">
 #
-# Privée : smoke_use_auth_config est la seule à l'appeler (St12-14). Écrit le fichier de
+# Privée : seule smoke_use_auth_config l'appelle (St12-14) ; le test l'appelle aussi, pour ses cas. Écrit le fichier de
 # configuration curl (`-K`) qui porte la Basic Auth, dans un
 # dossier privé (`mktemp -d`, 0700) sous TMPDIR, fichier en 600 (`umask 077`) :
 # SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG reçoivent les deux chemins, rien n'est
@@ -99,7 +100,7 @@ _smoke_is_variable_name() {
 # Une variable vide ou absente : retour 0, aucun dossier, SMOKE_AUTH_CONFIG vide. C'est à
 # l'appelant de juger ce vide : smoke_use_auth_config l'arrête (sortie 2) quand la
 # variable est définie, une variable absente n'envoie aucune Basic Auth (la prod, un
-# smoke local). La valeur n'est lue que sous `set +x`.
+# smoke lancé à la main). La valeur n'est lue que sous `set +x`.
 #
 # Le nom est un identifiant (`[A-Za-z_][A-Za-z0-9_]*`), jamais une expression :
 # l'indirection évalue un indice, `x[$(commande)]` exécuterait la commande (C7-7). Il ne
@@ -129,8 +130,9 @@ _smoke_is_variable_name() {
 # l'appel de tête retire est ce que la bibliothèque a créé elle-même : les variables
 # sont vides à la source, un dossier hérité de l'environnement n'est jamais visé.
 #
-# Une fois le fichier écrit, la variable perd son attribut d'export (`export -n`, C12-10) : la
-# valeur reste lisible dans le shell, mais ni curl, ni dig, ni openssl, lancés ensuite, ne la reçoivent.
+# Dès la lecture, avant toute validation et tout `mktemp`, la variable perd son attribut d'export (`export -n`,
+# C12-10, C13-5), pour toute valeur lue, refusée comprise : la valeur reste lisible dans le shell, mais aucun
+# processus lancé ensuite (le `mktemp -d` de cette fonction, curl, dig, openssl) ne la reçoit.
 #
 # Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
 # leur `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup' EXIT`) puis écrivent
@@ -148,6 +150,9 @@ _smoke_write_auth_config() {
   case "$-" in *x*) _smoke_traced=1 ;; esac
   set +x
   _smoke_value="${!_smoke_name:-}"
+  # L'export se retire par le nom reçu, c'est voulu : SC2163 y voit une faute de frappe.
+  # shellcheck disable=SC2163
+  export -n -- "$_smoke_name"
   if [[ "$_smoke_value" == *$'\n'* || "$_smoke_value" == *$'\r'* ]]; then
     echo "$_smoke_name contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
     _smoke_rc=2
@@ -166,11 +171,6 @@ _smoke_write_auth_config() {
       _smoke_value="${_smoke_value//\\/\\\\}"
       _smoke_value="${_smoke_value//\"/\\\"}"
       printf 'user = "%s"\n' "$_smoke_value" > "$SMOKE_AUTH_CONFIG" || { smoke_cleanup; _smoke_rc=2; }
-    fi
-    if [ "$_smoke_rc" -eq 0 ]; then
-      # L'export se retire par le nom reçu, c'est voulu : SC2163 y voit une faute de frappe.
-      # shellcheck disable=SC2163
-      export -n -- "$_smoke_name"
     fi
     umask "$_smoke_umask"
   fi

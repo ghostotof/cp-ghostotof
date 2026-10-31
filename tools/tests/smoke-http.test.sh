@@ -848,36 +848,51 @@ for indent in '    ' $'\t'; do
   fi
 done
 
-# --- Garde des vidages d'environnement (C12-2) : aucune ligne de l'audit, des trois smokes ni de la
-# bibliothèque (hors le corps de _smoke_write_auth_config, seul lecteur de la valeur) n'énumère l'environnement
-# ou ne lit une variable par son nom : `declare -p`, `printenv`, `env`, `set` seul ou redirigé, `export -p`,
-# `${!…}`. Un motif ancré sur des limites de mot : `environment`, `set -e`, `set +x` passent.
+# --- Garde des vidages d'environnement (C12-2, D3 de la treizième relecture) : aucune ligne de l'audit, des trois
+# smokes ni de la bibliothèque n'énumère l'environnement ni ne lit une variable par son nom. Refusés :
+#   - `declare`, `typeset`, `local`, `export`, `readonly` **sans nom** (seuls, ou suivis d'options seules : `declare -x`,
+#     `export -n`), qui listent ; avec une option `p` ; `declare`, `typeset`, `local` avec une option `n` (une référence de
+#     nom, `declare -n ref=X`, qui lit X par son nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ;
+#   - `compgen` avec `-v`, `-e`, `-A variable` ou `-A export` ; `set` seul, ou suivi d'une redirection ou d'un tube ;
+#   - `eval`, `printenv`, `env` (la commande : `"${env}"` n'en est pas une), `${!…}` ;
+#   - `ps` dont une option porte `e` (`ps e`, `ps eww`, `ps -ef`) ;
+#   - le mot `environ` (`/proc/<pid>/environ` écrit de toute façon : `cd /proc/self && cat environ`, `"$p/environ"`) ;
+#     `environment` passe.
+# Chaque ligne est lue, commentaires et heredocs compris. Un motif ancré sur des limites de mot : `set -e`, `set +x` passent.
+# **L'exemption est une ligne** : `  _smoke_value="${!_smoke_name:-}"`, comparée par égalité, dans le corps de
+# _smoke_write_auth_config ; tout autre ajout dans ce corps est jugé comme ailleurs.
+# **Limite écrite** : la garde vise les fautes de bonne foi (une trace de débogage oubliée). Une liste de motifs n'est jamais
+# complète contre un contournement délibéré (`eval` d'un nom composé, un `bash -c` dont la chaîne est assemblée) : celui-là
+# est arrêté par la relecture du diff, pas par ce test.
 env_dump_lines() {
   local file="$1" n=0 line in_reader=0
+  local word_before='(^|[^[:alnum:]_.-])'
+  local list_end='([[:space:]]+-[[:alnum:]]+)*[[:space:]]*($|[;&|)#]|[0-9]*[<>])'
+  local pat_bare="${word_before}(declare|typeset|local|readonly|export)${list_end}"
   local pat_listing='(^|[^[:alnum:]_])(declare|typeset|local|readonly|export)[[:space:]]+-[[:alpha:]]*p'
+  local pat_nameref='(^|[^[:alnum:]_])(declare|typeset|local)[[:space:]]+-[[:alpha:]]*n'
+  local pat_compgen="${word_before}compgen[[:space:]]+(-[[:alpha:]]*[ve]|-A[[:space:]]+(variable|export))"
+  local pat_eval='(^|[^[:alnum:]_.-])eval([^[:alnum:]_-]|$)'
   local pat_printenv='(^|[^[:alnum:]_.-])printenv([^[:alnum:]_]|$)'
-  local pat_env='(^|[^[:alnum:]_.$-])env([^[:alnum:]_]|$)'
-  local pat_set='(^|[;&|(`{]|\$\()[[:space:]]*set[[:space:]]*($|[|>;&)])'
+  local pat_env='(^|[^[:alnum:]_.${-])env([^[:alnum:]_]|$)'
+  local pat_set='(^|[;&|(`{]|\$\()[[:space:]]*set[[:space:]]*($|[|>;&)#]|[0-9]*[<>])'
+  local pat_ps="${word_before}ps[[:space:]]+(-?[[:alpha:]]*e[[:alpha:]]*([[:space:]]|\$)|([^[:space:]]+[[:space:]]+)*-[[:alpha:]]*e)"
   local pat_indirect='\$\{!'
-  # R148b : `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore.
-  local pat_proc_environ='/proc/[^[:space:]]*environ([^[:alnum:]_]|$)'
+  # `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore (R148b).
+  local pat_environ='(^|[^[:alnum:]_])environ([^[:alnum:]_]|$)'
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     # La ligne d'interpréteur n'est pas un appel d'`env`.
     if [ "$n" -eq 1 ] && [[ "$line" == '#!'* ]]; then continue; fi
-    # Le corps de _smoke_write_auth_config, seul lecteur de la valeur, lit par indirection.
-    # /proc/…/environ n'a aucune excuse, pas même dans le corps du lecteur : jugé avant son exemption.
-    if [[ "$line" =~ $pat_proc_environ ]]; then
-      printf '%s:%s\n' "$n" "$line"
-      continue
-    fi
     if [ "$line" = '_smoke_write_auth_config() {' ]; then in_reader=1; fi
     if [ "$in_reader" -eq 1 ]; then
       if [ "$line" = '}' ]; then in_reader=0; fi
-      continue
+      # La seule exemption : la lecture de la valeur par son nom, dans le corps du lecteur.
+      if [ "$line" = '  _smoke_value="${!_smoke_name:-}"' ]; then continue; fi
     fi
-    if [[ "$line" =~ $pat_listing || "$line" =~ $pat_printenv || "$line" =~ $pat_env \
-          || "$line" =~ $pat_set || "$line" =~ $pat_indirect ]]; then
+    if [[ "$line" =~ $pat_bare || "$line" =~ $pat_listing || "$line" =~ $pat_nameref || "$line" =~ $pat_compgen \
+          || "$line" =~ $pat_eval || "$line" =~ $pat_printenv || "$line" =~ $pat_env || "$line" =~ $pat_set \
+          || "$line" =~ $pat_ps || "$line" =~ $pat_indirect || "$line" =~ $pat_environ ]]; then
       printf '%s:%s\n' "$n" "$line"
     fi
   done < "$file"
@@ -911,6 +926,48 @@ dump_forbidden=(
   $'cat <<\'EOT\'\n/proc/self/environ\nEOT'
   $'cat <<\'EOT\'\n# declare -p SOME_NAME\nEOT'
   '# printenv, dit en commentaire'
+  # D3 : les listes nues, sans option `p`.
+  'declare'
+  'typeset'
+  'local'
+  'export'
+  'readonly'
+  'declare -x'
+  'typeset -x'
+  'export -n'
+  'declare -a'
+  'declare | grep SOME'
+  'export; echo fin'
+  'declare 2>/dev/null'
+  'declare -x # liste des exportées'
+  # D3 : une référence qui lit une variable par son nom.
+  'declare -n ref=SOME_NAME'
+  'local -n ref=SOME_NAME'
+  'typeset -n ref=SOME_NAME'
+  'declare -rn ref=SOME_NAME'
+  # D3 : l'énumération des noms et l'évaluation.
+  'compgen -v'
+  'compgen -e'
+  'compgen -ve'
+  'compgen -A export'
+  'compgen -A variable'
+  'set 2>/dev/null'
+  'set 2>&1 | grep SOME'
+  'set <<< x'
+  'eval "v=\$$n"'
+  'eval echo x'
+  'x=$(eval echo "\$$n")'
+  # D3 : les processus et /proc écrit autrement.
+  'ps e'
+  'ps eww -p $$'
+  'ps -ef'
+  'ps -p $$ -e'
+  'ps auxe'
+  'cd /proc/self && cat environ'
+  'cat "/proc"/self/environ'
+  'p=/proc/self; cat "$p/environ"'
+  'cat environ'
+  'xargs -0 -n1 < environ'
 )
 for line in "${dump_forbidden[@]}"; do
   if [ -n "$(mutant_dump "$line")" ]; then
@@ -935,6 +992,23 @@ dump_allowed=(
   'cat /proc/self/cmdline'
   'echo /proc/self/environment'
   'echo "a pour valeur $env_name"'
+  # D3 : le faux positif `${env}` (le `{` précède `env`) et les déclarations qui n'énumèrent rien.
+  'x="${env}"'
+  'echo "${env}"'
+  'local name="$1"'
+  'local name'
+  'export -n -- "$n"'
+  'readonly LIMIT=3'
+  'declare -a list=()'
+  'declare -A table'
+  'declare -x SOME_NAME=1'
+  'echo environment'
+  'set -e'
+  'set +x'
+  'compgen -d'
+  'compgen -f -- "$prefix"'
+  'ps -p $$ -o comm='
+  'echo "declare keyword."'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
@@ -943,8 +1017,8 @@ for line in "${dump_allowed[@]}"; do
     fail "garde des vidages : voisin refusé à tort" "$line : $(mutant_dump "$line")"
   fi
 done
-# Les cinq fichiers réels n'en portent aucun ; la bibliothèque lit la valeur par indirection dans
-# _smoke_write_auth_config seulement : la même ligne ailleurs dans la bibliothèque est refusée.
+# Les cinq fichiers réels n'en portent aucun ; la bibliothèque lit la valeur par indirection par la seule ligne
+# exemptée de _smoke_write_auth_config : une indirection ailleurs dans la bibliothèque est refusée.
 dump_found=""
 for file in audit-prod.sh smoke-dead-session-cookie.sh smoke-login-throttling.sh smoke-mcp.sh lib/smoke-http.sh; do
   dump_found+="$(env_dump_lines "$TOOLS_DIR/$file" | sed "s|^|$file:|")"$'\n'
@@ -962,7 +1036,7 @@ else
   fail "indirection hors de la fonction" "la garde ne voit rien"
 fi
 
-# R148b : la lecture de /proc/<pid>/environ est refusée aussi dans le corps du lecteur, exempté des autres motifs.
+# R148b : la lecture de /proc/<pid>/environ est refusée dans le corps du lecteur comme partout (D3 : l'exemption est une ligne).
 cp "$LIB" "$TMP/mutant-lib.sh"
 sed 's|^  _smoke_value="${!_smoke_name:-}"$|&\n  : < /proc/self/environ|' "$LIB" > "$TMP/mutant-lib.sh"
 if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ] && grep -q '^  : < /proc/self/environ$' "$TMP/mutant-lib.sh"; then
@@ -970,6 +1044,76 @@ if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ] && grep -q '^  : < /proc/self
 else
   fail "/proc/environ dans le lecteur" "la garde ne voit rien"
 fi
+
+# D3 : l'exemption du lecteur est sa seule ligne de lecture par nom. Ce qu'on ajoute dans le corps de
+# _smoke_write_auth_config est jugé comme partout ailleurs ; la ligne de lecture hors du lecteur est refusée.
+reader_read='  _smoke_value="${!_smoke_name:-}"'
+reader_added=(
+  'printenv'
+  'declare -p _smoke_name'
+  'declare'
+  'compgen -v'
+  'set 2>/dev/null'
+  'eval "echo x"'
+  'ps eww -p $$'
+  'cat environ'
+)
+for line in "${reader_added[@]}"; do
+  python3 -I - "$LIB" "$TMP/mutant-lib.sh" "$reader_read" "  $line" <<'PY'
+import sys
+src, dst, anchor, added = sys.argv[1:5]
+lines = open(src).read().split('\n')
+out = []
+for text in lines:
+    out.append(text)
+    if text == anchor:
+        out.append(added)
+open(dst, 'w').write('\n'.join(out))
+PY
+  if grep -qxF -- "  $line" "$TMP/mutant-lib.sh" && [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ]; then
+    pass "garde des vidages : « $line » ajouté dans le corps de _smoke_write_auth_config est refusé"
+  else
+    fail "vidage dans le lecteur : $line" "la garde ne voit rien"
+  fi
+done
+cp "$LIB" "$TMP/mutant-lib.sh"
+printf '%s\n' 'other_reader() {' "$reader_read" '}' >> "$TMP/mutant-lib.sh"
+if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ]; then
+  pass "garde des vidages : la ligne de lecture par nom hors de _smoke_write_auth_config est refusée"
+else
+  fail "ligne de lecture hors du lecteur" "la garde ne voit rien"
+fi
+
+# --- C13-5 : la variable perd son export dès sa lecture, avant le premier processus fils (`mktemp -d`) :
+# un faux `mktemp` qui écrit son environnement dans un fichier ne doit pas la voir ; une valeur refusée non plus.
+real_mktemp="$(command -v mktemp)"
+mkdir "$TMP/fake-mktemp-bin"
+printf '%s\n' '#!/bin/sh' 'env > "$MKTEMP_ENV_OUT"' "exec $real_mktemp \"\$@\"" > "$TMP/fake-mktemp-bin/mktemp"
+chmod +x "$TMP/fake-mktemp-bin/mktemp"
+exported_auth="$(generated_basic_auth)"
+UNE_AUTH="$exported_auth"
+export UNE_AUTH
+rc=0
+MKTEMP_ENV_OUT="$TMP/mktemp-env.txt" PATH="$TMP/fake-mktemp-bin:$PATH" smoke_use_auth_config UNE_AUTH || rc=$?
+if [ "$rc" -eq 0 ] && [ -s "$TMP/mktemp-env.txt" ] && ! grep -q '^UNE_AUTH=' "$TMP/mktemp-env.txt" \
+   && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$exported_auth\"" ]; then
+  pass "smoke_use_auth_config : le mktemp lancé pendant l'écriture ne reçoit pas la variable"
+else
+  fail "export retiré trop tard" "rc=$rc ; mktemp la voit : $(grep -c '^UNE_AUTH=' "$TMP/mktemp-env.txt" || true)"
+fi
+smoke_cleanup
+unset UNE_AUTH
+UNE_AUTH="sansdeuxpoints"
+export UNE_AUTH
+rc=0
+smoke_use_auth_config UNE_AUTH 2>/dev/null || rc=$?
+if [ "$rc" -eq 2 ] && ! bash -c '[[ -v UNE_AUTH ]]'; then
+  pass "smoke_use_auth_config : une valeur refusée n'est plus exportée non plus"
+else
+  fail "valeur refusée encore exportée" "rc=$rc ; fils : $(bash -c '[[ -v UNE_AUTH ]] && echo la_voit || echo ne_la_voit_pas')"
+fi
+smoke_cleanup
+unset UNE_AUTH exported_auth real_mktemp
 
 # --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.
 mkdir "$TMP/bin"; cp "$TMP/curl" "$TMP/bin/curl"

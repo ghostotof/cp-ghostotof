@@ -147,6 +147,24 @@ else
   fail "fichier -K laissé" "$(ls -A "$TMP/nominal.tmpdir")"
 fi
 
+# --- C13-5 : aucun processus n'est lancé avant que la bibliothèque retire l'export de la variable. Un faux
+# `dirname` note son environnement : les appels qui suivent la bibliothèque (ses `source` voisins) y figurent, sans la
+# variable ; un `dirname` lancé avant le `source` la porterait.
+real_dirname="$(command -v dirname)"
+printf '%s\n' '#!/bin/sh' 'env >> "$FAKE_DIRNAME_ENV"' "exec $real_dirname \"\$@\"" > "$TMP/bin/dirname"
+chmod +x "$TMP/bin/dirname"
+: > "$TMP/dirname-env.txt"
+copy_tools dirname reelle
+FAKE_DIRNAME_ENV="$TMP/dirname-env.txt" AUDIT_BASIC_AUTH='u:p' run_audit dirname
+rm -f "$TMP/bin/dirname"
+if [ -s "$TMP/dirname-env.txt" ] && ! grep -q '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt"; then
+  pass "audit : aucun dirname ne reçoit la Basic Auth (le dossier de la bibliothèque se calcule sans processus)"
+else
+  fail "dirname avant la bibliothèque" \
+    "$(grep -c '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt" || true) environnement(s) la portent ; \
+fichier vide : $([ -s "$TMP/dirname-env.txt" ] && echo non || echo oui)"
+fi
+
 # --- C7-8 : le fichier -K naît dans un dossier privé propre à la bibliothèque, sous
 # TMPDIR (pas directement dedans), et ce dossier disparaît à la sortie : aucun
 # répertoire de la bibliothèque n'est laissé dans TMPDIR.
