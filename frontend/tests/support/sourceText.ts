@@ -1,3 +1,4 @@
+import { isFnExpressionBrowser, isMemberExpressionBrowser, NodeTypes, type ExpressionNode } from '@vue/compiler-dom'
 import ts from 'typescript'
 import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
 
@@ -10,17 +11,20 @@ import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
  * (`` /`([^`]+)`/ ``, `/filename="?([^";]+)"?/`) n'ouvre ni gabarit, ni chaîne, ni commentaire. Un `.vue` passe d'abord
  * par `scriptOf`, qui n'en garde que les blocs `<script>` (le `<template>` n'est pas du JavaScript : son apostrophe ou
  * son `//` ne doivent rien ouvrir) ; les expressions de ce gabarit (directives, gestionnaires en ligne, interpolations)
- * et ses valeurs d'attributs statiques se lisent à part, par `templateExpressionsOf`, qui rend chacune comme le fragment
- * JavaScript que Vue en compile. Les fins de ligne (`\r` compris) d'un commentaire ou d'un bloc écarté
- * sont gardées : une position ou un numéro de ligne reste celui de la source.
+ * et ses valeurs d'attributs statiques se lisent à part, par `templateFragmentsOf`, qui rend chacune comme le fragment
+ * JavaScript que Vue en compile : le type d'un nœud (`NodeTypes`) et le jugement d'un `v-on` (`isMemberExpressionBrowser`,
+ * `isFnExpressionBrowser`) viennent de `@vue/compiler-dom`, déclaré en `devDependencies` au même intervalle que `vue`.
+ * Les fins de ligne (`\r` compris) d'un commentaire ou d'un bloc écarté sont gardées : une position ou un numéro de
+ * ligne reste celui de la source.
  *
  * Qui l'appelle : `srcSources.ts` lit une fois les fichiers de `src/` pour `noOmittedCredentials.spec.ts` et
  * `sessionStateEncapsulation.spec.ts`.
  * `noLoadInOnMounted.spec.ts` lit, par `callsInsideHook`, les appels écrits dans un `onMounted` des pages du backoffice.
  *
- * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…) et de
- * celle de `vue/compiler-sfc` (`parse`). Un passage à TypeScript 7 (le portage natif) la changera : les gardes
- * rougiront alors bruyamment (une importation qui échoue), jamais en silence.
+ * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…), de
+ * celle de `vue/compiler-sfc` (`parse`) et de celle de `@vue/compiler-dom` (`NodeTypes`, `isMemberExpressionBrowser`…).
+ * Un passage à TypeScript 7 (le portage natif) change la première : les gardes rougiront alors bruyamment (une importation
+ * qui échoue), jamais en silence.
  *
  * Une chaîne non terminée est lue comme TypeScript la lit ; `vue-tsc` refuse ce code (`make front-build`), il n'est
  * jamais livré.
@@ -119,7 +123,7 @@ export function scriptOf(path: string, source: string): string {
   return code
 }
 
-/** La racine du gabarit, telle que `vue/compiler-sfc` la type (`@vue/compiler-core` n'est pas une dépendance du dépôt). */
+/** La racine du gabarit, telle que `vue/compiler-sfc` la type. */
 export type TemplateRoot = NonNullable<SFCTemplateBlock['ast']>
 type TemplateChild = TemplateRoot['children'][number]
 type TemplateElement = Extract<TemplateChild, { props: unknown[] }>
@@ -133,7 +137,7 @@ type TemplateExpression = NonNullable<TemplateDirective['exp']>
  * gabarit ; un `.vue` illisible est refusé comme par `scriptOf`, et un `<template>` sans arbre (`lang="pug"`, `src`) aussi :
  * le lire `[]` le laisserait sans garde. Chaque fragment se lit ensuite avec `stringLiterals`.
  */
-export function templateExpressionsOf(path: string, source: string): string[] {
+export function templateFragmentsOf(path: string, source: string): string[] {
   if (!path.endsWith('.vue')) {
     return []
   }
@@ -156,15 +160,23 @@ export function templateExpressionsOf(path: string, source: string): string[] {
 /**
  * Comment Vue lit la valeur d'une directive, pour que TypeScript la lise de la même façon :
  *
- * - `v-on` sans argument (`v-on="{ click: a }"`) est une expression ; avec un argument, une expression si `(texte)` se lit
- *   sans erreur de syntaxe (gestionnaire, fonction, chemin de membre, appel), sinon un corps de fonction (`a(); b()`) ;
+ * - `v-on` sans argument (`v-on="{ click: a }"`) est une expression ; avec un argument, la règle de `vOn` de Vue 3.5 : une
+ *   expression si Vue juge le texte un chemin de membre (`isMemberExpressionBrowser`) ou une fonction
+ *   (`isFnExpressionBrowser`), sinon une instruction en ligne, que Vue enveloppe dans une fonction de `$event` : un corps de
+ *   fonction si le texte contient un `;` (`a(); b()`), une expression entre parenthèses sinon (`{ credentials: 'omit' }`, `b()`) ;
  * - un paramètre de `v-slot` est un paramètre de fonction (`{ a = 1 }` y est un motif de déstructuration, non un bloc) ;
  * - toute autre directive est une expression (`{ credentials: 'omit' }` y est un littéral objet, non un bloc étiqueté).
  */
-function wrapperOf(directive: TemplateDirective): (text: string) => string {
+function wrapperOf(directive: TemplateDirective): (text: string, node: ExpressionNode) => string {
   switch (directive.name) {
     case 'on':
-      return (text) => (undefined === directive.arg || 0 === syntaxErrorsOf(asExpression(text)).length ? asExpression(text) : asBody(text))
+      return (text, node) => {
+        if (undefined === directive.arg || isMemberExpressionBrowser(node) || isFnExpressionBrowser(node)) {
+          return asExpression(text)
+        }
+
+        return text.includes(';') ? asBody(text) : asHandler(text)
+      }
     case 'slot':
       return asParameter
     default:
@@ -174,7 +186,8 @@ function wrapperOf(directive: TemplateDirective): (text: string) => string {
 
 const asExpression = (text: string): string => `(${text})`
 const asParameter = (text: string): string => `(${text}) => 0`
-const asBody = (text: string): string => `() => {\n${text}\n}`
+const asHandler = (text: string): string => `($event) => (${text})`
+const asBody = (text: string): string => `($event) => {\n${text}\n}`
 
 /**
  * Les fragments JavaScript d'un gabarit déjà lu, dans l'ordre du document : la valeur de chaque directive (écrite par
@@ -187,10 +200,10 @@ const asBody = (text: string): string => `() => {\n${text}\n}`
 export function fragmentsOfTemplateAst(root: TemplateRoot): string[] {
   const fragments: string[] = []
 
-  const read = (expression: TemplateExpression | undefined, wrap: (text: string) => string): void => {
+  const read = (expression: TemplateExpression | undefined, wrap: (text: string, node: ExpressionNode) => string): void => {
     // Une expression composée (`CompoundExpressionNode`) naît de la transformation, jamais de l'analyse : seul le texte source compte.
     if (undefined !== expression && 'content' in expression && 'string' === typeof expression.content) {
-      fragments.push(wrap(expression.content))
+      fragments.push(wrap(expression.content, expression))
     }
   }
 
@@ -221,8 +234,8 @@ export function fragmentsOfTemplateAst(root: TemplateRoot): string[] {
         }
       }
     }
-    // Une interpolation (type 5) porte son expression dans `content` (un nœud) ; un nœud de texte, dans `content` (une chaîne).
-    if ('type' in node && 5 === node.type && 'content' in node && null !== node.content) {
+    // Une interpolation porte son expression dans `content` (un nœud) ; un nœud de texte, dans `content` (une chaîne).
+    if ('type' in node && NodeTypes.INTERPOLATION === node.type && 'content' in node && null !== node.content) {
       read(node.content, asExpression)
     }
     if ('children' in node) {

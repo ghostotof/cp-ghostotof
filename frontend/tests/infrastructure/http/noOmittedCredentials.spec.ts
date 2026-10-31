@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { scriptOf, stringLiterals, syntaxErrorsOf, templateExpressionsOf } from '../../support/sourceText'
-import { SRC_SCRIPTS, SRC_TEMPLATE_EXPRESSIONS } from '../../support/srcSources'
+import { scriptOf, stringLiterals, syntaxErrorsOf, templateFragmentsOf } from '../../support/sourceText'
+import { SRC_SCRIPTS, SRC_TEMPLATE_FRAGMENTS } from '../../support/srcSources'
 
 /**
  * Garde de source (#748, R37, R51) : aucun fichier de `src/` n'écrit une chaîne `'omit'` hors d'un commentaire.
@@ -41,7 +41,7 @@ function writesOmit(literals: readonly string[]): boolean {
 
 /** Les littéraux lus de chaque fichier de `src/`, par chemin relatif à `src/`. */
 const literalsByFile = Object.fromEntries(
-  Object.entries(SRC_SCRIPTS).map(([path, script]) => [path, literalsOf(script, SRC_TEMPLATE_EXPRESSIONS[path] ?? [])]),
+  Object.entries(SRC_SCRIPTS).map(([path, script]) => [path, literalsOf(script, SRC_TEMPLATE_FRAGMENTS[path] ?? [])]),
 ) as Record<string, string[]>
 
 /**
@@ -50,7 +50,7 @@ const literalsByFile = Object.fromEntries(
  * ou une regex littérale n'ouvre ni commentaire ni chaîne. Locale à ce spec, non exportée : une garde n'est pas une API.
  */
 function offendsWithOmit(source: string, path = 'x.ts'): boolean {
-  return writesOmit(literalsOf(scriptOf(path, source), templateExpressionsOf(path, source)))
+  return writesOmit(literalsOf(scriptOf(path, source), templateFragmentsOf(path, source)))
 }
 
 describe("aucun credentials: 'omit' dans src/", () => {
@@ -95,11 +95,11 @@ describe("aucun credentials: 'omit' dans src/", () => {
   })
 
   it('chaque expression de gabarit de src/ se lit sans erreur de syntaxe : le détecteur ne lit pas une chaîne par chance', () => {
-    const broken = Object.entries(SRC_TEMPLATE_EXPRESSIONS).flatMap(([path, fragments]) =>
+    const broken = Object.entries(SRC_TEMPLATE_FRAGMENTS).flatMap(([path, fragments]) =>
       fragments.flatMap((fragment) => syntaxErrorsOf(fragment).map((error) => `${path} : ${error} : ${fragment}`)),
     )
 
-    expect(Object.values(SRC_TEMPLATE_EXPRESSIONS).flat().length).toBeGreaterThan(100)
+    expect(Object.values(SRC_TEMPLATE_FRAGMENTS).flat().length).toBeGreaterThan(100)
     expect(broken).toEqual([])
   })
 

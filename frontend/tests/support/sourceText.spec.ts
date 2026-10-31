@@ -1,11 +1,13 @@
+import { NodeTypes } from '@vue/compiler-dom'
 import { describe, expect, it } from 'vitest'
+import { parse } from 'vue/compiler-sfc'
 import {
   callsInsideHook,
   fragmentsOfTemplateAst,
   scriptOf,
   stringLiterals,
   syntaxErrorsOf,
-  templateExpressionsOf,
+  templateFragmentsOf,
   withoutComments,
   type TemplateRoot,
 } from './sourceText'
@@ -117,10 +119,10 @@ describe('scriptOf', () => {
   })
 })
 
-describe('templateExpressionsOf', () => {
+describe('templateFragmentsOf', () => {
   const wrap = (template: string): string => `<template>${template}</template>\n<script setup lang="ts">\n</script>\n`
   const literalsOf = (template: string): string[] =>
-    templateExpressionsOf('X.vue', wrap(template)).flatMap((expression) => stringLiterals(expression))
+    templateFragmentsOf('X.vue', wrap(template)).flatMap((expression) => stringLiterals(expression))
 
   it("rend l'expression d'un gestionnaire en ligne : un 'omit' qui y est écrit est vu", () => {
     expect(literalsOf('<button @click="go({ credentials: \'omit\' })">x</button>')).toEqual(['omit'])
@@ -131,16 +133,16 @@ describe('templateExpressionsOf', () => {
   })
 
   it("ne rend rien sans gabarit, ni pour un chemin qui n'est pas un .vue", () => {
-    expect(templateExpressionsOf('X.vue', '<script setup lang="ts">\nconst m = 1\n</script>\n')).toEqual([])
-    expect(templateExpressionsOf('x.ts', wrap('<p>{{ \'omit\' }}</p>'))).toEqual([])
+    expect(templateFragmentsOf('X.vue', '<script setup lang="ts">\nconst m = 1\n</script>\n')).toEqual([])
+    expect(templateFragmentsOf('x.ts', wrap('<p>{{ \'omit\' }}</p>'))).toEqual([])
   })
 
   it('refuse un .vue illisible en nommant son chemin', () => {
-    expect(() => templateExpressionsOf('X.vue', '<template><p></template>')).toThrow(/X\.vue/)
+    expect(() => templateFragmentsOf('X.vue', '<template><p></template>')).toThrow(/X\.vue/)
   })
 
   describe('chaque expression est rendue comme le fragment JavaScript que Vue compile', () => {
-    const fragmentsOf = (template: string): string[] => templateExpressionsOf('X.vue', wrap(template))
+    const fragmentsOf = (template: string): string[] => templateFragmentsOf('X.vue', wrap(template))
 
     it("lit l'expression d'un v-for : un 'omit' écrit dans la source de la boucle est vu", () => {
       expect(literalsOf('<ul><li v-for="m in [\'omit\']">{{ m }}</li></ul>')).toContain('omit')
@@ -168,8 +170,28 @@ describe('templateExpressionsOf', () => {
     it("lit un gestionnaire en ligne comme le corps d'une fonction (plusieurs instructions), et y voit le 'omit'", () => {
       const template = '<button @click="a(); b(\'omit\')">x</button>'
 
-      expect(fragmentsOf(template)).toEqual(["() => {\na(); b('omit')\n}"])
+      expect(fragmentsOf(template)).toEqual(["($event) => {\na(); b('omit')\n}"])
       expect(literalsOf(template)).toContain('omit')
+    })
+
+    it("lit un gestionnaire en ligne comme Vue : un objet ou un appel est enveloppé dans une fonction de $event (#748, R130)", () => {
+      // Formes confirmées à l'écriture par la sortie de `compileTemplate` de `vue/compiler-sfc` sur le même gabarit :
+      // `$event => ({ credentials: 'omit' })` et `$event => (_ctx.b('omit'))`.
+      expect(fragmentsOf('<button @click="{ credentials: \'omit\' }">x</button>')).toEqual(["($event) => ({ credentials: 'omit' })"])
+      expect(literalsOf('<button @click="{ credentials: \'omit\' }">x</button>')).toEqual(['omit'])
+      expect(fragmentsOf('<button @click="b(\'omit\')">x</button>')).toEqual(["($event) => (b('omit'))"])
+    })
+
+    it("lit un chemin de membre et une fonction écrite en flèche comme une expression, telle quelle (#748, R130)", () => {
+      expect(fragmentsOf('<button @click="a.b">x</button>')).toEqual(['(a.b)'])
+      expect(fragmentsOf('<button @click="() => b(\'omit\')">x</button>')).toEqual(["(() => b('omit'))"])
+    })
+
+    it("a pour type d'interpolation celui que Vue donne à un {{ a }} analysé (#748, R130)", () => {
+      const { descriptor } = parse(wrap('<p>{{ a }}</p>'), { filename: 'X.vue' })
+      const paragraph = descriptor.template?.ast?.children[0]
+
+      expect(paragraph && 'children' in paragraph ? paragraph.children[0] : undefined).toMatchObject({ type: NodeTypes.INTERPOLATION })
     })
 
     it("lit la valeur d'un attribut statique : un mode=\"omit\" écrit en dur dans le gabarit est vu (#748, R119)", () => {
@@ -178,9 +200,9 @@ describe('templateExpressionsOf', () => {
     })
 
     it('refuse un <template> sans arbre (lang, src) en nommant son chemin : une garde qui le sauterait le laisserait sans garde', () => {
-      expect(() => templateExpressionsOf('X.vue', '<template lang="pug">p x</template>')).toThrow('X.vue')
-      expect(() => templateExpressionsOf('X.vue', '<template src="./x.html"></template>')).toThrow('X.vue')
-      expect(templateExpressionsOf('X.vue', '<template lang="html"><p :a="b" /></template>')).toEqual(['(b)'])
+      expect(() => templateFragmentsOf('X.vue', '<template lang="pug">p x</template>')).toThrow('X.vue')
+      expect(() => templateFragmentsOf('X.vue', '<template src="./x.html"></template>')).toThrow('X.vue')
+      expect(templateFragmentsOf('X.vue', '<template lang="html"><p :a="b" /></template>')).toEqual(['(b)'])
     })
 
     it('lit un v-on sans argument (objet de gestionnaires) comme une expression : ce n\'est pas un bloc étiqueté', () => {

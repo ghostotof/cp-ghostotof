@@ -1,4 +1,4 @@
-import { scriptOf, templateExpressionsOf } from './sourceText'
+import { scriptOf, templateFragmentsOf } from './sourceText'
 
 /**
  * Les sources de `src/` lues pour les gardes de `tests/` (#748, R97 ; St8-6).
@@ -29,7 +29,7 @@ export const SRC_SCRIPTS: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(raw).map(([path, source]) => [relativeToSrc(path), scriptOf(path, source)]),
 )
 
-/** Les expressions du `<template>` de chaque fichier (`[]` hors d'un `.vue` ou sans gabarit), lues par `templateExpressionsOf`. */
-export const SRC_TEMPLATE_EXPRESSIONS: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
-  Object.entries(raw).map(([path, source]) => [relativeToSrc(path), templateExpressionsOf(path, source)]),
+/** Les fragments du `<template>` de chaque fichier (`[]` hors d'un `.vue` ou sans gabarit), lues par `templateFragmentsOf`. */
+export const SRC_TEMPLATE_FRAGMENTS: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Object.entries(raw).map(([path, source]) => [relativeToSrc(path), templateFragmentsOf(path, source)]),
 )
