@@ -228,7 +228,8 @@ the one singleton per locale, so its proposal is **deferred**: parked in `pendin
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
 would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
 not save would burn quota for nothing) and, for the settings, while a proposal is shown (a second translation would
-replace it with no « Annuler »), said by `admin.about.settingsProposalLockedHelp`, which names « Abandonner » (R127c):
+replace it with no « Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
+(`admin.about.settings.proposalDiscard`, R127c, R141):
 a `type="button"` shown only during the proposal, no confirmation, that drops it and re-reads the shown language's form
 (saved values back, focus to the first field, not announced like the per-entry « Annuler »); switching language alone
 keeps the proposal, only the return to its target re-reads it (R103).

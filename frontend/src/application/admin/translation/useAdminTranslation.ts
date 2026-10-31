@@ -35,7 +35,8 @@ export interface UseAdminTranslationResult {
   /**
    * Périme la traduction en vol : sa réponse rend `null` et ne pose ni état ni raison. Pour ce que `formIdentity` ne
    * voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée, qui ne change rien au
-   * formulaire : `useTranslatedForm.discardIfDeleted` la juge et l'appelle.
+   * formulaire : `useTranslatedForm.discardIfDeleted` la juge et l'appelle, seul appelant d'une page (le guetteur d'identité
+   * du composable l'appelle aussi). Aucune page ne l'appelle de son chef : un geste qui change le formulaire change son identité.
    */
   discard: () => void
 }

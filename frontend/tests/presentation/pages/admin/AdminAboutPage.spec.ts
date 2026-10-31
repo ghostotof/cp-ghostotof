@@ -1333,8 +1333,9 @@ describe('AdminAboutPage', () => {
       await wrapper.get('#admin-about-locale').setValue('fr')
       await flushPromises()
       expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
-      const kept = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { proposal: unknown }
-      expect(kept.proposal).toEqual({ source: 'fr', target: 'en' })
+      // Sous le FR, le formulaire porte les réglages FR enregistrés, ni avis ni verrou de la proposition de l'EN.
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
 
       await wrapper.get('#admin-about-locale').setValue('en')
       await flushPromises()
@@ -1348,10 +1349,12 @@ describe('AdminAboutPage', () => {
 
     // R127c, décision de l'auteur du 2026-10-31 : un bouton « Abandonner » retire la proposition affichée et relit le
     // formulaire de la langue montrée. Il n'existe que pendant la proposition, et le texte du verrou le nomme.
+    // Le bouton est trouvé par sa structure (un `type="button"` du panneau qui n'est pas « Proposer »), jamais par son libellé :
+    // les cas qui le nomment lisent ce libellé sur le bouton rendu.
     const abandonButton = (wrapper: VueWrapper): DOMWrapper<Element> | undefined =>
       panelOf(wrapper, SETTINGS_PANEL)
         .findAll('button')
-        .find((button) => 'Abandonner' === button.text())
+        .find((button) => 'button' === button.attributes('type') && button.element !== translateEntryButton(wrapper, SETTINGS_FORM).element)
     const SAVED_EN: AdminAboutSettings = { ...SETTINGS_EN, siteEyebrow: 'Saved English eyebrow' }
 
     it("réglages, « Abandonner » : un bouton simple, seulement pendant une proposition, nommé par le verrou (#748, R127c)", async () => {
@@ -1366,8 +1369,10 @@ describe('AdminAboutPage', () => {
       expect(abandon?.element.tagName).toBe('BUTTON')
       expect(abandon?.attributes('type')).toBe('button')
       expect(abandon?.attributes('disabled')).toBeUndefined()
-      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
-      expect(SETTINGS_PROPOSAL_LOCKED_TEXT).toContain('« Abandonner »')
+      // Le texte qui décrit « Proposer » nomme le bouton tel qu'il est rendu : son libellé est lu sur lui.
+      const described = textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))
+      expect(described).toHaveLength(1)
+      expect(described[0]).toContain(`« ${abandon?.text()} »`)
       await expectNoAccessibilityViolation(wrapper)
     })
 
@@ -1736,8 +1741,8 @@ describe('AdminAboutPage', () => {
     })
 
     // L'effet de la condition du `watch` de `settings` ne se voit pas dans le DOM : l'avis n'est rendu que sous sa
-    // cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute façon. Le test lit donc l'état du
-    // composant (`proposal`), la seule observation possible (R103, décision 2 de la neuvième série, Q2).
+    // cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute façon. Le cas dit ce que le DOM montre
+    // (les réglages du FR, aucun avis) ; il ne lit plus l'état du composant (R141, St12-9).
     it("une proposition en EN, passage au FR puis enregistrement du FR : la proposition EN reste (#748, R103, décision 2)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
@@ -1757,8 +1762,9 @@ describe('AdminAboutPage', () => {
 
       expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
       // Les réglages du FR sont arrivés sous le FR, qui n'est pas la cible : la proposition de l'EN est gardée.
-      const form = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { proposal: unknown }
-      expect(form.proposal).toEqual({ source: 'fr', target: 'en' })
+      // Le formulaire du FR porte les réglages que le serveur vient de rendre, et aucun avis de la proposition de l'EN.
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 

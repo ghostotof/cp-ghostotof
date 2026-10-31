@@ -143,8 +143,6 @@
       "delete": "Supprimer",
       "loading": "Chargement…",
       "loadError": "Le chargement a échoué. Réessayez plus tard.",
-      "settingsProposalLockedHelp": "Verrouillé par la proposition de traduction affichée : enregistrez-la, ou « Abandonner » pour la retirer.",
-      "settingsProposalDiscard": "Abandonner",
       "localeHelp": "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues.",
       "translationOfLabel": "Version de",
       "translationOfNone": "— aucune —",
@@ -165,7 +163,9 @@
         "meEyebrowLabel": "Titre de section « À propos de moi »",
         "technicalSubtitleLabel": "Sous-titre « Techniquement »",
         "personalSubtitleLabel": "Sous-titre « Humainement »",
-        "hobbiesSubtitleLabel": "Sous-titre « En dehors du travail »"
+        "hobbiesSubtitleLabel": "Sous-titre « En dehors du travail »",
+        "proposalLockedHelp": "Verrouillé par la proposition de traduction affichée : enregistrez-la, ou « Abandonner » pour la retirer.",
+        "proposalDiscard": "Abandonner"
       },
       "siteCard": {
         "listTitle": "Cartes « À propos de ce site »",

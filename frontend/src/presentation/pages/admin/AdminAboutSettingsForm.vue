@@ -54,7 +54,7 @@ const errorText = computed(() => {
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
  */
-// Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
+// Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue : l'identité ne porte que la langue) est périmée.
 // Le composable refuse de lui-même tout ce que le bouton refuse (R127, R127b) : l'absence de prose, un enregistrement en vol,
 // le verrou d'ordre de la page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
 const {
@@ -63,7 +63,6 @@ const {
   isRefused: isTranslationRefused,
   errorReason: translationErrorReason,
   translate,
-  discard: discardTranslation,
   proseReadonlyHintId,
   translationHintId,
   proseFieldAttrs,
@@ -177,15 +176,15 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
  * la langue montrée, dont les valeurs enregistrées reviennent. Le bouton n'existe que pendant la proposition, et la
  * proposition est la cible de la langue montrée : la relire est le retrait que fait déjà le retour sur cette langue
  * (R66, décision 4), sans l'aller-retour. La recopie est refaite ici et pas laissée au seul `watch` des réglages, qui ne
- * se déclenche pas si la lecture rend l'objet déjà détenu. Une traduction en vol est périmée par le même geste.
+ * se déclenche pas si la lecture rend l'objet déjà détenu. Aucune traduction n'est en vol à ce moment : le bouton « Proposer »
+ * est refusé tant que la proposition est affichée (`isProposalShown`), seule condition où « Abandonner » existe.
  * Aucune confirmation (pas de `confirm`) : la proposition n'est jamais enregistrée, la perdre ne coûte qu'un appel.
  *
  * Le bouton disparaît sous le focus (le formulaire est masqué pendant la lecture) : une fois relu, le focus va au
  * premier champ, jamais à `body`. Comme « Annuler » des formulaires par entrée, l'abandon n'est pas annoncé.
  */
-async function handleAbandonProposal(): Promise<void> {
+async function handleDiscardProposal(): Promise<void> {
   const locale = props.locale
-  discardTranslation()
   pendingProposal.value = null
   await load(locale)
 
@@ -303,16 +302,16 @@ async function handleSubmit(): Promise<void> {
           v-if="isProposalShown"
           type="button"
           class="btn btn-outline-light ms-2"
-          @click="handleAbandonProposal"
+          @click="handleDiscardProposal"
         >
-          {{ t('admin.about.settingsProposalDiscard') }}
+          {{ t('admin.about.settings.proposalDiscard') }}
         </button>
         <p
           v-if="isProposalShown"
           :id="PROPOSAL_LOCKED_HINT_ID"
           class="form-text mb-0"
         >
-          {{ t('admin.about.settingsProposalLockedHelp') }}
+          {{ t('admin.about.settings.proposalLockedHelp') }}
         </p>
       </div>
 
