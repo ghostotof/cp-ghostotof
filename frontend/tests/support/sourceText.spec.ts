@@ -294,14 +294,43 @@ describe('deferredCallsOf', () => {
     expect(deferredCallsOf('watchPostEffect(() => e())')).toEqual(['e'])
   })
 
-  it("deferredCallsOf ne lit un watch ou un watchEffect que s'il est posté après le rendu (#748, R144)", () => {
+  // Vue : un rappel `immediate` court dans le `setup` quel que soit `flush` (`reactivity.cjs.js`, `watch` : `job(true)`) ;
+  // un `watch` sans `immediate` ne court qu'à un changement de sa source, donc après le montage (CR13-3, R159).
+  it("deferredCallsOf lit un watch sans immediate : son rappel ne court jamais dans le setup (#748, R159)", () => {
+    expect(deferredCallsOf('watch(route, () => load())')).toEqual(['load'])
     expect(deferredCallsOf("watch(x, () => b(), { flush: 'post' })")).toEqual(['b'])
-    expect(deferredCallsOf("watch(x, () => b(), { immediate: true, flush: 'post' })")).toEqual(['b'])
+    expect(deferredCallsOf("watch(x, () => b(), { flush: 'sync' })")).toEqual(['b'])
+    expect(deferredCallsOf('watch(x, () => b(), { immediate: false })')).toEqual(['b'])
+    expect(deferredCallsOf("watch(x, cb, { 'deep': true })")).toEqual(['cb'])
+  })
+
+  it("deferredCallsOf ne lit pas un watch immediate, posté ou non : sa première exécution est celle du setup (#748, R159)", () => {
+    expect(deferredCallsOf('watch(x, () => a(), { immediate: true })')).toEqual([])
+    expect(deferredCallsOf("watch(x, () => b(), { flush: 'post', immediate: true })")).toEqual([])
+    expect(deferredCallsOf("watch(x, () => b(), { immediate: true, flush: 'post' })")).toEqual([])
+    expect(deferredCallsOf("watch(x, () => b(), { 'immediate': true, flush: 'sync' })")).toEqual([])
+    expect(deferredCallsOf('watch(x, load, { immediate: true })')).toEqual([])
+  })
+
+  it("deferredCallsOf lit un watch à options non littérales ou dont immediate n'est pas true (#748, R159)", () => {
+    expect(deferredCallsOf('watch(x, cb, opts)')).toEqual(['cb'])
+    expect(deferredCallsOf('watch(x, () => b(), { ...opts })')).toEqual(['b'])
+    expect(deferredCallsOf('watch(x, () => b(), { immediate })')).toEqual(['b'])
+    expect(deferredCallsOf('watch(x, () => b(), { immediate: isFirst })')).toEqual(['b'])
+  })
+
+  it("deferredCallsOf ne lit un watchEffect que posté ; watchPostEffect l'est toujours (#748, R144, R159)", () => {
     expect(deferredCallsOf("watchEffect(() => c(), { flush: 'post' })")).toEqual(['c'])
-    expect(deferredCallsOf('watch(x, () => b())')).toEqual([])
-    expect(deferredCallsOf('watch(x, () => b(), { immediate: true })')).toEqual([])
-    expect(deferredCallsOf("watch(x, () => b(), { flush: 'sync' })")).toEqual([])
-    expect(deferredCallsOf('watchEffect(() => c())')).toEqual([])
+    expect(deferredCallsOf('watchEffect(() => f())')).toEqual([])
+    expect(deferredCallsOf("watchEffect(() => f(), { flush: 'sync' })")).toEqual([])
+    expect(deferredCallsOf('watchPostEffect(() => e())')).toEqual(['e'])
+  })
+
+  it('deferredCallsOf lit les hooks de mise à jour et de réactivation, en fonction ou en référence (#748, R159)', () => {
+    expect(deferredCallsOf('onUpdated(() => c())')).toEqual(['c'])
+    expect(deferredCallsOf('onBeforeUpdate(d)')).toEqual(['d'])
+    expect(deferredCallsOf('onActivated(() => e())')).toEqual(['e'])
+    expect(deferredCallsOf("import { onUpdated as whenUpdated } from 'vue'\nwhenUpdated(page.refresh)")).toEqual(['page.refresh'])
   })
 
   it('deferredCallsOf lit la source de watch ni comme un rappel, ni comme un appel du hook (#748, R144)', () => {

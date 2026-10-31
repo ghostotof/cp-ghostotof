@@ -276,23 +276,27 @@ function syntaxTreeOf(source: string): ts.SourceFile {
 }
 
 /**
- * Où un hook différé range la fonction qu'il rappellera (`callback`, l'index de l'argument), où il range ses options
- * (`options`) et s'il ne s'exécute après le rendu que posté (`postedOnly`, `{ flush: 'post' }` : un `watch` ou un
- * `watchEffect` sans lui s'exécute dans le `setup`, ou de façon synchrone, jamais après le montage).
+ * Quand un hook différé s'exécute après le rendu (`when`) : absent, toujours ; `posted`, seulement posté (`{ flush: 'post' }` :
+ * un `watchEffect` sans lui s'exécute dans le `setup`) ; `unlessImmediate`, sauf si ses options portent `immediate: true`
+ * (un `watch` dont le rappel court dans le `setup`, quel que soit `flush` : `job(true)` de `watch`, `@vue/reactivity`).
+ * Où il range la fonction qu'il rappellera : `callback`, l'index de l'argument ; ses options : `options`.
  */
 interface DeferredHook {
   readonly callback: number
   readonly options?: number
-  readonly postedOnly?: boolean
+  readonly when?: 'posted' | 'unlessImmediate'
 }
 
 /** Les hooks de `vue` dont le rappel s'exécute après le montage, et les appels globaux qui différent une fonction. */
 const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
   ['onMounted', { callback: 0 }],
+  ['onUpdated', { callback: 0 }],
+  ['onBeforeUpdate', { callback: 0 }],
+  ['onActivated', { callback: 0 }],
   ['nextTick', { callback: 0 }],
   ['watchPostEffect', { callback: 0 }],
-  ['watch', { callback: 1, options: 2, postedOnly: true }],
-  ['watchEffect', { callback: 0, options: 1, postedOnly: true }],
+  ['watch', { callback: 1, options: 2, when: 'unlessImmediate' }],
+  ['watchEffect', { callback: 0, options: 1, when: 'posted' }],
   ['setTimeout', { callback: 0 }],
   ['queueMicrotask', { callback: 0 }],
   ['requestAnimationFrame', { callback: 0 }],
@@ -321,8 +325,12 @@ function vueImportsOf(file: ts.SourceFile): ReadonlyMap<string, string> {
   return imported
 }
 
-/** Vrai si `options` est un littéral objet qui porte `flush: 'post'` (une variable d'options n'est pas lue). */
-function isPostedOptions(options: ts.Expression | undefined): boolean {
+/**
+ * Vrai si `options` est un littéral objet dont la propriété `name` vaut exactement `value` (`'post'` pour `flush`, `true` pour
+ * `immediate`). Une variable d'options, une propagation (`{ ...opts }`), une propriété abrégée (`{ immediate }`) ou une valeur qui
+ * n'est pas ce littéral ne sont pas lues : l'appelant les tient pour absentes.
+ */
+function hasLiteralOption(options: ts.Expression | undefined, name: string, value: 'post' | true): boolean {
   if (undefined === options || !ts.isObjectLiteralExpression(options)) {
     return false
   }
@@ -331,11 +339,66 @@ function isPostedOptions(options: ts.Expression | undefined): boolean {
     (property) =>
       ts.isPropertyAssignment(property) &&
       (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) &&
-      'flush' === property.name.text &&
-      ts.isStringLiteralLike(property.initializer) &&
-      'post' === property.initializer.text,
+      name === property.name.text &&
+      (true === value
+        ? property.initializer.kind === ts.SyntaxKind.TrueKeyword
+        : ts.isStringLiteralLike(property.initializer) && value === property.initializer.text),
   )
 }
+
+/**
+ * Vrai si `hook`, appelé par `call`, s'exécute après le rendu. Une variable d'options n'est pas lue : un `watch` qui en reçoit
+ * une est tenu pour différé (prudent : sans `immediate: true` lisible, son rappel peut courir après le montage), un
+ * `watchEffect` qui en reçoit une, pour immédiat.
+ */
+function runsAfterRender(hook: DeferredHook, call: ts.CallExpression): boolean {
+  const options = call.arguments[hook.options ?? -1]
+  switch (hook.when) {
+    case 'posted':
+      return hasLiteralOption(options, 'flush', 'post')
+    case 'unlessImmediate':
+      return !hasLiteralOption(options, 'immediate', true)
+    default:
+      return true
+  }
+}
+
+/**
+ * Le nom sous lequel `call` appelle un hook de `vue` ou un appel global (lu par l'importation, puis `window.` ou
+ * `globalThis.` des minuteurs), ou `null`.
+ */
+function calledNameOf(call: ts.CallExpression, imported: ReadonlyMap<string, string>): string | null {
+  const callee = call.expression
+  if (ts.isIdentifier(callee)) {
+    return imported.get(callee.text) ?? callee.text
+  }
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    GLOBAL_OBJECTS.has(callee.expression.text) &&
+    GLOBAL_DEFERRALS.has(callee.name.text)
+  ) {
+    return callee.name.text
+  }
+
+  return null
+}
+
+/**
+ * Le rappel qu'un hook différé reçoit de `call` : l'argument de rang `hook.callback`, ou `undefined` s'il manque ou si `call`
+ * n'est pas un hook différé qui s'exécute après le rendu. Ce n'est qu'une position : que ce soit une fonction ou une référence
+ * se juge ensuite (`isFunctionLike`, `isReference`).
+ */
+function callbackOf(call: ts.CallExpression, imported: ReadonlyMap<string, string>): ts.Expression | undefined {
+  const name = calledNameOf(call, imported)
+  const hook = null === name ? undefined : DEFERRED_HOOKS.get(name)
+
+  return undefined !== hook && runsAfterRender(hook, call) ? call.arguments[hook.callback] : undefined
+}
+
+const isReference = (node: ts.Expression): boolean => ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)
+const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionExpression =>
+  ts.isArrowFunction(node) || ts.isFunctionExpression(node)
 
 /**
  * Le texte du *callee* de chaque appel qui s'exécute après le rendu d'un composant, dans l'ordre du source :
@@ -345,55 +408,29 @@ function isPostedOptions(options: ts.Expression | undefined): boolean {
  * - le nom passé **par référence** à un tel hook (`onMounted(load)` donne `['load']`, `onMounted(page.load)` donne `['page.load']`),
  *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`).
  *
- * Les hooks différés sont `onMounted`, `nextTick`, `watchPostEffect`, `watch` et `watchEffect` quand leurs options portent
- * `flush: 'post'`, puis `setTimeout`, `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`, `globalThis`,
- * `self`). Les hooks de `vue` se lisent sous le nom que leur importation leur donne (`import { onMounted as whenMounted }
- * from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est lu tel qu'il est écrit, pour qu'une source
- * sans importation (un fichier de test) se lise de même. Seul l'argument qui est le rappel est lu : le délai d'un
- * `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
+ * Les hooks différés sont `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `nextTick`, `watchPostEffect`, un `watch`
+ * **sauf** si ses options portent `immediate: true` (son rappel court alors dans le `setup`, posté ou non), un `watchEffect`
+ * quand ses options portent `flush: 'post'`, puis `setTimeout`, `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`,
+ * `globalThis`, `self`). Les hooks de `vue` se lisent sous le nom que leur importation leur donne (`import { onMounted as
+ * whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est lu tel qu'il est écrit, pour
+ * qu'une source sans importation (un fichier de test) se lise de même. Seul l'argument qui est le rappel est lu : le délai
+ * d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
  *
- * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`), une
- * option d'un `watch` passée par une variable, un module importé en espace de noms (`Vue.onMounted(…)`), une fonction déclarée
- * dans le fichier et passée par référence (vue par son nom seul, non par ce qu'elle appelle).
+ * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`), un
+ * module importé en espace de noms (`Vue.onMounted(…)`), une fonction déclarée dans le fichier et passée par référence (vue
+ * par son nom seul, non par ce qu'elle appelle). Des options passées par une variable : un `watch` les lit différées (il
+ * rougit peut-être à tort), un `watchEffect` les lit immédiates.
  */
 export function deferredCallsOf(source: string): string[] {
   const file = syntaxTreeOf(source)
   const imported = vueImportsOf(file)
   const callees: string[] = []
 
-  /** Le hook différé que `call` pose, ou `null` : son nom est lu par l'importation, puis `window.` ou `globalThis.` des minuteurs. */
-  const hookOf = (call: ts.CallExpression): DeferredHook | null => {
-    const callee = call.expression
-    let name: string | null = null
-    if (ts.isIdentifier(callee)) {
-      name = imported.get(callee.text) ?? callee.text
-    } else if (
-      ts.isPropertyAccessExpression(callee) &&
-      ts.isIdentifier(callee.expression) &&
-      GLOBAL_OBJECTS.has(callee.expression.text) &&
-      GLOBAL_DEFERRALS.has(callee.name.text)
-    ) {
-      name = callee.name.text
-    }
-    const hook = null === name ? undefined : DEFERRED_HOOKS.get(name)
-    if (undefined === hook || (true === hook.postedOnly && !isPostedOptions(call.arguments[hook.options ?? -1]))) {
-      return null
-    }
-
-    return hook
-  }
-
-  /** Le rappel d'un hook, s'il est écrit comme une fonction ou comme une référence (`undefined` sinon : un appel n'est pas un rappel). */
-  const callbackOf = (call: ts.CallExpression, hook: DeferredHook): ts.Expression | undefined => call.arguments[hook.callback]
-  const isReference = (node: ts.Expression): boolean => ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)
-  const isFunction = (node: ts.Expression): boolean => ts.isArrowFunction(node) || ts.isFunctionExpression(node)
-
   // Tout appel écrit dans la fonction d'un hook, y compris ceux d'un hook qu'elle pose à son tour (dont la référence compte).
   const collect = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       callees.push(node.expression.getText(file))
-      const hook = hookOf(node)
-      const callback = null === hook ? undefined : callbackOf(node, hook)
+      const callback = callbackOf(node, imported)
       if (undefined !== callback && isReference(callback)) {
         callees.push(callback.getText(file))
       }
@@ -402,19 +439,16 @@ export function deferredCallsOf(source: string): string[] {
   }
 
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
-      const hook = hookOf(node)
-      const callback = null === hook ? undefined : callbackOf(node, hook)
-      if (undefined !== callback && isFunction(callback)) {
-        collect((callback as ts.ArrowFunction | ts.FunctionExpression).body)
+    const callback = ts.isCallExpression(node) ? callbackOf(node, imported) : undefined
+    if (undefined !== callback && isFunctionLike(callback)) {
+      collect(callback.body)
 
-        return
-      }
-      if (undefined !== callback && isReference(callback)) {
-        callees.push(callback.getText(file))
+      return
+    }
+    if (undefined !== callback && isReference(callback)) {
+      callees.push(callback.getText(file))
 
-        return
-      }
+      return
     }
     ts.forEachChild(node, visit)
   }

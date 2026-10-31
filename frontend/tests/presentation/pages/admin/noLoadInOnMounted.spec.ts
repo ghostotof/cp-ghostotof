@@ -10,18 +10,21 @@ import { deferredCallsOf, destructuredAliasesOf } from '../../../support/sourceT
  * « A real refusal »).
  *
  * Lu : `presentation/pages/admin/` et `presentation/ui/admin/`. Refusé dans ce que `deferredCallsOf` rend (la fonction
- * passée à `onMounted`, `nextTick`, `watchPostEffect`, à un `watch` ou `watchEffect` en `flush: 'post'`, à `setTimeout`,
- * `queueMicrotask`, `requestAnimationFrame`, ou le nom passé par référence à l'un d'eux, `onMounted` lu sous l'alias de son
- * import de `vue`) : un appel dont le dernier segment est `reload`, commence par `load`, finit par `Load`, est `list`,
- * `get`, `fetch` ou `translate`, ou porte un nom local lié à la clé `load` ou `reload` d'une déstructuration
- * (`const { load: refresh } = useX()`).
+ * passée à `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `nextTick`, `watchPostEffect`, à un `watch` **sans
+ * `immediate: true`** (son rappel court à un changement de sa source, donc après le montage, quel que soit `flush`), à un
+ * `watchEffect` en `flush: 'post'`, à `setTimeout`, `queueMicrotask`, `requestAnimationFrame`, ou le nom passé par référence
+ * à l'un d'eux, `onMounted` lu sous l'alias de son import de `vue`) : un appel dont le dernier segment est `reload`,
+ * commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou porte un nom local lié à la clé `load`
+ * ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch` `immediate` n'est pas lu, posté ou non :
+ * sa première exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`).
  *
  * Non vu, tenu par la relecture : une lecture envoyée après un `await` (la suite d'un `await nextTick()` s'exécute après le
  * rendu, et n'est pas lue) ; un sous-composant rendu plus tard et situé hors de ces deux dossiers ; une fonction d'un autre
  * module qui charge sous un nom que le filtre ne reconnaît pas ; une fonction déclarée dans le fichier et passée par
  * référence (lue par son nom seul, non par ce qu'elle appelle) ; un hook passé par une variable (`const hook = onMounted`) ou
- * importé en espace de noms (`Vue.onMounted`) ; des options de `watch` passées par une variable ; un alias posé par une
- * affectation (`const refresh = load`).
+ * importé en espace de noms (`Vue.onMounted`) ; un alias posé par une affectation (`const refresh = load`). Des options de
+ * `watch` passées par une variable sont lues comme différées (la garde peut rougir à tort) ; celles d'un `watchEffect`,
+ * comme immédiates.
  */
 const GUARDED_DIRS = ['presentation/pages/admin/', 'presentation/ui/admin/']
 const REPOSITORY_CALLS = new Set(['list', 'get', 'fetch', 'translate'])
@@ -104,15 +107,29 @@ describe('aucun chargement après le montage dans le backoffice', () => {
       expect(offendingIn({ [PAGE]: 'requestAnimationFrame(() => repository.list())' })).toEqual([`${PAGE} : repository.list`])
     })
 
-    it("un watch immediate posté après le rendu charge, le même sans flush: 'post' passe (#748, R144)", () => {
-      const posted = "watch(id, () => { void load() }, { immediate: true, flush: 'post' })"
-      const inSetup = 'watch(id, () => { void load() }, { immediate: true })'
-      const synchronous = "watch(id, () => { void load() }, { immediate: true, flush: 'sync' })"
+    it("un watch sans immediate charge à un changement de sa source, donc après le montage (#748, R159)", () => {
+      expect(offendingIn({ [PAGE]: 'watch(route, () => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'watch(() => props.locale, load)' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: "watch(id, () => { void load() }, { flush: 'post' })" })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: "watch(id, () => { void load() }, { flush: 'sync' })" })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'watch(id, () => repository.list(), opts)' })).toEqual([`${PAGE} : repository.list`])
+    })
 
-      expect(offendingIn({ [PAGE]: posted })).toEqual([`${PAGE} : load`])
+    it("un watch immediate lit dans le setup, avec ou sans flush: 'post', et ne rougit pas (#748, R144, R159)", () => {
+      expect(offendingIn({ [PAGE]: 'watch(id, () => { void load() }, { immediate: true })' })).toEqual([])
+      expect(offendingIn({ [PAGE]: "watch(id, () => { void load() }, { immediate: true, flush: 'post' })" })).toEqual([])
+      expect(offendingIn({ [PAGE]: "watch(id, () => { void load() }, { flush: 'sync', immediate: true })" })).toEqual([])
+    })
+
+    it("un watchEffect posté charge, le même sans flush: 'post' lit dans le setup (#748, R144)", () => {
       expect(offendingIn({ [PAGE]: `watchEffect(() => { void load() }, { flush: 'post' })` })).toEqual([`${PAGE} : load`])
-      expect(offendingIn({ [PAGE]: inSetup })).toEqual([])
-      expect(offendingIn({ [PAGE]: synchronous })).toEqual([])
+      expect(offendingIn({ [PAGE]: 'watchEffect(() => { void load() })' })).toEqual([])
+    })
+
+    it('un chargement dans onUpdated, onBeforeUpdate ou onActivated (#748, R159)', () => {
+      expect(offendingIn({ [PAGE]: 'onUpdated(() => { void load() })' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onBeforeUpdate(load)' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onActivated(() => repository.list())' })).toEqual([`${PAGE} : repository.list`])
     })
 
     it('un composant de presentation/ui/admin (#748, R144)', () => {

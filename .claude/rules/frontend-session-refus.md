@@ -97,9 +97,12 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     (or an `immediate` watcher), both stamped before the alert's `onMounted`: a read sent from the page's own `onMounted`
     would carry the new epoch and say `common.accessRefused` for the earlier save. `noLoadInOnMounted.spec.ts` refuses a
     load or a repository call that runs after the mount, in `presentation/pages/admin` and `presentation/ui/admin` (R121, R144):
-    the function or the name passed to `onMounted` (under its import alias too), `nextTick`, `setTimeout`, `queueMicrotask`,
-    `requestAnimationFrame`, `watchPostEffect`, or a `watch` / `watchEffect` with `flush: 'post'`. What it cannot see (an
-    `await`, a hook held in a variable, a function declared in the file) is listed in its docblock.
+    the function or the name passed to `onMounted`, `onUpdated`, `onBeforeUpdate` or `onActivated` (each under its import alias
+    too), `nextTick`, `setTimeout`, `queueMicrotask`, `requestAnimationFrame`, `watchPostEffect`, a `watchEffect` with
+    `flush: 'post'`, or a `watch` **without a literal `immediate: true`** (its callback runs on a change of its source, after the
+    mount, whatever its `flush`; an `immediate` one runs synchronously in `setup`, posted or not, and passes). What it cannot
+    see (an `await`, a hook held in a variable, a function declared in the file and passed by reference, which it reads by its
+    name alone: seen if the name starts with `load` or matches its filter, never by what the function calls) is in its docblock.
     Any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the
     letter of decision 1 of the ninth: no load window, no counter).
   - **Accepted limits** (Q3 (a) of the twelfth review, R143): the module cannot tell a read the person relaunched from one
