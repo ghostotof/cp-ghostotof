@@ -3,7 +3,6 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminContributions } from '../../../application/admin/contributions/useAdminContributions'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -36,28 +35,6 @@ import type { AdminContribution } from '../../../domain/admin/contributions/enti
 const { t } = useI18n()
 const { contributions, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminContributions()
-const {
-  isTranslating,
-  isDiscardPending,
-  isRefused: isTranslationRefused,
-  errorReason: translationErrorReason,
-  translate,
-  discardIfDeleted,
-  renewForm,
-  proseReadonlyHintId,
-  translationHintId,
-  proseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-contribution',
-  isRefused: () => !hasProseToTranslate.value || isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingId.value,
-    locale: form.locale,
-    group: sourceGroup.value,
-  }),
-})
 
 const editingId = ref<string | null>(null)
 
@@ -117,12 +94,30 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-const hasProseToTranslate = computed(() => CONTRIBUTION_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-
-const translationErrorText = computed(() => {
-  const reason = translationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
+// Après le formulaire : le composable en lit l'objet dès l'appel.
+const {
+  isTranslating,
+  isDiscardPending,
+  isRefused: isTranslationRefused,
+  errorText: translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-contribution',
+  form,
+  proseFields: CONTRIBUTION_PROSE_FIELDS,
+  isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
 })
 
 const errorText = computed(() => {
@@ -282,18 +277,12 @@ async function handleSubmit(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, CONTRIBUTION_PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, CONTRIBUTION_PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, (sourceLocale) => {
+    editingId.value = null
+    form.locale = targetLocale
+    form.translationGroup = sourceGroup.value ?? ''
+    proposalSourceLocale.value = sourceLocale
+  })
 }
 
 async function handleDelete(contribution: AdminContribution): Promise<void> {
@@ -302,9 +291,7 @@ async function handleDelete(contribution: AdminContribution): Promise<void> {
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  discardIfDeleted(contribution)
-
-  await remove(contribution.id)
+  await removeEntry(contribution, () => remove(contribution.id))
 }
 
 useUnsavedOrderGuard(isOrderDirty)

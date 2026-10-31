@@ -1,7 +1,8 @@
 /**
  * Les champs que l'assistant de traduction envoie et remplace, un formulaire après l'autre : la prose. Chaque page
- * reste seule à décider des siens (spec 0004, D2) ; la liste est lue par la page (ce qu'elle envoie, remplace, et
- * ce qui la rend traduisible) et par son spec (les champs qui doivent être en lecture seule pendant une traduction).
+ * reste seule à décider des siens (spec 0004, D2) ; la liste est lue par `useTranslatedForm` (ce qu'il envoie, remplace, et
+ * ce qui rend le formulaire traduisible : `hasProse`) et par le spec de la page (les champs qui doivent être en lecture
+ * seule pendant une traduction).
  * Le complément de chaque liste est ce que « Créer la version XX » recopie de l'entrée existante : une clé d'icône, une
  * catégorie, une version, une date, une URL ou un nombre d'années n'ont pas de traduction (spec 0002, D2 ; spec 0004 §7).
  *

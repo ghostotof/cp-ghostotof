@@ -2,7 +2,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSettings } from '../../../application/admin/about/useAdminAboutSettings'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFieldCopy'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
@@ -61,14 +61,16 @@ const {
   isTranslating,
   isDiscardPending,
   isRefused: isTranslationRefused,
-  errorReason: translationErrorReason,
+  errorText: translationErrorText,
   translate,
   proseReadonlyHintId,
   translationHintId,
   proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-about-settings',
-  isRefused: () => !hasProseToTranslate.value || isAnySaving.value || props.isLocked || isProposalShown.value,
+  form,
+  proseFields: ABOUT_SETTINGS_PROSE_FIELDS,
+  isRefused: () => isAnySaving.value || props.isLocked || isProposalShown.value,
   identity: () => ({ entry: null, locale: props.locale, group: null }),
 })
 const pendingProposal = ref<TranslationProposal | null>(null)
@@ -85,12 +87,6 @@ const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null
 const isProposalShown = computed(() => proposal.value?.target === props.locale)
 // Pendant une proposition affichée, le bouton de traduction est verrouillé et désigne ce texte, rendu seulement alors (R127).
 const PROPOSAL_LOCKED_HINT_ID = 'admin-about-settings-proposal-locked-help'
-const hasProseToTranslate = computed(() => ABOUT_SETTINGS_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const translationErrorText = computed(() => {
-  const reason = translationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
-})
 
 // `flush: 'sync'` : le formulaire est rempli au moment même où les réglages
 // arrivent, et non au prochain tick — ainsi, quand `isLoaded` se lève (après la

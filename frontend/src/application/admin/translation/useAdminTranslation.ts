@@ -35,8 +35,9 @@ export interface UseAdminTranslationResult {
   /**
    * Périme la traduction en vol : sa réponse rend `null` et ne pose ni état ni raison. Pour ce que `formIdentity` ne
    * voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée, qui ne change rien au
-   * formulaire : `useTranslatedForm.discardIfDeleted` la juge et l'appelle, seul appelant d'une page (le guetteur d'identité
-   * du composable l'appelle aussi). Aucune page ne l'appelle de son chef : un geste qui change le formulaire change son identité.
+   * formulaire : `useTranslatedForm.discardIfDeleted` la juge et l'appelle (une page passe par son `removeEntry`), comme
+   * le guetteur d'identité du composable. Aucune page ne l'appelle de son chef : un geste qui change le formulaire change
+   * son identité.
    */
   discard: () => void
 }
@@ -109,7 +110,7 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
   const isTranslating = readonly(isAwaitingCurrent)
   const isDiscardPending = computed(() => isAnyCallRunning.value && !isAwaitingCurrent.value)
   const isRefused = computed(() => options.isRefused?.() ?? false)
-  // L'échec n'est rendu qu'à l'identité où il est né : le guetteur d'identité l'efface à tout changement (voir `translate`).
+  // L'échec n'est rendu qu'à l'identité où il est né : le guetteur d'identité l'efface à tout changement (voir `watchIdentity()`).
   const errorReason = readonly(failure)
   // La portée du composant : le guetteur d'identité, né plus tard, s'y arrête avec lui.
   const scope: EffectScope | undefined = getCurrentScope()

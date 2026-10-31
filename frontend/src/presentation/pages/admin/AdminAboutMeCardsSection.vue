@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutMeCards } from '../../../application/admin/about/useAdminAboutMeCards'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -84,29 +83,6 @@ const categoryOptions = computed(() =>
   ME_CARD_CATEGORIES.map((category) => ({ value: category, label: categoryLabel(category) })),
 )
 
-const {
-  isTranslating,
-  isDiscardPending,
-  isRefused: isTranslationRefused,
-  errorReason: translationErrorReason,
-  translate,
-  discardIfDeleted,
-  renewForm,
-  proseReadonlyHintId,
-  translationHintId,
-  proseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-about-me-card',
-  isRefused: () => !hasProseToTranslate.value || isSubmitting.value || props.isLocked || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingId.value,
-    locale: form.locale,
-    group: sourceGroup.value,
-  }),
-})
-
 /**
  * `locale` et `category` sont typées explicitement : sans annotation,
  * `reactive` les infère au type littéral de leur valeur initiale et les
@@ -158,16 +134,36 @@ const lock = useEntryFormLock({
  */
 const sourceGroup = ref<string | null>(null)
 
-const hasProseToTranslate = computed(() => ME_CARD_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+// Après le formulaire : le composable en lit l'objet dès l'appel.
+const {
+  isTranslating,
+  isDiscardPending,
+  isRefused: isTranslationRefused,
+  errorText: translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-me-card',
+  form,
+  proseFields: ME_CARD_PROSE_FIELDS,
+  isRefused: () => isSubmitting.value || props.isLocked || lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
 const errorText = computed(() => {
   const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.about.errors.${reason}`) : null
-})
-const translationErrorText = computed(() => {
-  const reason = translationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
 })
 
 /**
@@ -352,18 +348,12 @@ async function handleSubmit(): Promise<void> {
  * (ADR 0004, D4). En cas d'échec, le formulaire reste intact.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, ME_CARD_PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, ME_CARD_PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, (sourceLocale) => {
+    editingId.value = null
+    form.locale = targetLocale
+    form.translationGroup = sourceGroup.value ?? ''
+    proposalSourceLocale.value = sourceLocale
+  })
 }
 
 async function handleDelete(card: AdminAboutMeCard): Promise<void> {
@@ -372,9 +362,7 @@ async function handleDelete(card: AdminAboutMeCard): Promise<void> {
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  discardIfDeleted(card)
-
-  await remove(card.id)
+  await removeEntry(card, () => remove(card.id))
 }
 
 /** Libellé traduit d'une catégorie, réutilisé par le sélecteur et par les titres de tableaux. */

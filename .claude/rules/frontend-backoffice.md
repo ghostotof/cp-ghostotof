@@ -175,73 +175,87 @@ status announcement) that a fork would silently lose:
   through « aucune »; it turns red if `startEdit` looks for a sibling in the form's category only, which would
   make a text edit detach the card.
 
-**Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
-(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
-→ `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
-→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and
-exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
-`application/admin/translation/proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
-`applyTranslationProposal` leaves a field absent from the proposal untouched) → `presentation/ui/admin/
-TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
-**Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the proposal. Since spec 0004 every per-entry form (Incidents, Contributions, CV sans identité,
-Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
-the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
-entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
-value, so a lone source still attaches its proposal) so saving the proposed version links it with no
-extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
-holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
-kept group would make a second version of the source locale). « Proposer la version XX » (R93), « Version de » (R94) and the
-me-card **category** selector (R79b, D-b) are locked too. One text, `admin.entryLock.proposal`, describes them all: « Annuler »
-drops the proposal and empties the form (R93, CR8-4). Why each one: a second translation took the form back to the source
-locale, group kept (decision 1 of the eighth review); « aucune » would detach the proposal from its source (decision 3); a
-version in the other language does not change category (#501/#561), and « Créer la version XX » keeps the category free, by decision.
-**The page writes its refusal once.** `useAdminTranslation` refuses the call itself, not only the disabled button, whenever
-that button is disabled and while a call is in flight. The page gives it the `isRefused` option, one term per condition: no
-prose to translate, a save in flight, a dirty order draft or the page's order lock, the form's proposal lock (for the About
-settings, a proposal shown, R127, R127b). The button's `:disabled` reads the `isRefused` the composable exposes (R137), never a
-copy of the predicate.
-**A response is discarded when its form changed.** The form's identity is `FormIdentity`: the entry, the locale, the source
-group and the form's generation, compared field by field by `sameFormIdentity`, never the prose. A response whose form no
-longer has the identity read at send time is discarded, whatever gesture replaced it and even if the form later regains that
-identity (R124). Every gesture that fills or empties the form (a reset, « Modifier », « Créer la version XX ») advances its
-generation, `renewForm()` of `useTranslatedForm`, called first by each `resetForm`, `startEdit` and `startCreateVersion` (R139,
-decision 1 of the twelfth review; R152, D1 of the thirteenth): a blank form saved during a translation, or a « Modifier » or a
-« Créer la version XX » clicked again on the same entry or line, keeps its entry, locale and group, and only the generation tells
-it from the form the call left. What no identity sees, a deletion, goes through
-`discardIfDeleted()` of `useTranslatedForm`: the entry being edited, or the source of a creation attached to its group (R124,
-R140). A page calls it before every `remove`; deleting another member of the edited entry's group changes nothing.
-**One model call in flight per mounted form**: a discarded call still running refuses the next one (`isDiscardPending`, R125,
-decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened, or
-a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a text
-referenced by `aria-describedby` only while it waits, `admin.translation.discardPending`.
-**While a translation runs, the form's prose fields are `readonly`** (not `disabled`: readable and focusable), each
-described by `admin.translation.proseReadonly`
-(`TranslationReadonlyHint`), rendered only then — `presentation/ui/admin/useTranslatedForm.ts` wraps `useAdminTranslation`
-for every form and writes that once (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one
-`hintIdPrefix`), the field lists living in `presentation/pages/admin/proseFields.ts`, read by the page and by its spec
-(the spec derives each field's id with `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the templates write the ids
-literally, no production code reads it): the answer replaces prose nobody could change meanwhile, which is why the
-prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared by any change of
-identity or the next translation, never brought back by a return to it (R126, R139, decision 3 of the eleventh review). A proposal
-whose target locale the group already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
-`translation-already-exists` at save, « Annuler » being the way out (accepted, Q1 of the eighth review: detecting it
-would copy the server's uniqueness rule, as #573 refused). The old "page-locale"
-semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
-the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
-return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
-would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
-not save would burn quota for nothing) and, for the settings, while a proposal is shown (a second translation would
-replace it with no « Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
-(`admin.about.settings.proposalDiscard`, R127c, R141):
-a `type="button"` shown only during the proposal, no confirmation, that drops it and re-reads the shown language's form
-(saved values back, focus to the first field, not announced like the per-entry « Annuler »); any arrival of settings
-drops the proposal, whatever its language — invisible, the notice being under its target only and the return to it re-reading
-its settings (R141b, the author's decision revising decision 2 of the ninth review).
-Never use `v-html` on text coming back from the model: it goes
-through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
-closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
-version" copies nothing and the assistant sends all five fields.
+The translation assistant (ADR 0004 phase 1, spec 0002) is one more admin slice, `domain/admin/translation`
+(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`) →
+`infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`) →
+`application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and exposes
+`errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
+`application/admin/translation/proseFieldCopy.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
+`applyTranslationProposal` leaves a field absent from the proposal untouched) →
+`presentation/ui/admin/TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits
+`translate`) and, per form, `presentation/ui/admin/useTranslatedForm.ts`, which wraps `useAdminTranslation` and writes once
+what the nine forms share. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
+and what to do with the proposal.
+
+- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` returns `hasProse`, `errorText`
+  (`admin.translation.errors.<reason>`), `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`,
+  `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar `discard` (R153, D4 of the thirteenth
+  review). The page keeps its form and its gestures (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a
+  delete and the template block — `TranslateEntryButton`, `TranslationReadonlyHint`, the error alert —, which each page
+  writes because each of its bindings carries a value of the page (the form's locale, the lock's help, its `describedBy`). A
+  form new to the assistant writes its list of prose fields (`proseFields.ts`), its `identity`, its `isRefused` terms, its
+  `switchForm`, its template block and its `EntryFormLockCase` (`tests/support/entryFormLock.ts`); the About settings, whose
+  proposal is deferred, read `hasProse` and `errorText` and call `translate` themselves.
+- `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it. Since spec 0004 every
+  per-entry form (Incidents, Contributions, CV sans identité, Quality principles/traits, About site/me cards) behaves the
+  same way: the form switches to *creation* in the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…)
+  are kept, **the source entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
+  value, so a lone source still attaches its proposal) so saving the proposed version links it with no extra gesture, and a
+  `role="status"` banner names the proposal's source locale; while the form holds the proposal its locale selector is locked,
+  as in editing (R78, R79, Sp7-1: the kept group would make a second version of the source locale). « Proposer la version XX »
+  (R93), « Version de » (R94) and the me-card **category** selector (R79b, D-b) are locked too. One text,
+  `admin.entryLock.proposal`, describes them all: « Annuler » drops the proposal and empties the form (R93, CR8-4). Why each
+  one: a second translation took the form back to the source locale, group kept (decision 1 of the eighth review); « aucune »
+  would detach the proposal from its source (decision 3); a version in the other language does not change category
+  (#501/#561), and « Créer la version XX » keeps the category free, by decision.
+- The refusal is written once. `useAdminTranslation` refuses the call itself, not only the disabled button, whenever that
+  button is disabled and while a call is in flight. The page gives it the `isRefused` option, one term per condition: a save
+  in flight, a dirty order draft or the page's order lock, the form's proposal lock (for the About settings, a proposal
+  shown, R127, R127b); the composable adds the absence of prose (`hasProse`). The button's `:disabled` reads the `isRefused`
+  the composable exposes (R137), never a copy of the predicate.
+- A response is discarded when its form changed. The form's identity is `FormIdentity`: the entry, the locale, the source
+  group and the form's generation, compared field by field by `sameFormIdentity`, never the prose. A response whose form no
+  longer has the identity read at send time is discarded, whatever gesture replaced it and even if the form later regains
+  that identity (R124). Every gesture that fills or empties the form (a reset, « Modifier », « Créer la version XX »)
+  advances its generation, `renewForm()` of `useTranslatedForm`, called first by each `resetForm`, `startEdit` and
+  `startCreateVersion` (R139, decision 1 of the twelfth review; R152, D1 of the thirteenth): a blank form saved during a
+  translation, or a « Modifier » or a « Créer la version XX » clicked again on the same entry or line, keeps its entry,
+  locale and group, and only the generation tells it from the form the call left. What no identity sees, a deletion, goes
+  through `discardIfDeleted()` of `useTranslatedForm`: the entry being edited, or the source of a creation attached to its
+  group (R124, R140). A page deletes through `removeEntry(entry, remove)`, which calls it first and then awaits `remove`: a
+  refused deletion still discards the translation (accepted, D7 of the thirteenth review: discarding after the success would
+  let an answer that arrived during the `DELETE` land on a deleted entry); deleting another member of the edited entry's
+  group changes nothing.
+- One model call in flight per mounted form: a discarded call still running refuses the next one (`isDiscardPending`, R125,
+  decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened,
+  or a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a
+  text referenced by `aria-describedby` only while it waits, `admin.translation.discardPending`.
+- While a translation runs, the form's prose fields are `readonly` (not `disabled`: readable and focusable), each described
+  by `admin.translation.proseReadonly` (`TranslationReadonlyHint`), rendered only then — `useTranslatedForm` writes that once
+  (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one `hintIdPrefix`), the field lists
+  living in `presentation/pages/admin/proseFields.ts`, read by the page, which hands its list to `useTranslatedForm`, and by
+  its spec (the spec derives each field's id with `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the
+  templates write the ids literally, no production code reads it): the answer replaces prose nobody could change meanwhile,
+  which is why the prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared by
+  any change of identity or the next translation, never brought back by a return to it (R126, R139, decision 3 of the
+  eleventh review). A proposal whose target locale the group already has (from « Créer la version XX », or from an entry
+  whose group has both) ends on the server's 409 `translation-already-exists` at save, « Annuler » being the way out
+  (accepted, Q1 of the eighth review: detecting it would copy the server's uniqueness rule, as #573 refused). The old
+  "page-locale" semantics is gone with the page-level selector (one locale per form, see above).
+- About *settings* is the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on
+  the return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
+  overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could not save would burn
+  quota for nothing) and, for the settings, while a proposal is shown (a second translation would replace it with no «
+  Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
+  (`admin.about.settings.proposalDiscard`, R127c, R141): a `type="button"` shown only during the proposal, no confirmation,
+  that drops it and re-reads the shown language's form (saved values back, focus to the first field, not announced like the
+  per-entry « Annuler »); any arrival of settings drops the proposal, whatever its language — invisible, the notice being
+  under its target only and the return to it re-reading its settings (R141b, the author's decision revising decision 2 of the
+  ninth review).
+
+Never use `v-html` on text coming back from the model: it goes through the form fields, then `RichText.vue`. The case-studies
+admin page (`/admin/case-studies`, issue #104, closed 2026-09-14) is wired exactly like the CV sans identité one — every
+field is prose, so "Create the XX version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.

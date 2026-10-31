@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -104,55 +103,6 @@ const {
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
 /**
- * Une instance de composable de traduction par formulaire : chacun a son
- * attente et son message d'erreur.
- */
-const {
-  isTranslating: isTranslatingPrinciple,
-  isDiscardPending: isDiscardPendingPrinciple,
-  isRefused: isPrincipleTranslationRefused,
-  errorReason: principleTranslationErrorReason,
-  translate: translatePrinciple,
-  discardIfDeleted: discardPrincipleIfDeleted,
-  renewForm: renewPrincipleForm,
-  proseReadonlyHintId: principleProseReadonlyHintId,
-  translationHintId: principleTranslationHintId,
-  proseFieldAttrs: principleProseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-quality-principle',
-  isRefused: () => !hasPrincipleProse.value || isSubmittingPrinciple.value || isAnyOrderDirty.value || principleLock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingPrincipleId.value,
-    locale: principleForm.locale,
-    group: principleSourceGroup.value,
-  }),
-})
-const {
-  isTranslating: isTranslatingTrait,
-  isDiscardPending: isDiscardPendingTrait,
-  isRefused: isTraitTranslationRefused,
-  errorReason: traitTranslationErrorReason,
-  translate: translateTrait,
-  discardIfDeleted: discardTraitIfDeleted,
-  renewForm: renewTraitForm,
-  proseReadonlyHintId: traitProseReadonlyHintId,
-  translationHintId: traitTranslationHintId,
-  proseFieldAttrs: traitProseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-quality-trait',
-  isRefused: () => !hasTraitProse.value || isSubmittingTrait.value || isAnyOrderDirty.value || traitLock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingTraitId.value,
-    locale: traitForm.locale,
-    group: traitSourceGroup.value,
-  }),
-})
-
-/**
  * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
  * type littéral de sa valeur initiale et le sélecteur de langue ne compile
  * plus. Le champ numérique `Position` a disparu (spec 0004, D3) — la position
@@ -216,8 +166,58 @@ const traitLock = useEntryFormLock({
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 
-const hasPrincipleProse = computed(() => QUALITY_PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
-const hasTraitProse = computed(() => '' !== traitForm.label.trim())
+/**
+ * Une instance de composable de traduction par formulaire : chacun a son
+ * attente et son message d'erreur. Après les formulaires, que le composable lit dès l'appel.
+ */
+const {
+  isTranslating: isTranslatingPrinciple,
+  isDiscardPending: isDiscardPendingPrinciple,
+  isRefused: isPrincipleTranslationRefused,
+  errorText: principleTranslationErrorText,
+  proposeFrom: proposePrincipleFrom,
+  removeEntry: removePrincipleEntry,
+  renewForm: renewPrincipleForm,
+  proseReadonlyHintId: principleProseReadonlyHintId,
+  translationHintId: principleTranslationHintId,
+  proseFieldAttrs: principleProseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-quality-principle',
+  form: principleForm,
+  proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
+  isRefused: () => isSubmittingPrinciple.value || isAnyOrderDirty.value || principleLock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingPrincipleId.value,
+    locale: principleForm.locale,
+    group: principleSourceGroup.value,
+  }),
+})
+const {
+  isTranslating: isTranslatingTrait,
+  isDiscardPending: isDiscardPendingTrait,
+  isRefused: isTraitTranslationRefused,
+  errorText: traitTranslationErrorText,
+  proposeFrom: proposeTraitFrom,
+  removeEntry: removeTraitEntry,
+  renewForm: renewTraitForm,
+  proseReadonlyHintId: traitProseReadonlyHintId,
+  translationHintId: traitTranslationHintId,
+  proseFieldAttrs: traitProseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-quality-trait',
+  form: traitForm,
+  proseFields: QUALITY_TRAIT_PROSE_FIELDS,
+  isRefused: () => isSubmittingTrait.value || isAnyOrderDirty.value || traitLock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingTraitId.value,
+    locale: traitForm.locale,
+    group: traitSourceGroup.value,
+  }),
+})
 
 const principleErrorText = computed(() => {
   const reason = principleErrorMessage.value?.reason
@@ -228,16 +228,6 @@ const traitErrorText = computed(() => {
   const reason = traitErrorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
-})
-const principleTranslationErrorText = computed(() => {
-  const reason = principleTranslationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
-})
-const traitTranslationErrorText = computed(() => {
-  const reason = traitTranslationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
 })
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
@@ -484,37 +474,21 @@ async function handleSubmitTrait(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
-  const sourceLocale = principleForm.locale
-
-  const proposal = await translatePrinciple(
-    sourceLocale,
-    targetLocale,
-    collectProseFields(principleForm, QUALITY_PRINCIPLE_PROSE_FIELDS),
-  )
-  if (!proposal) {
-    return
-  }
-
-  editingPrincipleId.value = null
-  principleForm.locale = targetLocale
-  principleForm.translationGroup = principleSourceGroup.value ?? ''
-  applyTranslationProposal(principleForm, QUALITY_PRINCIPLE_PROSE_FIELDS, proposal)
-  principleProposalSourceLocale.value = sourceLocale
+  await proposePrincipleFrom(targetLocale, (sourceLocale) => {
+    editingPrincipleId.value = null
+    principleForm.locale = targetLocale
+    principleForm.translationGroup = principleSourceGroup.value ?? ''
+    principleProposalSourceLocale.value = sourceLocale
+  })
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
-  const sourceLocale = traitForm.locale
-
-  const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, QUALITY_TRAIT_PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingTraitId.value = null
-  traitForm.locale = targetLocale
-  traitForm.translationGroup = traitSourceGroup.value ?? ''
-  applyTranslationProposal(traitForm, QUALITY_TRAIT_PROSE_FIELDS, proposal)
-  traitProposalSourceLocale.value = sourceLocale
+  await proposeTraitFrom(targetLocale, (sourceLocale) => {
+    editingTraitId.value = null
+    traitForm.locale = targetLocale
+    traitForm.translationGroup = traitSourceGroup.value ?? ''
+    traitProposalSourceLocale.value = sourceLocale
+  })
 }
 
 async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
@@ -523,9 +497,7 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  discardPrincipleIfDeleted(principle)
-
-  await removePrinciple(principle.id)
+  await removePrincipleEntry(principle, () => removePrinciple(principle.id))
 }
 
 async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
@@ -534,9 +506,7 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  discardTraitIfDeleted(trait)
-
-  await removeTrait(trait.id)
+  await removeTraitEntry(trait, () => removeTrait(trait.id))
 }
 
 useUnsavedOrderGuard(isAnyOrderDirty)

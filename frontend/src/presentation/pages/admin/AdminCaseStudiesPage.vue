@@ -3,7 +3,6 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminCaseStudies } from '../../../application/admin/caseStudies/useAdminCaseStudies'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -36,28 +35,6 @@ import type { AdminCaseStudy } from '../../../domain/admin/caseStudies/entities/
 const { t } = useI18n()
 const { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminCaseStudies()
-const {
-  isTranslating,
-  isDiscardPending,
-  isRefused: isTranslationRefused,
-  errorReason: translationErrorReason,
-  translate,
-  discardIfDeleted,
-  renewForm,
-  proseReadonlyHintId,
-  translationHintId,
-  proseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-case-study',
-  isRefused: () => !hasProseToTranslate.value || isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingId.value,
-    locale: form.locale,
-    group: sourceGroup.value,
-  }),
-})
 
 const editingId = ref<string | null>(null)
 
@@ -115,12 +92,30 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-const hasProseToTranslate = computed(() => CASE_STUDY_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-
-const translationErrorText = computed(() => {
-  const reason = translationErrorReason.value
-
-  return reason ? t(`admin.translation.errors.${reason}`) : null
+// Après le formulaire : le composable en lit l'objet dès l'appel.
+const {
+  isTranslating,
+  isDiscardPending,
+  isRefused: isTranslationRefused,
+  errorText: translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-case-study',
+  form,
+  proseFields: CASE_STUDY_PROSE_FIELDS,
+  isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
 })
 
 const errorText = computed(() => {
@@ -273,18 +268,12 @@ async function handleSubmit(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, CASE_STUDY_PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, CASE_STUDY_PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, (sourceLocale) => {
+    editingId.value = null
+    form.locale = targetLocale
+    form.translationGroup = sourceGroup.value ?? ''
+    proposalSourceLocale.value = sourceLocale
+  })
 }
 
 async function handleDelete(caseStudy: AdminCaseStudy): Promise<void> {
@@ -293,9 +282,7 @@ async function handleDelete(caseStudy: AdminCaseStudy): Promise<void> {
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  discardIfDeleted(caseStudy)
-
-  await remove(caseStudy.id)
+  await removeEntry(caseStudy, () => remove(caseStudy.id))
 }
 
 useUnsavedOrderGuard(isOrderDirty)
