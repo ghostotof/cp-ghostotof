@@ -6,8 +6,11 @@ import { join, resolve } from 'node:path'
  * Garde de source (#748, R4) : « non chargé » n'est pas « vide ». Une page d'administration qui dit « aucune … »
  * le dit d'une liste qu'elle a **lue** ; après une première lecture en session finie, la liste est à `[]` sans
  * que rien n'ait été lu, et l'état vide affirmerait que le contenu n'existe pas. Le composable expose pour cela
- * `isLoaded` (`useAdminLoad`) : tout fichier de `presentation/pages/admin` qui compose un état vide
- * (`t('admin.….empty')`) doit le lire au moins autant de fois qu'il a d'états vides.
+ * `isLoaded` (`useAdminLoad`) : tout fichier de `presentation/pages/admin` qui compose un état vide dans son gabarit
+ * doit le lire, dans ce même gabarit, au moins autant de fois qu'il a d'états vides. Un état vide s'écrit de deux façons :
+ * `t('admin.….empty')`, et `{{ texts.empty }}` dans `AdminQualityEntrySection` (#748, R190), dont la page traduit le texte
+ * (une clé littérale, que `no-missing-keys` vérifie) et que la section affiche : le compte se fait donc sur le gabarit, où
+ * l'état vide est composé, et non sur le script, où la page de Qualité écrit seulement les clés.
  *
  * Les `.vue` se lisent par `node:fs` : Vitest 5 vide les imports bruts de fichiers non scripts, et un test de
  * source ne doit dépendre d'aucune transformation (comme `styleSheet.spec.ts`).
@@ -15,7 +18,7 @@ import { join, resolve } from 'node:path'
  * et les tests de page (`AdminCaseStudiesPage.spec.ts`, `AdminWatchPage.spec.ts`) en tiennent le comportement.
  */
 const PAGES_DIRECTORY = resolve(import.meta.dirname, '../../../../src/presentation/pages/admin')
-const EMPTY_STATE = /t\('admin\.[A-Za-z.]+\.empty'\)/g
+const EMPTY_STATE = /t\('admin\.[A-Za-z.]+\.empty'\)|\{\{\s*texts\.empty\s*\}\}/g
 const IS_LOADED = /\bisLoaded\b|\bis[A-Z][A-Za-z]*Loaded\b/g
 
 describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
@@ -25,17 +28,20 @@ describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
 
     for (const file of readdirSync(PAGES_DIRECTORY).filter((name) => name.endsWith('.vue'))) {
       const source = readFileSync(join(PAGES_DIRECTORY, file), 'utf8')
-      const emptyStates = source.match(EMPTY_STATE)?.length ?? 0
+      // Les états vides et les occurrences de `isLoaded` sont comptés sur le seul gabarit : la déclaration du script n'est pas
+      // une garde, et les clés que la page de Qualité traduit pour sa section n'y sont pas des états vides.
+      const template = source.slice(source.indexOf('<template>'))
+      const emptyStates = template.match(EMPTY_STATE)?.length ?? 0
       if (0 === emptyStates) continue
       withEmptyState++
-      // Les occurrences de `isLoaded` comptées sur le seul gabarit : la déclaration du script n'est pas une garde.
-      const template = source.slice(source.indexOf('<template>'))
       const guards = template.match(IS_LOADED)?.length ?? 0
       if (guards < emptyStates) offenders.push(`${file} : ${emptyStates} état(s) vide(s), ${guards} garde(s) isLoaded`)
     }
 
-    // Le garde-fou de la garde : une expression régulière qui ne trouverait plus rien la ferait passer à vide.
-    expect(withEmptyState).toBeGreaterThanOrEqual(10)
+    // Le garde-fou de la garde : une expression régulière qui ne trouverait plus rien la ferait passer à vide. Dix fichiers
+    // composent un état vide (onze avant R190 : les deux sections de Qualité n'en font plus qu'une) : le plancher est 9, un
+    // de moins que le compte, comme il l'était (10 pour 11).
+    expect(withEmptyState).toBeGreaterThanOrEqual(9)
     expect(offenders, `états vides sans isLoaded :\n${offenders.join('\n')}`).toEqual([])
   })
 })

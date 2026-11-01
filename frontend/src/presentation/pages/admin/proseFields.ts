@@ -10,8 +10,9 @@
  * ni employeur, ni client — vaut pour la proposition autant que pour l'original, et c'est la relecture humaine qui la
  * garantit.
  *
- * L'identifiant du champ dans le formulaire suit `<préfixe du formulaire>-<champ en kebab>` : les gabarits l'écrivent en littéral,
- * les specs le dérivent de ces listes (`tests/support/proseFieldId.ts`).
+ * L'identifiant du champ dans le formulaire suit `<préfixe du formulaire>-<champ en kebab>` : les gabarits l'écrivent en littéral
+ * (la section de Qualité le construit de son genre et du nom du champ, `qualityEntrySection.ts`, qui lit aussi les deux listes de
+ * Qualité), les specs le dérivent de ces listes (`tests/support/proseFieldId.ts`).
  */
 
 /** Incidents. Le complément : `version`, `occurredAt`. */

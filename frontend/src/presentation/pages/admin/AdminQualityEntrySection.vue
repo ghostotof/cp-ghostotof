@@ -1,7 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="F extends string, E extends QualityEntry<F>, I extends QualityEntryInput<F>">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -17,6 +16,7 @@ import {
   translationGroupOptions,
 } from '../../../domain/admin/shared/ordering/translationGroupSelection'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
+import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
@@ -25,33 +25,64 @@ import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
 import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
-import { QUALITY_TRAIT_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
-import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
+import type {
+  QualityEntry,
+  QualityEntryField,
+  QualityEntryInput,
+  QualityEntrySource,
+  QualityEntryTexts,
+} from './qualityEntrySection'
 
 /**
- * Les traits de qualité : un formulaire, un tableau groupé par groupe de
- * traduction (toutes les langues, spec 0004 D8) et son brouillon d'ordre.
- * L'autre moitié de `AdminQualityPage`, jumelle de `AdminQualityPrinciplesSection`
- * (le trait n'a qu'un champ, `label`, qui est de la prose : rien à recopier dans
- * « Créer la version XX »).
+ * Un contenu de qualité ordonné — les principes, ou les traits — : un formulaire, un tableau groupé par groupe de traduction
+ * (toutes les langues, spec 0004 D8) et son brouillon d'ordre. Une moitié de `AdminQualityPage`, instanciée deux fois ; elle
+ * ne diffère d'une instance à l'autre que par ses champs (`fields`, `qualityEntrySection.ts`), ses textes (`texts`, traduits
+ * par la page) et sa lecture (`source`) : aucune branche sur `kind`, qui ne sert qu'aux identifiants `admin-quality-<kind>-*`.
  *
- * Mêmes règles que les principes : la langue est un champ du formulaire
- * (`form.locale`), l'assistant bascule **ce** formulaire vers la locale
- * cible en gardant le groupe de la source (D9), et le verrou d'ordre (D6) est
- * global à la page : `isLocked` reçu, `orderDirtyChange` annoncé, et le refus de traduire lit
- * son propre brouillon (`isOrderDirty`) tout de suite.
+ * **La langue est un champ de formulaire, pas un état de page**
+ * (`form.locale`) : c'est la langue de l'entrée en cours d'édition ou
+ * de création, et elle ne pilote rien d'autre que ce formulaire et son
+ * assistant. « Modifier » sur une entrée d'une autre langue aligne celle du
+ * formulaire (sans cela, l'enregistrement réécrirait l'entrée anglaise en
+ * français) ; l'assistant bascule **ce** formulaire vers la locale cible et y
+ * rattache la proposition au groupe de l'entrée source (D9), si bien que
+ * l'enregistrer lie la traduction sans geste supplémentaire. Rien n'est rechargé
+ * derrière (le tableau affiche déjà toutes les langues, D8), donc rien ne vient
+ * écraser la proposition.
+ *
+ * **Le verrou d'ordre (D6) est global à la page** : la section reçoit
+ * `isLocked` (un brouillon d'ordre modifié, ici ou dans l'autre section) et
+ * annonce le sien par `orderDirtyChange`, la page faisant la somme et rendant
+ * l'aide une seule fois (`lockedHintId`). Le refus de traduire lit **son**
+ * brouillon (`isOrderDirty`) tout de suite et celui de l'autre section
+ * par `isLocked`, à jour après le rendu de la page : voir la limite dans
+ * `AdminQualityPage`.
+ *
+ * **Ce que la section lit une fois, à sa construction** : `source` (le composable ne change pas de main), les noms de
+ * `fields` (leurs libellés, eux, suivent la langue de l'interface) et `kind`.
  */
 
-const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
+const props = defineProps<{
+  /** `principle` ou `trait` : le seul usage est l'identifiant des éléments, `admin-quality-<kind>-*`. */
+  kind: 'principle' | 'trait'
+  source: QualityEntrySource<E, I>
+  /** Les champs du formulaire, dans l'ordre où le gabarit les écrit, chacun avec son libellé traduit. */
+  fields: readonly QualityEntryField<F>[]
+  /** Le champ qui nomme l'entrée : sa ligne dans le tableau, « Version de », la question de la suppression. */
+  titleField: F
+  texts: QualityEntryTexts
+  isLocked: boolean
+  lockedHintId?: string
+}>()
 const emit = defineEmits<{ orderDirtyChange: [isDirty: boolean] }>()
 
 const { t } = useI18n()
 
 const {
-  traits,
+  entries,
   isLoading,
   hasError,
   isLoaded,
@@ -61,22 +92,52 @@ const {
   update,
   remove,
   reorder,
-} = useAdminQualityTraits()
+} = props.source
+
+const idPrefix = `admin-quality-${props.kind}`
+
+/** `iconKey` devient `icon-key` : l'identifiant d'un champ est `<idPrefix>-<nom en kebab>`. */
+function fieldId(name: string): string {
+  return `${idPrefix}-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
+}
+
+/** Les champs de prose : ce que l'assistant envoie et remplace, et ce qui devient lisible seulement pendant une traduction. */
+const proseFields = props.fields.filter((field) => field.prose).map((field) => field.name)
+
+const CONTROLS = { text: BaseTextInput, textarea: BaseTextarea } as const
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
-interface TraitForm {
-  locale: Locale
-  translationGroup: string
-  label: string
+/**
+ * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
+ * type littéral de sa valeur initiale et le sélecteur de langue ne compile
+ * plus. Le champ numérique `Position` a disparu (spec 0004, D3) — la position
+ * ne se saisit plus, seul `PUT …/order` l'écrit.
+ */
+type EntryForm = { locale: Locale; translationGroup: string; [field: string]: string }
+
+/** Les champs du formulaire à blanc : une chaîne vide par nom de `fields`. */
+function blankFields(): { [K in F]: string } {
+  return Object.fromEntries(props.fields.map((field) => [field.name, ''])) as { [K in F]: string }
 }
 
-const form = reactive<TraitForm>({ locale: SUPPORTED_LOCALES[0], translationGroup: '', label: '' })
+const form = reactive({
+  locale: SUPPORTED_LOCALES[0],
+  translationGroup: '',
+  ...blankFields(),
+}) as unknown as EntryForm
 
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
 
-/** Groupe de l'entrée dont le formulaire est issu : voir `AdminQualityPrinciplesSection` (D9). */
+/**
+ * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
+ * version XX »), `null` sur une page blanche. Distinct de
+ * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
+ * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher la
+ * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
+ * aucune traduction et que le sélecteur affichait donc « aucune ».
+ */
 const sourceGroup = ref<string | null>(null)
 
 /** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
@@ -84,13 +145,14 @@ const proposalSourceLocale = ref<Locale | null>(null)
 
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
-  hintId: 'admin-quality-trait-entry-lock-help',
+  hintId: `${idPrefix}-entry-lock-help`,
   isEditing,
   proposalSourceLocale,
-  localeHelpId: 'admin-quality-trait-locale-help',
+  localeHelpId: `${idPrefix}-locale-help`,
 })
 
-const rows = computed(() => groupByTranslationGroup(traits.value, SUPPORTED_LOCALES))
+/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
+const rows = computed(() => groupByTranslationGroup(entries.value, SUPPORTED_LOCALES))
 
 const {
   draft: orderDraft,
@@ -122,9 +184,10 @@ const {
   translationHintId,
   proseFieldAttrs,
 } = useTranslatedForm({
-  hintIdPrefix: 'admin-quality-trait',
-  form,
-  proseFields: QUALITY_TRAIT_PROSE_FIELDS,
+  hintIdPrefix: idPrefix,
+  // `EntryForm` indexe ses champs par une chaîne (le gabarit compile ainsi) : le composable, lui, veut un champ par nom de `F`.
+  form: form as Record<F, string>,
+  proseFields,
   // Son brouillon d'ordre est lu tout de suite, celui de l'autre section par `props.isLocked` : la limite de cette
   // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
   isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
@@ -163,14 +226,23 @@ const {
 
 const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
+/** Les champs dont le tableau fait une colonne, dans l'ordre de `fields`. */
+const columnFields = computed(() => props.fields.filter((field) => field.column))
+
+/**
+ * « Version de » : les options du sélecteur (D2, cf.
+ * `domain/admin/shared/ordering/translationGroupSelection.ts` pour la règle
+ * exacte). L'option « aucune » est préfixée ici, son libellé étant un texte
+ * traduit — le module partagé reste framework-free.
+ */
 const translationOptions = computed(() => [
   { value: '', label: t('admin.quality.translationOfNone') },
   ...translationGroupOptions(
-    traits.value,
+    entries.value,
     form.locale,
     form.translationGroup,
     editingId.value,
-    (trait) => `${trait.locale.toUpperCase()} · ${trait.label}`,
+    (entry) => `${entry.locale.toUpperCase()} · ${entry[props.titleField]}`,
   ),
 ])
 
@@ -181,40 +253,65 @@ function resetForm(): void {
   sourceGroup.value = null
   form.locale = SUPPORTED_LOCALES[0]
   form.translationGroup = ''
-  form.label = ''
+  Object.assign(form, blankFields())
 }
 
-function startEdit(trait: AdminQualityTrait): void {
+// Le groupe lu est repris tel quel dès qu'il porte une traduction : le
+// formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
+// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+// traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+// est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+function startEdit(entry: E): void {
   renewForm()
-  editingId.value = trait.id
+  editingId.value = entry.id
   proposalSourceLocale.value = null
-  sourceGroup.value = trait.translationGroup
-  form.locale = trait.locale
-  form.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
-  form.label = trait.label
+  sourceGroup.value = entry.translationGroup
+  form.locale = entry.locale
+  form.translationGroup = hasSibling(entries.value, entry) ? entry.translationGroup : ''
+  for (const field of props.fields) {
+    form[field.name] = entry[field.name]
+  }
 }
 
-/** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
-function startCreateVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
+/**
+ * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
+ * dans la langue manquante, celle du sélecteur de ce formulaire. Les champs `copiedToNewVersion` sont recopiés de l'entrée
+ * existante (les champs non traduits : une clé d'icône) et la prose reste vide :
+ * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
+ */
+function startCreateVersion(row: TranslationGroupRow<E>, locale: Locale): void {
   renewForm()
+  const existing = firstEntry(row, SUPPORTED_LOCALES)
+
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = row.key
   form.locale = locale
   form.translationGroup = row.key
-  form.label = ''
+  for (const field of props.fields) {
+    const copied: string = existing?.[field.name] ?? ''
+
+    form[field.name] = field.copiedToNewVersion ? copied : ''
+  }
 }
 
 async function handleSubmit(): Promise<void> {
   isSubmitting.value = true
 
+  // Le corps d'écriture : la langue, le groupe et un champ par nom de `fields`. `as I` : `I` est le corps de l'instance, que
+  // le compilateur ne peut pas reconstruire d'une liste de noms lue à l'exécution.
   const input = {
     locale: form.locale,
+    // D3 : aucun `position` n'est jamais envoyé. `null` = contenu neuf à la
+    // création, détachement sur une mise à jour.
     translationGroup: '' === form.translationGroup ? null : form.translationGroup,
-    label: form.label,
-  }
+    ...Object.fromEntries(props.fields.map((field) => [field.name, form[field.name]])),
+  } as I
 
-  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
+  const succeeded =
+    null !== editingId.value
+      ? await update(editingId.value, input)
+      : await create(input)
 
   isSubmitting.value = false
 
@@ -227,20 +324,20 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
   await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
 }
 
-async function handleDelete(trait: AdminQualityTrait): Promise<void> {
-  if (!window.confirm(t('admin.quality.trait.confirmDelete', { label: trait.label }))) {
+async function handleDelete(entry: E): Promise<void> {
+  if (!window.confirm(props.texts.confirmDelete(entry[props.titleField]))) {
     return
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  await removeEntry(trait, () => remove(trait.id))
+  await removeEntry(entry, () => remove(entry.id))
 }
 </script>
 
 <template>
   <div class="surface-panel p-3 p-sm-4">
     <h2 class="h6 fw-bold text-white mb-3">
-      {{ isEditing ? t('admin.quality.trait.edit') : t('admin.quality.trait.create') }}
+      {{ isEditing ? texts.edit : texts.create }}
     </h2>
 
     <form
@@ -249,7 +346,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
     >
       <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
-        id="admin-quality-trait-locale"
+        :id="`${idPrefix}-locale`"
         v-model="form.locale"
         :disabled="lock.isEntryLocked"
         :aria-describedby="lock.localeDescribedBy"
@@ -257,7 +354,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
         :options="localeOptions"
       />
       <p
-        id="admin-quality-trait-locale-help"
+        :id="`${idPrefix}-locale-help`"
         class="form-text mb-3"
       >
         {{ t('admin.quality.localeHelp') }}
@@ -267,21 +364,29 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
         :state="lock.state"
       />
       <BaseSelect
-        id="admin-quality-trait-translation-group"
+        :id="`${idPrefix}-translation-group`"
         v-model="form.translationGroup"
         :disabled="lock.isProposalLocked"
         :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.quality.translationOfLabel')"
         :options="translationOptions"
       />
-      <BaseTextInput
-        id="admin-quality-trait-label"
-        v-model="form.label"
-        v-bind="proseFieldAttrs()"
-        :label="t('admin.quality.trait.labelLabel')"
+      <component
+        :is="CONTROLS[field.control]"
+        v-for="field in fields"
+        :id="fieldId(field.name)"
+        :key="field.name"
+        v-model="form[field.name]"
+        v-bind="field.prose ? proseFieldAttrs() : undefined"
+        :label="field.label"
         required
       />
 
+      <!--
+        Verrouillé lui aussi tant qu'un ordre est modifié : l'appel au modèle
+        produirait une proposition que le formulaire, verrouillé, ne pourrait pas
+        enregistrer — du quota dépensé pour rien (ADR 0004, coût borné).
+      -->
       <div class="mb-3">
         <TranslateEntryButton
           :form-locale="form.locale"
@@ -346,7 +451,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
     <hr class="border-secondary my-4">
 
     <h3 class="h6 fw-bold text-white mb-3">
-      {{ t('admin.quality.trait.listTitle') }}
+      {{ texts.listTitle }}
     </h3>
 
     <p
@@ -372,7 +477,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
       v-else-if="0 === orderedRows.length"
       class="text-body-secondary mb-0"
     >
-      {{ t('admin.quality.trait.empty') }}
+      {{ texts.empty }}
     </p>
     <template v-else>
       <OrderToolbar
@@ -397,6 +502,14 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
               </th>
               <th scope="col">
                 {{ t('admin.quality.contentLabel') }}
+              </th>
+              <th
+                v-for="field in columnFields"
+                :key="field.name"
+                scope="col"
+                class="col-md-1"
+              >
+                {{ field.label }}
               </th>
               <th
                 scope="col"
@@ -424,7 +537,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
                 <OrderHandle
                   :index="index"
                   :count="orderedRows.length"
-                  :label="firstEntry(row, SUPPORTED_LOCALES)?.label ?? ''"
+                  :label="firstEntry(row, SUPPORTED_LOCALES)?.[titleField] ?? ''"
                   @move="(from, to) => moveRow(row.key, from, to)"
                 />
               </td>
@@ -440,12 +553,19 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
                   >{{ line.locale.toUpperCase() }}</span>
                   <span class="visually-hidden">{{ line.nativeName }}</span>
                   <template v-if="line.entry">
-                    <span class="text-white admin-locale-line__text">{{ line.entry.label }}</span>
+                    <span class="text-white admin-locale-line__text">{{ line.entry[titleField] }}</span>
                   </template>
                   <template v-else>
                     <span class="text-body-secondary admin-locale-line__text">{{ t('admin.order.missingTranslation') }}</span>
                   </template>
                 </div>
+              </td>
+              <td
+                v-for="field in columnFields"
+                :key="field.name"
+                class="text-nowrap"
+              >
+                {{ firstEntry(row, SUPPORTED_LOCALES)?.[field.name] }}
               </td>
               <!-- Une ligne par langue, en face de celle de la cellule de contenu :
                    même v-for, même hauteur minimale (`.admin-locale-line`). -->
@@ -463,7 +583,7 @@ async function handleDelete(trait: AdminQualityTrait): Promise<void> {
                       :aria-describedby="lockedHintId"
                       @click="startEdit(line.entry)"
                     >
-                      {{ t('admin.quality.trait.editAction') }}
+                      {{ texts.editAction }}
                     </button>
                     <button
                       type="button"

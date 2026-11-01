@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
+import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
-import AdminQualityPrinciplesSection from './AdminQualityPrinciplesSection.vue'
-import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
+import AdminQualityEntrySection from './AdminQualityEntrySection.vue'
+import {
+  QUALITY_PRINCIPLE_FIELDS,
+  QUALITY_TRAIT_FIELDS,
+  withLabels,
+  type QualityEntryTexts,
+} from './qualityEntrySection'
 
 /**
  * Deux contenus ordonnés indépendamment sur une même page — les principes et
- * les traits de qualité —, chacun dans sa section (`AdminQualityPrinciplesSection`,
- * `AdminQualityTraitsSection`) avec son tableau groupé, son brouillon d'ordre et
- * son formulaire. La page garde ce que les deux partagent : le verrou d'ordre et
- * la garde de sortie. Le découpage suit celui d'« À propos » (`AdminAboutPage`).
+ * les traits de qualité —, chacun dans une instance de `AdminQualityEntrySection`
+ * avec son tableau groupé, son brouillon d'ordre et son formulaire. La page
+ * garde ce que les deux partagent : le verrou d'ordre et la garde de sortie, et
+ * ce qui les distingue : la lecture de chaque contenu (son composable), la liste de
+ * ses champs et ses textes, traduits ici avec des clés littérales.
  *
  * **Les tableaux affichent toutes les langues** (spec 0004, D8), une ligne par
  * groupe de traduction : l'ordre est celui du groupe et non celui d'une langue,
@@ -26,7 +34,7 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * de l'entrée en cours d'édition dans *l'autre* panneau, sans avertissement —
  * d'autant plus silencieusement que, selon D8, changer de langue ne recharge
  * aucune liste. Le détail (assistant, « Modifier » sur une autre langue) est
- * dans les sections.
+ * dans la section.
  *
  * **Verrouillage (D6) : global à la page.** Chaque section annonce son brouillon
  * d'ordre par `orderDirtyChange` ; la page en fait la somme, rend l'aide une
@@ -37,9 +45,9 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * geste en cours : un état, une aide, une règle à retenir.
  *
  * **Une section lit son propre brouillon tout de suite, celui de l'autre par
- * `isLocked`** (comme chaque section d'« À propos ») : la prop n'est à jour qu'après l'`emit` et le rendu de la page, une
- * limite acceptée (une micro-tâche, qu'aucun geste de l'utilisateur ne traverse) que les sections citent et que
- * `.claude/rules/frontend-backoffice.md` écrit une fois (« The refusal is written once »).
+ * `isLocked`** : la prop n'est à jour qu'après l'`emit` et le rendu de la page, une limite acceptée (une micro-tâche,
+ * qu'aucun geste de l'utilisateur ne traverse) que la section cite et que `.claude/rules/frontend-backoffice.md` écrit une
+ * fois (« The refusal is written once »).
  *
  * La page ne possède aucune logique d'ordre : elle ne connaît que deux booléens.
  */
@@ -54,6 +62,42 @@ const { t } = useI18n()
  * pendante serait elle-même une erreur d'accessibilité.
  */
 const LOCKED_HINT_ID = 'admin-order-locked-hint'
+
+/**
+ * La lecture de chaque contenu : le composable, la liste sous le nom `entries` que la section attend. Chaque composable est
+ * appelé ici, une fois ; ses refs restent dans l'objet (la page ne les déballe pas : seule la section les lit).
+ */
+const { principles, ...principleReading } = useAdminQualityPrinciples()
+const principleSource = { entries: principles, ...principleReading }
+const { traits, ...traitReading } = useAdminQualityTraits()
+const traitSource = { entries: traits, ...traitReading }
+
+/** Les libellés des champs : une clé littérale chacun, que `no-missing-keys` vérifie ; le type refuse un libellé manquant. */
+const principleFields = computed(() =>
+  withLabels(QUALITY_PRINCIPLE_FIELDS, {
+    title: t('admin.quality.principle.titleLabel'),
+    description: t('admin.quality.principle.descriptionLabel'),
+    iconKey: t('admin.quality.principle.iconKeyLabel'),
+  }),
+)
+const traitFields = computed(() => withLabels(QUALITY_TRAIT_FIELDS, { label: t('admin.quality.trait.labelLabel') }))
+
+const principleTexts = computed<QualityEntryTexts>(() => ({
+  create: t('admin.quality.principle.create'),
+  edit: t('admin.quality.principle.edit'),
+  listTitle: t('admin.quality.principle.listTitle'),
+  editAction: t('admin.quality.principle.editAction'),
+  empty: t('admin.quality.principle.empty'),
+  confirmDelete: (title) => t('admin.quality.principle.confirmDelete', { title }),
+}))
+const traitTexts = computed<QualityEntryTexts>(() => ({
+  create: t('admin.quality.trait.create'),
+  edit: t('admin.quality.trait.edit'),
+  listTitle: t('admin.quality.trait.listTitle'),
+  editAction: t('admin.quality.trait.editAction'),
+  empty: t('admin.quality.trait.empty'),
+  confirmDelete: (label) => t('admin.quality.trait.confirmDelete', { label }),
+}))
 
 const isPrincipleOrderDirty = ref(false)
 const isTraitOrderDirty = ref(false)
@@ -79,12 +123,22 @@ useUnsavedOrderGuard(isAnyOrderDirty)
       {{ t('admin.order.lockedHint') }}
     </p>
 
-    <AdminQualityPrinciplesSection
+    <AdminQualityEntrySection
+      kind="principle"
+      :source="principleSource"
+      :fields="principleFields"
+      title-field="title"
+      :texts="principleTexts"
       :is-locked="isAnyOrderDirty"
       :locked-hint-id="lockedHintId"
       @order-dirty-change="isPrincipleOrderDirty = $event"
     />
-    <AdminQualityTraitsSection
+    <AdminQualityEntrySection
+      kind="trait"
+      :source="traitSource"
+      :fields="traitFields"
+      title-field="label"
+      :texts="traitTexts"
       :is-locked="isAnyOrderDirty"
       :locked-hint-id="lockedHintId"
       @order-dirty-change="isTraitOrderDirty = $event"

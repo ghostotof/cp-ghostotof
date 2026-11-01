@@ -26,8 +26,9 @@ paths:
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits, one section each, `AdminQualityPrinciplesSection` and
-`AdminQualityTraitsSection`, under a page that keeps the shared order lock, as `about` does), `contributions`, `incidents`,
+Existing resources: `technologies`, `quality` (principles + traits, one generic section instantiated twice,
+`AdminQualityEntrySection`, which `AdminQualityPage` gives each content's fields (`qualityEntrySection.ts`) and texts, under a
+page that keeps the shared order lock, as `about` does), `contributions`, `incidents`,
 `anonymousCv`, `caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
 form: no client or employer name — no filter does it for you), `about` (settings + site cards +
 me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
@@ -198,8 +199,9 @@ and what to do with the proposal.
   every file of `presentation/pages/admin` that calls `useTranslatedForm`, the constants those two options read and, step by step, the
   ones their initialisers read). The page keeps its form and its gestures
   (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
-  `TranslationReadonlyHint`, the error alert —, which each page writes because each of its bindings carries a value of the
-  page (the form's locale, the lock's help, its `describedBy`). A form new to the assistant writes its list of prose fields
+  `TranslationReadonlyHint`, the error alert —, which each form component writes because each of its bindings carries a value of
+  the form (the form's locale, the lock's help, its `describedBy`); the generic section of Quality writes it once for its two
+  instances, its bindings reading its props (R190). A form new to the assistant writes its list of prose fields
   (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm` (`switchToProposedCreation(state, target)` of
   `presentation/ui/admin/proposedCreation.ts`, written once for the eight per-entry forms: it empties `editingId`, sets the
   target locale, the source's group and `proposalSourceLocale`), its template block and its `EntryFormLockCase`
@@ -250,14 +252,15 @@ and what to do with the proposal.
 - While a translation runs, the form's prose fields are `readonly` (not `disabled`: readable and focusable), each described
   by `admin.translation.proseReadonly` (`TranslationReadonlyHint`), rendered only then — `useTranslatedForm` writes that once
   (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one `hintIdPrefix`), the field lists
-  living in `presentation/pages/admin/proseFields.ts`, read by the page, which hands its list to `useTranslatedForm`, and by
-  its spec (the spec derives each field's id with `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the
-  templates write the ids literally, no production code reads it): the answer replaces prose nobody could change meanwhile,
-  which is why the prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared by
-  any change of identity or the next translation, never brought back by a return to it (R126, R139, decision 3 of the
-  eleventh review). A proposal whose target locale the group already has (from « Créer la version XX », or from an entry
-  whose group has both) ends on the server's 409 `translation-already-exists` at save, « Annuler » being the way out
-  (accepted, Q1 of the eighth review: detecting it would copy the server's uniqueness rule, as #573 refused). The old
+  living in `presentation/pages/admin/proseFields.ts`, read by the page, which hands its list to `useTranslatedForm` (for
+  Quality, `qualityEntrySection.ts` derives each field's `prose` from it), and by its spec (the spec derives each field's id with
+  `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the templates write the ids literally, no production code
+  reads it, bar Quality's generic section, which builds `admin-quality-<kind>-<field in kebab>` itself): the answer replaces
+  prose nobody could change meanwhile, which is why the prose is out of `formIdentity` and a failed translation's message (429,
+  503) survives typing, cleared by any change of identity or the next translation, never brought back by a return to it (R126,
+  R139, decision 3 of the eleventh review). A proposal whose target locale the group already has (from « Créer la version XX »,
+  or from an entry whose group has both) ends on the server's 409 `translation-already-exists` at save, « Annuler » being the
+  way out (accepted, Q1 of the eighth review: detecting it would copy the server's uniqueness rule, as #573 refused). The old
   "page-locale" semantics is gone with the page-level selector (one locale per form, see above).
 - About *settings* is the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on
   the return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
@@ -327,8 +330,9 @@ field is prose, so "Create the XX version" copies nothing and the assistant send
   not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise.
   Without it a first read in an ended session left the list at `[]`
   with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
-  guard: every file of `presentation/pages/admin` that composes a `…empty` state reads `isLoaded` at least as many times in
-  its template. A new list page adds the `isLoaded` guard before its empty state.
+  guard: every file of `presentation/pages/admin` that composes a `…empty` state in its template (`t('admin.….empty')`, or
+  `{{ texts.empty }}` in Quality's generic section, whose page translates the text) reads `isLoaded` at least as many times in that
+  template. A new list page adds the `isLoaded` guard before its empty state.
   **The About settings are the one composable with a key** (the locale), hence `clear`: a `load(key)` with a key other
   than the held value's empties it (`settings = null`) *before* reading. Otherwise the form of one locale stayed under
   the header of another when the read of the new one ended in an ended session, and « Enregistrer » sent `save(props.locale)`
