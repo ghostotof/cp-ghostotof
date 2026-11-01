@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
 import { EXPIRED_CALL_PENDING_FR, PROSE_READONLY_FR } from '../../support/adminTranslationTexts'
+import { ENTRY_LOCK_PROPOSAL_FR } from '../../support/entryFormLockTexts'
 
 /**
  * La justesse des deux textes de la traduction assistée (#748, R142) : c'est ici, et nulle part ailleurs, que leur
@@ -14,6 +15,24 @@ describe('textes de la traduction assistée (#748, R142)', () => {
 
     expect(en.admin.translation.proseReadonly).not.toContain('is lost')
     expect(en.admin.translation.proseReadonly).not.toContain('replaces them with the proposal')
+  })
+
+  it("l'aide de la prose en lecture seule ne promet pas l'ouverture de la proposition : la réponse peut être périmée ou refusée", () => {
+    // Une réponse périmée n'ouvre rien, et les réglages ne l'ouvrent pas toujours dans la langue cible : la réponse « peut » ouvrir.
+    expect(PROSE_READONLY_FR).not.toContain('Si elle aboutit')
+    expect(PROSE_READONLY_FR).not.toContain("la proposition s'ouvre")
+    expect(PROSE_READONLY_FR).toContain('qui peut ouvrir une proposition dans la langue cible')
+
+    expect(en.admin.translation.proseReadonly).not.toContain('If it succeeds')
+    expect(en.admin.translation.proseReadonly).not.toContain('the proposal opens')
+    expect(en.admin.translation.proseReadonly).toContain('which may open a proposal in the target language')
+  })
+
+  it("l'aide du verrou de proposition, en anglais, dit que « Cancel » abandonne et vide le formulaire, sans « discard »", () => {
+    // « discard » est réservé aux réglages « À propos » (R154) ; le français, lui, reste « l'abandonne et vide le formulaire ».
+    expect(en.admin.entryLock.proposal).not.toContain('discards')
+    expect(en.admin.entryLock.proposal).toContain('“Cancel” drops it and clears the form.')
+    expect(ENTRY_LOCK_PROPOSAL_FR).toContain("« Annuler » l'abandonne et vide le formulaire.")
   })
 
   it("l'attente du bouton parle de la traduction précédente, pas d'une traduction annulée par un seul geste", () => {

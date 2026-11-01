@@ -63,7 +63,7 @@
     "localeLabel": "Language",
     "entryLock": {
       "editing": "The language of an existing entry cannot be changed.",
-      "proposal": "Locked by the current translation proposal; “Cancel” discards it and clears the form."
+      "proposal": "Locked by the current translation proposal; “Cancel” drops it and clears the form."
     },
     "nav": {
       "content": "Content",
@@ -397,7 +397,7 @@
       "proposeVersion": "Suggest the {locale} version",
       "inProgress": "Translating…",
       "expiredCallPending": "The previous translation, abandoned, is still finishing on the server: this button comes back as soon as it answers, and the answer changes nothing in the form.",
-      "proseReadonly": "Translation in progress: the text fields are read-only until the answer. If it succeeds, the proposal opens in the target language; nothing is saved.",
+      "proseReadonly": "Translation in progress: the text fields are read-only until the answer, which may open a proposal in the target language; nothing is saved.",
       "proposalNotice": "AI-generated suggestion from the {locale} version: review and correct it before saving. Nothing is saved until you click Save.",
       "errors": {
         "validation": "The content to translate is invalid (empty or too long field).",
