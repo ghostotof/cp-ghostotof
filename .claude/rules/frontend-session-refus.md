@@ -96,17 +96,17 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     would carry the new epoch and say `common.accessRefused` for the earlier save. `noLoadInOnMounted.spec.ts` refuses a
     load or a repository call that runs after the mount, in `presentation/pages/admin` and `presentation/ui/admin` (R121, R144,
     R178). **Its criterion is the first execution of the callback**: it reads what never runs in `setup`. The function or the name
-    passed to `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`, `onDeactivated`,
-    `onBeforeRouteUpdate` or `onBeforeRouteLeave` (the `vue` ones under their import alias too), `nextTick`, `setTimeout`,
-    `setInterval`, `queueMicrotask`, `requestAnimationFrame`, `watchPostEffect`, the two callbacks of `then`, `catch` and `finally`
-    (any receiver, a whole chain), a `watchEffect` with `flush: 'post'`, or a `watch` **without a literal `immediate: true`**. An
-    `immediate` `watch` passes, posted or not: its **first** run is synchronous in `setup`, and the later ones answer a change of
-    its source, which the guard accepts. **Not seen, in full** (the review holds it): a read sent after an `await`; a sub-component
-    rendered later and outside the two folders; a function of another module that loads under a name the filter does not know; a
-    function declared in the file and passed by reference (read by its name alone, never by what it calls: seen if the name starts
-    with `load` or matches the filter); a hook held in a variable (`const hook = onMounted`) or imported as a namespace
-    (`Vue.onMounted`); a `vue-router` hook under an import alias; `promise['then']`; an alias set by an assignment
-    (`const refresh = load`); a callback handed to a third-party function (`debounce(load)`, `emitter.on('x', load)`).
+    passed to each deferred hook of `DEFERRED_HOOKS` (`frontend/tests/support/sourceText.ts`, where the list is written once, R192;
+    the `vue` ones under their import alias too; the two callbacks of `then`, `catch` and `finally`, any receiver, a whole chain), a
+    `watchEffect` with `flush: 'post'`, or a `watch` **without a literal `immediate: true`**. An `immediate` `watch` passes, posted
+    or not: its **first** run is synchronous in `setup`, and the later ones answer a change of its source, which the guard accepts.
+    **Not seen, in full** (the review holds it): a read sent after an `await`; a sub-component rendered later and outside the two
+    folders; a function of another module that loads under a name the filter does not know; a function declared in the file and
+    passed by reference (read by its name alone, never by what it calls: seen if the name starts with `load` or matches the
+    filter); a hook held in a variable (`const hook = onMounted`) or imported as a namespace
+    (`Vue.onMounted`); a `vue-router` hook under an import alias; `promise['then']`; `then`, `catch` and `finally` are judged on
+    the name alone, whatever the receiver (an object that is not a promise and has a `then` is read too); an alias set by an
+    assignment (`const refresh = load`); a callback handed to a third-party function (`debounce(load)`, `emitter.on('x', load)`).
     Any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the
     letter of decision 1 of the ninth: no load window, no counter).
   - **Accepted limits** (Q3 (a) of the twelfth review, R143): the module cannot tell a read the person relaunched from one

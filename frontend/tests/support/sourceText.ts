@@ -304,7 +304,12 @@ interface DeferredHook {
   readonly when?: 'posted' | 'unlessImmediate'
 }
 
-/** Les hooks de `vue` dont le rappel s'exécute après le montage, et les appels globaux qui différent une fonction. */
+/**
+ * La liste des hooks différés, **écrite ici et nulle part ailleurs** (#748, St15-5) : les hooks de `vue` et de `vue-router` dont le rappel
+ * s'exécute après le montage, les appels globaux qui différent une fonction, et les méthodes d'une promesse. Le docblock de
+ * `deferredCallsOf`, celui de `noLoadInOnMounted.spec.ts` et la règle `frontend-session-refus.md` y renvoient par son nom : ajouter
+ * ou retirer un hook se fait ici seulement, et `sourceText.spec.ts` a un cas par hook de la liste.
+ */
 const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
   ['onMounted', { callback: 0 }],
   ['onUpdated', { callback: 0 }],
@@ -400,7 +405,7 @@ function calledNameOf(call: ts.CallExpression, imported: ReadonlyMap<string, str
   if (ts.isIdentifier(callee)) {
     const name = imported.get(callee.text) ?? callee.text
 
-    // `then`, `catch` et `finally` ne différent un rappel que comme méthode d'une promesse, jamais appelés nus.
+    // `then`, `catch` et `finally` ne diffèrent un rappel que comme méthode d'une promesse, jamais appelés nus.
     return PROMISE_METHODS.has(name) ? null : name
   }
   if (
@@ -450,14 +455,13 @@ const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionEx
  *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`) ;
  * - ce qui précède un hook dans une chaîne (`prepare().then(() => a()).then(b)` donne `['a', 'b']`).
  *
- * Les hooks différés sont `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`,
- * `onDeactivated`, `onBeforeRouteUpdate`, `onBeforeRouteLeave`, `nextTick`, `watchPostEffect`, un `watch` **sauf** si ses options
- * portent `immediate: true`, un `watchEffect` quand ses options portent `flush: 'post'`, puis `setTimeout`, `setInterval`,
- * `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`, `globalThis`, `self`), et `then` (ses deux rappels), `catch`
- * et `finally`, appelés comme méthode de n'importe quel receveur. Les hooks de `vue` se lisent sous le nom que leur importation
- * leur donne (`import { onMounted as whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est
- * lu tel qu'il est écrit, pour qu'une source sans importation (un fichier de test) se lise de même. Seuls les arguments qui sont
- * des rappels sont lus : le délai d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
+ * Les hooks différés sont ceux de `DEFERRED_HOOKS` (la liste n'est écrite que là) ; un `watch` n'en est un que **sauf** si ses
+ * options portent `immediate: true`, un `watchEffect` que quand elles portent `flush: 'post'`, les minuteurs et `requestAnimationFrame`
+ * se lisent nus ou sur `window`, `globalThis`, `self`, et `then` (ses deux rappels), `catch` et `finally` comme méthode de n'importe
+ * quel receveur (le nom seul les juge : un objet qui n'est pas une promesse mais a un `then` est lu aussi). Les hooks de `vue` se lisent
+ * sous le nom que leur importation leur donne (`import { onMounted as whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un
+ * nom que `vue` ne lie pas est lu tel qu'il est écrit, pour qu'une source sans importation (un fichier de test) se lise de même. Seuls
+ * les arguments qui sont des rappels sont lus : le délai d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
  *
  * **Le critère est la première exécution du rappel.** Un `watch` `immediate` n'est pas lu : sa première exécution court dans le
  * `setup`, posté ou non (`job(true)`, `@vue/reactivity`) ; ses suivantes répondent à un changement, ce que la garde admet. Tout
@@ -471,58 +475,67 @@ const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionEx
  */
 export function deferredCallsOf(source: string): string[] {
   const file = syntaxTreeOf(source)
-  const imported = vueImportsOf(file)
-  const callees: string[] = []
+  const reading: DeferredReading = { file, imported: vueImportsOf(file), callees: [] }
+  visitNode(reading, file)
 
-  // Un rappel : sa fonction se lit (ses appels, ceux d'un hook qu'elle pose à son tour), une référence se nomme.
-  const readCallback = (callback: ts.Expression, whenOther: (node: ts.Node) => void): void => {
-    if (isFunctionLike(callback)) {
-      collect(callback.body)
-    } else if (isReference(callback)) {
-      callees.push(callback.getText(file))
+  return reading.callees
+}
+
+/** Ce que partagent les fonctions de `deferredCallsOf` : l'arbre (pour lire un texte), les importations de `vue`, et ce qui est rendu. */
+interface DeferredReading {
+  readonly file: ts.SourceFile
+  readonly imported: ReadonlyMap<string, string>
+  readonly callees: string[]
+}
+
+/** Un rappel : sa fonction se lit (ses appels, ceux d'un hook qu'elle pose à son tour), une référence se nomme, le reste se parcourt. */
+function readCallback(reading: DeferredReading, callback: ts.Expression): void {
+  if (isFunctionLike(callback)) {
+    collectCalls(reading, callback.body)
+  } else if (isReference(callback)) {
+    reading.callees.push(callback.getText(reading.file))
+  } else {
+    visitNode(reading, callback)
+  }
+}
+
+/** Tout appel écrit dans la fonction d'un hook, y compris ceux d'un hook qu'elle pose à son tour (dont la référence compte). */
+function collectCalls(reading: DeferredReading, node: ts.Node): void {
+  if (ts.isCallExpression(node)) {
+    reading.callees.push(node.expression.getText(reading.file))
+    for (const callback of callbacksOf(node, reading.imported)) {
+      if (isReference(callback)) {
+        reading.callees.push(callback.getText(reading.file))
+      }
+    }
+  }
+  ts.forEachChild(node, (child) => collectCalls(reading, child))
+}
+
+/**
+ * Un appel à rappels : le receveur d'abord (la chaîne `a.then(…).then(…)` se lit de son premier maillon), puis les arguments dans
+ * l'ordre, un rappel lu comme tel, tout autre argument parcouru.
+ */
+function visitHook(reading: DeferredReading, call: ts.CallExpression, callbacks: readonly ts.Expression[]): void {
+  visitNode(reading, call.expression)
+  for (const argument of call.arguments) {
+    if (callbacks.includes(argument)) {
+      readCallback(reading, argument)
     } else {
-      whenOther(callback)
+      visitNode(reading, argument)
     }
   }
+}
 
-  // Tout appel écrit dans la fonction d'un hook, y compris ceux d'un hook qu'elle pose à son tour (dont la référence compte).
-  const collect = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
-      callees.push(node.expression.getText(file))
-      for (const callback of callbacksOf(node, imported)) {
-        if (isReference(callback)) {
-          callees.push(callback.getText(file))
-        }
-      }
-    }
-    ts.forEachChild(node, collect)
+/** Parcourt `node` : un appel à rappels se lit par `visitHook`, tout autre nœud par ses enfants. */
+function visitNode(reading: DeferredReading, node: ts.Node): void {
+  const callbacks = ts.isCallExpression(node) ? callbacksOf(node, reading.imported) : []
+  if (ts.isCallExpression(node) && callbacks.length > 0) {
+    visitHook(reading, node, callbacks)
+
+    return
   }
-
-  // Un appel à rappels : le receveur d'abord (la chaîne `a.then(…).then(…)` se lit de son premier maillon), puis les arguments dans
-  // l'ordre, un rappel lu comme tel, tout autre argument parcouru.
-  const visitHook = (call: ts.CallExpression, callbacks: readonly ts.Expression[]): void => {
-    visit(call.expression)
-    for (const argument of call.arguments) {
-      if (callbacks.includes(argument)) {
-        readCallback(argument, visit)
-      } else {
-        visit(argument)
-      }
-    }
-  }
-
-  const visit = (node: ts.Node): void => {
-    const callbacks = ts.isCallExpression(node) ? callbacksOf(node, imported) : []
-    if (ts.isCallExpression(node) && callbacks.length > 0) {
-      visitHook(node, callbacks)
-
-      return
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(file)
-
-  return callees
+  ts.forEachChild(node, (child) => visitNode(reading, child))
 }
 
 /**

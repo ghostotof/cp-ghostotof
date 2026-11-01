@@ -10,22 +10,21 @@ import { deferredCallsOf, destructuredAliasesOf } from '../../../support/sourceT
  * « A real refusal »).
  *
  * Lu : `presentation/pages/admin/` et `presentation/ui/admin/`. **Le critère est la première exécution du rappel** : refusé, ce
- * qui ne court jamais dans le `setup`. Dans ce que `deferredCallsOf` rend (la fonction, ou le nom passé par référence, de
- * `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`, `onDeactivated`,
- * `onBeforeRouteUpdate`, `onBeforeRouteLeave`, `nextTick`, `watchPostEffect`, `setTimeout`, `setInterval`, `queueMicrotask`,
- * `requestAnimationFrame`, `then` (ses deux rappels), `catch`, `finally`, d'un `watch` **sans `immediate: true`**, d'un
- * `watchEffect` en `flush: 'post'` ; les hooks de `vue` se lisent sous l'alias de leur import), un appel dont le dernier segment est
- * `reload`, commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou porte un nom local lié à la clé
- * `load` ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch` `immediate` n'est pas lu, posté ou non :
- * sa **première** exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`) ; ses suivantes répondent à un
- * changement de sa source, ce que la garde admet.
+ * qui ne court jamais dans le `setup`. Dans ce que `deferredCallsOf` rend (la fonction, ou le nom passé par référence, de chaque
+ * hook différé de `DEFERRED_HOOKS`, dans `tests/support/sourceText.ts`, où la liste est écrite une fois ; les hooks de `vue` se
+ * lisent sous l'alias de leur import ; un `watch` n'en est un que **sans `immediate: true`**, un `watchEffect` qu'en `flush: 'post'`),
+ * un appel dont le dernier segment est `reload`, commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou
+ * porte un nom local lié à la clé `load` ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch`
+ * `immediate` n'est pas lu, posté ou non : sa **première** exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`) ;
+ * ses suivantes répondent à un changement de sa source, ce que la garde admet.
  *
  * Non vu, tenu par la relecture : une lecture envoyée après un `await` (la suite d'un `await nextTick()` s'exécute après le
  * rendu, et n'est pas lue) ; un sous-composant rendu plus tard et situé hors de ces deux dossiers ; une fonction d'un autre
  * module qui charge sous un nom que le filtre ne reconnaît pas ; une fonction déclarée dans le fichier et passée par
  * référence (lue par son nom seul, non par ce qu'elle appelle) ; un hook passé par une variable (`const hook = onMounted`) ou
  * importé en espace de noms (`Vue.onMounted`) ; un hook de `vue-router` importé sous un alias ; `then` écrit en `promise['then']` ;
- * un alias posé par une affectation (`const refresh = load`) ; un rappel passé à une fonction tierce (`debounce(load)`,
+ * `then`, `catch` et `finally` jugés sur le nom seul, quel que soit le receveur (un objet qui n'est pas une promesse les porte
+ * aussi) ; un alias posé par une affectation (`const refresh = load`) ; un rappel passé à une fonction tierce (`debounce(load)`,
  * `emitter.on('x', load)`, `addEventListener`). Des options de `watch` passées par une variable sont lues comme différées (la garde
  * peut rougir à tort) ; celles d'un `watchEffect`, comme immédiates.
  */
