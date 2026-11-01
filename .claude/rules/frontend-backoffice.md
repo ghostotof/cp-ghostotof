@@ -27,7 +27,7 @@ Content/user management UI, mirrored per-resource under `domain/admin/<resource>
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
 Existing resources: `technologies`, `quality` (principles + traits, one generic section instantiated twice,
-`AdminQualityEntrySection`, which `AdminQualityPage` gives each content's fields (`qualityEntrySection.ts`) and texts, under a
+`AdminQualityEntrySection`, which `AdminQualityPage` gives each content's fields (`qualityEntrySection.ts`), labels and texts, under a
 page that keeps the shared order lock, as `about` does), `contributions`, `incidents`,
 `anonymousCv`, `caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
 form: no client or employer name — no filter does it for you), `about` (settings + site cards +

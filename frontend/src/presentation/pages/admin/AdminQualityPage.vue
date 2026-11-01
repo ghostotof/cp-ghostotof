@@ -8,7 +8,6 @@ import AdminQualityEntrySection from './AdminQualityEntrySection.vue'
 import {
   QUALITY_PRINCIPLE_FIELDS,
   QUALITY_TRAIT_FIELDS,
-  withLabels,
   type QualityEntryTexts,
 } from './qualityEntrySection'
 
@@ -64,23 +63,26 @@ const { t } = useI18n()
 const LOCKED_HINT_ID = 'admin-order-locked-hint'
 
 /**
- * La lecture de chaque contenu : le composable, la liste sous le nom `entries` que la section attend. Chaque composable est
- * appelé ici, une fois ; ses refs restent dans l'objet (la page ne les déballe pas : seule la section les lit).
+ * La lecture de chaque contenu : le retour du composable, tel quel, à une clé près. La section dépend de l'interface
+ * `QualityEntrySource` (elle ne connaît ni les deux composables ni leur injection) et y lit la liste sous `entries`, là où
+ * chaque composable la nomme à sa façon (`principles`, `traits`) : c'est la seule différence, ajoutée ici. Chaque composable
+ * est appelé ici, une fois ; ses refs restent dans l'objet (la page ne les déballe pas : seule la section les lit).
  */
-const { principles, ...principleReading } = useAdminQualityPrinciples()
-const principleSource = { entries: principles, ...principleReading }
-const { traits, ...traitReading } = useAdminQualityTraits()
-const traitSource = { entries: traits, ...traitReading }
+const principleReading = useAdminQualityPrinciples()
+const principleSource = { ...principleReading, entries: principleReading.principles }
+const traitReading = useAdminQualityTraits()
+const traitSource = { ...traitReading, entries: traitReading.traits }
 
-/** Les libellés des champs : une clé littérale chacun, que `no-missing-keys` vérifie ; le type refuse un libellé manquant. */
-const principleFields = computed(() =>
-  withLabels(QUALITY_PRINCIPLE_FIELDS, {
-    title: t('admin.quality.principle.titleLabel'),
-    description: t('admin.quality.principle.descriptionLabel'),
-    iconKey: t('admin.quality.principle.iconKeyLabel'),
-  }),
-)
-const traitFields = computed(() => withLabels(QUALITY_TRAIT_FIELDS, { label: t('admin.quality.trait.labelLabel') }))
+/**
+ * Les libellés des champs, à part de la liste des champs (une constante) : ils suivent la langue de l'interface. Une clé
+ * littérale chacun, que `no-missing-keys` vérifie ; le type refuse un libellé manquant ou en trop.
+ */
+const principleLabels = computed(() => ({
+  title: t('admin.quality.principle.titleLabel'),
+  description: t('admin.quality.principle.descriptionLabel'),
+  iconKey: t('admin.quality.principle.iconKeyLabel'),
+}))
+const traitLabels = computed(() => ({ label: t('admin.quality.trait.labelLabel') }))
 
 const principleTexts = computed<QualityEntryTexts>(() => ({
   create: t('admin.quality.principle.create'),
@@ -126,7 +128,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <AdminQualityEntrySection
       kind="principle"
       :source="principleSource"
-      :fields="principleFields"
+      :fields="QUALITY_PRINCIPLE_FIELDS"
+      :labels="principleLabels"
       title-field="title"
       :texts="principleTexts"
       :is-locked="isAnyOrderDirty"
@@ -136,7 +139,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <AdminQualityEntrySection
       kind="trait"
       :source="traitSource"
-      :fields="traitFields"
+      :fields="QUALITY_TRAIT_FIELDS"
+      :labels="traitLabels"
       title-field="label"
       :texts="traitTexts"
       :is-locked="isAnyOrderDirty"
