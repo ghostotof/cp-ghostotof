@@ -15,8 +15,8 @@ Prises le 2026-11-01 : **les quatre recommandations**.
   la dix-septième série, chaque agent écrit ses mutations dans le **corps de son message de commit**.
 - Q2 → retirer les quatre `as` d'`AdminQualityEntrySection.vue` (`reactive` typé, `QualityEntryInput<F>`, garde d'exhaustivité).
 - Q3 → garder le retrait de la condition d'`endCall` ; son commentaire nomme le test de R125 qui garde l'invariant.
-- Q4 → ouvrir le ticket P15-1 maintenant (texte montré à l'auteur avant l'envoi) ; `bodyOf`, `arguments()`, `constantsAt` restent
-  dans #748.
+- Q4 → ticket P15-1 ouvert le 2026-11-01 : **#753** (texte montré à l'auteur avant l'envoi) ; `bodyOf`, `arguments()`,
+  `constantsAt` restent dans #748.
 - Tout le reste se corrige (critère « tout jusqu'à zéro »).
 
 Questions posées :
