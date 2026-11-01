@@ -136,18 +136,28 @@ It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (
 and, with a `p` option in **any** cluster of options, `declare -p`, `export -p`, `declare -g -p NAME`; `declare`, `typeset` and `local`
 with an `n` option in any cluster (a nameref reads a variable by name: `local -r -n ref=NAME`);
 `compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`) or a
-quote (`bash -c 'set'`, `bash -c "set"`), bare or followed by a redirection, a pipe, `;`, `&&`, `||` or a quote; `eval`; `printenv`;
-`env` as a command; `${!`; `ps` with the BSD option `e` in any position (`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`),
-not the POSIX `-e` (every process, not its environment: `ps -ef` passes); and the word `environ`, prose included,
+quote, a backtick or a backslash (`bash -c 'set'`, `` x=`set` ``, `\set`), bare or followed by a redirection, a pipe, `;`, `&&`, `||`, a
+quote, a backtick or a backslash (`set\`); `eval`; `printenv`; `env` as a command; `${!`; `ps` with the BSD option `e` in any position
+(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`),
+not the POSIX `-e` (every process, not its environment: `ps -ef` passes); a quote, a backtick or a backslash glued to a word is dropped
+first, and a final backslash refuses the line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, prose included,
 however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
 French prose writes « à peu près » or « près de », never that word, in a comment of these files.
+Such a bare word ends its command at the end of the line, `;`, `&`, `|`, `)`, `#`, a redirection, a backslash (`declare\`: the next line
+carries on the command), or at a quote or a backtick **glued** to the word or to its last option (C16-2: `bash -c 'declare'`,
+`bash -c "export"`, `bash -c 'declare -x'`, `` x=`export` ``, `'declare'`, `\declare`). After a blank, a quote ends it only if a word end
+follows (`bash -c 'declare -x '`): `export -n -- "$n"` opens the name, it passes.
 `export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
-`if set -o | grep -q xtrace`, `x="${env}"` and `environment` pass.
+`if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``, `bash -c 'export -n -- NAME'`, `x="${env}"`
+and `environment` pass.
+The forms of C16-2 that print are **measured** in `smoke-http.test.sh`: run by `bash -c` with an exported dummy variable (a random value),
+each prints the value, and the same list is then refused by the guard.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
 and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, a `set` alone between
-quotes: `echo 'set'`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of patterns is never
-complete against a deliberate bypass, which the review of the diff stops; « no line lists the environment » holds under that limit only.
+quotes: `echo 'set'`, `echo "declare"`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of
+patterns is never complete against a deliberate bypass, which the review of the diff stops: a word cut inside by a quote or a backslash
+(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`; « no line lists the environment » holds under that limit only.
 Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.

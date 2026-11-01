@@ -1431,34 +1431,44 @@ done
 #   - `declare`, `typeset`, `local`, `export`, `readonly` **sans nom** (seuls, ou suivis d'options seules : `declare -x`,
 #     `export -n`), qui listent ; avec une option `p` dans une grappe quelconque (`declare -g -p NOM`) ; `declare`, `typeset`,
 #     `local` avec une option `n` dans une grappe quelconque (une référence de nom, `local -r -n ref=X`, qui lit X par son
-#     nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ;
+#     nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ; le mot finit sur la fin de ligne, `;`, `&`, `|`, `)`, `#`, une
+#     redirection, un antislash (continuation), un guillemet ou un accent grave collé (`bash -c 'declare'`, x=`export`, C16-2) ;
 #   - `compgen` avec `-v`, `-e`, `-A variable` ou `-A export` ; `set` après n'importe quel mot (`if set`, `then set`, `! set`,
-#     `time set`), seul ou suivi d'une redirection, d'un tube, de `;`, `&&` ou `||` ; `set -o` passe ;
+#     `time set`, `bash -c 'set'`, x=`set`, `\set`), seul ou suivi d'une redirection, d'un tube, de `;`, `&&`, `||`, d'un guillemet,
+#     d'un accent grave ou d'un antislash (`set\`) ; `set -o` passe ;
 #   - `eval`, `printenv`, `env` (la commande : `"${env}"` n'en est pas une), `${!…}` ;
-#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`) ; `-e` POSIX liste les processus et
-#     non leur environnement : `ps -ef` passe (voir ps_lists_environment) ;
+#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`, `bash -c 'ps e'`, un antislash final) ; `-e` POSIX
+#     liste les processus et non leur environnement : `ps -ef` passe (voir ps_lists_environment) ;
 #   - le mot `environ`, prose comprise (`/proc/<pid>/environ` écrit de toute façon : `cd /proc/self && cat environ`,
 #     `"$p/environ"`) ; la prose française écrit « à peu près » ; `environment` passe.
 # Chaque ligne est lue, commentaires et heredocs compris. Un motif ancré sur des limites de mot : `set -e`, `set +x` passent.
 # **L'exemption est une ligne** : `  _smoke_value="${!_smoke_name:-}"`, comparée par égalité, dans le corps de
 # _smoke_write_auth_config ; tout autre ajout dans ce corps est jugé comme ailleurs.
 # **Limite écrite** : la garde vise les fautes de bonne foi (une trace de débogage oubliée). Une liste de motifs n'est jamais
-# complète contre un contournement délibéré (`eval` d'un nom composé, un `bash -c` dont la chaîne est assemblée) : celui-là
+# complète contre un contournement délibéré (`eval` d'un nom composé, un `bash -c` dont la chaîne est assemblée, un mot coupé par un
+# guillemet ou un antislash : `dec""lare`) : celui-là
 # est arrêté par la relecture du diff, pas par ce test.
 # ps_lists_environment <ligne> : vrai si une commande `ps` de la ligne porte l'option BSD `e` (`ps e`, `ps eww`, `ps auxe`), en
 # toute position (`ps -p $$ e`, `ps -o args= -p $$ ewww`). Les options à tiret ne comptent pas : `-e` POSIX liste les processus,
 # pas leur environnement (`ps -ef` passe), et la valeur d'une option qui en prend une (`-o etime=`, `-p $$`) est sautée. La
-# ligne est coupée aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`.
+# ligne est coupée aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`. Un guillemet, un accent grave ou un
+# antislash collé à un mot est retiré avant le jugement, et un antislash final (continuation) refuse la ligne.
 ps_lists_environment() {
   local segment token skip=0
-  local ps_word='(^|[^[:alnum:]_.-])ps([[:space:]]|$)'
+  local ps_word='(^|[^[:alnum:]_.-])ps([[:space:]]|$|\\)'
   local -a tokens
   while IFS= read -r segment; do
     if ! [[ "$segment" =~ $ps_word ]]; then continue; fi
+    # `ps\` : la ligne suivante porte les options.
+    if [[ "${BASH_REMATCH[0]}" == *'\' ]]; then return 0; fi
     segment="${segment#*"${BASH_REMATCH[0]}"}"
+    # Un antislash final : la ligne suivante continue la commande, ses options ne se jugent pas ici.
+    if [[ "$segment" == *'\' ]]; then return 0; fi
     read -r -a tokens <<< "$segment"
     skip=0
     for token in "${tokens[@]}"; do
+      # Un guillemet ou un accent grave collé au mot ne change pas ce que `ps` lit (`bash -c 'ps e'`, x=`ps e`).
+      token="${token//[\'\"\`\\]/}"
       if [ "$skip" -eq 1 ]; then skip=0; continue; fi
       case "$token" in
         -[opCuUgGtsNOqw]) skip=1 ;;
@@ -1472,8 +1482,16 @@ ps_lists_environment() {
 env_dump_lines() {
   local file="$1" n=0 line in_reader=0
   local word_before='(^|[^[:alnum:]_.-])'
-  # Après le mot : des grappes d'options en `-` ou en `+` (`declare +x`) et le séparateur `--`, qui ne nomment rien.
-  local list_end='([[:space:]]+(-|\+)[[:alnum:]]+|[[:space:]]+--)*[[:space:]]*($|[;&|)#]|[0-9]*[<>])'
+  # Après le mot : des grappes d'options en `-` ou en `+` (`declare +x`) et le séparateur `--`, qui ne nomment rien, puis la fin de
+  # la commande : la fin de ligne, `;`, `&`, `|`, `)`, `#`, une redirection, ou un antislash (`declare\` : la ligne suivante
+  # continue la commande, des options ou un nom qu'on ne juge pas ici). Un guillemet ou un accent grave **collé** au mot ou à la
+  # dernière option le ferme (`bash -c 'declare'`, `x=`declare``, `declare -x'`) ; après un blanc, il ne ferme que s'il est suivi d'une fin
+  # de mot (`bash -c 'declare -x '`) : `export -n -- "$n"` ouvre le nom, il passe.
+  local list_opts='([[:space:]]+(-|\+)[[:alnum:]]+|[[:space:]]+--)*'
+  local list_plain='[[:space:]]*($|[;&|)#\\]|[0-9]*[<>])'
+  local list_glued='[`'"'"'"]'
+  local list_spaced='[[:space:]]+[`'"'"'"]($|[[:space:];&|)#<>])'
+  local list_end="${list_opts}(${list_plain}|${list_glued}|${list_spaced})"
   local pat_bare="${word_before}(declare|typeset|local|readonly|export)${list_end}"
   # Une option `p` ou `n` dans n'importe quelle grappe d'options (`declare -g -p NOM`, `local -r -n ref=NOM`), pas la première seule.
   local pat_listing='(^|[^[:alnum:]_])(declare|typeset|local|readonly|export)([[:space:]]+-[[:alpha:]]*)*[[:space:]]+-[[:alpha:]]*p'
@@ -1484,8 +1502,9 @@ env_dump_lines() {
   local pat_env='(^|[^[:alnum:]_.${-])env([^[:alnum:]_]|$)'
   # `set` après n'importe quel mot (`if set`, `then set`, `! set`, `time set`, `do set`), seul ou suivi d'une redirection, d'un
   # tube, d'un `;`, d'un `&&` ou d'un `||` ; `set -o`, `set -e`, `set +x` n'énumèrent rien.
-  # Un guillemet avant ou après le mot le rend visible dans une chaîne de `bash -c 'set'` ou `bash -c "set"`.
-  local pat_set='(^|[[:space:];&|(`{!'"'"'"]|\$\()set[[:space:]]*($|[|>;&)#'"'"'"]|[0-9]*[<>])'
+  # Un guillemet, un accent grave ou un antislash avant ou après le mot le rend visible dans `bash -c 'set'`, x=`set`, `\set`
+  # (l'antislash coupe l'alias) et `set\` (continuation).
+  local pat_set='(^|[[:space:];&|(`{!'"'"'"\\]|\$\()set[[:space:]]*($|[|>;&)#`'"'"'"\\]|[0-9]*[<>])'
   local pat_indirect='\$\{!'
   # `unset` ne vide pas la copie de l'environnement que le processus a reçue à son lancement ; /proc/<pid>/environ la montre encore (R148b).
   local pat_environ='(^|[^[:alnum:]_])environ([^[:alnum:]_]|$)'
@@ -1511,7 +1530,66 @@ mutant_dump() {
   printf '%s\n' "$@" >> "$TMP/mutant-dump.sh"
   env_dump_lines "$TMP/mutant-dump.sh"
 }
+# C16-2 : les formes où le mot est entouré d'un guillemet, d'un accent grave ou d'un antislash, ou suivi d'une continuation,
+# vident l'environnement comme le mot nu. Chacune est **mesurée** : exécutée par `bash -c` avec une variable factice exportée
+# (valeur aléatoire), elle imprime la valeur ; la même liste est ensuite refusée par la garde. Le script mesuré est la forme suivie
+# de deux fins de ligne puis d'un `echo "${x-}"` : les formes qui affectent `x` (accent grave) l'impriment, et la continuation
+# (`declare\`) finit sur la ligne vide.
+dump_printing=(
+  "bash -c 'declare'"
+  'bash -c "export"'
+  "bash -c 'declare -x'"
+  "bash -c 'typeset'"
+  'x=`declare`'
+  'x=`export`'
+  'x=`set`'
+  '\set'
+  'declare\'
+  # Les formes voisines du même mécanisme (relevé de R197) : un autre mot, l'antislash avant, la continuation après des options.
+  '\declare'
+  '\export'
+  'declare -x \'
+  'export\'
+  'set\'
+  'typeset\'
+  '"declare"'
+  "'export'"
+  "declare''"
+  'x=`typeset -x`'
+  "sh -c 'export'"
+  "bash -c 'set'"
+  # L'option BSD `e` de `ps` lit l'environnement d'un processus : citée, entre accents graves, ou avant une continuation.
+  "bash -c 'ps e -p \$\$'"
+  'x=`ps e -p $$`'
+  'ps e -p $$ \'
+)
+measured_value="valeur-factice-$RANDOM$RANDOM"
+for line in "${dump_printing[@]}"; do
+  if [ "$(
+    export MEASURED_VARIABLE="$measured_value"
+    bash -c "$line"$'\n\necho "${x-}"' 2>&1 | grep -cF -- "$measured_value" || true
+  )" -ge 1 ]; then
+    pass "garde des vidages : bash imprime la variable factice avec « $line »"
+  else
+    fail "garde des vidages : « $line » n'imprime pas la variable" "la mesure ne voit pas la valeur factice"
+  fi
+done
 dump_forbidden=(
+  "${dump_printing[@]}"
+  # Les mêmes mots de déclaration, qui n'impriment pas la variable exportée mais énumèrent des noms ou des valeurs.
+  "bash -c 'readonly'"
+  "bash -c 'local'"
+  'x=`local`'
+  'x=`readonly`'
+  'readonly\'
+  'local\'
+  'ps -p $$ \'
+  "bash -c 'ps e'"
+  'x=`ps e`'
+  'ps\'
+  "bash -c 'declare -x '"
+  'bash -c "export "'
+  "ps e'"
   'declare -p SOME_NAME'
   'declare -xp'
   'typeset -p SOME_NAME'
@@ -1658,6 +1736,20 @@ dump_allowed=(
   'declare +x NOM=1'
   "bash -c 'set -e'"
   'bash -c "set +x"'
+  # R197 : un mot de déclaration entre guillemets suivi d'autre chose, un `set` ou un `declare` qui n'énumère rien, une chaîne de prose.
+  "echo 'declare keyword'"
+  'echo "set the table"'
+  'x=`set -e`'
+  'x=`declare -a list`'
+  "bash -c 'export -n -- NOM'"
+  "bash -c 'declare -a list=()'"
+  "bash -c 'readonly LIMIT=3'"
+  'echo `date`'
+  'x=`ps -ef`'
+  "bash -c 'ps -p \$\$ -o comm='"
+  'ps -p "$$" -o comm='
+  'ps -o args= -p $$'
+  'local settings \'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
