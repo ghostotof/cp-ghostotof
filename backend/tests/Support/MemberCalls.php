@@ -7,8 +7,7 @@ namespace App\Tests\Support;
 use PhpToken;
 
 /**
- * La forme d'un appel de membre, écrite une fois pour les recenseurs par jetons (`AuthorizationSites`,
- * `PathIsDecidedCanonicallyTest`, `CookieConstructions`, `PlainPasswordInputs`, #748) : un nom précédé de `->`, `?->`
+ * La forme d'un appel de membre, écrite une fois pour les recenseurs par jetons (#748) : un nom précédé de `->`, `?->`
  * ou `::` et suivi de `(`.
  *
  * Un recenseur qui réécrit cette forme à sa façon rate l'une des trois écritures sans que l'autre le voie : l'appel
@@ -61,8 +60,8 @@ final class MemberCalls
     }
 
     /**
-     * Un nom (`T_STRING` : `->$nom(` et `::$nom(` sont dynamiques, aucun nom à juger), précédé d'un de ces opérateurs
-     * et suivi de `(`.
+     * Un nom (`->$nom(` et `::$nom(` sont dynamiques, aucun nom à juger), précédé d'un de ces opérateurs et suivi de
+     * `(`.
      *
      * @param list<PhpToken> $tokens
      * @param list<int>      $operators
@@ -73,8 +72,22 @@ final class MemberCalls
         $before = $tokens[$index - 1] ?? null;
         $after = $tokens[$index + 1] ?? null;
 
-        return $name instanceof PhpToken && $name->is(\T_STRING)
+        return $name instanceof PhpToken && self::isMemberName($name)
             && $before instanceof PhpToken && $before->is($operators)
             && $after instanceof PhpToken && '(' === $after->text;
+    }
+
+    /**
+     * Le jeton est-il un nom de membre ? Un `T_STRING`, ou un mot réservé (`list`, `print`, `new`…) : après `->` le
+     * lexeur rend tout nom en `T_STRING`, mais après `::` il garde le jeton du mot (`T_LIST`, `T_PRINT`), qui n'en
+     * est pas moins le nom de la méthode. `class` n'en est pas un : `A::class` est le nom de la classe.
+     */
+    private static function isMemberName(PhpToken $token): bool
+    {
+        if ($token->is(\T_STRING)) {
+            return true;
+        }
+
+        return !$token->is(\T_CLASS) && 1 === preg_match('/\A[a-z_]\w*\z/i', $token->text);
     }
 }

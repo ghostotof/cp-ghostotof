@@ -25,9 +25,9 @@ use PHPUnit\Framework\TestCase;
  * Refusés dans `src/` (par jetons, commentaires et chaînes exclus) : un appel `getPathInfo(` ou `isPathUnder(`,
  * sans égard à la casse (PHP n'en fait pas pour un nom de méthode), écrit `->`, `?->` ou `::`, y compris en appelable
  * de première classe (`->getPathInfo(...)`), hors de `CanonicalPath.php`. Aucun appel légitime n'existe aujourd'hui,
- * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lisent aussi `AuthorizationSites`,
- * `CookieConstructions` et `PlainPasswordInputs`. Le compteur de lectures canoniques ne compte qu'un nom qui résout vers
- * `CanonicalPath` (alias compris), jamais un homonyme d'un autre espace de noms.
+ * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lisent tous les recenseurs par jetons.
+ * Le compteur de lectures canoniques ne compte qu'un nom qui résout vers `CanonicalPath` (alias compris), jamais un
+ * homonyme d'un autre espace de noms.
  *
  * Ce que la garde ne voit pas, limite assumée : un chemin lu autrement que par ces deux noms
  * (`$request->server->get('PATH_INFO')`, `getRequestUri()`, `getUri()`, `getBaseUrl()`, `$_SERVER`), un nom construit
@@ -140,8 +140,8 @@ final class PathIsDecidedCanonicallyTest extends TestCase
         $canonical = CanonicalPath::class;
         $import = "<?php\nuse {$canonical};\n";
 
-        yield 'nom court' => [$import."\$p = CanonicalPath::of(\$request);\n", 1];
-        yield 'nom qualifié par un espace de noms' => [
+        yield 'nom court importé' => [$import."\$p = CanonicalPath::of(\$request);\n", 1];
+        yield 'nom qualifié depuis l\'espace de noms parent' => [
             "<?php\nnamespace App\\Shared\\Infrastructure;\n\$p = Http\\CanonicalPath::of(\$request);\n",
             1,
         ];
@@ -149,7 +149,7 @@ final class PathIsDecidedCanonicallyTest extends TestCase
             "<?php\n\$p = \\App\\Shared\\Infrastructure\\Http\\CanonicalPath::of(\$request);\n",
             1,
         ];
-        yield 'nom relatif à l\'espace de noms courant' => [
+        yield 'nom relatif dans l\'espace de noms de la classe' => [
             "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = namespace\\CanonicalPath::of(\$request);\n",
             1,
         ];
@@ -165,17 +165,8 @@ final class PathIsDecidedCanonicallyTest extends TestCase
 
         // Le nom se résout comme PHP le résout : seule la classe de CanonicalPath compte, pas un homonyme.
         yield 'alias de la classe importée' => ["<?php\nuse {$canonical} as CP;\n\$p = CP::of(\$request);\n", 1];
-        yield 'nom court importé' => ["<?php\nuse {$canonical};\n\$p = CanonicalPath::of(\$request);\n", 1];
         yield 'nom court dans son espace de noms' => [
             "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = CanonicalPath::of(\$request);\n",
-            1,
-        ];
-        yield 'nom qualifié depuis l\'espace de noms parent' => [
-            "<?php\nnamespace App\\Shared\\Infrastructure;\n\$p = Http\\CanonicalPath::of(\$request);\n",
-            1,
-        ];
-        yield 'nom relatif dans l\'espace de noms de la classe' => [
-            "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = namespace\\CanonicalPath::of(\$request);\n",
             1,
         ];
         yield 'homonyme de nom complet d\'un autre espace de noms' => ["<?php\n\$p = \\Other\\CanonicalPath::of(\$request);\n", 0];

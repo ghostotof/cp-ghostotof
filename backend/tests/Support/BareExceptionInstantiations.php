@@ -25,9 +25,8 @@ namespace App\Tests\Support;
  * Les noms se résolvent par {@see ClassNameResolver}, partagé avec
  * {@see \App\Tests\Shared\Infrastructure\Http\ProblemDetailStaysStaticTest}
  * (issue #507) : un nom relatif d'un fichier à espace de noms y désigne une
- * classe de cet espace, jamais une classe globale visée. Limite assumée : un
- * import groupé (`use Foo\{A, B};`) n'est pas résolu, voir sa documentation ;
- * aucune des classes visées n'a d'ailleurs d'espace de noms à grouper.
+ * classe de cet espace, jamais une classe globale visée ; un import groupé
+ * (`use Foo\{A, B};`) y est lu, bien que {@see UnsortedImports} le refuse.
  */
 final class BareExceptionInstantiations
 {

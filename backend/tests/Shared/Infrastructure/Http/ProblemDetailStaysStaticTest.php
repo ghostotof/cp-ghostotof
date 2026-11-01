@@ -109,8 +109,6 @@ use ReflectionClass;
  *  - `$this->message` modifié autrement que par affectation directe
  *    (référence, Reflection, `Closure::bind`), et un paramètre réaffecté par
  *    un passage par référence ({@see self::reassignedIn()}) ;
- *  - l'import groupé (`use Foo\{A, B};`) : ImportsStaySortedTest le refuse
- *    déjà dans src/ et tests/ ;
  *  - une classe déclarée dans le corps d'une méthode ou d'une fonction : les
  *    fonctions hors classe sont interdites dans src/ (issue #432), et une
  *    déclaration conditionnelle n'y existe pas.

@@ -78,6 +78,10 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'Cookie::fromString()' => [$use."\$c = Cookie::fromString(\$header);\n", [4]];
         yield 'nom complet' => ["<?php\nnamespace App;\n\$c = \\Symfony\\Component\\HttpFoundation\\Cookie::create('x');\n", [3]];
         yield 'importée sous un alias' => ["<?php\nnamespace App;\nuse Symfony\\Component\\HttpFoundation\\Cookie as C;\n\$c = new C('x');\n", [4]];
+        yield 'importée par un import groupé' => [
+            "<?php\nnamespace App;\nuse Symfony\\Component\\HttpFoundation\\{Cookie as C, Response};\n\$c = new C('x');\n",
+            [4],
+        ];
         yield 'casse indifférente, comme PHP' => [$use."\$c = COOKIE::Create('x');\n", [4]];
         yield 'classe anonyme qui étend Cookie' => [$use."\$c = new class('x') extends Cookie {};\n", [4]];
         yield 'expiration en ligne' => ["<?php\nnamespace App;\n\$response->headers->clearCookie('BEARER');\n", [3]];

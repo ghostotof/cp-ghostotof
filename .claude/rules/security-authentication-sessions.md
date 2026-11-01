@@ -81,7 +81,7 @@ paths:
   stay needed. Not `withPath()` / `withRaw()`: the first is also a PSR-7 URI method (league), and neither
   drops a protection. A `with…()` homonym of another class is refused by name: rename it, no allow-list.
   Not seen, accepted: a dynamic call, the header composed (`'Set-'.'Cookie'`, `sprintf()`) or written with
-  `\u{…}`, a grouped import or `use function` (both refused in `src/` by `ImportsStaySortedTest`), the
+  `\u{…}`, a `use function` (refused in `src/` by `ImportsStaySortedTest`), the
   vendor and the configuration. **At run time**, `ApiRouteExposureTest` (invariant 7, trait
   `tests/Support/ReadsResponseCookies`) requires every response it produces — after each of its requests,
   and on each `PUBLIC_PATHS` route called anonymously, `/api/mcp` and its PSR-7 bridge included — to set

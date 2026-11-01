@@ -197,6 +197,23 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
             "<?php\n\$a = \"is_granted('ROLE_X') and \$b\";\n",
             [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
         ];
+        yield 'chaîne is_granted, interpolation dans les arguments' => [
+            "<?php\n\$a = \"is_granted({\$role})\";\n",
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
+        ];
+        yield 'chaîne is_granted, interpolation avant le nom' => [
+            "<?php\n\$a = \"\$role and is_granted('X')\";\n",
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
+        ];
+    }
+
+    /**
+     * La limite écrite au docblock d'{@see AuthorizationSites} (St14-33) : un jeton de chaîne se lit seul, un `is_granted(`
+     * que coupe une interpolation n'est pas vu, comme celui qu'une concaténation assemble.
+     */
+    public function testAnIsGrantedCutByAnInterpolationIsNotSeen(): void
+    {
+        self::assertSame([], AuthorizationSites::in("<?php\n\$a = \"is_granted{\$space}('X')\";\n"));
     }
 
     /**

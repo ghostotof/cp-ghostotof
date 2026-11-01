@@ -12,9 +12,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * La forme d'un appel de membre, prouvée pour elle-même (#748, R161) : quatre détecteurs par jetons la lisent
- * (`PathIsDecidedCanonicallyTest`, `AuthorizationSites`, `CookieConstructions`, `PlainPasswordInputs`), chacun
- * ne prouve que les noms qu'il cherche. Ici, tout nom d'un code est jugé ; le spec rend les noms que le prédicat retient.
+ * La forme d'un appel de membre, prouvée pour elle-même (#748, R161) : des détecteurs par jetons la lisent, chacun
+ * ne prouve que les noms qu'il cherche. Ici, tout nom d'un code est jugé : chaque prédicat rend les noms qu'il retient.
  */
 final class MemberCallsTest extends TestCase
 {
@@ -24,7 +23,7 @@ final class MemberCallsTest extends TestCase
      * @param list<string> $static   ceux d'un appel statique (`::`)
      */
     #[DataProvider('codes')]
-    public function testEachPredicateKeepsTheNamesItsFormCalls(string $code, array $any, array $instance, array $static): void
+    public function testEachPredicateAcceptsTheCallsOfItsFormOnly(string $code, array $any, array $instance, array $static): void
     {
         self::assertSame($any, $this->namesCalledBy($code, MemberCalls::isCallAt(...)), 'isCallAt');
         self::assertSame($instance, $this->namesCalledBy($code, MemberCalls::isInstanceCallAt(...)), 'isInstanceCallAt');
@@ -51,6 +50,21 @@ final class MemberCallsTest extends TestCase
         yield 'propriété sans parenthèse' => ["<?php\n\$x = \$a->run;\n", [], [], []];
         yield 'constante de classe' => ["<?php\n\$x = A::RUN;\n", [], [], []];
         yield 'nom de classe' => ["<?php\n\$x = A::class;\n", [], [], []];
+        // Après `::`, un mot réservé est lexé comme tel (T_LIST, T_PRINT…), pas en T_STRING : c'est pourtant un nom de méthode.
+        yield 'appel statique d\'un nom réservé' => [
+            "<?php\nA::list();\nA::print(1);\nA::new();\nA::fn();\nA::Static();\n",
+            ['list', 'print', 'new', 'fn', 'Static'],
+            [],
+            ['list', 'print', 'new', 'fn', 'Static'],
+        ];
+        yield 'appel d\'un nom réservé, objet et nullsafe' => [
+            "<?php\n\$a->list();\n\$a?->print();\n",
+            ['list', 'print'],
+            ['list', 'print'],
+            [],
+        ];
+        yield 'constante de classe d\'un nom réservé' => ["<?php\n\$x = A::list;\n(\$b);\n", [], [], []];
+        yield '`class` suivi d\'une parenthèse n\'est pas un appel' => ["<?php\n\$x = A::CLASS (\$b);\n", [], [], []];
         yield 'nom sans appel, suivi d\'une autre instruction' => ["<?php\n\$a->run;\n(\$b);\n", [], [], []];
         yield 'nom dynamique' => ["<?php\n\$a->\$name();\nA::\$name();\n", [], [], []];
         yield 'fonction libre' => ["<?php\nrun();\n\\run();\n", [], [], []];
@@ -59,13 +73,15 @@ final class MemberCallsTest extends TestCase
         yield 'commentaire et chaîne' => ["<?php\n// \$a->run()\n\$s = '\$a->run()';\n", [], [], []];
     }
 
+    /** Un index hors du tableau — avant le premier jeton et après le dernier — ne désigne aucun appel, sans erreur. */
     public function testAnIndexOutsideTheTokensIsNoCall(): void
     {
         $tokens = PhpSources::significantTokens("<?php\n\$a->run();\n");
 
-        self::assertFalse(MemberCalls::isCallAt($tokens, 0));
-        self::assertFalse(MemberCalls::isCallAt($tokens, \count($tokens) + 5));
-        self::assertFalse(MemberCalls::isInstanceCallAt($tokens, -1));
+        foreach ([MemberCalls::isCallAt(...), MemberCalls::isInstanceCallAt(...), MemberCalls::isStaticCallAt(...)] as $predicate) {
+            self::assertFalse($predicate($tokens, -1));
+            self::assertFalse($predicate($tokens, \count($tokens)));
+        }
     }
 
     /**
