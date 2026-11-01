@@ -61,6 +61,29 @@ function shellQuoted(value: string): string {
 }
 
 /**
+ * Ce que le shell lirait **hors** de guillemets simples dans `text` : le texte entre `'…'` est retiré, un `\x` hors guillemets
+ * est un caractère littéral (`'\''` : une apostrophe). Un `$(` qui reste ici serait développé par un terminal qui reçoit le message.
+ */
+function outsideSingleQuotes(text: string): string {
+  let outside = ''
+  let quoted = false
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (quoted) {
+      quoted = "'" !== char
+    } else if ("'" === char) {
+      quoted = true
+    } else if ('\\' === char) {
+      index += 1
+    } else {
+      outside += char
+    }
+  }
+
+  return outside
+}
+
+/**
  * Les écarts d'alignement, chacun une phrase qui dit la correction ; vide quand tout est aligné.
  * Pure (les deux fichiers lus passés en paramètre) pour que ses cas rouges s'écrivent sans toucher au lockfile réel.
  */
@@ -76,7 +99,8 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   // `devDependencies` (mesuré) : la réinstallation porte donc le drapeau de la même section.
   const section = declaredSection(manifest, COMPILER) ?? 'devDependencies'
   const saveFlag = 'dependencies' === section ? '--save-prod' : '--save-dev'
-  // Les valeurs lues du dépôt (l'intervalle de `vue`, la version du lockfile) sont entre guillemets simples (`shellQuoted`).
+  // Les valeurs lues du dépôt (l'intervalle de `vue`, les versions et chemins du lockfile) sont entre guillemets simples
+  // (`shellQuoted`), dans la commande comme dans la prose du message : il se copie en entier dans un terminal (C16-6).
   const realign =
     `npm pkg set ${shellQuoted(`${section}.${COMPILER}=${vueRange ?? '<intervalle de vue>'}`)} && npm install --package-lock-only`
   // Une installation en trop ou une version fausse se refont par `npm install`, puis l'intervalle se réécrit.
@@ -96,14 +120,15 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   const compilerRange = declaredRange(manifest, COMPILER)
   if (undefined === compilerRange || compilerRange !== vueRange) {
     problems.push(
-      `package.json : ${COMPILER} est déclaré « ${compilerRange ?? 'absent'} », vue « ${vueRange ?? 'absent'} » : ${realign}`,
+      `package.json : ${COMPILER} est déclaré « ${shellQuoted(compilerRange ?? 'absent')} », ` +
+        `vue « ${shellQuoted(vueRange ?? 'absent')} » : ${realign}`,
     )
   }
 
   const entries = Object.keys(lock.packages).filter((path) => COMPILER_ENTRY.test(path))
   if (1 !== entries.length) {
     problems.push(
-      `package-lock.json : ${entries.length} installation(s) de ${COMPILER} (${entries.join(', ') || 'aucune'}), ` +
+      `package-lock.json : ${entries.length} installation(s) de ${COMPILER} (${entries.map(shellQuoted).join(', ') || 'aucune'}), ` +
         `une seule attendue : ${reinstall}`,
     )
   }
@@ -112,8 +137,8 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   const required = lock.packages['node_modules/vue']?.dependencies?.[COMPILER]
   if (undefined === installed || installed !== required || installed !== vueVersion) {
     problems.push(
-      `package-lock.json : ${COMPILER} installé en ${installed ?? 'absent'}, ` +
-        `exigé par vue en ${required ?? 'absent'}, vue en ${vueVersion ?? 'absent'} : ${reinstall}`,
+      `package-lock.json : ${COMPILER} installé en ${shellQuoted(installed ?? 'absent')}, ` +
+        `exigé par vue en ${shellQuoted(required ?? 'absent')}, vue en ${shellQuoted(vueVersion ?? 'absent')} : ${reinstall}`,
     )
   }
 
@@ -268,6 +293,49 @@ describe('@vue/compiler-dom reste la version de vue', () => {
     expect(problems[0]).toContain("npm pkg set 'devDependencies.@vue/compiler-dom=^3.5.44'\\''; id; '\\'''")
   })
 
+  // C16-6 : la prose du message (« déclaré … », « installé en … ») lit aussi des valeurs du dépôt. Le message se copie en entier
+  // dans un terminal : un `$(…)` de la prose, hors de guillemets simples, s'y développerait comme celui de la commande.
+  it("les valeurs du dépôt de la prose sont entre guillemets simples : aucun $( hors des guillemets (#748, R200)", () => {
+    const { lock } = alignedLock()
+    const manifest: PackageJson = { dependencies: { vue: '^3.5.0$(id)' }, devDependencies: { [COMPILER]: '^3.5.0$(whoami)' } }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems).toHaveLength(1)
+    expect(outsideSingleQuotes(problems[0])).not.toContain('$(')
+    // Garde de la garde : les deux valeurs hostiles sont bien dans la prose, citées.
+    expect(problems[0]).toContain("« '^3.5.0$(whoami)' »")
+    expect(problems[0]).toContain("« '^3.5.0$(id)' »")
+  })
+
+  it("les chemins et versions du lockfile de la prose sont entre guillemets simples : aucun $( hors des guillemets (#748, R200)", () => {
+    const { manifest, lock } = alignedLock()
+    lock.packages['node_modules/vue'] = { version: '3.5.44$(id)', dependencies: { [COMPILER]: '3.5.43$(whoami)' } }
+    lock.packages[`node_modules/${COMPILER}`] = { version: '3.5.42$(uname)' }
+    lock.packages[`node_modules/$(hostname)/node_modules/${COMPILER}`] = { version: '3.5.44' }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems.length).toBeGreaterThan(0)
+    const message = problems.join('\n')
+    expect(outsideSingleQuotes(message)).not.toContain('$(')
+    // Garde de la garde : la prose cite bien chaque valeur hostile (chemin, version installée, exigée, de vue).
+    const cited = [`'node_modules/$(hostname)/node_modules/${COMPILER}'`, "'3.5.42$(uname)'", "'3.5.43$(whoami)'", "'3.5.44$(id)'"]
+    for (const value of cited) {
+      expect(message).toContain(value)
+    }
+  })
+
+  it("une apostrophe d'une valeur de la prose reste dans les guillemets : rien n'en sort (#748, R200)", () => {
+    const { lock } = alignedLock()
+    const manifest: PackageJson = { dependencies: { vue: '^3.5.44' }, devDependencies: { [COMPILER]: "^3.5.0'$(id)'" } }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems).toHaveLength(1)
+    expect(outsideSingleQuotes(problems[0])).not.toContain('$(')
+  })
+
   // Sp15-11 : `npm pkg set` n'écrit qu'une section ; avec les deux déclarées, la commande seule ne réaligne rien.
   it('un compilateur déclaré dans dependencies et dans devDependencies est refusé, avec de quoi retirer l\'une (#748, R192)', () => {
     const { lock } = alignedLock()
@@ -279,7 +347,6 @@ describe('@vue/compiler-dom reste la version de vue', () => {
     const problems = alignmentProblems(manifest, lock)
 
     expect(problems).toHaveLength(1)
-    expect(problems[0]).toContain('dependencies')
     expect(problems[0]).toContain('devDependencies')
     expect(problems[0]).toContain("npm pkg delete 'dependencies.@vue/compiler-dom'")
     expect(problems[0]).toContain("npm pkg delete 'devDependencies.@vue/compiler-dom'")

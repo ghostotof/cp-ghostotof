@@ -240,7 +240,8 @@ declared in (`dependencies` or `devDependencies`, the one the test read; `devDep
 holds a second installation or a wrong version, by `npm install --save-dev '@vue/compiler-dom@<vue's version>'` (`--save-prod` when it is
 declared in `dependencies`: `--save-dev` moves it to `devDependencies`). **Never the bare `npm install …@<version>` alone**: it writes
 `^<version>`, which the test refuses when `vue` is declared `~` (the loop of CR13-5); `npm pkg set` writes `vue`'s range as is.
-**Both values are read from the repository, so the command quotes them in single quotes, an apostrophe escaped as `'\''`** (R192,
-C15-8): the message is copied into a terminal, and a `$(…)` in `vue`'s range or in the lockfile's version would run if it sat in
-double quotes. **A compiler declared in both sections** is refused with its own message, which gives the two `npm pkg delete`
-commands (one per section): `npm pkg set` writes one section only, so it cannot realign two copies.
+**Every value read from the repository (`vue`'s range, the compiler's, the lockfile's versions and paths) is quoted in single
+quotes, an apostrophe escaped as `'\''`, in the command and in the message's prose** (R192, C15-8; R200, C16-6): the message is
+copied whole into a terminal, and a `$(…)` in any of them would run if it sat unquoted or in double quotes.
+**A compiler declared in both sections** is refused with its own message, which gives the two `npm pkg delete` commands (one per
+section): `npm pkg set` writes one section only, so it cannot realign two copies.

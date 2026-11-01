@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import axe from 'axe-core'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { accessibleNameOf, expectNoAccessibilityViolation } from './axe'
@@ -91,5 +92,23 @@ describe('accessibleNameOf', () => {
 
     expect(document.body.contains(wrapper.element)).toBe(false)
     expect(document.body.innerHTML).toBe(before)
+  })
+
+  // CR16-9 : la copie est rattachée au document avant `axe.setup` ; si `setup` lève, elle ne doit pas y rester, sinon elle
+  // s'ajoute au DOM de tous les cas suivants du fichier de spec.
+  it("ne laisse aucune copie dans le document, même si axe.setup lève (#748, R200)", () => {
+    const Bouton = defineComponent({ template: '<button type="button">Texte</button>' })
+    const wrapper = mount(Bouton)
+    const before = document.body.innerHTML
+    const setup = vi.spyOn(axe, 'setup').mockImplementation(() => {
+      throw new Error('setup refusé')
+    })
+
+    try {
+      expect(() => accessibleNameOf(wrapper.element)).toThrow('setup refusé')
+      expect(document.body.innerHTML).toBe(before)
+    } finally {
+      setup.mockRestore()
+    }
   })
 })

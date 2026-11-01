@@ -9,7 +9,7 @@ import type { FormIdentity } from '../../../application/admin/translation/FormId
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 import type { AdminTranslationErrorReason } from '../../../domain/admin/translation/errors/AdminTranslationError'
-import type fr from '../../../infrastructure/i18n/locales/fr.json'
+import type { TranslationErrorTextKey } from '../../i18n'
 import { describedBy } from './describedBy'
 
 /** Ce que `removeEntry` lit d'une entrée qu'on supprime : sa clé et son groupe de traduction. */
@@ -24,7 +24,7 @@ export interface UseTranslatedFormOptions<F extends string> {
   /**
    * L'objet réactif du formulaire, passé tel quel : le composable en lit la prose (`hasProse`, la prose envoyée) et la remplace
    * par la proposition (`proposeFrom`). La page le déclare donc **avant** l'appel : `vue-tsc` refuse un usage avant la
-   * déclaration (TS2448), ce qu'un getter ne verrait pas.
+   * déclaration (TS2448).
    */
   readonly form: Record<F, string>
   /** Les champs de prose du formulaire, ceux que la traduction envoie et remplace (`presentation/pages/admin/proseFields.ts`). */
@@ -193,13 +193,13 @@ function isTranslationOf(identity: Omit<FormIdentity, 'generation'>, deleted: De
 }
 
 /**
- * La clé i18n du texte de chaque raison d'échec. Une table fermée sur `AdminTranslationErrorReason`, dont chaque clé est lue dans
- * le fichier de messages : une raison sans entrée, ou une clé absente du fichier (`admin.translation.errors.<raison>`), ne compile
- * pas, là où une clé construite (`${reason}`) ne verrait rien.
+ * La clé i18n du texte de chaque raison d'échec. Une table fermée sur `AdminTranslationErrorReason`, dont chaque clé doit exister
+ * dans le français **et** dans l'anglais (`TranslationErrorTextKey`, de `presentation/i18n`) : une raison sans entrée, ou une clé
+ * absente de l'une des deux langues (`admin.translation.errors.<raison>`), ne compile pas, là où une clé construite
+ * (`${reason}`) ne verrait rien.
  */
-type TranslationErrorTexts = typeof fr.admin.translation.errors
 const ERROR_TEXT_KEYS: {
-  readonly [R in AdminTranslationErrorReason]: `admin.translation.errors.${R & keyof TranslationErrorTexts}`
+  readonly [R in AdminTranslationErrorReason]: `admin.translation.errors.${R & TranslationErrorTextKey}`
 } = {
   validation: 'admin.translation.errors.validation',
   'rate-limited': 'admin.translation.errors.rate-limited',
