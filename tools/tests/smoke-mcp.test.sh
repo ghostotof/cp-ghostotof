@@ -314,6 +314,13 @@ else
   fail "corps de l'étape 2 avec la Basic Auth" \
     "rc=$rc ; chemin : ${body_path:-aucun} ; TMPDIR : $(ls -A "$TMP/mcp-tmpdir") ; err : $(cat "$TMP/err")"
 fi
+# R196 (St16-26, Q2) : le chemin du corps se lit dans SMOKE_AUTH_DATA_FILE, le nom que la bibliothèque pose (le préfixe SMOKE_AUTH_
+# dit ce que `smoke_cleanup` vide) ; l'ancien nom, absent, ferait sortir le script sous `set -u` avant tout appel.
+if grep -qF 'body_file="$SMOKE_AUTH_DATA_FILE"' "$SCRIPT" && ! grep -qE '\bSMOKE_DATA_FILE\b' "$SCRIPT"; then
+  pass "le corps de l'étape 2 passe par SMOKE_AUTH_DATA_FILE, l'ancien nom SMOKE_DATA_FILE n'est plus lu"
+else
+  fail "nom du fichier de corps du smoke MCP" "$(grep -n 'DATA_FILE' "$SCRIPT")"
+fi
 if ! grep -qF -- "$body_auth" "$TMP/bodyfile.args" "$TMP/out" "$TMP/err" \
    && [ "$(grep -cF -- ' --proto-redir =https --noproxy * ' "$TMP/bodyfile.args")" -eq "$(grep -c -- ' -K ' "$TMP/bodyfile.args")" ] \
    && grep -qF -- ' -K ' "$TMP/bodyfile.args"; then

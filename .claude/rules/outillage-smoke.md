@@ -17,7 +17,8 @@ The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, 
 `audit-prod.sh`. It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
 `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
 The writer `_smoke_write_auth_config` is private (R148): `smoke_use_auth_config` is its only production caller (St14-27); tests call it too.
-The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
+The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (every variable `smoke_cleanup`
+empties, `SMOKE_AUTH_DATA_FILE` included: emptied before the reading, it would answer « secret de Basic Auth vide »).
 The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
 As soon as the value is read, before any validation and before the `mktemp`, the variable is unset (D3 of the fourteenth review):
 no `set`, `declare -p` nor child process (`mktemp`, curl, dig, openssl) started afterwards sees it, whatever the value, a refused one
@@ -60,22 +61,39 @@ no cluster but `-sS` (`-s`, `-sSv`), no glued value (`-HAccept: x`). A value is 
 Anything else exits 2, curl not called: `-v`, `--verbose`, `--trace*`, `--libcurl`, a second URL (the only URL is the one judged),
 `--`, `-x`, `--proxy`, `--doh-url`, `--cacert`, `--unix-socket`, `--proto-default`, a redirection, a configuration file,
 an option with no value after it, and an option no line of the `case` knows.
-The value of four options is judged for one thing only: that it makes curl read a local file (D2 of the fifteenth review, the author's
-decision of 2026-11-01), whose content would go to the host. `-H @…` and `-d @…` (a value starting with `@`: `@f`, `@-`) exit 2;
-so does `--data-binary @<path>` unless `<path>` is, **in full**, a file `smoke_data_file` created (a string equality: no `..`, no prefix,
+The value of five options is judged for one thing only: that it makes curl read or write a local file (D2 of the fifteenth review, the
+author's decision of 2026-11-01, then C16-1 and C16-4), whose content would go to the host, or whose overwriting would drop the Basic Auth.
+`-H @…`, `-d @…` and `-b @…` (a value starting with `@`: `@f`, `@-`) exit 2; **`-b '@a=b'` too**, whatever follows the `@`: curl 8.5.0
+reads the cookie file « a=b » (`CURLOPT_COOKIEFILE`, measured on 2026-11-01 on the pinned image, `--libcurl -`, `--network none`).
+So does `--data-binary @<path>` unless `<path>` is, **in full**, a file `smoke_data_file` created (a string equality: no `..`, no prefix,
 never the `-K` file nor another file of its directory); and so does `-b` with no « = », which curl reads as a cookie file (`-b ''` too).
-`-b 'BEARER=x'`, `-H 'X: @y'`, `-d '{"a":1}'`, `-d ''` and `--data-binary abc` pass: no `@` leads the value, or it is a cookie.
+So does `-D` with a value that is the `-K` file or a file of its directory (C16-4, Q1 of the sixteenth review): curl writes the
+headers there and truncates the `-K` to 0 bytes (measured, the transfer failing as well), which the next call reads as an empty
+configuration, with no Basic Auth. The test is bash's `-ef` (same device, same inode: it follows `..` and links, with no process and no
+path computation), first on the value and the `-K` file, then on the value's directory (`${2%/*}`, `/` for a file of the root, `.` for a
+name with no `/`, judged from the current directory) and the Basic Auth's. `-D -` (the standard output) passes. Limit: a link to a
+file of that directory that does not exist yet is not seen. A blank before the `@` changes nothing, measured the same day: `-b ' @a=b'`
+is a cookie, `-H ' @f'` a header, `-d ' @f'` a body, none reads a file.
+`-b 'BEARER=x'`, `-H 'X: @y'`, `-d '{"a":1}'`, `-d ''`, `--data-binary abc`, `-D "$headers_file"`, `-D -` and `-D headers.txt` pass:
+no `@` leads the value, it is a cookie, or it writes outside the Basic Auth's directory.
 `smoke_data_file`, called **after** `smoke_use_auth_config`, runs `mktemp`, keeps the path in the array `SMOKE_AUTH_DATA_FILES` and
-puts it in `SMOKE_DATA_FILE`; it prints nothing, since `"@$(smoke_data_file)"` would run it in a subshell that loses the record.
+puts it in `SMOKE_AUTH_DATA_FILE`; it prints nothing, since `"@$(smoke_data_file)"` would run it in a subshell that loses the record.
 `smoke_cleanup` removes those files and empties both variables, and a second `smoke_use_auth_config` calls it first: a path from before
 it is no longer admitted. Both variables are empty at the source. `smoke-mcp.sh` makes its body file with it, not with `mktemp`.
 The message gives the **rank** of the argument, never its text (a glued value could be a secret):
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
-« argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth ».
+« argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth »; for a `-D` that writes into the directory:
+« argument n° N : une valeur qui écrit dans le dossier de la Basic Auth est refusée ».
 Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
-To admit a new option: a line of the `case` with its arity, an « accepted » case in `smoke-http.test.sh` (the call leaves, the option
-and its value in the fake curl's call), a line of this rule naming it. Nothing else.
+To admit a new option, **eight places** (St16-25), the same as in the docblock of `_smoke_option_arity`: (1) a line of its `case`, with
+the arity; (2) the list of that docblock; (3) the sentence « It admits <n> options » above, its number and its list (a case of
+`smoke-http.test.sh` compares the three lists and the number: a drift turns it red); (4) the measure, on the pinned curl 8.5.0 image
+(`curl --manual`, then `--libcurl -`), of what the value makes curl read or write, written here; (5) if it reads or writes a file, a line
+of `_smoke_value_touches_file`, a case `refuse_file_args` (`refuse_write_args` for a write) and a case `refuse_curl_opts_file`
+(`refuse_write_curl_opts`) in `smoke-http.test.sh`; (6) an « accepted » case there (`accept_args`: the call leaves, the option and its
+value in the fake curl's call); (7) the docblock of `smoke_fetch`, if the option says a new refusal; (8) the list of `audit_call_problems`
+in `audit-prod.test.sh`, only if the audit passes the option.
 Once the Basic Auth is written, the library unsets the variables curl reads that would move or expose the identifier: `http_proxy`,
 `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`,
 `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log of TLS or QUIC left by a debugging session, the

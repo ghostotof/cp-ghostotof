@@ -172,7 +172,7 @@ unset AUDIT_BASIC_AUTH AUTRE_VAR
 # SMOKE_AUTH_CONFIG, que le `smoke_cleanup` de tête remet à vide avant la lecture : le
 # retour serait 0 et l'appelant croirait avoir posé une Basic Auth).
 hostile='x[$(touch "$TMP/pwned")]'
-for bad_name in "$hostile" '1abc' 'a-b' '' '_smoke_x' '_smoke_name' SMOKE_AUTH_CONFIG SMOKE_AUTH_DIR SMOKE_AUTH_X; do
+for bad_name in "$hostile" '1abc' 'a-b' '' '_smoke_x' '_smoke_name' SMOKE_AUTH_CONFIG SMOKE_AUTH_DIR SMOKE_AUTH_DATA_FILE SMOKE_AUTH_X; do
   SMOKE_CURL_OPTS=(-sS)
   rc=0
   _smoke_write_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
@@ -260,7 +260,7 @@ else
 fi
 smoke_cleanup
 # Un nom invalide est refusé comme par _smoke_write_auth_config : retour 2, aucune commande exécutée.
-for bad_name in SMOKE_AUTH_DIR _smoke_x '1abc' '' "$hostile"; do
+for bad_name in SMOKE_AUTH_DIR SMOKE_AUTH_DATA_FILE _smoke_x '1abc' '' "$hostile"; do
   rc=0
   smoke_use_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   if [ "$rc" -eq 2 ] && [ ! -e "$TMP/pwned" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] \
@@ -729,21 +729,22 @@ if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
 else
   fail "SMOKE_CURL_OPTS des smokes" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
 fi
-# --- R183 (D2 de la quinzième relecture, Q3 et Q4) : la valeur de quatre options admises est jugée, jamais citée. Avec la Basic Auth,
-# une valeur qui fait lire un fichier local à curl est refusée (sortie 2, curl jamais appelé, le **rang de la valeur** dans le
-# message) : `-H @f` et `-d @f` (le `@` en tête), `--data-binary @<chemin>` sauf le chemin **exact** d'un fichier créé par
-# `smoke_data_file`, `-b` sans « = » (curl lit alors un fichier de cookies). Le fichier `-K` lui-même ne passe jamais.
-# `smoke_data_file` pose SMOKE_DATA_FILE (jamais une impression : une substitution `$(…)` perdrait l'enregistrement du chemin).
+# --- R183 (D2 de la quinzième relecture, Q3 et Q4) : la valeur de cinq options admises est jugée, jamais citée (R196 : `-b '@…'`
+# et `-D`, plus bas). Avec la Basic Auth, une valeur qui fait lire un fichier local à curl est refusée (sortie 2, curl jamais appelé,
+# le **rang de la valeur** dans le message) : `-H @f`, `-d @f` et `-b @f` (le `@` en tête), `--data-binary @<chemin>` sauf le chemin
+# **exact** d'un fichier créé par `smoke_data_file`, `-b` sans « = » (curl lit alors un fichier de cookies). Le fichier `-K` lui-même
+# ne passe jamais.
+# `smoke_data_file` pose SMOKE_AUTH_DATA_FILE (jamais une impression : une substitution `$(…)` perdrait l'enregistrement du chemin).
 # Le nombre de fichiers que retient la bibliothèque et le premier : sous `set -u` un tableau absent (la fonction manque) ferait
 # sortir le test, qui doit au contraire échouer par un `fail` nommé.
 data_files_count() { ( set +u; echo "${#SMOKE_AUTH_DATA_FILES[@]}" ); }
 data_files_first() { ( set +u; echo "${SMOKE_AUTH_DATA_FILES[0]-}" ); }
 rc=0
 smoke_data_file || rc=$?
-data_file="${SMOKE_DATA_FILE-}"
+data_file="${SMOKE_AUTH_DATA_FILE-}"
 if [ "$rc" -eq 0 ] && [ -n "$data_file" ] && [ -f "$data_file" ] && [[ "$data_file" == "$TMPDIR"/* ]] \
    && [ "$(data_files_count)" -eq 1 ] && [ "$(data_files_first)" = "$data_file" ]; then
-  pass "smoke_data_file : crée un fichier sous TMPDIR, pose SMOKE_DATA_FILE et le retient dans SMOKE_AUTH_DATA_FILES"
+  pass "smoke_data_file : crée un fichier sous TMPDIR, pose SMOKE_AUTH_DATA_FILE et le retient dans SMOKE_AUTH_DATA_FILES"
 else
   fail "smoke_data_file" "rc=$rc ; fichier : ${data_file:-aucun} ; retenus : $(data_files_count)"
 fi
@@ -781,6 +782,14 @@ refuse_file_args 4 -b cookies.txt
 refuse_file_args 4 -b ''
 refuse_file_args 4 -b /tmp/cookies
 refuse_file_args 4 -b -
+# R196 (C16-1) : curl 8.5.0 lit un fichier de cookies dès que la valeur de `-b` commence par `@`, même si elle porte un « = »
+# (`-b '@a=b'` : CURLOPT_COOKIEFILE « a=b », mesuré sur l'image épinglée). Le fichier `-K` lui-même, par `@`, ne passe pas non plus ;
+# un blanc avant le `@` n'est pas lu comme tel (mesuré : `-b ' @f'` désigne le fichier « ␠@f », refusé faute de « = »).
+refuse_file_args 4 -b '@a=b'
+refuse_file_args 4 -b '@cookies'
+refuse_file_args 4 -b "@$SMOKE_AUTH_CONFIG"
+refuse_file_args 4 -b ' @f'
+refuse_file_args 6 -H 'A: b' -b '@a=b'
 # Le rang suit la position de la valeur.
 refuse_file_args 6 -H 'A: b' -d @f
 refuse_file_args 6 -H 'A: b' -b cookies.txt
@@ -794,6 +803,16 @@ accept_args "-H d'un en-tête dont le @ n'est pas en tête" "-H X: @y" -H 'X: @y
 accept_args "-H 'X: y'" "-H X: y" -H 'X: y'
 accept_args "-b 'BEARER=x'" "-b BEARER=x" -b 'BEARER=x'
 accept_args "-b d'un cookie dont la valeur porte un =" "-b a=b=c" -b 'a=b=c'
+# R196 : un blanc avant le `@` n'est lu comme un fichier par aucune de ces trois options (mesuré sur curl 8.5.0, `--libcurl -` :
+# CURLOPT_COOKIE « ␠a=b », CURLOPT_HTTPHEADER « ␠@f », CURLOPT_POSTFIELDS « ␠@f ») : admis, aucun refus sans mesure.
+accept_args "-b ' @a=b' (le blanc en tête en fait un cookie)" "-b  @a=b" -b ' @a=b'
+accept_args "-H ' @f' (le blanc en tête en fait un en-tête)" "-H  @f" -H ' @f'
+accept_args "-d ' @f' (le blanc en tête en fait un corps)" "-d  @f" -d ' @f'
+# `-D` : le fichier d'en-têtes d'un smoke, la sortie standard, un nom sans `/`, un fichier du dossier parent de celui de la Basic Auth.
+accept_args "-D <fichier d'en-têtes>" "-D $TMP/headers" -D "$TMP/headers"
+accept_args "-D - (la sortie standard)" "-D -" -D -
+accept_args "-D headers.txt (un nom sans /)" "-D headers.txt" -D headers.txt
+accept_args "-D <fichier du TMPDIR, dossier parent de celui de la Basic Auth>" "-D $TMPDIR/h" -D "$TMPDIR/h"
 # Le même jugement pour SMOKE_CURL_OPTS, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> : … ».
 refuse_curl_opts_file() {
   local rank="$1" refused
@@ -815,6 +834,116 @@ refuse_curl_opts_file() {
 refuse_curl_opts_file 3 -sS -H @f
 refuse_curl_opts_file 3 -sS -b cookies.txt
 refuse_curl_opts_file 3 -sS --data-binary @/tmp/autre
+refuse_curl_opts_file 3 -sS -b '@a=b'
+# --- R196 (C16-4, Q1 (A)) : `-D <fichier>` écrit dans ce fichier. Vers le fichier `-K` ou vers un fichier du dossier de la Basic Auth,
+# curl l'écraserait (mesuré sur l'image épinglée : `-D <le -K>` le laisse à 0 octet, même quand le transfert échoue) et le
+# prochain appel lirait un `-K` vide, donc sans Basic Auth. Le jugement est un test de bash, `-ef` (même périphérique, même inode),
+# qui suit `..` et les liens sans processus : refus de sortie 2, curl jamais appelé, le rang de la valeur, jamais son texte, et le
+# message propre « une valeur qui écrit dans le dossier de la Basic Auth ».
+refuse_write_args() {
+  local rank="$1" refused rc=0
+  local prefix=(-X POST)
+  shift
+  refused="${*:$((rank - ${#prefix[@]})):1}"
+  : > "$FAKE_ARGS"
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
+  run_case check_args_write_refused \
+    "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
+  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "smoke_fetch : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+refuse_write_curl_opts() {
+  local rank="$1" refused
+  shift
+  refused="${*:$rank:1}"
+  SMOKE_CURL_OPTS=("$@")
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
+  run_case check_curl_opts_write_refused \
+    "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
+  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "SMOKE_CURL_OPTS : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+write_dir_name="${SMOKE_AUTH_DIR##*/}"
+ln -s "$SMOKE_AUTH_CONFIG" "$TMP/lien-vers-le-k"
+refuse_write_args 4 -D "$SMOKE_AUTH_CONFIG"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR/x"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR/../$write_dir_name/curl-auth.conf"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR/../$write_dir_name/neuf"
+refuse_write_args 4 -D "$TMP/lien-vers-le-k"
+refuse_write_args 6 -H 'A: b' -D "$SMOKE_AUTH_CONFIG"
+# Un nom sans `/`, jugé depuis le dossier courant : dans le dossier de la Basic Auth, il écrit chez elle.
+cd "$SMOKE_AUTH_DIR"
+refuse_write_args 4 -D curl-auth.conf
+refuse_write_args 4 -D headers.txt
+cd "$OLDPWD"
+refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_CONFIG"
+refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR/x"
+refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR/../$write_dir_name/curl-auth.conf"
+rm -f "$TMP/lien-vers-le-k"
+unset write_dir_name
+
+# --- R196 (St16-25, Q3 (A)) : les trois listes d'options que la procédure d'admission d'une option dit de tenir ensemble — les
+# lignes du `case` de `_smoke_option_arity`, la liste de sa docblock et la phrase « It admits <n> options » de la règle — sont
+# égales, et le nombre que dit la phrase est celui de sa liste. Une option ajoutée à une seule des trois (ou le nombre non mis à
+# jour) rougit en la nommant. Chaque liste se lit **dans sa forme écrite** : un `case` ne se lit pas comme une docblock.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+rule_file="$repo_root/.claude/rules/outillage-smoke.md"
+case_options="$(awk '
+  /^_smoke_option_arity\(\) \{/ { on = 1; next }
+  on && /^\}/ { on = 0 }
+  on && /^[[:space:]]+-[^)]*\)/ {
+    line = $0
+    sub(/\).*/, "", line)
+    n = split(line, parts, "|")
+    for (i = 1; i <= n; i++) { gsub(/[[:space:]]/, "", parts[i]); print parts[i] }
+  }' "$LIB" | sort)"
+# Lue par indirection (`${!first_list}`, plus bas) : shellcheck ne le voit pas.
+# shellcheck disable=SC2034
+docblock_options="$(awk '
+  /^# La liste d.autorisation/ { on = 1 }
+  /^# Ce sont les options/ { on = 0 }
+  on && /^#   / { print }' "$LIB" | grep -oE '`-[A-Za-z-]+`' | tr -d '`' | sort)"
+rule_sentence="$(awk '/^It admits / { on = 1 } on { print } on && /\(one value each\)/ { on = 0 }' "$rule_file")"
+# shellcheck disable=SC2034
+rule_options="$(printf '%s\n' "$rule_sentence" | grep -oE '`-[A-Za-z-]+`' | tr -d '`' | sort)"
+rule_count_word="$(printf '%s\n' "$rule_sentence" | sed -n 's/^It admits \([a-z]*\) options.*/\1/p')"
+case "$rule_count_word" in
+  one) rule_count=1 ;; two) rule_count=2 ;; three) rule_count=3 ;; four) rule_count=4 ;; five) rule_count=5 ;;
+  six) rule_count=6 ;; seven) rule_count=7 ;; eight) rule_count=8 ;; nine) rule_count=9 ;; ten) rule_count=10 ;;
+  eleven) rule_count=11 ;; twelve) rule_count=12 ;; *) rule_count=-1 ;;
+esac
+options_problems=""
+for named in case_options docblock_options rule_options; do
+  if [ -z "${!named}" ]; then options_problems+="la liste « $named » est introuvable ; "; fi
+done
+for pair in "case_options docblock_options" "case_options rule_options"; do
+  read -r first_list second_list <<< "$pair"
+  only_first="$(comm -23 <(printf '%s\n' "${!first_list}") <(printf '%s\n' "${!second_list}") | tr '\n' ' ')"
+  only_second="$(comm -13 <(printf '%s\n' "${!first_list}") <(printf '%s\n' "${!second_list}") | tr '\n' ' ')"
+  if [ -n "$only_first$only_second" ]; then
+    options_problems+="$first_list seule : ${only_first:-aucune} ; $second_list seule : ${only_second:-aucune} ; "
+  fi
+done
+case_count="$(printf '%s\n' "$case_options" | grep -c .)"
+if [ "$rule_count" -ne "$case_count" ]; then
+  options_problems+="la règle dit « It admits ${rule_count_word:-?} options » pour $case_count options du case ; "
+fi
+if [ -z "$options_problems" ]; then
+  pass "les options du case de _smoke_option_arity, de sa docblock et de la règle sont les mêmes ($case_count), le nombre dit vrai"
+else
+  fail "options admises : le case, la docblock et la règle ne disent pas la même liste" "$options_problems"
+fi
+unset repo_root rule_file case_options docblock_options rule_sentence rule_options rule_count_word rule_count options_problems named pair \
+  first_list second_list only_first only_second case_count
 # La Basic Auth portée, l'appel part avec `--noproxy '*'` derrière `--proto-redir =https` (curl 8.5.0 : `CURLOPT_NOPROXY, "*"`,
 # que `--libcurl -` imprime), et un proxy exporté **après** `smoke_use_auth_config` ne change rien à l'appel : l'option le couvre,
 # la bibliothèque ne retire les variables qu'une fois. L'appel sans Basic Auth ne la porte pas (plus bas).
@@ -928,16 +1057,16 @@ fi
 unset curl_variables variable still_set missing lib_unset_names test_unset_names
 
 # --- R183 (Q4) : le cycle de vie de smoke_data_file. `smoke_cleanup` retire les fichiers et vide SMOKE_AUTH_DATA_FILES et
-# SMOKE_DATA_FILE : un chemin d'un premier appel, même recréé ensuite, n'est plus admis. Un second `smoke_use_auth_config` remplace
+# SMOKE_AUTH_DATA_FILE : un chemin d'un premier appel, même recréé ensuite, n'est plus admis. Un second `smoke_use_auth_config` remplace
 # le premier : il retire aussi ses fichiers. À la source, les deux variables sont vides, quoi que l'environnement ait contenu.
 lifecycle_auth="$(generated_basic_auth)"
 UNE_AUTH="$lifecycle_auth"
 smoke_use_auth_config UNE_AUTH
 rc=0
 smoke_data_file || rc=$?
-first_data="${SMOKE_DATA_FILE-}"
+first_data="${SMOKE_AUTH_DATA_FILE-}"
 smoke_data_file || rc=$?
-second_data="${SMOKE_DATA_FILE-}"
+second_data="${SMOKE_AUTH_DATA_FILE-}"
 if [ "$rc" -eq 0 ] && [ -f "$first_data" ] && [ -f "$second_data" ] && [ "$first_data" != "$second_data" ] \
    && [ "$(data_files_count)" -eq 2 ]; then
   pass "smoke_data_file : deux appels, deux fichiers distincts, les deux retenus"
@@ -956,12 +1085,12 @@ for kept in "$first_data" "$second_data"; do
 done
 smoke_cleanup
 if [ -n "$first_data" ] && [ -n "$second_data" ] && [ ! -e "$first_data" ] && [ ! -e "$second_data" ] \
-   && [ "$(data_files_count)" -eq 0 ] && [ -z "${SMOKE_DATA_FILE-}" ]; then
-  pass "smoke_cleanup retire les fichiers de smoke_data_file et vide SMOKE_AUTH_DATA_FILES et SMOKE_DATA_FILE"
+   && [ "$(data_files_count)" -eq 0 ] && [ -z "${SMOKE_AUTH_DATA_FILE-}" ]; then
+  pass "smoke_cleanup retire les fichiers de smoke_data_file et vide SMOKE_AUTH_DATA_FILES et SMOKE_AUTH_DATA_FILE"
 else
   fail "smoke_cleanup et les fichiers de données" \
     "restent : $(ls "$first_data" "$second_data" 2>/dev/null) ; retenus : $(data_files_count)" \
-    "; SMOKE_DATA_FILE : ${SMOKE_DATA_FILE-absente}"
+    "; SMOKE_AUTH_DATA_FILE : ${SMOKE_AUTH_DATA_FILE-absente}"
 fi
 # Le chemin d'un premier appel n'est plus admis après un nouveau `smoke_use_auth_config`, même si le fichier est recréé.
 UNE_AUTH="$lifecycle_auth"
@@ -975,7 +1104,7 @@ smoke_cleanup
 UNE_AUTH="$lifecycle_auth"
 smoke_use_auth_config UNE_AUTH
 smoke_data_file || true
-replaced_data="${SMOKE_DATA_FILE-}"
+replaced_data="${SMOKE_AUTH_DATA_FILE-}"
 UNE_AUTH="$lifecycle_auth"
 smoke_use_auth_config UNE_AUTH
 if [ -n "$replaced_data" ] && [ ! -e "$replaced_data" ] && [ "$(data_files_count)" -eq 0 ]; then
@@ -989,7 +1118,7 @@ unset UNE_AUTH
 # Sans Basic Auth, smoke_data_file crée aussi son fichier (le smoke ne sait pas s'il en a une), et le retire de même.
 rc=0
 smoke_data_file || rc=$?
-plain_data="${SMOKE_DATA_FILE-}"
+plain_data="${SMOKE_AUTH_DATA_FILE-}"
 if [ "$rc" -eq 0 ] && [ -f "$plain_data" ]; then
   smoke_cleanup
   if [ ! -e "$plain_data" ]; then
@@ -1000,19 +1129,20 @@ if [ "$rc" -eq 0 ] && [ -f "$plain_data" ]; then
 else
   fail "smoke_data_file sans Basic Auth" "rc=$rc ; fichier : ${plain_data:-aucun}"
 fi
-# Un mktemp qui échoue (TMPDIR absent) : retour 2, rien de retenu, SMOKE_DATA_FILE vide, le motif sur stderr.
+# Un mktemp qui échoue (TMPDIR absent) : retour 2, rien de retenu, SMOKE_AUTH_DATA_FILE vide, le motif sur stderr.
 rc=0
 TMPDIR="$TMP/absent" smoke_data_file > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-if [ "$rc" -eq 2 ] && [ -z "${SMOKE_DATA_FILE-}" ] && [ "$(data_files_count)" -eq 0 ] && grep -q '^smoke_data_file : ' "$TMP/stderr"; then
+if [ "$rc" -eq 2 ] && [ -z "${SMOKE_AUTH_DATA_FILE-}" ] && [ "$(data_files_count)" -eq 0 ] \
+   && grep -q '^smoke_data_file : ' "$TMP/stderr"; then
   pass "smoke_data_file : mktemp en échec → retour 2, rien de retenu, le motif sur stderr"
 else
-  fail "smoke_data_file sans dossier" "rc=$rc ; SMOKE_DATA_FILE : ${SMOKE_DATA_FILE-absente} ; stderr : $(cat -A "$TMP/stderr")"
+  fail "smoke_data_file sans dossier" "rc=$rc ; SMOKE_AUTH_DATA_FILE : ${SMOKE_AUTH_DATA_FILE-absente} ; stderr : $(cat -A "$TMP/stderr")"
 fi
 # À la source, les deux variables sont vides, quoi que l'environnement ait contenu.
-inherited_data="$(SMOKE_AUTH_DATA_FILES=/herite/fichier SMOKE_DATA_FILE=/herite/fichier \
-  bash -c 'source "$1"; printf "[%s][%s]" "${#SMOKE_AUTH_DATA_FILES[@]}" "${SMOKE_DATA_FILE-absente}"' _ "$LIB")"
+inherited_data="$(SMOKE_AUTH_DATA_FILES=/herite/fichier SMOKE_AUTH_DATA_FILE=/herite/fichier \
+  bash -c 'source "$1"; printf "[%s][%s]" "${#SMOKE_AUTH_DATA_FILES[@]}" "${SMOKE_AUTH_DATA_FILE-absente}"' _ "$LIB")"
 if [ "$inherited_data" = "[0][]" ]; then
-  pass "sourcer vide SMOKE_AUTH_DATA_FILES et SMOKE_DATA_FILE hérités de l'environnement"
+  pass "sourcer vide SMOKE_AUTH_DATA_FILES et SMOKE_AUTH_DATA_FILE hérités de l'environnement"
 else
   fail "fichiers de données hérités" "obtenu : $inherited_data"
 fi

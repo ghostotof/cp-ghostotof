@@ -100,9 +100,9 @@ smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
 
 headers_file="$(mktemp)"
 # Le corps de l'étape 2 : avec la Basic Auth, `--data-binary @<fichier>` n'est admis que vers un fichier de `smoke_data_file`
-# (tools/lib/smoke-http.sh), qui pose SMOKE_DATA_FILE : un `$(…)` perdrait l'enregistrement du chemin.
+# (tools/lib/smoke-http.sh), qui pose SMOKE_AUTH_DATA_FILE : un `$(…)` perdrait l'enregistrement du chemin.
 smoke_data_file || exit 2
-body_file="$SMOKE_DATA_FILE"
+body_file="$SMOKE_AUTH_DATA_FILE"
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
