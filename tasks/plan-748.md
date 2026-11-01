@@ -13900,6 +13900,829 @@ comme Q9 (A) l'a fait pour la seizième ? (c) les six points laissés au jugemen
 
 ---
 
+## Corrections de la dix-septième relecture (2026-11-01)
+
+R196 à R208 sont faites (après c5f98ee5, jusqu'à b840ea14 ; constats de la dix-septième relecture : 8685992e, décisions :
+69e26ecf). Leurs cases restent non cochées, par convention des séries : cette phrase dit qu'elles sont faites.
+
+Quatre relectures du diff a33a5a76...b840ea14 (`/code-review medium` CR17-*, audit de sécurité C17-*, axe Standards St17-*,
+axe Spec Sp17-*) : aucun critique ni haut ; moyens : St17-7 = Sp17-7 = CR17-1 = C17-6, St17-1, St17-22 = C17-8. Constats
+complets et décisions : `tasks/relectures-748/relecture-17-constats.md` (la source de vérité). Tous sont traités ici par R209 à
+R221, avant les tâches 11 et 12 : corrigés, rectifiés ci-dessous (ceux qui ne portent que sur le plan ou sur un bilan), laissés à
+l'auteur (C17-7, hors dépôt), ou écartés avec leur raison (Sp17-17).
+
+**Numérotation.** Les quatre décisions de l'utilisateur (questions 1 à 4 du fichier de constats) sont citées ici **D1 à D4** ;
+les questions que ce plan pose sont **Q1 à Q3** (« Questions à l'auteur »). Cette série est la **dix-huitième** ; sa
+sous-section de bilan s'appelle « Ce que la dix-huitième série a réellement fait », écrite par R221.
+
+### Ce que la dix-septième série a réellement fait *(rectifié le 2026-11-01)*
+
+La sous-section « Ce que la dix-septième série a réellement fait », écrite par R208, est l'archive de son moment et n'est pas
+réécrite. La dix-septième relecture y a montré ces inexactitudes et ces oublis :
+
+- **R201** (Sp17-3) : « conforme » est faux. Le docblock de `dropPendingProposalNotFor` (`AdminAboutSettingsForm.vue:139-142`)
+  nomme encore son appelant (« la page l'appelle au geste… »), contre le Step 2 de R201. R216 le corrige.
+- **R202** (Sp17-5 ≈ St17-5) : la clé `entries` ajoutée aux deux sources (`AdminQualityPage.vue:72, 74`) n'est pas déclarée ;
+  Q6 (A) de la seizième section disait « sans le renommer ». R215 récrit les deux sources (CR17-9).
+- **R207** (Sp17-12) : le cas d'`ImportsStaySortedTest` du Step 3 n'est pas écrit (la mesure s'est faite à la main par
+  `inCode()`), contre le brief (« un cas vert d'emblée s'écrit quand même ») ; l'écart n'est pas déclaré. R220 l'écrit.
+- **Recherche 9 de R208** (Sp17-14) : elle annonce 346 lignes ; `grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l` en rend
+  **304** à HEAD 69e26ecf (mesuré pour ce plan). Les commandes des recherches 3, 6, 7, 8 et 9 ne sont pas écrites dans la
+  sous-section. R221 les rejoue et les écrit.
+- **Lignes de plus de 140 caractères dans des corps de commit** (St17-32 = Sp17-1), hors lignes rouges citées : b366e1a2 (six :
+  142, 168, 156, 167, 152, 150), d5e29e05 (une, 141), 30334c3f (une, 144, seule déclarée). Mesure de ce plan, lignes rouges
+  comprises : `git log -1 --format=%B <sha> | awk 'length>140' | wc -l` rend 13, 2 et 1. Les messages ne se réécrivent pas
+  (`--amend` interdit) : R221 les déclare, R209 ajoute au brief la vérification avant le commit.
+- **R197** (Sp17-2) : le tableau motif × délimiteur manque au corps du commit (« table au rendu ») ; le bilan de R208 le dit.
+  R221 rejoue le relevé et écrit le tableau dans son bilan.
+- **Méthode des mutations** (Sp17-22, confiance basse) : les corps de R199, R201 à R205 et R207 donnent le test lancé comme
+  « commande », pas la façon de muter ; le corps de R197 ne donne pas la taille de la règle modifiée. R209 ajoute les deux au
+  format du brief ; R221 les déclare pour la dix-septième série.
+- **Les six points laissés au jugement de la dix-septième relecture** (bilan de R208) ont chacun leur constat : (1) le typage de
+  R202 → St17-1 (D1, R215) ; (2) les trois planchers → Sp17-16 (D4, R217 ; les deux autres planchers, justifiés, restent) ;
+  (3) les ` as Locale` → St17-9 et St17-8 (D2, R213 et R214) ; (4) le repli d'une entrée en langue inconnue → St17-7 (R214) ;
+  (5) `rate-limited` → Sp17-17 (pas un constat) ; (6) la lecture du catalogue → St17-15 (D3, R218 et R219). Les questions
+  ouvertes (a) et (b) de R208 sont St17-4 (R215) et St17-14 (R216).
+
+### Décisions de l'utilisateur (2026-11-01)
+
+1. **D1** (St17-1) : les champs de Qualité déclarés `{…} satisfies Record<F, …>`, la liste dérivée : le compilateur vérifie
+   l'exhaustivité ; `requireEveryField`, `fieldsFrom` et `MissingEntryFieldError` disparaissent (CR17-2 avec eux). R215.
+2. **D2** (St17-8, St17-9) : un accesseur unique `useCurrentLocale(): ComputedRef<Locale>` remplace les copies de
+   `locale.value as Locale` et sert aux trois formes voisines (`OAuthConsentPage.vue:104, 110`, `SignInAgainLink.vue:35`) ; les
+   dépôts HTTP d'admin valident la langue à la frontière et les entités d'admin passent à `locale: Locale` (revient sur « sans
+   changer le contrat des entités » de R204) ; les quatre gardes copiées dans les pages disparaissent. R213, R214.
+3. **D3** (St17-15, St17-16, Sp17-15) : tous les libellés de boutons des specs lus du catalogue (interpolation pour « Créer la
+   version XX »), constantes écrites une fois dans `tests/support/`, une mutation de `fr.json` par clé. R218, R219.
+4. **D4** (Sp17-16) : le plancher `reads >= 2` gardé, sa raison écrite dans le docblock. R217.
+5. **C17-7** : la rotation du jeton exposé par l'incident de R197 est à la charge de l'auteur (« Je gère », 2026-11-01), hors
+   session ; rien dans ce plan ne la fait ni ne la vérifie. R221 la cite comme action à confirmer par l'auteur seul.
+
+Tout le reste se corrige (critère **tout jusqu'à zéro**). Toujours valables : les décisions et « Sans suite » des séries
+précédentes, sauf ce que D1 à D4 revoient (D2 revient sur la portée de R204 ; D1 sur la garde de R202).
+
+### Vérification de chaque constat dans le code (HEAD 69e26ecf)
+
+- **St17-7 = Sp17-7 = CR17-1 = C17-6, confirmé** : `AdminIncidentsPage.vue:187-209` pose `editingId`, `proposalSourceLocale` et
+  `sourceGroup` avant la garde `isSupportedLocale` (l. 194), la prose après ; même forme à `AdminContributionsPage.vue:191`,
+  `AdminCaseStudiesPage.vue:188`, `AdminAnonymousCvPage.vue:186`. Les quatre cas « …le sélecteur garde la précédente (#748,
+  R204) » (`AdminIncidentsPage.spec.ts:539`, `AdminContributionsPage.spec.ts:488`, `AdminCaseStudiesPage.spec.ts:590`,
+  `AdminAnonymousCvPage.spec.ts:489`) passent par `tests/support/startEditThroughSetup.ts`, seul chemin vers ce `startEdit`.
+- **St17-9, recompté** : `grep -rn ' as Locale' frontend/src` rend **28** lignes (non 30) : 14 dans `presentation/`, 8 dans
+  `application/`, 5 dans `infrastructure/admin/` (`HttpAdminQualityPrincipleRepository.ts:86`, `…TraitRepository.ts:84`,
+  `HttpAdminAboutSettingsRepository.ts:55`, `…SiteCardRepository.ts:86`, `…MeCardRepository.ts:91`), 1 dans `domain/`
+  (`groupByTranslationGroup.ts:50`). Quatre des quatorze de `presentation/` recopient `routeLocale()`
+  (`ContactPage.vue:15`, `LoginPage.vue:53`, `SetPasswordPage.vue:71`, `AppFooter.vue:33` : la même expression ternaire que
+  `presentation/router/routeLocale.ts:14`), et `LocaleSwitcher.vue:11` lit `route.params.locale as Locale` : formes voisines.
+- **St17-8, confirmé et élargi** : les entités `AdminQualityPrinciple`, `AdminQualityTrait`, `AdminAboutSettings`,
+  `AdminAboutSiteCard`, `AdminAboutMeCard` sont **déjà** `locale: Locale`, d'où les cinq `as Locale` de leurs dépôts ; ce sont
+  les quatre autres, `AdminIncident`, `AdminContribution`, `AdminCaseStudy`, `AdminAnonymousCvSection` (et leurs `…Input`,
+  `locale: string`), qui gardent `string`, et leurs dépôts ne font aucune conversion. `groupByTranslationGroup` et
+  `translationGroupOptions` (`domain/admin/shared/ordering/`) contraignent `locale: string`. Le backend n'émet que `fr` et `en`
+  (`backend/src/Portfolio/Shared/Domain/ValueObject/Locale.php`) : une autre valeur est une rupture du contrat de l'API.
+- **St17-1, CR17-2, St17-2, St17-4, St17-6, CR17-9, confirmés** : `qualityEntrySection.ts:13-18, 43-87, 164-172` ;
+  `AdminQualityEntrySection.vue:118-130, 180, 246, 289-298` ; `AdminQualityPage.vue:72, 74` (`{ ...reading, entries: … }`).
+- **St17-22 = C17-8, confirmé** : `smoke-http.test.sh:1529-1534`, `export MEASURED_VARIABLE` puis `bash -c "$line"` sans
+  `env -i`, `grep -cF -- "$measured_value"`.
+- **C17-1, confirmé** : `smoke-http.test.sh:1437-1438`, `-[opCuUgGtsNOqw]) skip=1 ;;` puis `-*) ;;` : toute option à tiret passe.
+  **C17-2** : `pat_environ` l. 1473, en minuscules seules.
+- **CR17-5, ligne déplacée** : `write_value_patterns` est à `tools/tests/lib/smoke-cases.sh:57` (non 393) ; `values_found_in` l. 74.
+  **St17-27** : la phrase « /dev/fd propre à bash » est l. 52.
+- **St17-23** : la boucle `for hollow in ':' "${token}:" ":${token}"` est dans `smoke-login-throttling.test.sh:263`,
+  `smoke-dead-session-cookie.test.sh:380` et `smoke-mcp.test.sh:398` ; `audit-prod.test.sh` et `smoke-http.test.sh` en
+  portent une aussi (`grep -ln 'for hollow' tools/tests/*.sh` : cinq fichiers) — formes voisines, que R212 juge.
+- **CR17-7, C17-3, C17-4, CR17-10, St17-24, Sp17-9, Sp17-10, confirmés** : `smoke-http.sh:74-80` (le moignon « Vides à la » et la
+  phrase du préfixe dite deux fois), `:228-240` (`_smoke_write_auth_config`, sans `SMOKE_AUTH_DATA_FILE`), `:366-390` (la
+  procédure en huit points, « jugée pour cinq »), `:420-438` (`_smoke_writes_in_auth_dir` : ni le dossier lui-même, ni un `..`
+  à travers un composant absent, ni un fichier de `smoke_data_file`), `:451-452` (« ` @f` … jamais un fichier lu ») ;
+  `outillage-smoke.md:63-104`.
+- **St17-28 = CR17-6, St17-29, CR17-8** : `ProblemDetailStaysStaticTest.php:525-532` (le témoin dans le `foreach`) ;
+  `InterpolatedStrings.php:46-55` (`COMMAS`, `DOLLARS`) ; `PhpSources.php:87` (`opensBrace` : `{`, `T_CURLY_OPEN`,
+  `T_DOLLAR_OPEN_CURLY_BRACES`). La « l. 67 » que cite la relecture est relue par R220 (une ligne du docblock à HEAD).
+- **St17-11** : `entryFormState.ts:25` (« pour les huit formulaires ») ; forme voisine `useEntryFormLock.ts:32`.
+- **St17-21** : `translatedFormDeclarationOrder.spec.ts:290` (`expect(callCount,` sans espace), `AccessRefusedNotice.spec.ts:145`
+  (`'de' as never`). **Sp17-21** : `AdminAboutPage.vue:66` (`form !== null`), `buttonLabelled.ts:12`.
+- **St17-15, recompté** : `'Enregistrer'` 18 lignes (7 fichiers), « Enregistrer l'ordre » 19 (7), `'Créer la version` 41 (6),
+  `'Proposer la version` 6 (4) ; neuf fichiers en tout (les sept specs de pages d'admin, `TranslateEntryButton.spec.ts`,
+  `tests/support/axe.spec.ts`). Les clés : `admin.order.save`, `admin.order.createVersion` (« Créer la version {locale} »),
+  `admin.<section>.save`, `…proposeVersion` (`fr.json:88, 96, 102…, 397`).
+- **Les autres constats** faibles et « Info » sont pris tels que le fichier de constats les situe ; chaque tâche relit la ligne
+  citée avant d'écrire (une tâche précédente a pu la déplacer).
+
+### Pourquoi cet ordre
+
+- **R209 (le brief) d'abord** : C17-9 et Sp17-22 changent la façon dont chaque tâche mute, restaure et écrit ses mutations ; les
+  agents de R210 à R221 lisent le brief à jour (forme de 2e745f7c, un commit `docs:` à part).
+- **Outillage (R210 → R212)**, chaque fonction et chaque paragraphe de `outillage-smoke.md` touché une fois :
+  - **R210** change la garde des vidages (`ps`, `environ`, la mesure sous `env -i`), règle l. 141-162 ;
+  - **R211** change le jugement des valeurs de la bibliothèque (`-D`, la prose de `-b`, la procédure), règle l. 61-104 ;
+  - **R212** est l'hygiène des tests (un cas partagé, `write_value_patterns`) : après les comportements, elle factorise aussi
+    les cas que R210 et R211 ajoutent.
+- **Frontend (R213 → R219)** :
+  - **R213** (l'accesseur, D2) avant **R214** (les dépôts) : R213 pose la garde de source des ` as Locale` avec la liste exacte des
+    six fichiers qui en gardent un (cinq dépôts, `groupByTranslationGroup.ts`) ; R214 vide cette liste.
+  - **R214 traite St17-7 en retirant la garde, non en la déplaçant.** Une fois les entités typées `Locale` et la langue validée
+    par le dépôt, une entrée en langue non prise en charge n'atteint plus `startEdit` : le correctif de la relecture (`return`
+    en tête, un test que rien ne change) jugerait un état que le type ne permet plus de construire sans `as`. Écrire d'abord ce
+    `return` puis le retirer à la tâche suivante ferait deux commits pour un état final identique ; R214 fait donc les deux
+    gestes de D2 à la fois (dépôts, entités, gardes retirées), et le cas qui prouvait la garde devient un cas du dépôt.
+    `startEditThroughSetup.ts` (St17-17), qui n'existe que pour atteindre cette garde, part avec elle.
+  - **R215** (Qualité, D1) après R214 : R214 resserre `groupByTranslationGroup` et `translationGroupOptions`, que la section lit.
+  - **R216** (les formulaires par entrée : commentaires, `EntryFormPlacement`) après R214 et R215, qui récrivent `startEdit` et la
+    section : ses commentaires portent sur leur forme finale.
+  - **R217** (gardes de source et hygiène des specs) après R216 : `entryFormState.ts` et `proposedCreation.ts` sont dans les
+    relevés des gardes.
+  - **R218 → R219** (D3, les libellés lus du catalogue) en dernier du frontend : R214 retire des cas des quatre specs de pages et
+    R215 change `qualityEntrySection.spec.ts` ; lire le catalogue avant eux ferait récrire des sites qui disparaissent.
+    **Découpé en deux** : environ 84 sites dans neuf fichiers, plus le relevé des titres ; R218 écrit le module de
+    `tests/support/` et convertit les quatre specs des pages par entrée, R219 le reste et rend le relevé à zéro.
+- **Backend (R220)** après le frontend, pour qu'un seul agent à la fois touche un conteneur.
+- **R221** (balayage) en dernier : il relit ce que toute la série a écrit et tient le plan à jour.
+
+### Choix de conception tranchés
+
+Le plan suit la recommandation de chaque question ; une autre réponse ne change que la tâche nommée.
+
+1. **R213 (D2), l'accesseur.** `useCurrentLocale(): ComputedRef<Locale>` vit dans
+   `frontend/src/application/shared/useCurrentLocale.ts` : les composables d'`application/` en ont besoin (8 sites) et
+   `presentation/` peut importer `application/`, l'inverse non. Il lit `useI18n().locale` et rend
+   `isSupportedLocale(valeur) ? valeur : DEFAULT_LOCALE` — le repli de `AccessRefusedNotice.vue:67` (`fallbackLocale`), qui le
+   remplace aussi : une langue d'interface hors du site n'atteint jamais une adresse. Rejeté : le générique de langues de
+   vue-i18n (`useI18n<…, Locale>()`), qui type sans rien vérifier à l'exécution, et devrait être écrit à chaque appel. Les cinq
+   formes qui recopient `routeLocale()` l'appellent (`routeLocale(route, currentLocale.value)`), `LocaleSwitcher.vue` compris.
+2. **R213, la garde de source.** `frontend/tests/presentation/noLocaleCast.spec.ts` lit chaque `.ts` et `.vue` de
+   `frontend/src` (lecture par `node:fs`, comme `styleSheet.spec.ts`) et exige que les fichiers qui portent `as Locale`
+   (`/\bas\s+Locale\b/`) soient **exactement** la liste `REMAINING_LOCALE_CASTS` (égalité, comme les gardes de R203) ; R213 y
+   écrit les six fichiers de R214, R214 la vide. Une valeur hors du site posée dans vue-i18n par un test passe par
+   `Reflect.set(i18n.global.locale, 'value', 'de')`, écrit une fois dans `tests/support/unsupportedLocale.ts` : plus de
+   `'de' as never` (St17-21).
+3. **R214 (D2), la frontière.** `supportedLocaleOf(value: string, unsupported: (value: string) => Error): Locale`, dans
+   `frontend/src/infrastructure/admin/shared/supportedLocale.ts`, est appelée par le `toEntity` de **neuf** dépôts : les cinq
+   que nomme D2 et les quatre dont l'entité passe à `Locale` (`HttpAdminIncidentRepository`, `HttpAdminContributionRepository`,
+   `HttpAdminCaseStudyRepository`, `HttpAdminAnonymousCvSectionRepository`) : sans elle, leur `toEntity` devrait un `as Locale`
+   de plus. Ce que fait le dépôt devant une langue inconnue : **question Q1, réponse attendue** ; les Steps de R214 sont écrits
+   pour la recommandation (A). Les `…Input` des quatre contextes passent aussi à `locale: Locale` (le formulaire en envoie une).
+4. **R211 (C17-4), `-D` vers le dossier lui-même et `..`.** Refusés, plutôt qu'une limite écrite : `[[ "$1" -ef
+   "$SMOKE_AUTH_DIR" ]]`, et une valeur dont un composant est `..` (`[[ "/$1/" == */../* ]]`), puisque `-ef` ne suit `..` qu'à
+   travers des composants existants. Aucun smoke n'en passe (ils écrivent dans `headers_file`) ; `-D a..b` reste admis.
+5. **R211 (CR17-7).** `-D` vers un fichier de `smoke_data_file` est refusé comme une écriture (`writes`) : `-ef` contre chaque
+   élément de `SMOKE_AUTH_DATA_FILES`. **CR17-10** reste une limite, écrite dans le docblock de `_smoke_writes_in_auth_dir` et dans
+   la règle : le jugement et l'appel de curl se font dans le même dossier courant (`smoke_fetch` ne change pas de dossier entre
+   les deux) ; un `cd` placé entre eux casserait l'équivalence.
+6. **R211 (St17-24 = Sp17-11, St17-25), la procédure d'admission.** Écrite **une fois, dans la règle** (chargée par `Read` dès
+   qu'un agent lit la bibliothèque) ; le docblock de `_smoke_option_arity` y renvoie en une ligne. Elle gagne les endroits
+   oubliés : le compte des options dont la valeur est jugée (« five », règle l. 70 ; « jugée pour cinq », docblock l. 370), la
+   liste du docblock de `_smoke_value_touches_file`, l'énumération de la règle (l. 72-84). Les deux comptes s'écrivent **en
+   chiffres** (« It admits 9 options », « The value of 5 options ») : le test lit un nombre, sans table de mots anglais bornée.
+7. **R210 (C17-1), la liste d'autorisation des options de `ps`** (esprit de D1 de la quatorzième relecture) : `-o` et `-p`
+   (une valeur, sautée), `-e`, `-f`, `-ef` et `-aux` (sans valeur) ; **toute autre option à tiret refuse la ligne**. Ce sont les
+   options que les cas admis de `smoke-http.test.sh` passent (`grep -nE "'ps " tools/tests/smoke-http.test.sh`), plus `-aux`, le
+   voisin que l'audit nomme admis (BSD sans `e`) ; aucun script gardé n'appelle `ps`. La valeur d'une option admise reste sautée.
+8. **R210 (C17-2).** `environ` jugé sans égard à la casse, par des classes (`[Ee][Nn][Vv][Ii][Rr][Oo][Nn]`), non par
+   `shopt -s nocasematch`, qu'il faudrait rétablir sur chaque chemin de sortie. Perl (`%ENV`) et PHP (`getenv()`, `$_ENV`) sont
+   nommés dans la limite de la règle, non refusés : aucun script gardé n'en lance.
+9. **R215 (D1), les champs de Qualité.** Chaque instance déclare un record, `QUALITY_PRINCIPLE_FIELD_OPTIONS = { title: …,
+   description: …, iconKey: … } as const satisfies Record<'title' | 'description' | 'iconKey', QualityFieldOptions>` (de même
+   `QUALITY_TRAIT_FIELD_OPTIONS`), où `QualityFieldOptions = { readonly control: 'text' | 'textarea'; readonly copiedToNewVersion?:
+   true; readonly column?: true }` : seul ce qui diffère du défaut s'écrit (St17-6). La liste se dérive
+   (`entryFieldsOf(options, proseFields)`, ordre des clés du record) ; la prop de la section reçoit le record. Le formulaire et le
+   corps d'écriture se construisent des clés du record : **question Q2, réponse attendue** (une assertion unique) ; les Steps
+   sont écrits pour (A).
+10. **R216 (St17-12).** `export type EntryFormPlacement = { locale: Locale; translationGroup: string }` dans
+    `presentation/ui/admin/proposedCreation.ts`, lu par `switchToProposedCreation` et par `EntryForm<F>` de `qualityEntrySection.ts`.
+11. **R209 (C17-9).** Avant `git add`, chaque fichier muté que la tâche ne modifie pas rend `git diff --exit-code -- <fichier>` à 0 ;
+    un fichier muté que la tâche modifie aussi se compare par `cmp` à une copie prise **après** la modification de la tâche et
+    **avant** la mutation. Le résultat va dans le bloc « Mutations » (une ligne `restauré :`).
+
+### Questions à l'auteur
+
+Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
+
+- **Q1 (R214), D2, un dépôt d'admin devant une langue que le site ne porte pas.** Le backend n'émet que `fr` et `en` (value
+  object `Locale`) : une autre valeur est une rupture du contrat, inatteignable aujourd'hui. (A) recommandé : le dépôt lève
+  l'erreur métier de son contexte avec la raison existante `'unknown'` (« Unsupported locale in response »), en lecture de liste
+  comme en réponse d'écriture ; la page montre son erreur de chargement ou d'enregistrement habituelle ; rien n'est caché, aucune
+  clé de traduction nouvelle ; inconvénient : une seule entrée fautive bloque tout le tableau. (B) une raison dédiée
+  `unsupported-locale` dans les six classes d'erreur (`AdminQualityError`, `AdminAboutError`, `AdminIncidentError`,
+  `AdminContributionError`, `AdminCaseStudyError`, `AdminAnonymousCvSectionError`), avec son message FR/EN et sa traduction par
+  chaque page : plus précis, mais neuf chemins et douze clés pour un cas que le contrat exclut. (C) la liste écarte l'entrée
+  (ce que fait déjà `groupByTranslationGroup` à l'affichage) et une réponse d'écriture lève (A) : le tableau reste utilisable,
+  mais une entrée disparaît en silence du backoffice.
+- **Q2 (R215), D1, construire `Record<F, string>` des clés du record déclaré.** `Object.fromEntries` rend
+  `{ [k: string]: string }`, que TypeScript n'accepte pas comme `Record<F, string>`. (A) recommandé :
+  `fieldRecord<F extends string>(options: Readonly<Record<F, unknown>>, valueOf: (name: F) => string): Record<F, string>`, dans
+  `qualityEntrySection.ts`, porte **la seule** assertion des deux fichiers (`as Record<F, string>`), son docblock dit pourquoi
+  elle est sûre (les clés sont `F` par le `satisfies`, la fonction ne fait que les recopier) ; inconvénient : un `as` revient
+  après D2 de la seizième relecture, qui en retirait quatre. (B) une fonction typée écrite à la main par instance
+  (`(valueOf) => ({ title: valueOf('title'), … })`) : aucune assertion, le compilateur juge le littéral ; mais chaque nom s'écrit
+  deux fois par instance (St16-9 rouvert). (C) garder un prédicat de type à l'exécution (`hasEveryField`) : aucune assertion
+  écrite, mais c'est la garde que D1 retire.
+- **Q3 (R214), St17-7, les quatre cas de R204 « …le sélecteur garde la précédente ».** Une fois les entités typées, une entrée
+  `locale: 'de'` ne se construit plus sans `as`. (A) recommandé : les quatre cas sont retirés avec la garde qu'ils prouvaient,
+  et remplacés par un cas par dépôt (neuf) qui juge la frontière, plus les cas de `supportedLocale.spec.ts` ; le brief demande de
+  rendre en question un cas écarté, d'où cette question. (B) les garder avec une entrée `as never` : ils jugeraient un état que
+  le type exclut, et réintroduiraient la forme que St17-21 retire.
+
+### Review Focus (dix-septième relecture)
+
+1. **Un script gardé qui porte `ps -auxe`, `ps -eaux`, `ps -A e`** : la garde des vidages le refuse ; `ps -aux`, `ps -ef`,
+   `ps -p $$ -o comm=` passent. Test : R210.
+2. **Une liste du backoffice qui porte une entrée `locale: 'de'`** : le dépôt rend l'erreur de Q1 (A), la page son alerte de
+   chargement, aucun formulaire n'est ouvert sous une autre langue. Test : R214.
+3. **vue-i18n porte une langue hors du site** (`'de'`) : chaque lien et chaque lecture de langue (consentement OAuth, lien de
+   reconnexion, en-tête, pied de page, composables publics) rend `fr`, jamais `/de/…`. Test : R213.
+4. **`-D "$SMOKE_AUTH_DATA_FILE"`, `-D "$SMOKE_AUTH_DIR"`, `-D "$SMOKE_AUTH_DIR/absent/../curl-auth.conf"`** avec la Basic Auth :
+   sortie 2, curl jamais appelé ; `-D "$headers_file"`, `-D a..b`, `-D -` passent. Test : R211.
+5. **Une valeur générée qui commence, finit ou se coupe par un saut de ligne** donnée à `values_found_in` : aucune ligne vide dans
+   le fichier de motifs, un fichier qui ne la porte pas n'est pas « trouvé ». Test : R212.
+
+### Contraintes propres aux tâches R209 à R221
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent (« Contraintes propres aux tâches R196 à
+  R208 », reprises ici sauf ce qui suit). Exécution : **un agent par tâche, successifs dans l'ordre R209 → R221**, qui lit
+  d'abord `tasks/relectures-748/brief-commun-agents.md` (dans sa forme de R209), puis **cette section** en entier jusqu'à la
+  première tâche, `tasks/relectures-748/relecture-17-constats.md`, puis sa tâche.
+- Mutations, restauration et corps du commit : au format du brief (R209 : méthode, ligne `restauré :`, `git diff --exit-code`).
+  Un refactoring sans mutation possible écrit son filet au même endroit (commande, nombre avant, nombre après).
+- **Le message de commit s'écrit dans un fichier** du scratchpad, `awk 'length>140'` y rend vide (hors ligne rouge citée
+  entière, dite), puis `git commit -F <fichier>` (St17-32, R209) ; il ne contient jamais `[skip ci]`, `[ci skip]`, `[no ci]`,
+  `[skip actions]` ni `[actions skip]`.
+- **Un correctif d'une classe de défaut s'applique à toutes les formes voisines du même mécanisme dans le périmètre** : la tâche
+  les cherche, les nomme dans son commit, et dit celles qu'elle laisse et pourquoi.
+- Rien ne se coche ; jamais `git commit --amend`, `git reset`, `git checkout`, `git switch`, `git stash`, `git restore`,
+  `git checkout-index`, `git add -N` ; mutations en place par `python3 -I`, restaurées depuis une copie vérifiée par `cmp`.
+- **« ≤ 140 » est la longueur d'une ligne, en caractères** ; tables Markdown, JSON et titres de tâche du plan exceptés, dits au
+  rendu. Un message d'`echo` reste d'un seul tenant (R167 (A)).
+- Mesures : curl sur l'image épinglée (`curlimages/curl@sha256:08e46600…`, `--network none`) ; `ps` de procps (celui du runner,
+  Ubuntu 24.04), la version de l'hôte dite si elle diffère ; bash du runner (5.2.21) ou de l'hôte (5.2.37), dit.
+- **Aucun vidage d'environnement dans la session** (brief, « Interdits ») : les formes de R210 qui impriment l'environnement ne se
+  lancent que sous `env -i`, avec une seule variable factice, leur sortie lue par `values_found_in` sur un fichier.
+- Outillage (R210 à R212) : `Read` des scripts touchés et de `outillage-smoke.md` ; tests hors ligne
+  (`for t in tools/tests/*.test.sh; do bash "$t" >/dev/null 2>&1; echo "$t $?"; done`, 26 fichiers) ; shellcheck dans l'image
+  épinglée du job `tools-tests` (commande des contraintes de la quatorzième section) ; le nombre de `ok` de chaque test touché,
+  avant et après, au commit (départ : `smoke-http` 493, `smoke-mcp` 44, `audit-prod` 40, `smoke-login-throttling` 30,
+  `smoke-dead-session-cookie` 41).
+- Frontend (R213 à R219) : `Read` de `frontend.md`, `frontend-a11y.md`, `frontend-backoffice.md` (et `frontend-session-refus.md`
+  avant `AccessRefusedNotice.vue`, `frontend-session-bandeau.md` avant `SignInAgainLink.vue`) ; ciblé
+  `docker compose exec -T frontend npm test -- <chemins>`, puis `make front-test`, `make front-lint`, `make front-build`, codes lus
+  sans pipe (départ : 2 642 tests, 182 fichiers) ; `docker compose restart frontend` après un fichier créé, supprimé ou déplacé.
+- Backend (R220) : `Read` d'un fichier de `backend/tests/Support/` et de `backend-conventions.md` ; ciblé
+  `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test`, `make back-quality`, `make back-style-fix`
+  (départ : 5 788 tests).
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; tailles au départ (HEAD 69e26ecf) : `outillage-smoke.md`
+  22 478, `frontend-backoffice.md` 38 926, `frontend.md` 20 882, `frontend-session-refus.md` 17 270,
+  `frontend-session-bandeau.md` 12 871, `backend-conventions.md` 27 023, `.claude/CLAUDE.md` 35 014, **`security-user.md` 47 922**
+  et **`backoffice-api.md` 39 834** (non touchées). Une tâche qui modifie une règle la nomme dans ses fichiers et dans son rendu.
+- **#753 n'est pas traité ici** (D4 de la seizième relecture) : une tâche qui croise une ligne de sa liste la laisse, et le dit.
+
+### Fichiers (tâches R209 à R221)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `tasks/relectures-748/brief-commun-agents.md` | lecture de la série, restauration vérifiée par `git diff`, méthode et taille au corps du commit, message dans un fichier | R209 |
+| `tools/tests/smoke-http.test.sh` (`ps_lists_environment`, `env_dump_lines`, `dump_printing`, `dump_forbidden`, `dump_allowed`), `outillage-smoke.md` (l. 141-162) | `ps` par liste d'autorisation, `environ` sans casse, mesure sous `env -i` | R210 |
+| `tools/lib/smoke-http.sh` (`_smoke_writes_in_auth_dir`, `_smoke_value_touches_file`, `_smoke_option_arity`, en-tête, `_smoke_write_auth_config`), `tools/tests/smoke-http.test.sh`, `outillage-smoke.md` (l. 61-104) | `-D` vers un fichier de corps, le dossier, `..` ; prose de `-b` ; la procédure complète | R211 |
+| `tools/tests/lib/smoke-cases.sh`, `tools/tests/smoke-{login-throttling,dead-session-cookie,mcp}.test.sh` (et les deux autres si la forme est la même), `outillage-smoke.md` (l. 186-197) | un cas partagé, motifs sans ligne vide, commentaires | R212 |
+| `application/shared/useCurrentLocale.ts` (créé), 22 sites de `presentation/` et `application/`, `AccessRefusedNotice.vue`, `tests/presentation/noLocaleCast.spec.ts` (créé), `tests/support/unsupportedLocale.ts` (créé), `frontend.md` (i18n) | D2 : l'accesseur, la garde de source | R213 |
+| `infrastructure/admin/shared/supportedLocale.ts` (créé), neuf dépôts HTTP d'admin, quatre entités et leurs `…Input`, `groupByTranslationGroup.ts`, `translationGroupSelection.ts`, quatre pages, leurs specs, `startEditThroughSetup.ts` (supprimé), `frontend-backoffice.md` (l. 212-214) | D2 : la frontière, St17-7, St17-17 | R214 |
+| `qualityEntrySection.ts`, `AdminQualityEntrySection.vue`, `AdminQualityPage.vue`, `qualityEntrySection.spec.ts` | D1, défauts des champs, sources explicites, docblocks | R215 |
+| `entryFormState.ts`, `useEntryFormLock.ts`, `proposedCreation.ts`, `useTranslatedForm.ts`, `useAdminTranslation.ts`, `AdminAboutPage.vue`, `AdminAboutSettingsForm.vue`, les sept formulaires par entrée (commentaire), `frontend-backoffice.md` (l. 192-193) | commentaires, `EntryFormPlacement`, numéros de tâche | R216 |
+| `tests/support/sourceText.ts`, `translatedFormDeclarationOrder.spec.ts`, `emptyStateNeedsLoaded.spec.ts`, `noLoadInOnMounted.spec.ts`, `vueCompilerAlignment.spec.ts`, `AdminAboutPage.vue` (l. 66) | docblocks sans nombres, D4, limites, style | R217 |
+| `tests/support/adminButtonTexts.ts` (créé), `tests/support/buttonLabelled.ts`, les specs des quatre pages par entrée | D3 (1/2) : constantes, quatre specs | R218 |
+| `AdminQualityPage.spec.ts`, `AdminAboutPage.spec.ts`, `AdminWatchPage.spec.ts`, `TranslateEntryButton.spec.ts`, `tests/support/axe.spec.ts`, ce que le relevé désigne | D3 (2/2) : le reste, relevé à zéro | R219 |
+| `ProblemDetailStaysStaticTest.php`, `InterpolatedStrings.php`, `PhpSources.php`, `ClassNameResolver.php`, `ClassNameResolverTest.php`, `ImportsStaySortedTest.php` | témoin, listes, fermeture en constante, cas de R207, présent, `\assert` | R220 |
+| `.claude/rules/*`, fichiers désignés, cette section du plan | balayage | R221 |
+
+---
+
+### Task R209 : Le brief commun — la série lue, chaque mutation restaurée vérifiée par `git diff`, sa méthode au commit
+
+Constats : C17-9 ; Sp17-22 (pour l'avenir) ; St17-32 = Sp17-1 (pour l'avenir) ; choix 11.
+
+**Exception au brief** : cette tâche écrit dans `tasks/relectures-748/brief-commun-agents.md` (forme de 2e745f7c), rien d'autre ;
+elle ne touche ni au plan ni au code.
+
+**Files :**
+- Modify : `tasks/relectures-748/brief-commun-agents.md`
+
+- [ ] **Step 1 : lecture préalable** — la puce « Dans `tasks/plan-748.md` » nomme, pour **R209 et suivantes**, la section
+  « Corrections de la dix-septième relecture (2026-11-01) » et `tasks/relectures-748/relecture-17-constats.md` ; R196–R208 passent
+  dans la liste des séries passées (« … seizième relecture », `relecture-16-constats.md`). **Remplacer**, ne pas ajouter.
+- [ ] **Step 2 : restauration** (C17-9, choix 11) — dans « Tests », après la phrase de la copie vérifiée par `cmp` : avant
+  `git add`, chaque fichier muté que la tâche ne modifie pas rend `git diff --exit-code -- <fichier>; echo "exit=$?"` à 0, et un
+  fichier muté que la tâche modifie se compare par `cmp` à une copie prise après sa modification et avant la mutation ; un agent
+  interrompu entre une mutation et sa restauration ne commite rien avant cette vérification.
+- [ ] **Step 3 : format du corps** (Sp17-22) — le bloc « Mutations » de « Commit » gagne deux lignes par mutation :
+  `méthode : python3 -I (copie <chemin>, cmp)` et `restauré : <commande> → <sortie>` ; le paragraphe du corps donne la taille de
+  chaque règle touchée.
+- [ ] **Step 4 : longueur des lignes du message** (St17-32) — « Commit » : le message s'écrit dans un fichier du scratchpad,
+  `awk 'length>140' <fichier>` est vide (hors ligne rouge citée entière, dite au rendu), puis `git commit -F <fichier>`.
+- [ ] **Step 5 : exception du balayage** — « Interdits » : la seule exception à « ne touche pas à `tasks/` » devient « R221 écrit
+  la sous-section « Ce que la dix-huitième série a réellement fait » du plan ».
+- [ ] **Step 6 : vérifier** — `awk 'length>140' tasks/relectures-748/brief-commun-agents.md` : vide ; `git diff --stat` : ce seul
+  fichier.
+- [ ] **Step 7 : commit** — `docs: le brief commun de #748 vérifie chaque restauration et écrit la méthode des mutations`.
+
+---
+
+### Task R210 : Outillage — la garde des vidages : `ps` par liste d'autorisation, `environ` sans casse, mesure sous `env -i`
+
+Constats : C17-1 ; C17-2 ; St17-22 = C17-8 ; choix 7 et 8.
+
+**Files :**
+- Test : `tools/tests/smoke-http.test.sh` (`ps_lists_environment` l. 1414-1444, `pat_environ` l. 1473, `dump_printing` et sa boucle
+  l. 1501-1535, `dump_forbidden`, `dump_allowed`)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 141-162 : `ps`, `environ`, la mesure)
+
+- [ ] **Step 1 : filet** — les 26 tests hors ligne à 0, nombre de `ok` de chacun noté.
+- [ ] **Step 2 : tests, rouges** (Review Focus 1) —
+  - `dump_forbidden` gagne `ps -auxe`, `ps -eaux`, `ps -A e`, `ps -www`, `ps --cols 200`, `awk 'BEGIN { print ENVIRON["X"] }'`,
+    `# lire ENVIRON` ; `dump_allowed` gagne `ps -aux`, `ps -e -o pid=`, `x="$ENVIRONMENT_NAME"` (un mot plus long) ;
+  - `dump_printing` gagne `ps -auxe` et `ps -eaux` (mesurées : elles impriment la valeur) ;
+  - un cas « mesure sans héritage » : une variable témoin exportée par le test (valeur aléatoire, jamais en argument) n'apparaît
+    dans aucune sortie de la boucle de mesure (`values_found_in` : 0).
+  Run : `bash tools/tests/smoke-http.test.sh; echo "exit=$?"`. Expected : FAIL (`-auxe`, `-eaux`, `ENVIRON` admis ; le témoin
+  hérité, puisque la boucle ne passe pas par `env -i`).
+- [ ] **Step 3 : implémenter** — `ps_lists_environment` : `-o|-p) skip=1 ;;`, `-e|-f|-ef|-aux) ;;`, `-*) return 0 ;;` (choix 7),
+  son en-tête dit la liste et pourquoi ; `pat_environ` par classes (choix 8) ; la boucle : `env -i PATH="$PATH"
+  MEASURED_VARIABLE="$measured_value" bash -c …`, sortie dans un fichier de `$TMP` (mode 600), lue par `values_found_in`, plus
+  d'`export` ni de valeur en argument (St17-22). La garde relue sur la bibliothèque, l'audit et les trois smokes : aucune fausse
+  alerte.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `-*) return 0 ;;` → `-*) ;;` → `ps -auxe` et
+  `ps -eaux` rougissent ; (b) `-aux` retiré de la liste → le cas admis `ps -aux` rougit (« voisin refusé à tort ») ; (c)
+  `pat_environ` ramené aux minuscules → le cas `awk … ENVIRON` rougit ; (d) `env -i PATH="$PATH"` retiré de la boucle → le cas
+  « mesure sans héritage » rougit ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règle** — l. 148-151 : la liste d'autorisation des options de `ps` (au lieu de « not the POSIX `-e` ») ; « the
+  word `environ` » sans égard à la casse, la limite perl/PHP ; l. 161-162 : la mesure se fait sous `env -i`, une variable factice.
+  **Remplacer**, lignes ≤ 140, les quatre recherches de moignons du brief, taille notée.
+- [ ] **Step 6 : verts** — les 26 tests hors ligne à 0 (`smoke-http` : 493 + les cas du Step 2), shellcheck (image épinglée),
+  `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -n 'export MEASURED_VARIABLE\|grep -cF -- "\$measured_value"'
+  tools/tests/smoke-http.test.sh` : vide.
+- [ ] **Step 7 : commit** — `test(tools): la garde des vidages lit ps par liste d'autorisation, environ sans casse (#748)`.
+
+---
+
+### Task R211 : Outillage — `-D` vers un fichier de corps, vers le dossier et à travers `..` refusé ; la procédure d'admission complète
+
+Constats : CR17-7 ; C17-4 ; CR17-10 ; C17-3 ; St17-24 = Sp17-11 ; St17-25 ; Sp17-9 ; Sp17-10 ; choix 4 à 6.
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh` (`_smoke_writes_in_auth_dir` et son docblock, choix 4 et 5 ; `_smoke_value_touches_file`,
+  l. 451-452 : C17-3, ` @f` sans « = » est lu comme fichier par `-b` et refusé par la règle du « = » ; en-tête l. 74-80, Sp17-9 :
+  une phrase, sans moignon ni redite du préfixe ; `_smoke_write_auth_config` l. 228-240, Sp17-10 : `SMOKE_AUTH_DATA_FILE` et
+  `SMOKE_AUTH_DATA_FILES` nommés avec le préfixe refusé ; `_smoke_option_arity` : un renvoi à la règle, choix 6)
+- Test : `tools/tests/smoke-http.test.sh` (les cas, et le cas qui compare les listes, St17-25)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 61-104)
+
+- [ ] **Step 1 : filet et mesure** — les 26 tests à 0, `ok` notés ; sur curl 8.5.0 (image épinglée) : `-D <fichier de corps>`
+  (le corps écrasé par les en-têtes), `-D <le dossier>` et `-D <d>/absent/../curl-auth.conf` (sortie 23, `-K` intact, la mesure
+  de l'audit reprise) ; sorties au commit.
+- [ ] **Step 2 : tests, rouges** (Review Focus 4) — refusés avec le message `writes` : `-D "$SMOKE_AUTH_DATA_FILE"` (après
+  `smoke_data_file`), un lien vers ce fichier, `-D "$SMOKE_AUTH_DIR"`, `-D "$SMOKE_AUTH_DIR/absent/../curl-auth.conf"`,
+  `-D ../x`, et le même lot dans `SMOKE_CURL_OPTS` ; admis : `-D "$headers_file"`, `-D a..b`, `-D -`. Le cas des listes
+  (St17-25, St17-24) : il compare les options du `case`, la liste de la règle et son nombre **en chiffres**, puis les cinq options
+  jugées du docblock de `_smoke_value_touches_file`, celles de la règle et leur nombre. Expected : FAIL (les `-D` admis ; la règle
+  écrit encore « nine », « five »).
+- [ ] **Step 3 : implémenter** les choix 4 à 6 et la liste des fichiers ; la procédure de la règle liste **chaque** endroit :
+  les huit actuels, plus (9) le compte des options jugées et sa liste dans la règle, (10) la liste du docblock de
+  `_smoke_value_touches_file`, (11) l'énumération des valeurs refusées et admises de la règle (l. 72-84) ; le docblock de
+  `_smoke_option_arity` y renvoie en une ligne. Chaque fonction ≤ 25 lignes (`awk` des longueurs au commit).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le `-ef` contre `SMOKE_AUTH_DATA_FILES` retiré →
+  les cas du fichier de corps rougissent ; (b) le refus de `..` retiré → `-D …/absent/../…` et `-D ../x` ; (c) le `-ef` du dossier
+  lui-même retiré → `-D "$SMOKE_AUTH_DIR"` ; (d) « 5 » → « 6 » dans la règle → le cas des listes ; (e) `-b` retiré du docblock de
+  `_smoke_value_touches_file` → le même cas, qui nomme l'option ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règle** — l. 61-104 réécrites : les chiffres, les refus nouveaux, la limite CR17-10, la prose de C17-3, la
+  procédure en onze points. **Remplacer** ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 6 : verts** — les 26 tests à 0, shellcheck, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -n 'jamais un fichier lu\|Vides à la$' tools/lib/smoke-http.sh` : vide ; `grep -nE '\b(nine|five|twelve)\b'
+  tools/tests/smoke-http.test.sh .claude/rules/outillage-smoke.md` : chaque ligne restante dite au commit.
+- [ ] **Step 7 : commit** — `fix(tools): avec la Basic Auth, -D vers un corps, le dossier ou à travers .. est refusé (#748)`.
+
+---
+
+### Task R212 : Outillage — un cas partagé pour les blocs recopiés, des motifs sans ligne vide, des commentaires qui disent vrai
+
+Constats : St17-23 ; CR17-5 ; St17-26 ; St17-27 ; refactoring (sauf CR17-5).
+
+**Files :**
+- Test : `tools/tests/lib/smoke-cases.sh` (St17-23 : un cas partagé `check_hollow_basic_auth_values` pour les blocs vide /
+  témoin / `CDPATH` / racine / `http://` et la boucle `for hollow` ; CR17-5 :
+  `write_value_patterns` l. 57 n'écrit aucune ligne vide, une valeur faite seulement de sauts de ligne est un `fail` nommé ;
+  St17-27 : l. 52, la raison qui tient — ou la phrase retirée si aucune ne tient), `smoke-login-throttling.test.sh:263`,
+  `smoke-dead-session-cookie.test.sh:380`, `smoke-mcp.test.sh:398` (une ligne d'appel chacun), `smoke-mcp.test.sh:258`
+  (St17-26 : un commentaire dit que l'espace final de `'Mcp-Session-Id: 0 '` sépare l'en-tête de `Mcp-Session-Id: 0x…`),
+  `audit-prod.test.sh` et `smoke-http.test.sh` si leur boucle a la même forme (formes voisines : convertis, ou la différence
+  dite au commit)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 186-197, si le cas partagé y change ce que dit la phrase des cas)
+
+- [ ] **Step 1 : filet** — les 26 tests à 0, `ok` de chacun noté.
+- [ ] **Step 2 : test, rouge** (CR17-5, Review Focus 5) — dans `smoke-http.test.sh` : `values_found_in` d'une valeur
+  `$'\nabc'`, `$'abc\n'` et `$'a\n\nb'` sur un fichier qui ne porte aucune des trois parties → « non trouvée » ; une valeur `$'\n'`
+  → `fail` nommé. Expected : FAIL (la ligne vide trouve tout).
+- [ ] **Step 3 : implémenter** CR17-5, puis **refactorer** St17-23, St17-26, St17-27.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le filtre des lignes vides retiré → les cas du
+  Step 2 rougissent ; (b) dans le cas partagé, la vérification du code de sortie d'un « vide » inversée → les trois tests qui
+  l'appellent rougissent (nombre au commit) ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : verts** — mêmes nombres de `ok` (plus les cas du Step 2, moins les cas fusionnés, dits), shellcheck,
+  `tools/check-claude-rules.sh` ; `grep -c 'for hollow' tools/tests/*.test.sh` : 0 dans les fichiers convertis, chaque ligne
+  restante dite.
+- [ ] **Step 6 : commit** — `test(tools): un cas partagé pour les valeurs creuses, des motifs sans ligne vide (#748)`.
+
+---
+
+### Task R213 : Frontend — `useCurrentLocale()` remplace les copies de `locale.value as Locale`
+
+Constats : D2 (première moitié) ; St17-9 ≈ Sp17-18 ≈ CR17-3 ≈ C17-5 ; St17-21 (`'de' as never`) ; choix 1 et 2.
+
+**Files :**
+- Create : `frontend/src/application/shared/useCurrentLocale.ts`, `frontend/tests/application/shared/useCurrentLocale.spec.ts`,
+  `frontend/tests/presentation/noLocaleCast.spec.ts`, `frontend/tests/support/unsupportedLocale.ts`
+- Modify : les 22 sites de `presentation/` et `application/` (`grep -rn ' as Locale' frontend/src/presentation
+  frontend/src/application`), `presentation/ui/admin/AccessRefusedNotice.vue` (`fallbackLocale` remplacé),
+  `tests/presentation/ui/admin/AccessRefusedNotice.spec.ts:145` (par `unsupportedLocale.ts`)
+- Modify (règle) : `.claude/rules/frontend.md` (« i18n » : l'accesseur, une phrase) ; `frontend-session-bandeau.md` l. 67-68 et
+  `frontend-session-refus.md` si une phrase y décrit la langue de repli autrement
+
+**Interfaces :**
+- Produces : `useCurrentLocale(): ComputedRef<Locale>` ; `setUnsupportedLocale(i18n: I18n, value: string): void` ;
+  `REMAINING_LOCALE_CASTS: readonly string[]` (dans le spec), que R214 vide.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 3) —
+  - `useCurrentLocale.spec.ts` : `"la langue de l'interface, si le site la porte (#748, R213)"` → `en` après
+    `i18n.global.locale.value = 'en'`, et suit un changement ; `"une langue hors du site rend la langue par défaut (#748, R213)"` →
+    `setUnsupportedLocale(i18n, 'de')` → `fr` ;
+  - `noLocaleCast.spec.ts` : les fichiers de `frontend/src` qui portent `as Locale` égalent `REMAINING_LOCALE_CASTS` (les cinq
+    dépôts de St17-8 et `groupByTranslationGroup.ts`) ; le message nomme chaque fichier de trop ou en moins ;
+  - un cas par forme voisine de D2 (`OAuthConsentPage.vue`, `SignInAgainLink.vue`) : sous une langue d'interface hors du site, la
+    cible du lien commence par `/fr/`.
+  Expected : FAIL (module absent ; 22 fichiers de trop ; `/de/` dans les deux cibles).
+- [ ] **Step 2 : implémenter** (choix 1) ; `docker compose restart frontend` (fichiers créés).
+- [ ] **Step 3 : remplacer les 22 sites** ; les cinq copies de `routeLocale()` l'appellent ; `AccessRefusedNotice.vue` lit
+  l'accesseur. `grep -rn ' as Locale' frontend/src/presentation frontend/src/application` : vide.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `as Locale` remis dans `NotFoundPage.vue` → la
+  garde rougit en le nommant ; (b) le repli de `useCurrentLocale` remplacé par la valeur lue telle quelle (`locale.value as
+  Locale`) → le cas « hors du site » et ceux des deux liens rougissent ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règles** ; lignes ≤ 140, moignons relus ; tailles notées.
+- [ ] **Step 6 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` ;
+  `grep -rn "as never" frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts` : vide.
+- [ ] **Step 7 : commit** — `refactor(frontend): la langue courante lue par useCurrentLocale, plus de locale.value as Locale (#748)`.
+
+---
+
+### Task R214 : Frontend — les dépôts d'admin valident la langue, les entités portent `Locale`, les gardes des pages disparaissent
+
+Constats : D2 (seconde moitié), Q1, Q3 ; St17-8 ≈ CR17-4 ; St17-7 = Sp17-7 = CR17-1 = C17-6 ; St17-17 ; choix 3.
+
+**Files :**
+- Create : `frontend/src/infrastructure/admin/shared/supportedLocale.ts`,
+  `frontend/tests/infrastructure/admin/shared/supportedLocale.spec.ts`
+- Modify : les neuf dépôts (choix 3 : `toEntity` par `supportedLocaleOf`), les entités et `…Input` de `incidents`,
+  `contributions`, `caseStudies`, `anonymousCv` (`locale: Locale`), `domain/admin/shared/ordering/groupByTranslationGroup.ts` et
+  `translationGroupSelection.ts` (contrainte `locale: Locale`, le `as Locale` de la l. 50 et le `as readonly string[]` retirés),
+  les quatre pages (`startEdit` : `form.locale = <entrée>.locale`, la garde et son commentaire retirés, l'import
+  d'`isSupportedLocale` s'il n'est plus lu), `frontend/tests/presentation/noLocaleCast.spec.ts` (`REMAINING_LOCALE_CASTS = []`)
+- Delete : `frontend/tests/support/startEditThroughSetup.ts` (`git rm`)
+- Test : les specs des neuf dépôts (`frontend/tests/infrastructure/admin/*/`), les quatre specs de pages (**question Q3, réponse
+  attendue** ; (A) : les cas « …le sélecteur garde la précédente (#748, R204) » retirés, et l'import du helper)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (l. 212-214 : la langue d'un formulaire vient d'une entrée typée
+  `Locale`, validée par le dépôt — `supportedLocaleOf`, ce que fait le dépôt d'une langue inconnue ; plus de renvoi au helper)
+
+**Interfaces :**
+- Consumes : `REMAINING_LOCALE_CASTS` (R213).
+- Produces : `supportedLocaleOf(value: string, unsupported: (value: string) => Error): Locale`.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** (Review Focus 2) — `supportedLocale.spec.ts` : `'fr'` → `'fr'`, `'en'` → `'en'`, `'de'` et `''`
+  → lève l'erreur que rend `unsupported` ; un cas par dépôt (neuf) : `list()` répondu avec une entrée `locale: 'de'` → rejette
+  avec l'erreur de son contexte, raison `'unknown'` (**question Q1, réponse attendue** ; (B) : raison `unsupported-locale` ;
+  (C) : l'entrée écartée de la liste), et `create()` répondu avec la même entrée → rejette de même. Expected : FAIL (module
+  absent ; la liste rendue avec `'de'`).
+- [ ] **Step 3 : implémenter** ; `docker compose restart frontend` (fichier créé, fichier supprimé) ; les erreurs de `vue-tsc -b`
+  qui suivent le changement de type (fixtures de specs comprises) se corrigent par le type, jamais par `as`.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `supportedLocaleOf` qui rend la valeur sans la
+  juger → les neuf cas de dépôt rougissent (nombre au commit) ; (b) `supportedLocaleOf` retiré de `HttpAdminIncidentRepository` →
+  `make front-build` échoue (ligne TS au commit : une `string` n'est pas une `Locale`) ; (c) `as Locale` remis dans
+  `groupByTranslationGroup.ts` → `noLocaleCast.spec.ts` rougit ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règle** ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 6 : verts** — `make front-test` (nombre : filet − 4 + les cas du Step 2), `make front-lint`, `make front-build`,
+  `tools/check-claude-rules.sh` ; `grep -rn ' as Locale' frontend/src` : vide ; `grep -rn 'isSupportedLocale'
+  frontend/src/presentation/pages/admin/Admin{Incidents,Contributions,CaseStudies,AnonymousCv}Page.vue` : vide ;
+  `grep -rn 'startEditThroughSetup' frontend .claude` : vide.
+- [ ] **Step 7 : commit** — `fix(frontend): les dépôts d'admin valident la langue, les entités portent Locale (#748)`.
+
+---
+
+### Task R215 : Qualité — des champs déclarés par un record exhaustif, la liste dérivée, sans garde à l'exécution
+
+Constats : D1, Q2 ; St17-1 ; St17-2 = Sp17-4 ; St17-3 = Sp17-6 ; St17-6 ; CR17-2 ; CR17-9 ; St17-4 ; St17-5 ; choix 9.
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/qualityEntrySection.ts` (choix 9 ; `QualityFieldOptions`,
+  `QUALITY_PRINCIPLE_FIELD_OPTIONS`, `QUALITY_TRAIT_FIELD_OPTIONS`, `entryFieldsOf`, `fieldRecord` selon Q2 ; `hasEveryField`,
+  `requireEveryField`, `fieldsFrom`, `MissingEntryFieldError` retirés ; St17-2 : l'en-tête dit ce que vérifie le compilateur — le
+  record, l'entrée, l'écriture, les libellés — et ce qu'il ne vérifie pas : le formulaire est `EntryForm<string>`, écart accepté
+  de R202, `form.nimporteQuoi` compile), `AdminQualityEntrySection.vue` (la prop reçoit le record ; `fieldNames` et son docblock
+  disparaissent ou disent leur usage réel, St17-4 ; CR17-2 : le corps d'écriture se construit **avant** `isSubmitting.value =
+  true`, rien qui puisse lever entre cette ligne et le `try` ; St17-3 : l. 83, la phrase dit ce qui est vrai — un libellé
+  manquant est refusé, un libellé en trop n'est pas vu, `labels` étant un `computed` ; St17-5 : l. 51, « expose la liste sous
+  `entries` »), `AdminQualityPage.vue` (CR17-9 : chaque source est un littéral typé `QualityEntrySource<…>` qui porte
+  exactement ses membres, `entries: principleReading.principles`, sans `...reading` ; l. 66-78 : St17-3, St17-5)
+- Test : `frontend/tests/presentation/pages/admin/qualityEntrySection.spec.ts` (les neuf cas de `hasEveryField`,
+  `requireEveryField`, `fieldsFrom` retirés avec les fonctions ; des cas pour `entryFieldsOf` et `fieldRecord`) ;
+  `AdminQualityPage.spec.ts` **inchangé**
+
+**Interfaces :**
+- Produces : `type QualityFieldOptions` ; `entryFieldsOf<F extends string>(options: Readonly<Record<F, QualityFieldOptions>>,
+  proseFields: readonly string[]): readonly QualityEntryField<F>[]` ; `fieldRecord<F extends string>(options: Readonly<Record<F,
+  unknown>>, valueOf: (name: F) => string): Record<F, string>` (Q2 (A)). R216 lit `EntryForm<F>`.
+
+- [ ] **Step 1 : filet** — `docker compose exec -T frontend npm test -- tests/presentation/pages/admin/AdminQualityPage.spec.ts
+  --reporter=verbose` (noms et verdicts dans un fichier du scratchpad), puis `make front-test; echo "exit=$?"`, nombres notés.
+- [ ] **Step 2 : tests, rouges** — `qualityEntrySection.spec.ts` : `entryFieldsOf` rend les champs dans l'ordre des clés, chaque
+  défaut à `false` sauf ce que le record déclare (`iconKey` : recopié, en colonne), la prose lue de la liste passée ;
+  `fieldRecord({ a: …, b: … }, (n) => n.toUpperCase())` rend `{ a: 'A', b: 'B' }`. Expected : FAIL (fonctions absentes).
+- [ ] **Step 3 : refactorer** selon le choix 9 et la liste ; `grep -n ' as ' qualityEntrySection.ts AdminQualityEntrySection.vue
+  AdminQualityPage.vue` : les `as const` et la seule assertion de `fieldRecord` (**question Q2, réponse
+  attendue** ; (A)), dites au commit.
+- [ ] **Step 4 : verts, même suite** — `AdminQualityPage.spec.ts` inchangé (`git diff --stat` vide), mêmes noms et verdicts
+  (`cmp`) ; `make front-test` : même nombre − 9 + les cas du Step 2 ; `make front-lint`, `make front-build`.
+- [ ] **Step 5 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) la clé `iconKey` retirée de
+  `QUALITY_PRINCIPLE_FIELD_OPTIONS` → `make front-build` échoue (la ligne TS du `satisfies` au commit : l'exhaustivité est au
+  compilateur) ; (b) `entryFieldsOf` qui met `copiedToNewVersion` à `true` par défaut → le cas « principe : ouvre une création
+  rattachée, l'icône recopiée… » d'`AdminQualityPage.spec.ts` rougit ; (c) `...principleReading` remis dans la source → `make
+  front-build` échoue (propriété en trop d'un littéral frais) ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 6 : commit** — `refactor(frontend): les champs de Qualité déclarés par un record exhaustif (#748)`.
+
+---
+
+### Task R216 : Les formulaires par entrée — des commentaires sans redite ni décompte, `EntryFormPlacement`, des renvois à la règle
+
+Constats : St17-10 ; St17-11 = Sp17-8 ; St17-12 ; St17-13 = Sp17-19 ; St17-14 ; Sp17-3 ; choix 10.
+
+**Files :**
+- Modify : `frontend/src/presentation/ui/admin/proposedCreation.ts` (choix 10), `qualityEntrySection.ts` (`EntryForm<F> =
+  EntryFormPlacement & Record<F, string>`), `entryFormState.ts:25` et `useEntryFormLock.ts:32` (St17-11 : sans décompte
+  d'appelants), les sept formulaires par entrée (St17-10 : le commentaire « L'état commun des formulaires par entrée
+  (`useEntryFormState`) ; `formState` entier va à la bascule… » retiré, le docblock du module le dit), `useTranslatedForm.ts:24-28`
+  (St17-13 : la phrase alignée sur `frontend-backoffice.md:193`, ou la règle alignée sur le code — l'une des deux, la même chose
+  dite aux deux endroits), les six numéros de tâche seuls (St17-14 : `useAdminTranslation.ts:183-184`, `AdminAboutPage.vue:44`,
+  `AdminAboutSettingsForm.vue:140`, `useTranslatedForm.ts:82, 85` — chacun gagne le nom de la règle et de sa section, forme de
+  Q9 (A) de la seizième section), `AdminAboutSettingsForm.vue:139-142` (Sp17-3 : le docblock dit ce que fait la fonction, sans
+  nommer son appelant)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` si St17-13 l'aligne
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : corriger** la liste ; `grep -rn "huit formulaires" frontend/src` : vide ; `git blame` des lignes de `frontend/src`
+  qui citent `R[0-9]+` seul et que la dix-septième série a écrites : 0 (commande et nombre au commit).
+- [ ] **Step 3 : rouge vu à la compilation** (Python, copie vérifiée par `cmp`) : `locale: Locale` → `locale: string` dans
+  `EntryFormPlacement` → `make front-build` échoue (ligne TS au commit) ; restauré ; **dans le corps du commit**.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`
+  si la règle change (taille notée).
+- [ ] **Step 5 : commit** — `refactor(frontend): les formulaires par entrée sans commentaire recopié (#748)`.
+
+---
+
+### Task R217 : Gardes de source et specs — des docblocks qui renvoient aux constantes, les limites écrites, la raison du plancher
+
+Constats : D4 ; Sp17-16 ; St17-18 ; St17-19 ; St17-20 ; St17-21 (`expect(callCount,`) ; Sp17-20 ; Sp17-21 (`form !== null`) ;
+refactoring.
+
+**Files :**
+- Test : `frontend/tests/presentation/pages/admin/translatedFormDeclarationOrder.spec.ts` (D4 : le docblock du plancher
+  `reads >= 2`, l. 294, dit sa raison ; St17-18 : les docblocks des égalités renvoient à `CALLING_FILES`, `PAGES_FILES`, `UI_FILES`,
+  `FILES_WITH_EMPTY_STATE` sans recopier nombre ni liste ; St17-21 : `expect(callCount, …)`), `emptyStateNeedsLoaded.spec.ts`,
+  `noLoadInOnMounted.spec.ts` (St17-18), `frontend/tests/support/sourceText.ts:308-312` (St17-19 : la procédure de
+  `DEFERRED_HOOKS` retrouve l'étape « un cas dans `sourceText.spec.ts` », les noms écrits une fois, « sur `window`,
+  `globalThis` ou `self` »), `vueCompilerAlignment.spec.ts` (St17-20 : la limite d'`outsideSingleQuotes` devant une apostrophe
+  française, écrite dans son docblock ; Sp17-20 : l. 350, `toContain('devDependencies')` retiré)
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutPage.vue:66` (`null !== form`, Sp17-21)
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : corriger** la liste.
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) dans une copie, un site qui ne lit plus qu'une
+  option de `useTranslatedForm` → le plancher `reads >= 2` rougit (le docblock dit ce qu'il attrape) ; (b) le cas de
+  `sourceText.spec.ts` d'un hook différé retiré de `DEFERRED_HOOKS` → il rougit (l'étape rétablie est vraie) ; restaurées ;
+  **dans le corps du commit**.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ;
+  `cd frontend/tests/presentation/pages/admin`, puis `grep -nE "\b(8|10|12|15)\b"` sur
+  `translatedFormDeclarationOrder.spec.ts`, `emptyStateNeedsLoaded.spec.ts` et `noLoadInOnMounted.spec.ts` : aucune ligne de
+  docblock qui recopie un compte (chaque ligne restante dite au commit).
+- [ ] **Step 5 : commit** — `test(frontend): des gardes de source qui renvoient à leurs constantes (#748)`.
+
+---
+
+### Task R218 : Les libellés lus du catalogue (1/2) — les constantes écrites une fois, les quatre specs des pages par entrée
+
+Constats : D3 ; St17-15 ≈ Sp17-15 (en partie) ; St17-16 ; Sp17-21 (`as DOMWrapper`) ; refactoring.
+
+**Files :**
+- Create : `frontend/tests/support/adminButtonTexts.ts` — `ORDER_TEXTS` (`save`, `cancel` : `admin.order`),
+  `entryFormTexts(section)` (`save`, `cancel`, `delete` de `admin.<section>`, la clé `delete` ou `deleteAction` selon la section),
+  `createVersionLabel(locale: Locale)` et `proposeVersionLabel(locale: Locale)` (interpolation par `createAppI18n().global.t`, avec
+  le paramètre que la page passe — relu dans la page), lus de `fr.json` ; un docblock, une fois, dit pourquoi
+- Modify : `frontend/tests/support/buttonLabelled.ts` (Sp17-21 : `scope.findAll<HTMLButtonElement>('button')`, sans `as` ; le
+  docblock dit l'exception « un test qui juge le texte lui-même »), les specs `AdminIncidentsPage`, `AdminContributionsPage`,
+  `AdminCaseStudiesPage`, `AdminAnonymousCvPage` (les `DELETE_FR`, `CANCEL_FR`, `ORDER_CANCEL_FR` locaux et leur commentaire de
+  quatre lignes retirés ; chaque `'Enregistrer'`, « Enregistrer l'ordre », `'Créer la version …'`, `'Proposer la version …'`
+  remplacé)
+
+**Interfaces :**
+- Produces : `ORDER_TEXTS: { readonly save: string; readonly cancel: string }` ; `entryFormTexts(section: AdminEntrySection):
+  { save: string; cancel: string; delete: string }` ; `createVersionLabel(locale: Locale): string` ;
+  `proposeVersionLabel(locale: Locale): string`. R219 les lit.
+
+- [ ] **Step 1 : filet et rouge avant** — `make front-test; echo "exit=$?"`, nombre noté ; puis **une mutation par clé** sur une
+  copie de `fr.json` (Python, en place, copie vérifiée par `cmp`) : `admin.order.save`, `admin.order.cancel`,
+  `admin.order.createVersion`, `…proposeVersion`, et `save`, `cancel`, `delete(Action)` de chacune des quatre sections → le nombre
+  de cas rouges par clé, au commit ; restauré.
+- [ ] **Step 2 : refactorer** ; `docker compose restart frontend` (fichier créé).
+- [ ] **Step 3 : vert après** — les mêmes mutations, rejouées : **0 rouge** par clé dans les quatre specs (le catalogue est la
+  source) ; restaurées ; **avant et après dans le corps du commit**.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; dans les quatre specs,
+  `grep -nE "'Enregistrer'|Enregistrer l'ordre|'Créer la version|'Proposer la version|const (DELETE|CANCEL|ORDER_CANCEL)_FR"` :
+  vide, ou chaque ligne justifiée (un test qui juge le texte lui-même).
+- [ ] **Step 5 : commit** — `test(frontend): les libellés des pages par entrée lus du catalogue, écrits une fois (#748)`.
+
+---
+
+### Task R219 : Les libellés lus du catalogue (2/2) — Qualité, À propos, veille, bouton de traduction ; relevé à zéro
+
+Constats : D3 ; St17-15 ≈ Sp17-15 (le reste) ; refactoring.
+
+**Files :**
+- Test : `AdminQualityPage.spec.ts`, `AdminAboutPage.spec.ts`, `AdminWatchPage.spec.ts`, `TranslateEntryButton.spec.ts`,
+  `tests/support/axe.spec.ts`, et chaque spec que le relevé du Step 1 désigne ; `tests/support/adminButtonTexts.ts` si une clé
+  manque (une section de plus)
+
+**Interfaces :**
+- Consumes : `ORDER_TEXTS`, `entryFormTexts`, `createVersionLabel`, `proposeVersionLabel` (R218).
+
+- [ ] **Step 1 : relevé** — un script Python du scratchpad (`python3 -I`) lit `frontend/src/infrastructure/i18n/locales/fr.json`
+  et chaque `frontend/tests/**/*.spec.ts`, et liste chaque littéral entre guillemets égal à une valeur de `admin.*` (titres
+  compris) ; la liste (fichier, ligne, clé) et son nombre vont au corps du commit. Puis `make front-test`, nombre noté, et une
+  mutation par clé relevée sur une copie de `fr.json` (rouges par clé, au commit).
+- [ ] **Step 2 : refactorer** chaque site relevé ; un test qui juge le texte lui-même garde son littéral, dit au commit.
+- [ ] **Step 3 : vert après** — les mêmes mutations : 0 rouge hors des littéraux gardés ; **avant et après dans le corps du
+  commit**.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; le relevé du Step 1 rejoué :
+  seules les lignes gardées au Step 2 ; `grep -rnE "'Enregistrer'|Enregistrer l'ordre|'Créer la version|'Proposer la version"
+  frontend/tests` : idem.
+- [ ] **Step 5 : commit** — `test(frontend): les libellés des specs d'admin lus du catalogue, relevé à zéro (#748)`.
+
+---
+
+### Task R220 : Backend — un témoin hors de la boucle, des listes à deux formes, une fermeture en constante, `\assert` d'un caractère
+
+Constats : St17-28 = CR17-6 ; St17-29 ; CR17-8 ; Sp17-12 ; Sp17-13 ; St17-30 ; St17-31.
+
+**Files :**
+- Test : `backend/tests/Shared/Infrastructure/Http/ProblemDetailStaysStaticTest.php` (St17-28 : le témoin « le même argument, sans
+  la virgule » produit une fois, hors du `foreach (COMMAS …)` l. 525-530, ou sa clé portant `$label` ; la ligne 67 citée relue ;
+  CR17-8 : un cas « une constante dont la valeur est une fermeture » — PHP 8.5 admet une fermeture statique dans une expression
+  constante —, verdict du témoin sans accolade), `backend/tests/Support/InterpolatedStrings.php` (St17-29 : `COMMAS` et `DOLLARS`
+  gagnent une seconde forme, l'interpolation à accolades `"{$a},"`, `"{$a}$"`), `backend/tests/Shared/ClassNameResolverTest.php:145`
+  (Sp17-13 : le commentaire au présent dit ce que le cas garde), `backend/tests/Shared/ImportsStaySortedTest.php` (Sp17-12 : le cas
+  de R207, une fermeture `use (` après une chaîne `"$x("`)
+- Modify : `backend/tests/Support/ClassNameResolver.php:155-157` (St17-30 : la ligne de ~110 coupée à la largeur du docblock),
+  `backend/tests/Support/PhpSources.php` (St17-31 : `\assert(1 === \strlen($char))` dans `isChar`, `isAnyChar` passant par lui)
+
+- [ ] **Step 1 : filet** — `make back-test; echo "exit=$?"`, nombre noté ; `php -i | grep zend.assertions` dans le conteneur
+  (`-u dev`) : la valeur, au commit (St17-31 suppose `1` en test).
+- [ ] **Step 2 : tests** — les cas de St17-28, St17-29, CR17-8, Sp17-12 ; `PhpSourcesTest` (créé si absent) : `isChar($jeton,
+  '((')` lève `AssertionError`. Expected : vert d'emblée pour St17-29, CR17-8 et Sp17-12 (le dire, et le prouver au Step 4) ;
+  FAIL pour l'`AssertionError` ; la clé en double de St17-28 ne rougit qu'avec une seconde entrée : prouvé au Step 4.
+- [ ] **Step 3 : implémenter** ; `make back-style-fix`.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`, cache vidé dans le conteneur) : (a) `arguments()`
+  remis à `->is(',')` → les deux cas `COMMAS` rougissent ; (b) `opensBrace` sans `isChar($token, '{')` → le cas de la fermeture
+  rougit (sinon : « rouge : aucune », la raison, et la question rendue) ; (c) la mutation de R207 (`UnsortedImports.php:81` par le
+  texte) → le cas de Sp17-12 : rouge, ou « rouge : aucune — inatteignable » comme R207 l'a mesuré ; (d) le `\assert` retiré → le
+  cas de `PhpSourcesTest` ; (e) avant le correctif de St17-28, une seconde entrée ajoutée à `COMMAS` → PHPUnit signale la clé en
+  double ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : verts** — `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `test(security): un témoin hors de la boucle, une fermeture en constante, un caractère vérifié (#748)`.
+
+---
+
+### Task R221 : Balayage documentaire de la dix-septième relecture — commandes et nombres dans le plan
+
+Constats : St17-32 = Sp17-1 ; Sp17-2 ; Sp17-14 ; Sp17-22 ; C17-7 (cité) ; les écarts réels de R209 à R220.
+
+**Exception au brief** : cette tâche écrit dans `tasks/plan-748.md`, et seulement la sous-section « Ce que la dix-huitième série a
+réellement fait » à la fin de cette section (avant « ### Task 11 »), sans cocher de case ni toucher au reste. **Elle ne refactore
+rien** : ce qu'elle trouve à restructurer se rend en question.
+
+**Files :** ceux que le balayage désigne (texte seulement) ; `tasks/plan-748.md` (la sous-section).
+
+- [ ] **Step 1 : recherches** (`X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor
+  --exclude-dir=var)`, `P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)`,
+  `B=$(git log --grep='le plan de la dix-huitième série' -1 --format=%H)`). Pour **chaque** recherche : **la commande exacte**,
+  le nombre de lignes, la raison de chaque ligne gardée — écrits dans la sous-section (Sp17-14) ; chaque manque déclaré est
+  vérifié par une mutation ou un `grep` cité :
+  1. Noms disparus : `grep -rn "${X[@]}" -e requireEveryField -e fieldsFrom -e MissingEntryFieldError -e hasEveryField
+     -e startEditThroughSetup -e 'export MEASURED_VARIABLE' -e ' as Locale' "${P[@]}"`.
+  2. Vocabulaire : `grep -rn "${X[@]}" -e 'huit formulaires' -e 'jamais un fichier lu' -e 'jugée pour cinq' -e '\bnine\b'
+     -e '\bfive\b' "${P[@]}"`.
+  3. Identifiants de constat dans les noms de tests : la recherche de R135, rejouée, sa commande écrite.
+  4. Récits au passé dans `git diff --name-only "$B"...HEAD -- frontend backend tools .claude` : les deux expressions de la
+     recherche 4 de R208.
+  5. Longueurs : `awk 'length>140'` sur chaque fichier de `git diff --name-only "$B"...HEAD` (lignes écrites par la série, par
+     `git blame`) ; **et les corps de commit** : `for c in $(git rev-list "$B"..HEAD); do git log -1 --format=%B "$c" | awk -v c="$c"
+     'length>140 {print c": "length}'; done` — chaque ligne dite (rouge citée ou non) ; St17-32 = Sp17-1 : les lignes de b366e1a2
+     (six), d5e29e05 (une) et 30334c3f (une) de la dix-septième série, déclarées.
+  6. Moignons et coupes dans chaque règle touchée par la série : les quatre recherches du brief, leurs commandes écrites.
+  7. Règles relues avec `Read` (`outillage-smoke.md`, `frontend-backoffice.md`, `frontend.md`, `frontend-session-bandeau.md`,
+     `frontend-session-refus.md` si touchée) : toute phrase fausse sur HEAD **remplacée** ; une règle modifiée sans déclaration, dite.
+  8. Docblocks : dans les fichiers de `src/`, `tests/support/`, `backend/tests/Support/` et `tools/` modifiés par R209 à R220, un
+     docblock qui ne fait que redire le nom du membre est dit au rendu (question, pas correction) ; la commande du relevé écrite.
+  9. Numéros de tâche dans `src/` : `grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l` (304 à 69e26ecf) et `git blame` des
+     lignes écrites dans `"$B"..HEAD` qui citent `R[0-9]+` seul (0 attendu, forme de R216) ; commandes et nombres écrits.
+  10. Mutations : `git log --format='%h %s%n%b' "$B"..HEAD` ; pour chaque tâche, chaque mutation lue dans le corps (méthode,
+      commande, rouge, `restauré :`) ; une mutation que le plan annonce et que le commit ne porte pas est « non attestée ».
+  11. Sp17-2 : le relevé motif × délimiteur de R197 rejoué sur la garde de HEAD (après R210), le **tableau** écrit dans la
+      sous-section. Sp17-22 : pour R199, R201 à R205 et R207, la méthode de mutation dite d'après le diff (copie et Python, ou
+      l'inconnu), et la taille d'`outillage-smoke.md` après R197 (`git show 80a7b746:.claude/rules/outillage-smoke.md | wc -c`).
+- [ ] **Step 2 : plan tenu à jour** — la sous-section « Ce que la dix-huitième série a réellement fait *(écrit par R221 le …)* » :
+  les commits ; pour chaque tâche R209 à R220, « conforme » ou l'écart réel (déclaré **et** lisible dans le diff) ; les questions Q1
+  à Q3 et la réponse suivie ; les onze recherches (commande, nombre, lignes gardées) ; la liste des mutations relue dans `git log` ;
+  les nombres de tests (`make front-test`, `make back-test`, `ok` des 26 tests hors ligne) ; la taille de chaque règle touchée et la
+  sortie de `tools/check-claude-rules.sh` ; C17-7 : « rotation du jeton à la charge de l'auteur, à confirmer par lui seul ». Aucune
+  autre ligne du plan ne change.
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; toutes les règles < 50 000, `backoffice-api.md` à
+  39 834 et `security-user.md` à 47 922 ; `make front-test` / `make back-test` / tests hors ligne selon les fichiers changés,
+  codes lus sans pipe.
+- [ ] **Step 4 : commit** — `docs: le balayage de la dix-septième relecture de #748`.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| St17-7 = Sp17-7 = CR17-1 = C17-6 | R214 (la garde retirée avec D2, Q3 ; le cas devient un cas du dépôt, Q1) ; « Pourquoi cet ordre » |
+| St17-1 | R215 (D1, Q2) |
+| St17-22 = C17-8 | R210 (`env -i`, `values_found_in`) |
+| St17-2 = Sp17-4 | R215 (l'en-tête) |
+| St17-3 = Sp17-6 | R215 (la phrase vraie) |
+| St17-6 | R215 (défauts du record, choix 9) |
+| CR17-2 | R215 (le chemin disparaît avec `fieldsFrom` ; le corps construit avant `isSubmitting`) |
+| CR17-9 | R215 (sources littérales typées) |
+| Sp17-5 | rectifié ci-dessus ; R215 |
+| St17-9 ≈ Sp17-18 ≈ CR17-3 ≈ C17-5 | R213 (D2, choix 1 et 2) ; R214 (les six derniers) |
+| St17-8 ≈ CR17-4 | R214 (D2, choix 3) |
+| St17-10 | R216 |
+| St17-11 = Sp17-8 | R216 (`entryFormState.ts`, `useEntryFormLock.ts`) |
+| St17-14 | R216 (les six numéros) ; R221 (recherche 9) |
+| Sp17-3 | rectifié ci-dessus ; R216 |
+| St17-15 ≈ Sp17-15 | R218, R219 (D3) |
+| St17-16 | R218 (`adminButtonTexts.ts`) |
+| St17-17 | R214 (le helper supprimé avec la garde qu'il atteignait) |
+| St17-18 | R217 |
+| St17-19 | R217 |
+| Sp17-16 | R217 (D4) |
+| C17-1 | R210 (choix 7) |
+| C17-2 | R210 (choix 8) |
+| CR17-5 | R212 |
+| CR17-7 | R211 (choix 5) |
+| CR17-10 | R211 (limite écrite, choix 5) |
+| St17-23 | R212 |
+| St17-24 ≈ Sp17-11 | R211 (choix 6) |
+| St17-25 | R211 (chiffres, choix 6) |
+| St17-26 | R212 |
+| Sp17-9 | R211 |
+| Sp17-10 | R211 |
+| C17-7 | hors dépôt : rotation à la charge de l'auteur (« Je gère », 2026-11-01) ; citée par R221 |
+| C17-9 | R209 (brief, choix 11) |
+| St17-28 = CR17-6 | R220 |
+| CR17-8 | R220 (la fermeture en constante) |
+| Sp17-12 | rectifié ci-dessus ; R220 |
+| Sp17-13 | R220 |
+| St17-32 = Sp17-1 | rectifié ci-dessus ; R221 (déclaré, recherche 5) ; R209 (pour l'avenir) |
+| Sp17-2 | rectifié ci-dessus ; R221 (le tableau rejoué, recherche 11) |
+| Sp17-14 | rectifié ci-dessus (304) ; R221 (commandes écrites) |
+| St17-4 | R215 (`fieldNames`) |
+| St17-5 | R215 |
+| St17-12 | R216 (choix 10) |
+| St17-13 = Sp17-19 | R216 |
+| St17-20 | R217 (la limite écrite) |
+| St17-21 | R217 (`expect(callCount,`) ; R213 (`'de' as never`) |
+| St17-27 | R212 |
+| St17-29 | R220 |
+| St17-30 | R220 |
+| St17-31 | R220 |
+| C17-3 | R211 (la prose) |
+| C17-4 | R211 (choix 4) |
+| Sp17-17 | **pas un constat** : `useAdminTranslation` ne distingue pas les raisons, le 429 est couvert par `HttpAdminTranslationRepository.spec.ts:58` et les pages d'admin |
+| Sp17-20 | R217 |
+| Sp17-21 | R217 (`form !== null`) ; R218 (`as DOMWrapper`) |
+| Sp17-22 | rectifié ci-dessus ; R209 (format) ; R221 (déclaré, recherche 11) |
+| Questions (a), (b), (c) de R208 | St17-4 (R215), St17-14 (R216), les six points (rectifié ci-dessus) |
+
+### Constats écartés, avec leur raison
+
+Aucun n'est réfuté sur le code. **Sp17-17** n'est pas un constat (la relecture le dit elle-même : le composable ne distingue pas les
+raisons, et le 429 reste couvert ailleurs). **C17-7** est une action hors du dépôt, à la charge de l'auteur : aucune tâche ne la
+fait, R221 la cite. St17-9 est recompté à 28 lignes (la relecture en disait 30) ; la différence ne change rien au traitement.
+
+---
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
