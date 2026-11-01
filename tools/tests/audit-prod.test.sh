@@ -358,6 +358,9 @@ fi
 # `nominal`, un appel par ligne de `nominal.calls.argv` : `-q` d'abord, ensuite seulement des options de la liste de l'audit
 # (une seule URL, en dernier) ; un appel qui porte `-K` n'a que des URL en `https://`.
 # audit_call_problems <nom> : une ligne par appel qui s'écarte de cette forme, vide sinon.
+# Cette liste est celle de l'audit, non celle de _smoke_option_arity : l'audit lance `curl` lui-même, sans passer par smoke_fetch,
+# avec `-L`, `-o`, `-w`, `-K`, `--proto`, `--proto-redir` et `--noproxy`, que la liste de smoke_fetch n'admet pas (il pose lui-même
+# `-K`, `--proto*`, `--noproxy` et `-w`, et refuse `-L` et `-o` avec la Basic Auth) : l'audit jugé par elle verrait ses appels refusés.
 audit_call_problems() {
   local line index word skip rank url_count
   local -a words
