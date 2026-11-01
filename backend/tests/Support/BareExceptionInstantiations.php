@@ -22,11 +22,10 @@ namespace App\Tests\Support;
  * ({@see \DomainException}…) sont hors périmètre : aucune n'est levée nue dans
  * `src/`, et les ajouter ici est la marche à suivre le jour où l'une le serait.
  *
- * Les noms se résolvent par {@see ClassNameResolver}, partagé avec
- * {@see \App\Tests\Shared\Infrastructure\Http\ProblemDetailStaysStaticTest}
- * (issue #507) : un nom relatif d'un fichier à espace de noms y désigne une
- * classe de cet espace, jamais une classe globale visée ; un import groupé
- * (`use Foo\{A, B};`) y est lu, bien que {@see UnsortedImports} le refuse.
+ * Les noms se résolvent par {@see ClassNameResolver} (issue #507) : un nom
+ * relatif d'un fichier à espace de noms y désigne une classe de cet espace,
+ * jamais une classe globale visée ; un import groupé (`use Foo\{A, B};`) y est
+ * lu, bien que {@see UnsortedImports} le refuse.
  */
 final class BareExceptionInstantiations
 {

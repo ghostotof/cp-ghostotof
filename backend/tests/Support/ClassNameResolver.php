@@ -10,11 +10,9 @@ use PhpToken;
 /**
  * La résolution d'un nom de classe écrit dans les sources, telle que PHP la
  * fait, pour les recenseurs par jetons qui doivent savoir quelle classe un nom
- * désigne ({@see BareExceptionInstantiations},
- * {@see \App\Tests\Shared\Infrastructure\Http\ProblemDetailStaysStaticTest}).
- * Écrite une fois (issue #507) : chacun avait la sienne, et celle du second ne
- * lisait ni les listes `use A, B;`, ni les noms `namespace\X`, et comparait
- * les noms en tenant compte de la casse.
+ * désigne. Écrite une fois (issue #507) : chaque recenseur avait la sienne, et
+ * l'une ne lisait ni les listes `use A, B;`, ni les noms `namespace\X`, et
+ * comparait les noms en tenant compte de la casse.
  *
  * Tout est rendu en minuscules, sans `\` initial : PHP résout les classes sans
  * tenir compte de la casse, la comparaison se fait donc sur cette forme.
@@ -155,10 +153,8 @@ final class ClassNameResolver
 
     /**
      * Chaque jeton du code avec l'espace de noms et les imports qui valent à
-     * cet endroit : la boucle que partagent les recenseurs de sites
-     * ({@see BareExceptionInstantiations}, {@see CookieConstructions}, le modèle
-     * de `ProblemDetailStaysStaticTest`). Les jetons `namespace` et `use`
-     * eux-mêmes ne sont pas rendus ; les imports repartent de zéro à chaque
+     * cet endroit : la boucle que partagent les recenseurs de sites. Les
+     * jetons `namespace` et `use` eux-mêmes ne sont pas rendus ; les imports repartent de zéro à chaque
      * `namespace`, et à la fin d'un bloc `namespace X { … }`. Seul un `use` de
      * l'espace de noms importe : celui d'un corps de classe est un trait, celui
      * d'une fonction anonyme une capture. Les accolades se comptent par

@@ -12,12 +12,10 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
- * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
- * MisqualifiedNativeCalls, AnonymousClassesAndFreeFunctions) : quels fichiers
- * ils lisent, quels jetons ils ignorent, et lesquels ouvrent une déclaration
- * de classe. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre
- * que son voisin.
+ * Ce que les recenseurs par jetons ont en commun : quels fichiers ils lisent,
+ * quels jetons ils ignorent, et lesquels ouvrent une déclaration de classe.
+ * Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que son
+ * voisin.
  */
 final class PhpSources
 {

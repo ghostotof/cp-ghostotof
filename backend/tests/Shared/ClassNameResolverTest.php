@@ -142,7 +142,7 @@ final class ClassNameResolverTest extends TestCase
         yield 'imports remis à zéro à la fin du bloc' => ["<?php\nnamespace X { use A\\B; }\nnew B;", 'b'];
 
         // Un fragment de chaîne interpolée dont le texte est `}` ou `{` n'est pas une accolade du code : l'import
-        // qui suit reste au premier niveau (C15-2 : lu par le texte, il résolvait `C` vers `app\c`).
+        // qui suit reste au premier niveau (C15-2 : lu par le texte, le recenseur résout `C` vers `app\c`).
         foreach (InterpolatedStrings::BRACES as $label => $string) {
             yield 'import après '.$label => [
                 "<?php\nnamespace App;\n\$j = ".$string.";\nuse Symfony\\Component\\HttpFoundation\\Cookie as C;\nnew C('x');",

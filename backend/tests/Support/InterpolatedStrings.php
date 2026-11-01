@@ -7,19 +7,19 @@ namespace App\Tests\Support;
 /**
  * Les chaînes interpolées dont un fragment a le texte d'une accolade, d'une
  * parenthèse, d'un crochet, d'une virgule ou d'un dollar, écrites une fois pour
- * les recenseurs par jetons qui comptent des niveaux ou découpent sur un
- * délimiteur ({@see ClassNameResolver::scopes()}, {@see UnsortedImports},
- * {@see AnonymousClassesAndFreeFunctions} et le modèle de
- * `ProblemDetailStaysStaticTest`). Le texte d'un T_ENCAPSED_AND_WHITESPACE
- * `}` est celui d'une accolade du code, son identifiant n'en est pas un : un
- * recenseur qui lit par le texte décale son niveau, coupe un argument ou
- * réaffecte à tort (issue #748, C15-2, D4).
+ * les cas des recenseurs par jetons qui comptent des niveaux ou découpent sur
+ * un délimiteur. Le texte d'un T_ENCAPSED_AND_WHITESPACE `}` est celui d'une
+ * accolade du code, son identifiant n'en est pas un : un recenseur qui lit par
+ * le texte décale son niveau, coupe un argument ou réaffecte à tort (issue
+ * #748, C15-2, D4).
  *
- * Chaque valeur est du code PHP, sans point-virgule : le cas l'écrit dans son
- * extrait. Les deux dernières de {@see self::BRACES} sont de vraies
- * interpolations (`T_CURLY_OPEN`, `T_DOLLAR_OPEN_CURLY_BRACES`) : aucun
- * fragment n'y a le texte d'une accolade, mais leur ouverture n'a pas
- * l'identifiant `{`.
+ * Une constante par délimiteur : {@see self::BRACES}, {@see self::PARENTHESES},
+ * {@see self::CLOSING_BRACKET}, {@see self::COMMAS}, {@see self::DOLLARS}, et
+ * {@see self::HEREDOCS} pour ceux qu'un heredoc ou un nowdoc porte. Chaque
+ * valeur est du code PHP, sans point-virgule : le cas l'écrit dans son extrait.
+ * Les deux dernières de {@see self::BRACES} sont de vraies interpolations
+ * (`T_CURLY_OPEN`, `T_DOLLAR_OPEN_CURLY_BRACES`) : aucun fragment n'y a le
+ * texte d'une accolade, mais leur ouverture n'a pas l'identifiant `{`.
  */
 final class InterpolatedStrings
 {
