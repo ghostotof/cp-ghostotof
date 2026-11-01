@@ -11581,6 +11581,869 @@ de `describeGroupLock` changée → un test rouge (« après une proposition, «
 
 ---
 
+## Corrections de la quinzième relecture (2026-11-01)
+
+R168 à R181 et R173b sont faites (après 8747d019, jusqu'à 7f72ee92 ; constats de la quinzième relecture : 524ad954,
+décisions : 0c51a767). Leurs cases restent non cochées, par convention des séries : cette phrase dit qu'elles sont faites.
+
+Quatre relectures du diff 7eb683ce...7f72ee92 (`/code-review medium` CR15-*, audit de sécurité C15-*, axe Standards St15-*,
+axe Spec Sp15-*) : aucun critique ni haut ; moyens : CR15-2 = C15-3 = St15-24, CR15-1, St15-1 = Sp15-5, St15-2 = Sp15-4,
+St15-5, St15-29. Constats complets et décisions : `tasks/relectures-748/relecture-15-constats.md` (la source de vérité).
+Tous sont traités ici par R182 à R195, avant les tâches 11 et 12 : corrigés, rectifiés ci-dessous (ceux qui ne portent que
+sur le plan), ou écartés avec leur raison.
+
+**Numérotation.** Les cinq décisions de l'utilisateur (questions Q1 à Q5 du fichier de constats) sont citées ici **D1 à
+D5** ; les questions que ce plan pose sont **Q1 à Q14** (« Questions à l'auteur ») ; le constat que le plan ajoute en
+vérifiant le code est **P15-1**.
+
+### Ce que la quatorzième série a réellement fait *(rectifié le 2026-11-01)*
+
+La sous-section « Ce que la quatorzième série a réellement fait », écrite par R181, est l'archive de son moment et n'est pas
+réécrite. La quinzième relecture y a montré ces inexactitudes et ces oublis :
+
+- **R170, `CDPATH`** (Sp15-14 = C15-5) : le bilan dit que le cas n'existe que pour `smoke-dead-session-cookie.sh` et pour
+  l'audit. Il existe dans les **quatre** tests (`grep -c CDPATH` : 5 lignes dans chacun de `audit-prod.test.sh`,
+  `smoke-dead-session-cookie.test.sh`, `smoke-login-throttling.test.sh`, `smoke-mcp.test.sh`) et rougit dans les quatre
+  (mutation de la relecture : 4 FAIL). Seul le script placé à la racine (`script_dir` vide) n'a pas de test (Sp15-22, R186).
+- **R170, R173b et R175, écritures au plan** (Sp15-2) : le bilan les range « hors de l'exception du brief ». C'étaient des
+  **exceptions données par le fil principal** (l'ajout de l'auteur à R170, la section R173b, l'ajout de l'auteur à R175),
+  non des infractions. Ce qui reste vrai (Sp15-3) : la section R173b et l'ajout de R175 ont été écrits par le commit qui les
+  applique, donc attestés par l'agent sur son propre travail ; le brief dit désormais que le fil principal écrit au plan une
+  décision prise en cours de série **avant** de lancer la tâche.
+- **R173b** (Sp15-16) : la tâche n'a pas d'étapes, et manque à la table des fichiers, à la traçabilité et à l'ordre
+  « R168 → R181 ». Elle s'est faite entre R173 et R174 (commit e0aed9b0).
+- **R180** : il a modifié `.claude/rules/security-authentication-sessions.md` (ligne 84, la parenthèse « refused in `src/`
+  by `ImportsStaySortedTest` ») sans le déclarer (Sp15-17 : `git show --stat f4865124` la liste) ; et le cas
+  `namespace X {…} namespace Y { new B(` et la mutation (a) de son plan ne pouvaient pas être rouges : un `namespace Y`
+  remet déjà les imports à zéro (Sp15-15). Le cas `namespace X { use A\B; } new B;` que l'agent a ajouté est celui qui garde
+  la remise à zéro de fin de bloc.
+- **R169** (Sp15-19) : « refusés exprès (`refuse_args`) » est inexact pour `--data`, refusé par la liste générique.
+- **Recherche 8 du balayage** (Sp15-4, Sp15-5) : les docblocks de `expire` et `formIdentity` (« sa réponse rend `null` ») et
+  celui de `renewForm` (`resetPrincipleForm()`/`resetTraitForm()`) ont été déclarés conformes à tort. R188 les corrige.
+- **R172** (Sp15-1 = C15-7) : le cas des réglages a été écarté par l'agent seul ; D5 le fait écrire (R187). Le brief dit
+  désormais qu'un écart qui écarte un cas de test se rend en question.
+- **Ajouts de R181** (Sp15-10) : A et B étaient demandés par le fil principal ; B (`describeLock`, `describeRefusals`) est un
+  refactoring fait dans un balayage. **Mutations** (Sp15-8) : celles qu'annoncent R172, R173, R174, R175, R177 et R178 ne se
+  lisent pas dans le diff (aucune trace de commande ni de sortie). **R171** (Sp15-20) : `absent` adapté, consigné par l'agent.
+  **Tailles des règles et `check-claude-rules`** absents du bilan (Sp15-25). **Sp15-6** : le docblock de
+  `AdminQualityPage.vue:39-43` compare encore à « À propos » ; l'intention de R173b tient, R190 réécrit ce docblock.
+
+### Décisions de l'utilisateur (2026-11-01)
+
+1. **D1** (C15-2 + St15-29) : régression **et** recenseurs antérieurs. `ClassNameResolver::scopes()` compte les accolades par
+   **identifiant de jeton** (+ cas) ; `UnsortedImports`, `AnonymousClassesAndFreeFunctions` et `ProblemDetailStaysStaticTest`
+   passent par la même lecture. R193.
+2. **D2** (CR15-4) : refuser sauf exception. Avec la Basic Auth, une valeur `@…` est refusée pour `-H` et `-d` ; pour
+   `--data-binary`, admise seulement vers un fichier du dossier temporaire du smoke, jamais le fichier `-K` ; `-b` exige un
+   `=` ; un cas par forme. R183.
+3. **D3** (St15-15) : FR de `admin.entryLock.proposal` : « « Annuler » la retire et vide le formulaire. ». R191.
+4. **D4** (St15-13, contre la recommandation) : factoriser `AdminQualityPrinciplesSection.vue` et
+   `AdminQualityTraitsSection.vue` en une section générique paramétrée par ses champs, tâche dédiée, gardée par les 90 tests de
+   Qualité. R190.
+5. **D5** (Sp15-1 = C15-7, contre la recommandation) : écrire un cas pour les réglages « À propos » de R172 (un `load()`
+   résolu dans le même point de contrôle que la réponse) ; s'il reste vert d'emblée, le dire et le prouver par mutation. R187.
+
+Tout le reste se corrige (critère **tout jusqu'à zéro**). Toujours valables : les décisions et « Sans suite » des séries
+précédentes, sauf ce que D4 revoit (Q3 de la quatorzième section : « chaque page écrit son bloc », voir Q11).
+
+### Vérification de chaque constat dans le code (HEAD 0c51a767)
+
+- **CR15-2 = C15-3 = St15-24, confirmé.** `tools/lib/smoke-http.sh:172` : `unset -v -- "$_smoke_name"`, code de retour non
+  lu, puis la validation et l'écriture du fichier. La mesure de la relecture (bash 5.2 : `readonly` → `rc=0`, fichier écrit)
+  est prise telle quelle ; R182 la rejoue sur le bash du runner (Ubuntu 24.04 : bash 5.2).
+- **CR15-3, confirmé**, `smoke-http.sh:162-165` : un nom invalide rend 2 avant toute lecture. La première garde de
+  `smoke-http.test.sh` exige que chacun des quatre scripts écrive l'appel littéral `smoke_use_auth_config AUDIT_BASIC_AUTH`
+  une fois (`outillage-smoke.md:82-83`) : ce chemin n'est atteint par aucun script du dépôt (Q2).
+- **CR15-4, confirmé.** `_smoke_option_arity` (`smoke-http.sh:289-295`) admet `-H`, `-d`, `--data-binary`, `-b` et
+  `_smoke_judge_args` consomme leur valeur sans la juger. Seul appel à `@` : `smoke-mcp.sh:158`,
+  `--data-binary "@$body_file"`, `body_file="$(mktemp)"` (l. 102), donc sous `${TMPDIR:-/tmp}` ; le fichier `-K` est
+  `$SMOKE_AUTH_DIR/curl-auth.conf`, `SMOKE_AUTH_DIR` venant de `mktemp -d` sous le même dossier. `-b` n'est passé que par
+  `smoke-dead-session-cookie.sh:145,160`, avec `"$dead_cookie"` (`BEARER=…`).
+- **C15-4, confirmé** : `smoke-http.sh:195-196` retire les variables une fois ; aucun `--noproxy` dans la bibliothèque ni
+  dans `audit-prod.sh` (`grep -n noproxy tools` : 0).
+- **C15-1** : pris tel que mesuré par l'audit ; `env_dump_lines` (`smoke-http.test.sh:1072-1076`) : `list_end` n'admet que
+  des options en `-` (`([[:space:]]+-[[:alnum:]]+)*`), ni `--` ni `+x`.
+- **CR15-1 = C15-6, confirmé** : `run_case` (`smoke-cases.sh:81-82`) déclare `local +x` ; la règle (`outillage-smoke.md:117-120`)
+  dit « never exported, even when the caller already exports the same names ».
+- **CR15-7, confirmé** : `write_env_noting` (`smoke-cases.sh:51-60`) écrit `exec ""` si `command -v` ne trouve rien.
+- **CR15-5** : `useAdminTranslation.ts:194` appelle `accept(retained)` hors du `try`. Les appelants sont des gestionnaires
+  d'évènement de composant (`@translate`) : Vue les appelle par `callWithAsyncErrorHandling`, qui attache un `catch` à la
+  promesse rendue et passe l'erreur à `app.config.errorHandler`. « Rejet non géré » est donc **à mesurer** (R187, Q7) ; le
+  formulaire à moitié basculé, lui, est réel (`switchForm` puis `applyTranslationProposal` dans `proposeFrom`,
+  `useTranslatedForm.ts:170-174`).
+- **CR15-6 = St15-19, confirmé et plus large** : dans les **huit** formulaires par entrée (pas quatre), `isRefused` lit
+  `isOrderDirty`, déclaré par `useOrderDraft` **après** l'appel de `useTranslatedForm` (Incidents l. 114/143, Contributions
+  112/141, CV sans identité 109/138, Études de cas 110/139, cartes « site » 133/160, cartes « moi » 157/177, principes 146/174,
+  traits 112/138 ; relevé par `grep -n`).
+- **CR15-8, confirmé** : `form: () => form` dans les neuf sites ; dans les neuf, `const form = reactive(…)` précède l'appel
+  (Études de cas 59/106, réglages 34/76, CV 59/105, « site » 84/127, Contributions 60/108, « moi » 104/151, Incidents 61/110,
+  principes 93/140, traits 73/107). La raison du getter (Q12 de la quatorzième section : « l'appel du composable peut précéder
+  la déclaration du formulaire ») ne se rencontre dans aucun site (Q8).
+- **St15-14, confirmé** : `handleTranslate` des huit formulaires par entrée a le même corps (`editingId`, `form.locale`,
+  `form.translationGroup = sourceGroup.value ?? ''`, `proposalSourceLocale`) et un docblock recopié qui ne nomme pas
+  `proposalSourceLocale` ; celui des réglages diffère (`requestProposal`, proposition différée).
+- **St15-11, confirmé** : « limite : une micro-tâche… » dans `AdminAboutSiteCardsSection.vue:132`,
+  `AdminAboutMeCardsSection.vue:156`, `AdminQualityPrinciplesSection.vue:145`, `AdminQualityPage.vue:43` ; Traits renvoie à
+  Principles.
+- **St15-13 (D4)** : `diff` des deux sections, les noms `principle`/`trait` neutralisés : les différences sont les champs
+  (`title`, `description`, `iconKey` contre `label`), `BaseTextarea`, la colonne `iconKey`, la recopie de `iconKey` dans
+  « Créer la version XX », le paramètre de `confirmDelete` (`{ title }` contre `{ label }`), les clés `admin.quality.<x>.*`,
+  les identifiants `admin-quality-<x>-*`, le composable (`useAdminQualityPrinciples` / `useAdminQualityTraits`, même forme),
+  et des docblocks. `emptyStateNeedsLoaded.spec.ts` compte `t('admin.….empty')` par fichier de `pages/admin` (plancher 10) :
+  une section générique change ce compte (Q12).
+- **C15-2 et D1, confirmés et plus larges.** `PhpSources::opensBrace()` (`'{' === $token->text`) et `$token->is('}')`
+  (`PhpToken::is()` compare le texte pour une chaîne) : `ClassNameResolver.php:184-186`, `UnsortedImports.php:74-76`,
+  `AnonymousClassesAndFreeFunctions.php:104,115`, `ProblemDetailStaysStaticTest.php:1029-1031, 1142, 1288-1290, 1576-1578,
+  1610-1612, 1703-1705`. Les quatre derniers sites de ce test ferment aussi `)` et `]` par leur texte : `"$x)"` donne un
+  `T_ENCAPSED_AND_WHITESPACE` `)` qui décale le niveau de la même façon. **St15-29** : `ProblemDetailStaysStaticTest.php:1028-1040`
+  tient sa propre boucle d'espace de noms et d'imports, sans la remise à zéro de fin de bloc `namespace X { … }`.
+- **P15-1 (constat du plan)** : d'autres comparaisons par texte d'un jeton d'un caractère existent hors du périmètre de D1,
+  dans `backend/tests` : `MemberCalls.php` (1), `MisqualifiedNativeCalls.php` (3), `PathsLeavingTests.php` (4),
+  `ChildProcessHarnessTest.php` (2), `ApplicationSecretUsesTest.php` (1), `SignaturesAreNeverComparedByHandTest.php` (2)
+  (`grep -rnF` des formes `is('…')`, `'…' === ` sur `(`, `)`, `{`, `}`). Ce sont surtout des lectures du jeton suivant
+  (`nom(`), où un fragment de chaîne ferait voir un appel de trop (sur-refus), non un décalage de profondeur. Q13.
+- **St15-34, en partie réfuté** (voir « Constats écartés ») ; **les autres constats** faibles et « Info » sont pris tels que le
+  fichier de constats les situe ; chaque tâche relit la ligne citée avant d'écrire (une tâche précédente a pu la déplacer).
+
+### Pourquoi cet ordre
+
+- **Outillage d'abord (R182 → R186)**, dans l'ordre où les paragraphes de `outillage-smoke.md` et les fonctions de
+  `smoke-http.sh` sont touchés, chacun une fois :
+  - **R182** change le contrat de la lecture (un retrait qui échoue est un refus) : R183 et R185 s'écrivent contre lui.
+    Paragraphe de la règle : l. 22-29.
+  - **R183** change la liste d'autorisation (les valeurs `@`, le `=` de `-b`, `--noproxy`) : paragraphe l. 48-67 (avec la
+    phrase historique de la l. 65, St15-31, et « no table », St15-36, qui y sont).
+  - **R184** change la garde des vidages : paragraphe l. 84-98. Après R183, la garde juge le code que R183 ajoute.
+  - **R185** est le refactoring de la bibliothèque (`_smoke_write_auth_config` découpée, docblocks) : après les trois
+    comportements, sinon ils récriraient une fonction fraîchement découpée ; la suite verte de R182 à R184 en est le filet.
+  - **R186** est l'hygiène des tests et des cas partagés, et le dernier paragraphe de la règle (l. 30-32 et l. 117-121) :
+    elle factorise les cas que R182 à R184 ont ajoutés.
+- **Frontend (R187 → R192)** : comportements, puis forme des sites, puis factorisation, puis hygiène des specs.
+  - **R187** (cas et comportements : CR15-5, D5, Sp15-7) d'abord : leurs preuves rouges portent sur le code tel qu'il est, avant
+    tout déplacement.
+  - **R188** (les deux composables, docblocks et découpage de `translate`) avant les sites, car R189 change la signature de
+    `useTranslatedForm` (`form`, Q8) et la façon dont les sites lui passent la bascule (Q9).
+  - **R189** (les neuf sites : ordre des déclarations, `form`, la bascule écrite une fois, le commentaire de la limite écrit une
+    fois) **avant** la factorisation : les deux sections de Qualité reçoivent ces changements une fois, en même temps que les
+    sept autres sites ; R190 fond alors deux fichiers déjà dans leur forme finale, et aucune ligne de la section générique n'est
+    écrite deux fois. Dans l'ordre inverse, R189 réécrirait la section générique juste créée.
+  - **R190** (D4) ensuite, gardée par `AdminQualityPage.spec.ts` **inchangé** (90 tests) : c'est pourquoi l'hygiène des specs
+    de Qualité (St15-16, St15-17, St15-22) attend R191 — changer le filet juste avant le refactoring qu'il garde le priverait
+    de sa valeur de preuve.
+  - **R191** (specs et le texte de D3), puis **R192** (garde des chargements, alignement du compilateur), indépendante des
+    autres, en dernier du frontend.
+- **Backend (R193, R194)** après le frontend, pour qu'un seul agent à la fois touche un conteneur ; R193 (D1, comportement)
+  avant R194 (hygiène des mêmes fichiers de `backend/tests/Support`).
+- **R195** (balayage) en dernier : il relit ce que toute la série a écrit et tient le plan à jour.
+
+### Choix de conception tranchés
+
+Le plan suit la recommandation de chaque question ; une autre réponse ne change que la tâche nommée.
+
+1. **R182 (CR15-2, Q1, Q2).** Juste après `unset -v -- "$_smoke_name"`, `_smoke_write_auth_config` vérifie
+   `[[ ! -v $_smoke_name ]]` ; sinon (une variable `readonly`, ou une locale d'un appelant qui masquait une globale), elle
+   vide `_smoke_value`, rétablit xtrace et rend 2 avec « <nom> : la variable ne peut pas être retirée du shell (lecture seule,
+   ou une globale masquée par une locale), rien d'écrit », **avant** toute validation et tout `mktemp`. Q2 (A) : le nom
+   invalide reste une limite écrite, liée à la première garde.
+2. **R183 (D2, Q3, Q4).** `_smoke_judge_args` juge désormais la **valeur** de quatre options, sans jamais la citer :
+   - `-H`, `-d` : une valeur qui commence par `@` est refusée ;
+   - `--data-binary` : `@<chemin>` n'est admis que si `<chemin>` est **exactement** un fichier déclaré par
+     `smoke_data_file` (Q4 (B)) ; tout autre `@…` est refusé, le fichier `-K` compris ; sans `@`, la valeur passe ; le nom
+     `SMOKE_AUTH_DATA_FILES` porte le préfixe `SMOKE_AUTH_`, déjà refusé comme nom de variable de la Basic Auth (C9-5 :
+     `smoke_cleanup` le vide avant la lecture) ;
+   - `-b` : une valeur sans `=` (un nom de fichier de cookies, que curl lit) est refusée ;
+   - message (Q3 (A)) : « <libellé> : argument n° <rang> : une valeur qui lit un fichier local est refusée avec la Basic Auth
+     — rien de vérifié » (et « SMOKE_CURL_OPTS, élément n° <rang> : … » pour l'autre source) ; le rang est celui de la valeur.
+   - `smoke_data_file` (publique) : crée un fichier par `mktemp` **après** `smoke_use_auth_config` (D2 de la quatorzième
+     section), le retient dans `SMOKE_AUTH_DATA_FILES` (vidée à la source, comme `SMOKE_AUTH_CONFIG`), imprime son chemin ;
+     `smoke_cleanup` retire ces fichiers. `smoke-mcp.sh` crée `body_file` par elle, et son `trap` ne le retire plus lui-même.
+   - **C15-4** : `_smoke_auth` gagne `--noproxy '*'` (après `--proto-redir`) ; les `CURL_OPTS` de l'audit qui portent le `-K`
+     aussi (`CURL_OPTS_ANONYMOUS` non) ; `audit-prod.test.sh` ajoute `--noproxy` à la liste des options de l'audit. Un proxy
+     d'environnement posé **après** l'appel n'est alors plus suivi. La limite est écrite (règle et docblock) : un environnement
+     contrôlé par un attaquant (`OPENSSL_CONF`, `LD_PRELOAD`, `PATH`, `SMOKE_CURL`, un `SSLKEYLOGFILE` réexporté après
+     l'appel) est hors du modèle ; la bibliothèque retire ce qu'un poste ou un runner de bonne foi laisse traîner.
+   - **Sp15-21** : la règle dit pourquoi les autres noms de la section ENVIRONMENT ne sont pas retirés (`HOME`, `APPDATA`,
+     `USERPROFILE` ne servent qu'au `.curlrc`, non lu sous `-q` ; `COLUMNS` règle l'affichage de la barre de progression) ; les
+     variantes en minuscules hors proxy (`curl_ca_bundle`…) sont mesurées sur curl 8.5.0 (image épinglée) : lues → ajoutées à
+     la liste ; non lues → la mesure écrite.
+3. **R184 (C15-1).** `list_end` admet, après le mot, des grappes en `-` **ou en `+`** et un `--` ; le `set` est vu aussi
+   précédé d'un guillemet (`bash -c 'set'`, `bash -c "set"`). Les sept formes de l'audit entrent dans `dump_forbidden`.
+4. **R185 (St15-30, Q6).** `_smoke_write_auth_config` garde la lecture (la ligne de l'exemption de la garde, à l'identique,
+   dans son corps) et délègue : `_smoke_value_problem` (la validation, lit `_smoke_value` par la portée dynamique — la valeur
+   ne passe jamais en argument —, imprime le message et rend 2) et `_smoke_write_config_file` (dossier, fichier, retrait des
+   variables de curl). Chaque fonction ≤ 25 lignes. Les variables globales `_smoke_*` restent le canal de retour des fonctions
+   privées (Q6 (A)), écrit une fois dans l'en-tête de la bibliothèque.
+5. **R189 (CR15-6, CR15-8, St15-14 ; Q8, Q9).** Dans chaque site, le bloc de l'ordre (`rows`, `useOrderDraft`) est déclaré
+   **avant** l'appel de `useTranslatedForm`, si bien que tout ce que lisent `isRefused` et `identity` existe à l'appel ;
+   `UseTranslatedFormOptions.form` redevient `form: Record<F, string>` (Q8 (A) : `vue-tsc` refuse alors un usage avant la
+   déclaration, TS2448, ce que le getter ne voyait pas) ; la bascule est écrite une fois :
+   `switchToProposedCreation(state)` dans `presentation/ui/admin/proposedCreation.ts` (Q9 (A)) rend le `switchForm` que les
+   huit `handleTranslate` passent à `proposeFrom`, `state` = `{ editingId, form, sourceGroup, proposalSourceLocale }` ; son
+   docblock, seul, dit les quatre affectations et leur raison (spec 0004, D9).
+6. **R190 (D4, Q10 à Q12).** Un composant `AdminQualityEntrySection.vue`
+   (`<script setup lang="ts" generic="E extends QualityEntry, I extends QualityEntryInput">`) et deux appels dans
+   `AdminQualityPage.vue`. Props : `kind` (`'principle' | 'trait'`, ne sert qu'aux identifiants `admin-quality-<kind>-*`),
+   `source` (le résultat de `useAdminQualityPrinciples()` ou `useAdminQualityTraits()`, appelé par la page), `fields`
+   (`readonly QualityEntryField[]` : `name`, `control` `'text' | 'textarea'`, `label`, `prose`, `copiedToNewVersion`,
+   `column`), `titleField` (le champ qui nomme l'entrée : ligne du tableau, « Version de », confirmation), `proseFields`,
+   `texts` (les textes traduits par la page avec des clés **littérales**, pour que `no-missing-keys` les vérifie encore),
+   `isLocked`, `lockedHintId` ; émet `orderDirtyChange`. Identifiants, textes, ordre des colonnes et comportements inchangés.
+   `QualityEntry`, `QualityEntryField` dans `presentation/pages/admin/qualityEntrySection.ts`.
+
+### Questions à l'auteur
+
+Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
+
+- **Q1 (R182), un retrait qui échoue.** (A) recommandé : refus, sortie 2, avant toute écriture, pour une variable `readonly`
+  comme pour une locale qui masque une globale (une vérification, un message) ; (B) répéter `unset` (au plus huit fois) pour
+  retirer aussi la globale masquée, et ne refuser que ce qui reste (`readonly`) : la Basic Auth d'un appelant qui masque sa
+  globale passerait, au prix d'une boucle et d'un cas de plus.
+- **Q2 (R182), CR15-3, le nom invalide.** (A) recommandé : la limite écrite (docblock et règle) — le chemin n'est atteint par
+  aucun script, la première garde imposant l'appel littéral, et le `trap` des quatre scripts ne lance aucun processus tant que
+  rien n'est créé (un cas le prouve sur l'audit, sortie 2 sur un nom invalide injecté dans une copie) ; (B) retirer la
+  variable `AUDIT_BASIC_AUTH` en dur sur ce chemin (la bibliothèque connaîtrait le nom de ses appelants, ce que sa règle refuse).
+- **Q3 (R183), le message d'une valeur `@`.** (A) recommandé : un message propre, « argument n° N : une valeur qui lit un
+  fichier local est refusée avec la Basic Auth — rien de vérifié » (le rang, jamais la valeur) ; (B) le message générique
+  « hors des options admises » (un diagnostic moins clair : l'option, elle, est admise).
+- **Q4 (R183), « un fichier du dossier temporaire du smoke ».** (A) un chemin enfant direct de `${TMPDIR:-/tmp}` (le fichier
+  `-K` est deux niveaux plus bas, exclu par construction ; tout autre fichier de ce dossier passerait) ; (B) recommandé : le
+  chemin **exact** d'un fichier créé par `smoke_data_file` (retenu par la bibliothèque, retiré par `smoke_cleanup`) : rien
+  d'autre ne passe, aucun calcul de chemin, mais une fonction publique de plus et `smoke-mcp.sh` change ; (C) tout chemin
+  sous `${TMPDIR:-/tmp}` hors de `SMOKE_AUTH_DIR` (un calcul de préfixe, `..` à refuser).
+- **Q5 (R183), Sp15-21, les variantes en minuscules.** (A) recommandé : mesurées sur curl 8.5.0 (image épinglée), ajoutées si
+  lues ; (B) toutes ajoutées sans mesure (une liste plus longue que ce que curl lit).
+- **Q6 (R185), St15-38, le canal de retour.** (A) recommandé : les globales `_smoke_arity`, `_smoke_refused_rank` gardées
+  (bash n'a pas de valeur de retour ; un `$(…)` coûterait un sous-shell), la convention écrite une fois en tête ; (B) un
+  paramètre de sortie nommé par l'appelant (`printf -v "$1"`), une indirection de plus que la garde des vidages devra juger.
+- **Q7 (R187), CR15-5, une exception de `accept`.** (A) recommandé : un cas mesure d'abord ce qui arrive (Vue passe le rejet
+  d'un gestionnaire `@translate` à `app.config.errorHandler`, `isTranslating` retombe) ; si c'est le cas, « rejet non géré »
+  est réfuté et la bascule à moitié faite devient une limite écrite (le `switchForm` d'une page qui lève est une faute de
+  programmation, que l'`errorHandler` rend visible) ; sinon, (B) s'applique ; (B) `translate` attrape l'exception de `accept`,
+  pose la raison `unknown` (« Une erreur est survenue ») et rend faux : l'échec est dit, mais le formulaire reste à moitié
+  basculé, et une faute de programmation se lit comme un échec du serveur.
+- **Q8 (R189), CR15-8, `form`.** (A) recommandé : `form: Record<F, string>`, l'objet, puisque les neuf sites le déclarent avant
+  l'appel ; `vue-tsc` refuse alors un usage avant déclaration (TS2448) — cela revient sur Q12 (A) de la quatorzième section ;
+  (B) le getter gardé, sa raison réécrite (aucun site ne s'en sert aujourd'hui).
+- **Q9 (R189), St15-14, où vit la bascule.** (A) recommandé : `switchToProposedCreation(state)` dans
+  `presentation/ui/admin/proposedCreation.ts`, qui rend le `switchForm` ; `useTranslatedForm` ne connaît ni `editingId` ni
+  `sourceGroup` ; (B) `useTranslatedForm` reçoit ces quatre états en option et rend un `handleTranslate(target)` tout fait (le
+  composable connaîtrait la forme d'une page par entrée, que les réglages n'ont pas) ; (C) chaque page garde son corps, seul le
+  docblock est corrigé (huit copies restent).
+- **Q10 (R190), la forme de la section générique.** (A) recommandé : un composant générique paramétré par une liste de champs
+  (choix 6) — la lettre de D4, un seul gabarit ; (B) un composant à emplacements (`#fields`, `#cells`) : chaque page écrit
+  encore ses champs et ses cellules, le reste est commun ; plus souple, mais deux tiers des lignes restent recopiées ; (C) un
+  composable `useQualityEntrySection` pour le script, deux SFC gardant leur gabarit (≈ 200 lignes de gabarit recopiées).
+- **Q11 (R190), la règle « chaque page écrit son bloc »** (Q3 de la quatorzième section, `frontend-backoffice.md`). (A)
+  recommandé : « chaque composant de formulaire écrit son bloc ; la section générique de Qualité l'écrit une fois pour ses deux
+  instances, ses liaisons lisant ses props » ; (B) la règle gardée, Qualité nommée comme exception.
+- **Q12 (R190), la garde des états vides.** (A) recommandé : `emptyStateNeedsLoaded.spec.ts` compte les états vides sur le
+  **gabarit** et reconnaît `{{ texts.empty }}` ; le plancher (« au moins 10 fichiers ») est recompté et justifié (un fichier de
+  moins) ; (B) la section lit sa clé d'état vide par `t(\`admin.quality.${kind}.empty\`)` (une clé dynamique, que
+  `no-missing-keys` ne vérifie plus).
+- **Q13 (R193), P15-1.** (A) recommandé : D1 à la lettre — les quatre recenseurs nommés, avec les `)` et `]` de leurs propres
+  boucles de niveau (même défaut, mêmes lignes) — et P15-1 en ticket à part ; (B) toutes les comparaisons par texte d'un jeton
+  d'un caractère de `backend/tests` passent par `PhpSources::isChar()` dans R193 (six fichiers de plus, un cas chacun).
+- **Q14 (R194), St15-33.** Le docblock de `CompiledNestedReading.php` a été rétabli tel que d8f481a2 l'a laissé (St13-59),
+  avec « testaient ». (A) recommandé : R194, une tâche et non un balayage, met ce seul verbe au présent, rien d'autre ; (B) le
+  docblock gardé tel quel (St15-33 consigné).
+
+### Review Focus (quinzième relecture)
+
+1. **Un smoke lancé avec la Basic Auth et `-H @/etc/hostname`, `-d @f`, `--data-binary @<fichier -K>`,
+   `--data-binary @/tmp/autre`, `-b cookies.txt`** : sortie 2, curl jamais appelé, le rang et jamais la valeur ;
+   `--data-binary @<fichier de smoke_data_file>`, `-b 'BEARER=x'`, `-d '{"a":1}'` passent. Test : R183.
+2. **`readonly AUDIT_BASIC_AUTH`, ou une locale qui masque une globale exportée** : sortie 2, aucun fichier `-K`, aucun fils
+   ne voit la valeur. Test : R182.
+3. **Un `HTTPS_PROXY` exporté après `smoke_use_auth_config`** : l'appel authentifié porte `--noproxy '*'`. Test : R183.
+4. **Une source PHP où `"{\"id\":$id}"` ou `"$x)"` précède `new Cookie(`** : le site est vu, avec la bonne classe. Test : R193.
+5. **Qualité après la factorisation** : identifiants, textes, verrous, traductions et ordre inchangés pour les principes et les
+   traits ; les 90 tests de `AdminQualityPage.spec.ts` verts sans changement. Test : R190.
+
+### Contraintes propres aux tâches R182 à R195
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent (« Contraintes propres aux tâches R168 à
+  R181 », reprises ici sauf ce qui suit). Exécution : **un agent par tâche, successifs dans l'ordre R182 → R195**, qui lit
+  d'abord `tasks/relectures-748/brief-commun-agents.md`, puis **cette section** en entier jusqu'à la première tâche,
+  `tasks/relectures-748/relecture-15-constats.md`, puis sa tâche.
+- Rien ne se coche ; jamais `git commit --amend`, `git reset`, `git checkout-index`, `git add -N` ; mutations en place par
+  `python3 -I`, restaurées depuis une copie vérifiée par `cmp` ; **chaque mutation se rend avec sa commande et la ligne de
+  sortie qui rougit** (Sp15-8), que R195 reporte au plan.
+- **« ≤ 140 » est la longueur d'une ligne, en caractères** ; toute ligne écrite ou touchée par la série y est soumise,
+  règles comprises (tables Markdown, JSON, titres de tâche et messages de commit du plan exceptés, dits au rendu). Un message
+  d'`echo` reste d'un seul tenant (R167 (A)).
+- **Une coupe ne laisse aucun moignon** (les quatre recherches du brief) ; **une affirmation sur un outil** se vérifie sur la
+  version du runner (Ubuntu 24.04 : curl 8.5.0, bash 5.2). Mesures de curl : l'image épinglée des contraintes de la
+  quatorzième section (`curlimages/curl:8.5.0@sha256:08e46600…`), `--network none`, fichiers écrits dans le conteneur.
+- Outillage (R182 à R186) : `Read` des scripts touchés et de `outillage-smoke.md` ; tests hors ligne
+  (`for t in tools/tests/*.test.sh; do bash "$t" >/dev/null 2>&1; echo "$t $?"; done`) ; shellcheck dans l'image épinglée du
+  job `tools-tests` (commande des contraintes de la quatorzième section).
+- Frontend (R187 à R192) : `Read` de `frontend.md`, `frontend-a11y.md`, `frontend-backoffice.md` (et `ai.md` avant
+  `useAdminTranslation.ts`, `frontend-session-refus.md` avant R192) ; ciblé `docker compose exec -T frontend npm test --
+  <chemins>`, puis `make front-test`, `make front-lint`, `make front-build`, codes lus sans pipe ; `docker compose restart
+  frontend` après un fichier créé, supprimé ou déplacé (R190).
+- Backend (R193, R194) : `Read` d'un fichier de `backend/tests/Support/` et de `security-authentication-sessions.md` ; ciblé
+  `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test`, `make back-quality`.
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; tailles au départ (HEAD 0c51a767) : `outillage-smoke.md`
+  12 970, `frontend-backoffice.md` 36 261, `frontend.md` 20 305, `frontend-session-refus.md` 17 845,
+  `security-authentication-sessions.md` 22 270, `.claude/CLAUDE.md` 35 014, **`security-user.md` 47 922** et
+  **`backoffice-api.md` 39 834** (non touchées). **Une tâche qui modifie une règle la nomme dans ses fichiers et dans son
+  rendu** (Sp15-17).
+- **Une décision de l'auteur listée ici ou au brief ne se contourne pas par une interprétation** ; **un écart qui écarte un
+  cas de test se rend en question** (Sp15-1) ; **un balayage ne refactore pas** (Sp15-10) : ce qu'il trouve à restructurer se
+  rend en question.
+
+### Fichiers (tâches R182 à R195)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `tools/lib/smoke-http.sh`, `tools/tests/smoke-http.test.sh`, `.claude/rules/outillage-smoke.md` (l. 22-29) | un retrait qui échoue est un refus ; la limite du nom invalide | R182 |
+| `tools/lib/smoke-http.sh`, `tools/smoke-mcp.sh`, `tools/audit-prod.sh`, `tools/tests/{smoke-http,smoke-mcp,audit-prod}.test.sh`, `outillage-smoke.md` (l. 48-67) | valeurs `@`, `-b` et `=`, `smoke_data_file`, `--noproxy`, limite de l'environnement | R183 |
+| `tools/tests/smoke-http.test.sh`, `outillage-smoke.md` (l. 84-98) | la garde des vidages : `--`, `+`, `set` entre guillemets | R184 |
+| `tools/lib/smoke-http.sh`, `tools/audit-prod.sh` (commentaire) | découpage, docblocks, locales préfixées | R185 |
+| `tools/tests/lib/smoke-cases.sh`, `tools/tests/*.test.sh`, `outillage-smoke.md` (l. 30-32, 76-78, 117-121) | cas partagés, faux outils, formulations | R186 |
+| `useAdminTranslation.ts`, `useTranslatedForm.ts`, leurs specs, `AdminAboutPage.spec.ts`, `frontend-backoffice.md` | exception de `accept`, cas des réglages, cas des trois catégories | R187 |
+| `useAdminTranslation.ts`, `useTranslatedForm.ts`, `useTranslationErrorText`, leurs specs | docblocks, `translate` découpé, types | R188 |
+| les neuf sites, `useTranslatedForm.ts`, `presentation/ui/admin/proposedCreation.ts`, `frontend-backoffice.md` | ordre des déclarations, `form`, bascule écrite une fois, la limite écrite une fois | R189 |
+| `AdminQualityEntrySection.vue`, `qualityEntrySection.ts`, `AdminQualityPage.vue`, les deux sections supprimées, `emptyStateNeedsLoaded.spec.ts`, `frontend-backoffice.md` | la section générique de Qualité | R190 |
+| `fr.json`, `adminTranslationTexts.spec.ts`, `tests/support/entryFormLock.ts`, `AdminAboutPage.spec.ts`, `AdminQualityPage.spec.ts` | le texte de D3, hygiène des specs | R191 |
+| `tests/support/sourceText.ts`, `sourceText.spec.ts`, `noLoadInOnMounted.spec.ts`, `vueCompilerAlignment.spec.ts`, `frontend.md`, `frontend-session-refus.md` | garde des chargements, commande du compilateur | R192 |
+| `backend/tests/Support/{PhpSources,ClassNameResolver,UnsortedImports,AnonymousClassesAndFreeFunctions}.php`, `ProblemDetailStaysStaticTest.php`, `ClassNameResolverTest.php` et les tests des recenseurs | accolades par identifiant de jeton | R193 |
+| `CookieConstructions.php`, `AuthorizationSites.php`, `CompiledNestedReading.php`, `MemberCallsTest.php`, `PathIsDecidedCanonicallyTest.php`, `security-authentication-sessions.md` (l. 84) | hygiène des recenseurs | R194 |
+| `.claude/rules/*`, fichiers désignés, cette section du plan | balayage | R195 |
+
+---
+
+### Task R182 : Outillage — un retrait de la Basic Auth qui échoue est un refus ; la limite du nom invalide (Q1, Q2 : CR15-2 = C15-3 = St15-24 ; CR15-3)
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh` (`_smoke_write_auth_config` : la vérification après l'`unset` ; docblocks de la
+  fonction et de l'en-tête : la limite du nom invalide)
+- Test : `tools/tests/smoke-http.test.sh` (cas du lecteur), `tools/tests/audit-prod.test.sh` (le cas du nom invalide, Q2)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 22-29)
+
+**Interfaces :**
+- Choix 1. Produces : après `smoke_use_auth_config NOM` rendu 0, `NOM` n'est défini dans aucune portée visible du shell ;
+  un retrait impossible rend 2 sans fichier `-K`. R183 et R185 s'écrivent contre ce contrat.
+
+- [ ] **Step 1 : mesurer** sur bash 5.2 (celui du runner ; `bash --version` noté) : `readonly V=u:p; unset -v V; echo $?` et
+  `export V=g; f(){ local V=l; unset -v V; [[ -v V ]] && echo "$V"; }; f` ; sorties au rendu.
+- [ ] **Step 2 : tests, rouges** (Review Focus 2) — `smoke-http.test.sh`, valeur générée (`generated_basic_auth`) :
+  - `readonly AUDIT_BASIC_AUTH=<valeur>` puis `_smoke_write_auth_config AUDIT_BASIC_AUTH` (dans un `bash -c` à part, la
+    variable `readonly` ne se retire plus) → rc 2, stderr « ne peut pas être retirée du shell », `SMOKE_AUTH_CONFIG` vide,
+    aucun dossier créé sous le `TMPDIR` du cas, la valeur absente de stderr ;
+  - `export AUDIT_BASIC_AUTH=<valeur>` puis, dans une fonction, `local AUDIT_BASIC_AUTH=<autre>` et l'appel → rc 2, même
+    message, aucun fichier `-K`, aucun dossier (la globale découverte reste celle de l'appelant, qui sort sur ce 2) ;
+  - `audit-prod.test.sh` (Q2) : une copie de l'audit dont l'appel porte un nom invalide (`AUDIT-BASIC`), lancée avec
+    `AUDIT_BASIC_AUTH` et le témoin `write_env_noting` → rc 2, et le fichier du témoin ne contient aucune ligne `== rm`
+    (le `trap` ne lance rien).
+  Run : `bash tools/tests/smoke-http.test.sh; echo "exit=$?"`. Expected : FAIL sur les deux premiers (rc 0, fichier écrit :
+  `unset` rend 0 sur la locale et n'est pas lu sur `readonly`).
+- [ ] **Step 3 : implémenter** selon le choix 1 ; le docblock de `_smoke_write_auth_config` dit la vérification et pourquoi
+  (`unset` d'une `readonly` échoue, celui d'une locale découvre la globale) ; la limite du nom invalide (Q2) au docblock.
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : la vérification retirée → les deux cas
+  rougissent ; restaurée ; commande et ligne `FAIL` au rendu.
+- [ ] **Step 5 : règle** — la phrase « As soon as the value is read… » **remplacée** : le retrait, puis « if the variable is
+  still defined afterwards (read-only, or a global a caller's local was hiding), the call exits 2 before anything is
+  written » ; une phrase pour la limite du nom invalide (la première garde impose l'appel littéral). Lignes ≤ 140, moignons
+  relus (les quatre recherches du brief). Taille notée.
+- [ ] **Step 6 : verts** — tous les tests hors ligne à 0, shellcheck (image épinglée) sur la bibliothèque et les deux tests,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 7 : commit** — `fix(tools): un retrait de la Basic Auth qui échoue rend 2 avant toute écriture (#748)`.
+
+---
+
+### Task R183 : Outillage — les valeurs qui lisent un fichier local refusées avec la Basic Auth, `smoke_data_file`, `--noproxy '*'`, la limite de l'environnement (D2, Q3 à Q5 : CR15-4 ; C15-4 ; Sp15-21 ; St15-31 et St15-36 pour la règle)
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh` (`_smoke_judge_args`, `smoke_data_file`, `SMOKE_AUTH_DATA_FILES`, `smoke_cleanup`,
+  `_smoke_auth` de `smoke_fetch`, en-tête : sept fonctions publiques), `tools/smoke-mcp.sh` (`body_file` par
+  `smoke_data_file`, son `trap`), `tools/audit-prod.sh` (`--noproxy '*'` dans les `CURL_OPTS` qui portent le `-K`)
+- Test : `tools/tests/smoke-http.test.sh`, `tools/tests/smoke-mcp.test.sh`, `tools/tests/audit-prod.test.sh` (la liste des
+  options de l'audit gagne `--noproxy`)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 48-67 : la liste d'autorisation, les valeurs, les variables ;
+  « which curl does not read under `-q` », l. 65-66, au présent ; « an option no table knows yet » → « no line of the
+  `case` », St15-36)
+
+**Interfaces :**
+- Consumes : R182. Choix 2. Produces : `smoke_data_file` (imprime un chemin, rend 2 si `mktemp` échoue), `SMOKE_AUTH_DATA_FILES`.
+
+- [ ] **Step 1 : mesurer sur curl 8.5.0** (image épinglée, `--network none`, `-K -` factice sur l'entrée standard) :
+  `HTTPS_PROXY=http://127.0.0.1:9 curl -q -K - --noproxy '*' --libcurl - https://127.0.0.1:9/` → `CURLOPT_NOPROXY, "*"` ;
+  `curl --manual | sed -n '/^ENVIRONMENT/,/^PROXY PROTOCOL PREFIXES/p'` : la liste complète (Sp15-21) ; pour chaque variante
+  en minuscules hors proxy (`curl_ca_bundle`, `ssl_cert_file`, `ssl_cert_dir`, `sslkeylogfile`), `--libcurl -` ou `-v` sur
+  `https://127.0.0.1:9/` dit si curl la lit (Q5) ; sorties au rendu.
+- [ ] **Step 2 : tests, rouges** (Review Focus 1 et 3) — `smoke-http.test.sh`, `SMOKE_AUTH_CONFIG` posé, faux curl :
+  - refusés (sortie 2, curl jamais appelé, message de Q3 avec le rang de la valeur, la valeur absente de stderr) :
+    `-H @/etc/hostname`, `-H @-`, `-d @f`, `-d @-`, `--data-binary @"$SMOKE_AUTH_CONFIG"`, `--data-binary @/tmp/autre`,
+    `--data-binary @"$TMP/declare"` sans `smoke_data_file`, `-b cookies.txt`, `-b ''`, et `SMOKE_CURL_OPTS=(-sS -H @f)` ;
+  - admis : `--data-binary "@$(smoke_data_file)"`, `--data-binary 'abc'`, `-d '{"a":1}'`, `-d ''`, `-H 'X: @y'` (le `@` hors
+    tête), `-b 'BEARER=x'` ;
+  - sans Basic Auth, `-H @f` passe (rien n'est jugé, Q7 de la quatorzième section) ;
+  - l'appel authentifié porte `--noproxy *` après `--proto-redir =https` ; `export HTTPS_PROXY=…` après l'appel n'y change
+    rien ; l'appel anonyme ne le porte pas ;
+  - `smoke_cleanup` retire les fichiers de `smoke_data_file` ; `SMOKE_AUTH_DATA_FILES` est vide à la source, quoi que
+    l'environnement ait contenu ;
+  - `audit-prod.test.sh` : chaque appel du faux curl qui porte `-K` porte `--noproxy *` ; `smoke-mcp.test.sh` : le cas
+    « borne de corps » passe par `smoke_data_file`, et le fichier est retiré à la sortie.
+  Expected : FAIL (valeurs admises, `--noproxy` absent, fonction inconnue).
+- [ ] **Step 3 : implémenter** selon le choix 2 ; docblocks de `_smoke_judge_args`, `smoke_data_file`, `smoke_fetch` (la
+  limite de l'environnement, choix 2), en-tête (« Sept fonctions publiques »). Une variante en minuscules que la mesure dit lue
+  rejoint l'`unset` et la liste.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le jugement de la valeur de
+  `--data-binary` ramené à « commence par `@` → admis » → le cas du fichier `-K` rougit ; (b) `--noproxy` retiré de
+  `_smoke_auth` → son cas rougit ; (c) `smoke_cleanup` qui ne vide plus `SMOKE_AUTH_DATA_FILES` → le cas du second appel rougit ;
+  restaurés ; commandes et lignes `FAIL` au rendu.
+- [ ] **Step 5 : règle** — le paragraphe l. 48-67 **réécrit** : les quatre jugements de valeur, `smoke_data_file`,
+  `--noproxy '*'` et sa mesure, la limite de l'environnement (choix 2), les noms de la section ENVIRONMENT non retirés et
+  pourquoi (Sp15-21) ; « no table » et la phrase historique remplacées. Lignes ≤ 140, moignons relus. Taille notée.
+- [ ] **Step 6 : verts** — tous les tests hors ligne à 0, shellcheck (image épinglée) sur la bibliothèque, `smoke-mcp.sh`,
+  l'audit et leurs tests, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 7 : commit** — `fix(tools): avec la Basic Auth, une valeur qui lit un fichier local est refusée, et les appels authentifiés ignorent les proxys (#748)`.
+
+---
+
+### Task R184 : Outillage — la garde des vidages voit `--`, les options en `+` et un `set` entre guillemets (C15-1)
+
+**Files :**
+- Test : `tools/tests/smoke-http.test.sh` (`env_dump_lines` : `list_end`, `pat_set` ; `dump_forbidden`, `dump_allowed`)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. 84-98 : « options only » dit les deux formes)
+
+- [ ] **Step 1 : tests, rouges** — `dump_forbidden` gagne les sept formes : `declare --`, `declare +x`, `export --`,
+  `declare -x --`, `typeset +r`, `bash -c 'set'`, `bash -c "set"` ; `dump_allowed` gagne `export -n -- NOM` (déjà permis,
+  gardé), `declare +x NOM=1` (un nom suit), `bash -c 'set -e'`. Run : `bash tools/tests/smoke-http.test.sh; echo "exit=$?"`.
+  Expected : FAIL sur les sept.
+- [ ] **Step 2 : implémenter** selon le choix 3 ; la garde relue sur la bibliothèque, l'audit et les trois smokes : aucune
+  fausse alerte (sinon, le code est reformulé et la ligne dite au rendu).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `+` retiré de `list_end` → `declare +x` et
+  `typeset +r` rougissent seuls ; restaurée ; commande et lignes `FAIL` au rendu.
+- [ ] **Step 4 : règle** — « bare, or followed by options only » dit « options in `-` or `+`, or `--` », et `set` vu après un
+  guillemet. Lignes ≤ 140, moignons relus. Taille notée.
+- [ ] **Step 5 : verts** — tous les tests hors ligne à 0, shellcheck, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `test(tools): la garde des vidages voit --, les options en + et un set entre guillemets (#748)`.
+
+---
+
+### Task R185 : Outillage — la bibliothèque en fonctions courtes, des docblocks qui disent ce qu'elles font (Q6 : St15-30 ; St15-31 et St15-32 pour `smoke-http.sh` ; St15-36 ; St15-38 ; St15-39 ; St15-43 ; refactoring)
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh` (St15-30 : choix 4 ; St15-31 : « C12-10 et C13-5… » et l. 149-150 au présent ; St15-32 :
+  l'en-tête « Sourcée par : » et le docblock « Privée : smoke_use_auth_config en est le seul appelant… » disent ce que fait la
+  fonction, sans liste d'appelants ; St15-36 : « table » → « liste » ou « `case` » ; St15-38 : la convention du canal de
+  retour, une fois, en tête ; St15-39 : les locales de `smoke_fetch` préfixées `_smoke_`), `tools/audit-prod.sh` (St15-43 :
+  au-dessus de `audit_call_problems`, la raison de sa propre liste — l'audit passe `-L`, `-o`, `-w`, `-K`… que `smoke_fetch`
+  n'admet pas)
+
+- [ ] **Step 1 : filet** — tous les tests hors ligne à 0, nombre de `pass` de chacun noté.
+- [ ] **Step 2 : refactorer** selon le choix 4 et la liste ; la ligne `_smoke_value="${!_smoke_name:-}"` reste à l'identique
+  dans le corps de `_smoke_write_auth_config` (l'exemption de la garde, par égalité) ; `awk` des longueurs de fonction au
+  rendu (chacune ≤ 25 lignes).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `_smoke_value_problem` qui rend 0 sur une
+  valeur sans « : » → le cas « Basic Auth sans « : » » rougit ; restaurée ; commande et ligne `FAIL` au rendu.
+- [ ] **Step 4 : verts** — mêmes nombres de `pass`, shellcheck (image épinglée), `grep -n 'Sourcée par' tools/lib/smoke-http.sh` :
+  vide.
+- [ ] **Step 5 : commit** — `refactor(tools): la bibliothèque des smokes en fonctions courtes, des docblocks sans liste d'appelants (#748)`.
+
+---
+
+### Task R186 : Outillage — des cas partagés et des faux outils qui disent vrai, la règle au plus près du code (CR15-1 = C15-6 ; CR15-7 ; St15-23 ; St15-25 ; St15-26 ; St15-27 ; St15-34 pour le cas `CDPATH` ; St15-35 ; St15-37 ; St15-44 ; Sp15-22 ; Sp15-23 ; Sp15-24)
+
+**Files :**
+- Modify : `tools/tests/lib/smoke-cases.sh` (CR15-7 : `write_env_noting` refuse un outil introuvable par un `fail` nommé ;
+  St15-35 : les noms `CASE_*` écrits une fois, un tableau que lisent la déclaration de `run_case`, son `case` et son message ;
+  St15-34, Sp15-22 : deux cas partagés, `check_finds_library_under_cdpath` et `check_root_script_dir_is_slash`, qui
+  évalue le bloc d'amorçage d'un script, relu entre ses repères, `${BASH_SOURCE[0]}` remplacé par `/script.sh` → `/` ;
+  CR15-1 : le docblock de `run_case` dit ce que `local +x` garantit et ce qu'il ne garantit pas)
+- Test : `tools/tests/{smoke-mcp,smoke-login-throttling,smoke-dead-session-cookie,audit-prod}.test.sh` (le cas `CDPATH`
+  recopié remplacé par le cas partagé ; le cas de la racine ajouté), `audit-prod.test.sh` (St15-25 : les faux `dig`, `openssl`
+  et `curl` notent leur environnement), `smoke-http.test.sh` (St15-26 : un repère pour `CASE_LABEL` ; St15-27 : le
+  commentaire de la l. 1088 sans `export -n` ; St15-37 : le cas de la l. 578 ne dépend plus du `-X POST` de `refuse_args`, `rc`
+  local ; St15-44 : le commentaire des l. 757-758 nomme QUIC et le moteur TLS ; Sp15-24 : la liste `curl_variables` comparée
+  à l'`unset -v` de la bibliothèque, une dérive rougit des deux côtés)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (St15-23 : l. 30-32, « start no process » → aucun programme n'est
+  exécuté avant l'appel, un `$(…)` de builtins ne fait qu'une copie du shell ; Sp15-23 : la phrase du `trap` distingue les
+  smokes, qui retirent `headers_file` et les fichiers de `smoke_data_file`, de l'audit ; l. 76-78 : le témoin porte aussi les
+  faux de l'audit ; CR15-1 : l. 117-121, « the values `run_case` sets never reach a child; a name the caller exported keeps
+  the caller's value there »)
+
+- [ ] **Step 1 : filet** — tous les tests hors ligne à 0, nombre de `pass` de chacun noté.
+- [ ] **Step 2 : tests, rouges** — (a) CR15-7 : `write_env_noting "$TMP/b" outil-absent` → `fail` « outil-absent
+  introuvable », plus de `exec ""` (FAIL avant : le faux est écrit) ; (b) St15-25 : `audit-prod.test.sh` lancé avec la Basic
+  Auth, le fichier du témoin porte une ligne `== curl` (FAIL avant : le faux curl ne note rien) ; (c) Sp15-22 : le cas de la
+  racine sur les quatre scripts (vert d'emblée : vu rouge par la mutation `[ -n "$script_dir" ] || script_dir=/` retirée d'une
+  copie) ; (d) Sp15-24 : un nom ajouté à l'`unset -v` d'une copie de la bibliothèque → le cas rougit.
+- [ ] **Step 3 : implémenter** et refactorer (St15-34, St15-35, St15-37) ; mêmes nombres de `pass`, plus les cas nouveaux.
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : le tableau des noms `CASE_*` privé d'un nom →
+  le cas qui le passe rougit sur le `fail` nommé ; restauré ; commande et ligne `FAIL` au rendu.
+- [ ] **Step 5 : règle** selon la liste ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 6 : verts** — tous les tests hors ligne à 0, shellcheck (image épinglée) sur `smoke-cases.sh` et les tests,
+  `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -c CDPATH tools/tests/*.test.sh` noté (une ligne d'appel par test).
+- [ ] **Step 7 : commit** — `test(tools): des cas partagés pour CDPATH et la racine, des faux outils qui notent leur environnement, la règle au plus près du code (#748)`.
+
+---
+
+### Task R187 : Traduction assistée — une exception de `accept`, le cas des réglages, les trois catégories des cartes « moi » (Q7, D5 : CR15-5 ; Sp15-1 = C15-7 ; Sp15-7)
+
+**Files :**
+- Modify (selon Q7) : `frontend/src/application/admin/translation/useAdminTranslation.ts` (docblock de `translate` : ce que
+  devient une exception de `accept`), `frontend/src/presentation/ui/admin/useTranslatedForm.ts` (docblock de `proposeFrom`)
+- Test : `frontend/tests/presentation/ui/admin/useTranslatedForm.spec.ts`,
+  `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant » : la limite de Q7, une phrase)
+
+- [ ] **Step 1 : CR15-5, mesurer** — `useTranslatedForm.spec.ts`, monté dans un composant de test dont `@translate` appelle
+  `proposeFrom(target, () => { throw new Error('bascule') })`, `app.config.errorHandler` espionné et un écouteur
+  `unhandledrejection` : `it("une bascule qui lève : l'erreur va au gestionnaire de Vue, la traduction ne reste pas en cours (#748, R187)")`
+  → `errorHandler` appelé une fois avec l'erreur, aucun `unhandledrejection`, `isTranslating` faux, `isExpiredCallPending`
+  faux. Vert d'emblée (« rejet non géré » réfuté) : vu rouge par la mutation qui appelle `proposeFrom` hors du gestionnaire
+  (`void proposeFrom(…)` dans un `setTimeout`) → `unhandledrejection` ; la limite écrite (Q7 (A)). Rouge d'emblée : Q7 (B).
+- [ ] **Step 2 : D5, test** — `AdminAboutPage.spec.ts`, le nom seul sur sa ligne :
+  `"réglages : un load() résolu au même point de contrôle que la réponse ne reçoit pas de proposition périmée (#748, R187)"`
+  — le faux dépôt de traduction rend une promesse `p` ; « Proposer la traduction » ; le test enregistre
+  `p.then(() => { events.push('switch'); <changement de langue des réglages> })`, résout `p` et la lecture des réglages de la
+  langue d'arrivée, `flushPromises()` ; aucune proposition en attente ni affichée sous la langue d'arrivée. Rouge : la cause
+  nommée. Vert d'emblée : **le dire au rendu** et le prouver par la mutation `accept` appelé après un `await
+  Promise.resolve()` dans `translate` → ce cas rougit (sinon, le cas ne garde rien et se rend en question).
+- [ ] **Step 3 : Sp15-7, test** — le cas R173b des cartes « moi » devient un cas par catégorie (les trois, lues de la
+  liste que le domaine exporte, nom au rendu) ; mutation : `isAnyOrderDirty` qui ne lit que la première
+  catégorie → les deux autres cas rougissent.
+- [ ] **Step 4 : docblocks et règle** selon le Step 1 ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo
+  "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; chaque mutation : commande et ligne `FAIL` au rendu.
+- [ ] **Step 6 : commit** — `test(frontend): une bascule qui lève, les réglages au même point de contrôle et les trois catégories des cartes (#748)`.
+
+---
+
+### Task R188 : Traduction assistée — des docblocks qui disent ce que rend `translate`, `translate` en fonctions courtes, la raison typée (St15-1 = Sp15-5 ; St15-2 = Sp15-4 ; St15-8 ; St15-9 ; St15-10 ; refactoring)
+
+**Files :**
+- Modify : `useAdminTranslation.ts` (St15-1 : docblocks de `expire` et `formIdentity`, « sa réponse ne pose rien : `translate`
+  rend faux et n'appelle pas `accept` » ; St15-8 : `translate` découpé — la garde d'entrée, l'appel au dépôt et son jugement,
+  l'échec —, **sans `await` entre le jugement et `accept`** (R172)), `useTranslatedForm.ts` (St15-2 : docblock de `renewForm`
+  sans noms de fonctions des pages ni liste d'appelants ; St15-10 : `proseFieldAttrsOf` dit « le texte de la lecture seule »),
+  `useTranslationErrorText` (St15-9 : prend `Readonly<Ref<AdminTranslationErrorReason | null>>`)
+- Test : `frontend/tests/application/admin/translation/useAdminTranslation.spec.ts` (St15-1 : les noms des tests des l. 112,
+  210, 308 disent « rend faux » ou « ne pose rien », plus « rend null »)
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : refactorer** ; `grep -rnE 'rend .?null|resetPrincipleForm|resetTraitForm' frontend/src frontend/tests` :
+  vide ; chaque fonction de `useAdminTranslation.ts` ≤ 30 lignes.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : un `await Promise.resolve()` inséré entre le
+  jugement et `accept` → les cas de R172 rougissent ; restaurée ; commande et ligne `FAIL` au rendu.
+- [ ] **Step 4 : verts** — même nombre, `make front-lint`, `make front-build`, codes lus sans pipe.
+- [ ] **Step 5 : commit** — `refactor(frontend): translate en fonctions courtes, des docblocks qui disent ce qu'il rend, la raison d'échec typée (#748)`.
+
+---
+
+### Task R189 : Les neuf formulaires — l'ordre déclaré avant l'appel, le formulaire passé tel quel, la bascule et la limite écrites une fois (Q8, Q9 : CR15-6 = St15-19 ; CR15-8 ; St15-14 ; St15-11 ; St15-12)
+
+**Files :**
+- Create : `frontend/src/presentation/ui/admin/proposedCreation.ts` (`switchToProposedCreation`)
+- Modify : `useTranslatedForm.ts` (`form: Record<F, string>`, Q8 ; son docblock), les neuf sites
+  (`grep -l 'useTranslatedForm(' frontend/src/presentation/pages/admin/*.vue` : le bloc de l'ordre avant l'appel, `form`,
+  `handleTranslate` par `switchToProposedCreation`, `isRefused` sur une ligne — St15-12 —, le commentaire de la limite
+  remplacé par un renvoi à la règle — St15-11 —), `AdminQualityPage.vue` (le paragraphe de la limite, une phrase et le renvoi)
+- Test : `frontend/tests/presentation/ui/admin/proposedCreation.spec.ts`, `useTranslatedForm.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (`form` ; la limite de la micro-tâche écrite à un seul endroit, la
+  règle, que les sites citent)
+
+**Interfaces :**
+- Choix 5. Produces : `switchToProposedCreation(state: ProposedCreationState): (sourceLocale: Locale) => void`,
+  `ProposedCreationState` = `{ editingId: Ref<string | null>, form: { locale: Locale; translationGroup: string },
+  sourceGroup: Readonly<Ref<string | null>>, proposalSourceLocale: Ref<Locale | null> }` ; target lu par `form.locale` : le
+  rappel reçoit `targetLocale` en premier argument (signature exacte dite au rendu si `proposeFrom` l'impose autrement).
+  R190 les utilise.
+
+- [ ] **Step 1 : test, rouge** — `proposedCreation.spec.ts`, le nom seul sur sa ligne :
+  `"la bascule vide l'entrée éditée, pose la langue cible, le groupe de la source et la langue source (#748, R189)"`
+  → `editingId` `null`, `form.locale` cible, `form.translationGroup` le groupe source (ou `''`), `proposalSourceLocale` la
+  source. Expected : FAIL (module absent).
+- [ ] **Step 2 : implémenter** selon le choix 5 ; `docker compose restart frontend` (fichier créé).
+- [ ] **Step 3 : refactorer les neuf sites** ; `make front-test; echo "exit=$?"` : même nombre que le filet (noté avant) +1 ;
+  `make front-build` vert (TS2448 attendu si un site appelait avant de déclarer : aucun).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) dans une copie d'un site, `form` déclaré
+  après l'appel → `make front-build` échoue sur TS2448 (sortie au rendu) ; (b) `switchToProposedCreation` qui oublie
+  `proposalSourceLocale` → les cas « bannière de proposition » des pages rougissent (nombre au rendu) ; restaurés.
+- [ ] **Step 5 : règle** — `form` (objet, déclaré avant l'appel) ; la limite d'une micro-tâche écrite ici seule. Lignes ≤ 140,
+  moignons relus. Taille notée.
+- [ ] **Step 6 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`, codes lus
+  sans pipe ; `grep -c 'form: () => form' frontend/src/presentation/pages/admin/*.vue` : 0 partout ;
+  `grep -n 'une micro-tâche' frontend/src` : le seul renvoi de chaque site, dit.
+- [ ] **Step 7 : commit** — `refactor(frontend): les neuf formulaires déclarent leur ordre avant la traduction, passent leur formulaire et écrivent la bascule une fois (#748)`.
+
+---
+
+### Task R190 : Qualité — une section générique paramétrée par ses champs (D4, Q10 à Q12 : St15-13 ; Sp15-6 ; refactoring)
+
+**Files :**
+- Create : `frontend/src/presentation/pages/admin/AdminQualityEntrySection.vue`,
+  `frontend/src/presentation/pages/admin/qualityEntrySection.ts` (`QualityEntry`, `QualityEntryInput`, `QualityEntryField`,
+  les deux listes de champs `QUALITY_PRINCIPLE_FIELDS`, `QUALITY_TRAIT_FIELDS`)
+- Delete : `AdminQualityPrinciplesSection.vue`, `AdminQualityTraitsSection.vue` (`git rm`)
+- Modify : `AdminQualityPage.vue` (deux instances, les textes traduits par clés littérales, le docblock : D8, la langue par
+  formulaire, le verrou, sans comparaison à « À propos » — Sp15-6 —),
+  `frontend/tests/presentation/pages/admin/emptyStateNeedsLoaded.spec.ts` (Q12), les fichiers qui nomment les
+  deux sections (`grep -rn 'AdminQuality\(Principles\|Traits\)Section' frontend .claude`)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (la liste des ressources : `AdminQualityEntrySection` ; la phrase
+  « which each page writes » selon Q11)
+
+**Interfaces :**
+- Consumes : R189 (`switchToProposedCreation`, `form` objet). Choix 6.
+
+- [ ] **Step 1 : filet** — `docker compose exec -T frontend npm test -- tests/presentation/pages/admin/AdminQualityPage.spec.ts`
+  (90 tests, nombre et liste des noms enregistrés : `--reporter=verbose` dans un fichier du scratchpad), puis
+  `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : créer** `qualityEntrySection.ts` et la section générique, en partant du texte commun des deux sections
+  (après R189) ; un champ non-prose recopié dans « Créer la version XX » (`iconKey`) et une colonne propre (`iconKey`) sont
+  des propriétés du champ, pas des branches du gabarit sur `kind`.
+- [ ] **Step 3 : brancher** la page, `git rm` des deux sections, `docker compose restart frontend`.
+- [ ] **Step 4 : la garde des états vides** (Q12 (A)) — le compte sur le gabarit, la forme `{{ texts.empty }}` reconnue, le
+  plancher recompté (dit au rendu) ; mutation : la garde `isLoaded` de l'état vide retirée de la section générique → la garde
+  rougit en nommant le fichier.
+- [ ] **Step 5 : verts, même suite** — `AdminQualityPage.spec.ts` **inchangé** (`git diff --stat` vide sur ce fichier) :
+  mêmes 90 noms, mêmes verdicts (`cmp` des deux listes) ; `make front-test` : même nombre ; `make front-lint` (aucune clé
+  manquante : les clés restent littérales), `make front-build`.
+- [ ] **Step 6 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `copiedToNewVersion` ignoré → le cas
+  « principe : ouvre une création rattachée, l'icône recopiée… » rougit ; (b) `isOrderDirty` retiré de l'`isRefused` de
+  la section → les deux cas R173 (principes et traits) rougissent ; restaurés ; commandes et lignes `FAIL` au rendu.
+- [ ] **Step 7 : règle** selon Q11 ; lignes ≤ 140, moignons relus ; taille notée ; `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 8 : commit** — `refactor(frontend): Qualité, une section générique paramétrée par ses champs pour les principes et les traits (#748)`.
+
+---
+
+### Task R191 : Le texte du verrou de proposition, des specs de traduction sans recopie (D3 : St15-15 ; St15-3 ; St15-16 = Sp15-13 ; St15-17 ; St15-18 ; St15-21 ; St15-22 ; Sp15-9)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/i18n/locales/fr.json` (`admin.entryLock.proposal`, D3)
+- Test : `frontend/tests/infrastructure/i18n/adminTranslationTexts.spec.ts` (D3 ; St15-21 : un commentaire dit pourquoi ses
+  fragments sont littéraux — une garde négative qui lirait le fichier qu'elle juge ne jugerait rien),
+  `frontend/tests/support/entryFormLock.ts` (St15-3 : lignes vides avant l'accolade fermante des quatre `describeExpiryBy*` ;
+  St15-18 : un JSDoc par membre de `LockToolkit` ; Sp15-9 : `translateEntryButton` trouvé par son nom accessible),
+  `AdminAboutPage.spec.ts` et `AdminQualityPage.spec.ts` (St15-16 : `emitTranslateRightAfterMove`, `proposalOf` écrits une fois
+  dans `tests/support/`, plus de `moveFirstRowDown` refait, le `Host` à sa place ; St15-17 : l'`it` à trois scénarios en trois
+  cas, les deux cas `isRefused` presque identiques en un `it.each` à valeurs explicites ; St15-22 : `'Modifier'` lu de
+  `fr.json`)
+
+- [ ] **Step 1 : test, rouge** (D3) — le texte FR de `admin.entryLock.proposal` est exactement « « Annuler » la retire et vide
+  le formulaire. » (la phrase entière de la clé lue, dite au rendu) et ne contient pas « l'abandonne ». Expected : FAIL.
+- [ ] **Step 2 : texte** de D3, mot pour mot ; vert.
+- [ ] **Step 3 : filet** — `make front-test; echo "exit=$?"`, nombre noté ; puis l'hygiène des specs ; même nombre (+1 par cas
+  scindé, dit au rendu).
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : le libellé « Modifier » changé dans `fr.json` →
+  les cas qui le cliquent rougissent par le texte lu ; restauré ; commande et lignes `FAIL` au rendu.
+- [ ] **Step 5 : verts** — `make front-test`, `make front-lint`, `make front-build`, codes lus sans pipe ;
+  `grep -n "'Modifier'" frontend/tests/presentation/pages/admin/{AdminAboutPage,AdminQualityPage}.spec.ts` : vide.
+- [ ] **Step 6 : commit** — `test(frontend): le verrou de proposition dit « la retire », les specs de traduction lisent leurs textes et partagent leurs gestes (#748)`.
+
+---
+
+### Task R192 : La garde des chargements écrit sa liste une fois ; la commande du compilateur entre guillemets simples (St15-4 ; St15-5 ; St15-6 ; St15-7 ; Sp15-12 ; C15-8 ; St15-20 ; Sp15-11)
+
+**Files :**
+- Modify : `frontend/tests/support/sourceText.ts` (St15-4 : « ne diffèrent » ; St15-5 : la liste des hooks différés écrite
+  une fois, `DEFERRED_HOOKS`, que le docblock de `deferredCallsOf` et celui de `noLoadInOnMounted.spec.ts` citent par son nom ;
+  St15-6 : `deferredCallsOf` en fonctions nommées de moins de 30 lignes ; St15-7 : `whenOther` reçoit ce que son appelant
+  passe, son type dit une valeur ; Sp15-12 : « Non vu » dit que `then`/`catch`/`finally` sont jugés sur le nom seul, si ce
+  n'est pas déjà écrit), `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts` (docblock),
+  `frontend/tests/support/vueCompilerAlignment.spec.ts` (C15-8 : la commande imprimée entre guillemets simples, une apostrophe
+  de la valeur échappée ; St15-20 : style des l. 37-48, le second cas porte `(#748, R179)` ; Sp15-11 : un manifeste qui déclare
+  `@vue/compiler-dom` dans les deux sections → un message qui le dit et propose de retirer l'une)
+- Test : `frontend/tests/support/sourceText.spec.ts`, `vueCompilerAlignment.spec.ts`
+- Modify (règle) : `.claude/rules/frontend.md` (« Toolchain history » : la commande entre guillemets simples, les deux
+  sections), `.claude/rules/frontend-session-refus.md` (la liste des hooks : un renvoi à `DEFERRED_HOOKS`, Sp15-12)
+
+- [ ] **Step 1 : tests, rouges** — `vueCompilerAlignment.spec.ts` : (a) un intervalle `^3.5.0$(id)` dans le manifeste → la
+  commande proposée porte `'dependencies.@vue/compiler-dom=^3.5.0$(id)'` entre guillemets simples ; (b) le compilateur déclaré
+  dans les deux sections → le message nomme les deux. Expected : FAIL.
+- [ ] **Step 2 : implémenter** ; puis le refactoring de `sourceText.ts` (filet : `sourceText.spec.ts` et
+  `noLoadInOnMounted.spec.ts`, nombres notés avant et après).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `onDeactivated` retiré de `DEFERRED_HOOKS` →
+  son cas de `sourceText.spec.ts` rougit ; restauré ; commande et ligne `FAIL` au rendu.
+- [ ] **Step 4 : règles** ; lignes ≤ 140, moignons relus ; tailles notées.
+- [ ] **Step 5 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`, codes lus
+  sans pipe.
+- [ ] **Step 6 : commit** — `test(frontend): la garde des chargements écrit sa liste une fois, la commande du compilateur se copie sans danger (#748)`.
+
+---
+
+### Task R193 : Backend — les recenseurs par jetons comptent les accolades par identifiant de jeton (D1, Q13 : C15-2 ; St15-29 ; St15-42)
+
+**Files :**
+- Modify : `backend/tests/Support/PhpSources.php` (`opensBrace()` par identifiant : `ord('{')`, `T_CURLY_OPEN`,
+  `T_DOLLAR_OPEN_CURLY_BRACES` ; `closesBrace()` : `ord('}')` ; `isChar(PhpToken, string)` : `$token->id === ord($char)`
+  pour `(`, `)`, `[`, `]`), `ClassNameResolver.php` (`scopes()` par ces lectures, St15-42 : découpé en fonctions nommées, un
+  compteur par fonction ; les comparaisons `'{' === $token->text` des l. 121, 136, 141, 209, 227 par les mêmes),
+  `UnsortedImports.php:74-76`, `AnonymousClassesAndFreeFunctions.php:104,115`,
+  `backend/tests/Shared/Infrastructure/Http/ProblemDetailStaysStaticTest.php` (St15-29 : la boucle des l. 1028-1040 lit
+  l'espace de noms et les imports par `ClassNameResolver::scopes()` ; les niveaux des l. 1142, 1288-1290, 1576-1578,
+  1610-1612, 1703-1705 par `opensBrace`/`closesBrace`/`isChar`)
+- Test : `backend/tests/Shared/ClassNameResolverTest.php` (`scoped`), les tests de `UnsortedImports`, de
+  `AnonymousClassesAndFreeFunctions` et de `CookieConstructions` (chemins relevés par `grep -rln` d'abord), et un cas de
+  `ProblemDetailStaysStaticTest` sur un extrait
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 4) — `scoped` : avant `new Cookie(` dans `namespace App;` après `use
+  Symfony\…\Cookie;`, chacune des chaînes `"{\"id\":$id}"`, `"$x}"`, `"\{$a}"` (et `"$x)"` pour les boucles qui ferment `)`)
+  → la classe résolue reste `symfony\…\cookie` ; `CookieConstructions::inCode` rend `[5]` (le site vu) au lieu de `[]` ;
+  `UnsortedImports` : un import après une fonction dont le corps porte `"$x}"` est jugé au premier niveau ;
+  `AnonymousClassesAndFreeFunctions` : une fonction libre après `"$x}"` est vue ; `ProblemDetailStaysStaticTest` : un
+  `getDetail()` dynamique dans `namespace X { … }` suivi de `namespace Y { … }`, et dans une classe dont une méthode porte
+  `"$x}"`, est refusé. Expected : FAIL sur chacun (cause : le texte `}` d'un `T_ENCAPSED_AND_WHITESPACE` ferme un niveau).
+- [ ] **Step 2 : implémenter** ; `make back-style-fix`.
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`, cache vidé dans le conteneur) : (a)
+  `closesBrace()` rendu à `'}' === $token->text` → les cas de `scoped` rougissent ; (b) la boucle de
+  `ProblemDetailStaysStaticTest` remise à la main sans remise à zéro de fin de bloc → le cas des deux blocs rougit ;
+  restaurés ; commandes et lignes de PHPUnit au rendu.
+- [ ] **Step 4 : verts** — `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"` ; `grep -rnF -e "is('}')"
+  -e "'}' === " backend/tests/Support/{ClassNameResolver,UnsortedImports,AnonymousClassesAndFreeFunctions}.php
+  backend/tests/Shared/Infrastructure/Http/ProblemDetailStaysStaticTest.php` : vide ; le relevé de P15-1 rejoué et dit (Q13).
+- [ ] **Step 5 : commit** — `test(security): les recenseurs par jetons comptent les accolades par identifiant, une chaîne interpolée ne décale plus leur niveau (#748)`.
+
+---
+
+### Task R194 : Backend — des docblocks et des cas justes pour les recenseurs (Q14 : St15-28 ; St15-33 ; St15-40 ; St15-41 ; St15-45 ; St15-46 ; St15-47 ; Sp15-18 ; Sp15-17 pour la règle)
+
+**Files :**
+- Modify : `backend/tests/Support/CookieConstructions.php` (St15-28 : « refusés dans `src/` par UnsortedImports » ne
+  s'applique qu'au `use function`, plus à l'échappement `\u{…}`), `AuthorizationSites.php` (St15-40 : `$previous` calculé à
+  l'endroit qui le lit, ou le commentaire « jamais autrement » dit ce qu'il garantit ; St15-47 : la coupe des l. 28-29),
+  `ClassNameResolver.php` (St15-41 : `importedAt` rend une forme nommée, `array{namespace: string, imports: array<string,
+  string>}` ou équivalent, ses appelants suivis), `CompiledNestedReading.php` (St15-33, Q14 (A) : « testaient » au présent,
+  rien d'autre)
+- Test : `backend/tests/Shared/MemberCallsTest.php` (St15-45 : l'index 0 rétabli dans `testAnIndexOutsideTheTokensIsNoCall`),
+  `backend/tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php` (Sp15-18 : « que lisent tous les recenseurs par
+  jetons » → les recenseurs qui la lisent vraiment, sans liste d'appelants)
+- Modify (règle) : `.claude/rules/security-authentication-sessions.md` (l. 84, St15-28 : la parenthèse « refused in `src/` by
+  `ImportsStaySortedTest` » ne porte que sur le `use function` ; ligne relue contre le code, Sp15-17)
+- St15-46 : les guillemets “…” au milieu de « » que la relecture situe, relevés par `grep -rn '“' <fichiers de R180>` et
+  remplacés par « » (ou ‹ › dans un « »), dits au rendu
+
+- [ ] **Step 1 : test, rouge** (St15-45) — `testAnIndexOutsideTheTokensIsNoCall` reçoit `0` en plus de `-1` et
+  `count($tokens)` : vert d'emblée si l'index 0 n'est jamais un appel (le dire), vu rouge par la mutation qui lit
+  `$tokens[$index - 1]` sans borne.
+- [ ] **Step 2 : refactorer et corriger** la liste ; `make back-style-fix`.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`, cache vidé) : `importedAt` qui inverse ses deux
+  clés → les cas de `ClassNameResolverTest` rougissent ; restaurée ; commande et lignes au rendu.
+- [ ] **Step 4 : règle** ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 5 : verts** — `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"` ; `git diff d8f481a2 HEAD -- backend/tests/Support/CompiledNestedReading.php` :
+  le seul verbe (Q14 (A)).
+- [ ] **Step 6 : commit** — `test(security): les docblocks et les cas des recenseurs disent ce qu'ils font (#748)`.
+
+---
+
+### Task R195 : Balayage documentaire de la quinzième série — commandes et nombres dans le plan (Sp15-25, Sp15-8 ; les écarts réels de R182 à R194)
+
+**Exception au brief** : cette tâche écrit dans `tasks/plan-748.md`, et seulement la sous-section « Ce que la quinzième série a
+réellement fait » à la fin de cette section (avant « ### Task 11 »), sans cocher de case ni toucher au reste. **Elle ne
+refactore rien** (Sp15-10) : ce qu'elle trouve à restructurer se rend en question.
+
+**Files :** ceux que le balayage désigne (texte seulement) ; `tasks/plan-748.md` (la sous-section).
+
+- [ ] **Step 1 : recherches** (`X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor
+  --exclude-dir=var)`, `P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)`). Pour **chaque**
+  recherche : la commande exacte, le nombre de lignes, la raison de chaque ligne gardée — **écrits dans la sous-section** ;
+  **chaque manque déclaré est vérifié par une mutation ou un `grep` cité** (Sp15-14) :
+  1. Noms disparus : `grep -rn "${X[@]}" -e AdminQualityPrinciplesSection -e AdminQualityTraitsSection -e 'form: () => form'
+     -e resetPrincipleForm -e resetTraitForm -e 'rend null' -e 'rend .null' "${P[@]}"`.
+  2. Vocabulaire : `grep -rn "${X[@]}" -e "l'abandonne" -e 'no table' -e 'start no process' -e 'never exported' -e 'ne
+     différent' -e 'testaient' "${P[@]}"`.
+  3. Identifiants de constat dans les noms de tests : la recherche de R135, rejouée (commandes de la recherche 3 de R181).
+  4. Récits au passé dans `git diff --name-only 0c51a767...HEAD -- frontend backend tools .claude` : l'expression de R181
+     **et** son complément sur les lignes ajoutées (`git diff -U0 … | grep -E '^\+' | grep -E "plus[.,;:)]|…"`).
+  5. Longueurs : `awk 'length>140'` sur chaque fichier de `git diff --name-only 0c51a767...HEAD` ; chaque ligne dont `git blame`
+     donne un commit de `0c51a767..HEAD` est coupée, sauf table, JSON, titre de tâche, message de commit et `echo` d'un seul
+     tenant (listés).
+  6. Moignons, dans chaque règle touchée par la série : les quatre recherches du brief, suite de mots comparée (`cmp`).
+  7. Règles relues avec `Read` (`outillage-smoke.md`, `frontend-backoffice.md`, `frontend.md`, `frontend-session-refus.md`,
+     `security-authentication-sessions.md`) : toute phrase fausse sur HEAD **remplacée** ; chaque règle modifiée par une tâche
+     sans qu'elle l'ait déclarée est dite (Sp15-17).
+  8. Docblocks d'en-tête de chaque fichier de `src/`, `tests/support/`, `backend/tests/Support/` et `tools/` modifié par R182 à
+     R194, relus contre le code — sauf un docblock qu'une tâche de la série a rétabli ou décidé (`CompiledNestedReading.php`,
+     R194) : un écart s'y signale au rendu.
+  9. Mutations (Sp15-8) : pour chaque tâche, la mutation annoncée, sa commande et la ligne qui a rougi, prises du rendu de
+     l'agent ; une mutation sans trace est dite « non attestée ».
+- [ ] **Step 2 : plan tenu à jour** — la sous-section « Ce que la quinzième série a réellement fait *(écrit par R195 le …)* » :
+  les commits ; pour chaque tâche R182 à R194, « conforme » ou l'écart réel (déclaré **et** lisible dans le diff ; un écart que
+  le diff montre sans déclaration y figure aussi) ; les questions Q1 à Q14 et la réponse suivie ; les lignes > 140 laissées ;
+  les neuf recherches (commande, nombre, lignes gardées) ; **la taille de chaque règle touchée et la sortie de
+  `tools/check-claude-rules.sh`** (Sp15-25). Aucune autre ligne du plan ne change.
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; toutes les règles < 50 000, `backoffice-api.md` à
+  39 834 et `security-user.md` à 47 922 ; `make front-test` / `make back-test` / tests hors ligne selon les fichiers changés,
+  codes lus sans pipe.
+- [ ] **Step 4 : commit** — `docs: le balayage de la quinzième relecture de #748`.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| CR15-1 = C15-6 | R186 (règle l. 117-121, docblock de `run_case`) |
+| CR15-2 = C15-3 = St15-24 | R182 (Q1) |
+| CR15-3 | R182 (Q2, limite écrite et cas du `trap`) |
+| CR15-4 | R183 (D2, Q3, Q4) |
+| CR15-5 | R187 (Q7) |
+| CR15-6 = St15-19 | R189 (les huit sites) |
+| CR15-7 | R186 |
+| CR15-8 | R189 (Q8) |
+| C15-1 | R184 |
+| C15-2 | R193 (D1) |
+| C15-4 | R183 (`--noproxy`, limite) |
+| C15-5 = Sp15-14 | rectifié ci-dessus ; brief (un manque se vérifie) ; R186 (cas partagé) |
+| C15-7 = Sp15-1 | R187 (D5) ; rectifié ci-dessus ; brief |
+| C15-8 | R192 |
+| St15-1 = Sp15-5, St15-2 = Sp15-4 | R188 ; rectifiés ci-dessus |
+| St15-3 | R191 |
+| St15-4, St15-5, St15-6, St15-7 | R192 |
+| St15-8, St15-9, St15-10 | R188 |
+| St15-11, St15-12, St15-14 | R189 (St15-12 aussi par R190) |
+| St15-13 | R190 (D4) |
+| St15-15 | R191 (D3) |
+| St15-16 = Sp15-13, St15-17, St15-18, St15-21, St15-22 | R191 |
+| St15-20 | R192 |
+| St15-23 | R186 (règle l. 30-32) |
+| St15-25, St15-26, St15-27 | R186 |
+| St15-28 | R194 (docblock et règle) |
+| St15-29 | R193 (D1) |
+| St15-30 | R185 |
+| St15-31 | R183 (règle l. 65-66), R185 (`smoke-http.sh`) |
+| St15-32 | R185 |
+| St15-33 | R194 (Q14) |
+| St15-34 | R186 (le cas `CDPATH` partagé) ; écarté pour le bloc d'amorçage (ci-dessous) |
+| St15-35 | R186 |
+| St15-36 | R183 (règle), R185 (bibliothèque) |
+| St15-37 | R186 |
+| St15-38 | R185 (Q6) |
+| St15-39 | R185 |
+| St15-40, St15-41 | R194 |
+| St15-42 | R193 |
+| St15-43 | R185 (la raison écrite) |
+| St15-44 | R186 |
+| St15-45, St15-46, St15-47 | R194 |
+| Sp15-2, Sp15-3 | rectifiés ci-dessus ; brief (Sp15-3) |
+| Sp15-6 | R190 (docblock de la page) ; rectifié ci-dessus |
+| Sp15-7 | R187 |
+| Sp15-8 | rectifié ci-dessus ; contraintes et brief ; R195 (recherche 9) |
+| Sp15-9 | R191 |
+| Sp15-10 | rectifié ci-dessus ; R195 et brief (un balayage ne refactore pas) |
+| Sp15-11, Sp15-12 | R192 |
+| Sp15-15, Sp15-16, Sp15-19, Sp15-20 | rectifiés ci-dessus |
+| Sp15-17 | rectifié ci-dessus ; R194 (la ligne relue) ; brief |
+| Sp15-18 | R194 |
+| Sp15-21 | R183 (Q5) |
+| Sp15-22, Sp15-23, Sp15-24 | R186 |
+| Sp15-25 | R195 ; rectifié ci-dessus |
+| P15-1 (constat du plan) | Q13 |
+
+### Constats écartés, avec leur raison
+
+- **St15-34, le bloc d'amorçage** (`script_dir` / `_audit_dir`, identique dans les trois smokes et l'audit) : réfuté sur le
+  code. Ce bloc calcule le dossier où se trouve la bibliothèque ; il ne peut pas vivre dans la bibliothèque, qu'il n'a pas
+  encore trouvée, et un second fichier sourcé pour le porter demanderait le même bloc pour être trouvé. La partie
+  « cas `CDPATH` copié dans quatre tests » est corrigée (R186).
+
+### Ce que la quinzième série a réellement fait
+
+*(écrit par R195)*
+
+---
 
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 

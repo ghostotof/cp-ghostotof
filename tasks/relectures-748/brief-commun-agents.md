@@ -9,38 +9,46 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R168 et suivantes**, la section
-  « Corrections de la quatorzième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série
-  précédente a réellement fait, décisions D1 à D4, vérification des constats, ordre, choix tranchés, questions Q1 à Q14,
-  Review Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R152–R167, R157b : « … treizième
-  relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ; R121–R136 : « … onzième relecture » ; R112–R120 et
-  R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième
-  relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 :
-  « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 :
-  « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
-  `tasks/relectures-748/relecture-14-constats.md` (R152–R167 : `relecture-13-constats.md` ; R137–R151 :
-  `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les sections passées sont l'archive de leur
-  moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si elle est fausse sur le
-  code réel (les tâches R précédentes ont pu le changer), adapte au plus près de son intention et note l'écart, ou rends
-  la question.
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R182 et suivantes**, la section
+  « Corrections de la quinzième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série précédente
+  a réellement fait, décisions D1 à D5, vérification des constats, ordre, choix tranchés, questions Q1 à Q14, Review
+  Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R168–R181, R173b : « … quatorzième
+  relecture » ; R152–R167, R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ;
+  R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième
+  relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième
+  relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième
+  relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de
+  relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-15-constats.md` (R168–R181 :
+  `relecture-14-constats.md` ; R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ;
+  R121–R136 : `relecture-11-constats.md`). Les sections passées sont l'archive de leur moment : une note
+  « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes
+  ont pu le changer), adapte au plus près de son intention et note l'écart, ou rends la question.
 - **Une décision de l'auteur listée au plan ou ici ne se contourne pas par une interprétation** : R166 a coupé des `echo`
   que l'auteur avait décidé de garder d'un seul tenant. Si une décision te semble contredire ta tâche, arrête-toi et rends
   la question.
 - **Un balayage ne réécrit pas un docblock qu'une tâche précédente de la série a rétabli** (Sp14-17 : celui de
   `CompiledNestedReading.php`, rétabli par R161, réécrit par R167) : un écart s'y signale au rendu, il ne se corrige pas.
-- Règles : avec l'outil **Read** (jamais cat/sed/grep, qui ne chargent pas les règles path-scoped), celles que ta
-  tâche cite ou modifie, plus, pour le frontend, `.claude/rules/frontend.md` et `.claude/rules/frontend-a11y.md`, et au
-  moins un fichier de chaque zone touchée (`frontend/src`, `backend/src`, `backend/tests`, `tools/`) avant d'y écrire.
-  Lis une règle avant de la modifier ; **remplace** une phrase plutôt que d'en ajouter. **Une docstring ou une règle
-  qui décrit un comportement que ta tâche modifie se corrige dans le même commit que le comportement** (St6-2 et Sp6-1
-  sont nés de docs laissées en arrière) : avant le commit, cherche (`grep`) le nom de chaque fonction ou état touché
-  dans `.claude/rules/` et dans les docblocks voisins. Un identifiant de constat (`CR11-3`, `A3-10`) est permis dans un
-  commentaire, jamais dans un nom de test (décision 4 de la onzième relecture). **Un nom de test se raccourcit sans
-  perdre un terme qui porte le sens** (l'état vérifié — « désactivé », pas « inactif » —, le palier, la tâche citée) ;
-  s'il ne tient pas sous 140, le littéral va seul sur sa ligne, ou la référence en commentaire au-dessus du `it`. Une règle ne dépasse pas
-  50 000 octets (`security-user.md` en fait 47 914 : n'y ajoute rien ; `backoffice-api.md` 39 834 : n'y ajoute rien sans
-  retirer d'abord) ; donne dans ton rendu la taille de chaque règle
-  touchée.
+  **Un balayage ne refactore pas** (Sp15-10) : ce qu'il trouve à restructurer se rend en question.
+- **Un balayage qui déclare un manque le vérifie par une mutation ou un `grep` cité** (Sp15-14 : le bilan de R181 a déclaré
+  absent un cas `CDPATH` présent dans les quatre tests) : la commande et sa sortie vont dans le bilan.
+- **Un écart au plan qui écarte un cas de test se rend en question, ne se décide pas** (R172 : le cas des réglages, écarté
+  par l'agent seul, Sp15-1). Un cas qui reste vert d'emblée s'écrit quand même et se prouve par la mutation que la tâche nomme.
+- **Une décision prise en cours de série est écrite au plan par le fil principal avant que la tâche parte** (Sp15-3) ; l'agent
+  de la tâche n'écrit pas au plan ce qu'il applique.
+- Règles : avec l'outil **Read** (jamais cat/sed/grep, qui ne chargent pas les règles path-scoped), celles que ta tâche
+  cite ou modifie, plus, pour le frontend, `.claude/rules/frontend.md` et `.claude/rules/frontend-a11y.md`, et au moins
+  un fichier de chaque zone touchée (`frontend/src`, `backend/src`, `backend/tests`, `tools/`) avant d'y écrire. Lis une
+  règle avant de la modifier ; **remplace** une phrase plutôt que d'en ajouter. **Une docstring ou une règle qui décrit
+  un comportement que ta tâche modifie se corrige dans le même commit que le comportement** (St6-2 et Sp6-1 sont nés de
+  docs laissées en arrière) : avant le commit, cherche (`grep`) le nom de chaque fonction ou état touché dans
+  `.claude/rules/` et dans les docblocks voisins. **Une tâche qui modifie une règle la nomme dans ses fichiers et dans
+  son rendu** (Sp15-17 : R180 a modifié `security-authentication-sessions.md` sans le dire). Un identifiant de constat
+  (`CR11-3`, `A3-10`) est permis dans un commentaire, jamais dans un nom de test (décision 4 de la onzième relecture).
+  **Un nom de test se raccourcit sans perdre un terme qui porte le sens** (l'état vérifié — « désactivé », pas
+  « inactif » —, le palier, la tâche citée) ; s'il ne tient pas sous 140, le littéral va seul sur sa ligne, ou la
+  référence en commentaire au-dessus du `it`. Une règle ne dépasse pas 50 000 octets (`security-user.md` en fait
+  47 914 : n'y ajoute rien ; `backoffice-api.md` 39 834 : n'y ajoute rien sans retirer d'abord) ; donne dans ton rendu la
+  taille de chaque règle touchée.
 - **Une règle se coupe ou se recolle sans moignon ni mot changé** : un balayage de moignons recolle sans en créer ;
   après chaque coupe ou recollage, relis `awk 'length<=45 && NF' <règle>` et `grep -nE '^[[:space:]]*[,;:.)»]' <règle>`
   (une ligne courte ou qui commence par une ponctuation est un moignon, sauf fin de paragraphe ou élément de liste), puis
@@ -80,7 +88,8 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne serait pas mesurée et un test
   resterait vert à tort (R99 : une mutation faite par Edit est restée verte dans le conteneur backend). On restaure
   depuis la copie, puis on vérifie par `cmp`. En cas de doute sur ce que voit le conteneur : `docker compose restart
-  backend` ou `docker compose restart frontend`. Pour un refactoring pur, le
+  backend` ou `docker compose restart frontend`. **Chaque mutation se rend avec sa commande et la ligne de sortie qui rougit**
+  (Sp15-8 : six mutations annoncées par la quatorzième série ne se lisaient nulle part). Pour un refactoring pur, le
   filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
@@ -108,7 +117,7 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R181 écrit la sous-section « Ce que la quatorzième
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R195 écrit la sous-section « Ce que la quinzième
 série a réellement fait » du plan, avec les commandes et les nombres de son balayage) ; ne coche rien —
 **aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
