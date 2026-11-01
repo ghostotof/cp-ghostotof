@@ -13071,6 +13071,10 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
   qui sort de la garde rougit ; un fichier ajouté aussi, une ligne à changer, dite par le message) ; (B) des planchers recomptés et
   justifiés (un fichier peut encore sortir en silence jusqu'au plancher).
 
+**Réponses de l'auteur (2026-11-01)** : Q1 à Q12 → **les douze recommandations** (Q2 : `SMOKE_DATA_FILE` devient
+`SMOKE_AUTH_DATA_FILE` ; Q7 : `useEntryFormState()` et `switchToProposedCreation(state, form, target)` ; Q12 : les gardes de
+source exigent l'égalité au nombre de fichiers relevé). Le plan les suit déjà : aucune tâche ne change.
+
 ### Review Focus (seizième relecture)
 
 1. **Un smoke avec la Basic Auth et `-b '@a=b'`, `-b "@$SMOKE_AUTH_CONFIG"`, `-D "$SMOKE_AUTH_CONFIG"`, `-D "$SMOKE_AUTH_DIR/x"`,
