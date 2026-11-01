@@ -64,7 +64,7 @@ interface Case {
 
 const ONE = { id: 'x' }
 
-/** Ce que onze composables de liste exposent de commun : la lecture, la suppression (leur première mutation), l'erreur de mutation. */
+/** Ce que les composables de liste exposent de commun : la lecture, la suppression (leur première mutation), l'erreur de mutation. */
 interface ListComposable {
   hasError: Ref<boolean>
   isLoaded: Ref<boolean>
@@ -92,16 +92,18 @@ function composeList<K extends string>(
 }
 
 /**
- * Un cas de liste ordinaire : une lecture `list` qui rend `[ONE]`, un `load()` sans argument. `overrides` donne ce qui change
- * d'un composable à l'autre (`key`, `compose`) ou ce qui s'écarte du cas ordinaire (les réglages, la lecture seule).
+ * Le cas d'un composable dont le dépôt lit une liste : une lecture `list` qui rend `[ONE]`, un `load()` sans argument. Seuls
+ * `key` et `compose` changent d'un composable à l'autre ; les réglages, lus par `get`, s'écrivent en entier.
  */
-function standardCase(name: string, overrides: Pick<Case, 'key' | 'compose'> & Partial<Case>): Case {
-  return { name, read: 'list', loaded: [ONE], args: [], ...overrides }
+function listCase(name: string, parts: Pick<Case, 'key' | 'compose'>): Case {
+  return { name, read: 'list', loaded: [ONE], args: [], ...parts }
 }
 
 const CASES: Case[] = [
-  standardCase('useAdminAboutMeCards', { key: ADMIN_ABOUT_ME_CARD_REPOSITORY, compose: composeList(useAdminAboutMeCards, 'cards') }),
-  standardCase('useAdminAboutSettings', {
+  listCase('useAdminAboutMeCards', { key: ADMIN_ABOUT_ME_CARD_REPOSITORY, compose: composeList(useAdminAboutMeCards, 'cards') }),
+  // Le singleton des réglages : lu par `get`, une locale en argument de `load()`, `save` pour première mutation.
+  {
+    name: 'useAdminAboutSettings',
     key: ADMIN_ABOUT_SETTINGS_REPOSITORY,
     read: 'get',
     loaded: ONE,
@@ -117,29 +119,26 @@ const CASES: Case[] = [
         shown: () => c.errorMessage.value,
       }
     },
-  }),
-  standardCase('useAdminAboutSiteCards', { key: ADMIN_ABOUT_SITE_CARD_REPOSITORY, compose: composeList(useAdminAboutSiteCards, 'cards') }),
-  standardCase('useAdminAnonymousCvSections', {
+  },
+  listCase('useAdminAboutSiteCards', { key: ADMIN_ABOUT_SITE_CARD_REPOSITORY, compose: composeList(useAdminAboutSiteCards, 'cards') }),
+  listCase('useAdminAnonymousCvSections', {
     key: ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY,
     compose: composeList(useAdminAnonymousCvSections, 'sections'),
   }),
-  standardCase('useAdminCaseStudies', { key: ADMIN_CASE_STUDY_REPOSITORY, compose: composeList(useAdminCaseStudies, 'caseStudies') }),
-  standardCase('useAdminContributions', {
-    key: ADMIN_CONTRIBUTION_REPOSITORY,
-    compose: composeList(useAdminContributions, 'contributions'),
-  }),
-  standardCase('useAdminIncidents', { key: ADMIN_INCIDENT_REPOSITORY, compose: composeList(useAdminIncidents, 'incidents') }),
-  standardCase('useAdminQualityPrinciples', {
+  listCase('useAdminCaseStudies', { key: ADMIN_CASE_STUDY_REPOSITORY, compose: composeList(useAdminCaseStudies, 'caseStudies') }),
+  listCase('useAdminContributions', { key: ADMIN_CONTRIBUTION_REPOSITORY, compose: composeList(useAdminContributions, 'contributions') }),
+  listCase('useAdminIncidents', { key: ADMIN_INCIDENT_REPOSITORY, compose: composeList(useAdminIncidents, 'incidents') }),
+  listCase('useAdminQualityPrinciples', {
     key: ADMIN_QUALITY_PRINCIPLE_REPOSITORY,
     compose: composeList(useAdminQualityPrinciples, 'principles'),
   }),
-  standardCase('useAdminQualityTraits', { key: ADMIN_QUALITY_TRAIT_REPOSITORY, compose: composeList(useAdminQualityTraits, 'traits') }),
-  standardCase('useAdminExperienceTechnologies', {
+  listCase('useAdminQualityTraits', { key: ADMIN_QUALITY_TRAIT_REPOSITORY, compose: composeList(useAdminQualityTraits, 'traits') }),
+  listCase('useAdminExperienceTechnologies', {
     key: ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY,
     compose: composeList(useAdminExperienceTechnologies, 'technologies'),
   }),
-  standardCase('useAdminUsers', { key: ADMIN_USER_REPOSITORY, compose: composeList(useAdminUsers, 'users') }),
-  standardCase('useAdminVulnerabilities', {
+  listCase('useAdminUsers', { key: ADMIN_USER_REPOSITORY, compose: composeList(useAdminUsers, 'users') }),
+  listCase('useAdminVulnerabilities', {
     key: ADMIN_VULNERABILITY_REPOSITORY,
     compose: () => {
       const c = useAdminVulnerabilities()
@@ -154,10 +153,7 @@ const CASES: Case[] = [
       }
     },
   }),
-  standardCase('useAdminWatchedProducts', {
-    key: ADMIN_WATCHED_PRODUCT_REPOSITORY,
-    compose: composeList(useAdminWatchedProducts, 'products'),
-  }),
+  listCase('useAdminWatchedProducts', { key: ADMIN_WATCHED_PRODUCT_REPOSITORY, compose: composeList(useAdminWatchedProducts, 'products') }),
 ]
 
 /**

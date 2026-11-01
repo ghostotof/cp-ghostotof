@@ -146,7 +146,8 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
   - `backofficeAccessRefusal.spec.ts`: the scope, a write's `{ kind: 'write' }`, two successive tests starting from zero.
     The landing load (R122): every read sent before the mount keeps the text, the first one stamped after closes it, and
     `currentRefusalScope()`, a read with no effect, closes nothing (R143). A spec that sends a read reads the scope of its
-    stamp, as the fake client does; `currentRefusalScope()` stays exported for that one case, the exception (R158, Q8).
+    stamp, as the fake client does; a probe that sends nothing reads `currentRefusalScope()`, exported for that (R158, Q8,
+    R177): through `stampBackofficeRead()` it would close the landing load too, and a test could pass for that reason.
   - `AccessRefusedNotice.spec.ts`: a fragment change keeps the alert, a query change clears it, the same parameters in
     another order keep it (vue-router runs that navigation, the sorted key ignores it, R54).
   - `AdminLayout.sessionEnded.spec.ts`: a refused save back after a navigation is shown on the next page; after an account

@@ -108,11 +108,6 @@ const INITIAL_STATE: RefusalModuleState = Object.freeze<RefusalModuleState>({ sc
 
 let moduleState: RefusalModuleState = INITIAL_STATE
 
-/** La position de départ à ce périmètre et cette époque : le chargement de la page d'arrivée fermé, tout le reste remis. */
-function resetTo(scope: number, epoch: number): RefusalModuleState {
-  return { ...INITIAL_STATE, scope, epoch }
-}
-
 /** Le compteur de refus réels depuis le dernier effacement ; 0 = aucun, rien à afficher. */
 export const backofficeAccessRefused = computed(() => state.value.count)
 
@@ -121,9 +116,7 @@ export const earlierSaveRefused = computed(() => state.value.earlierSave)
 
 /**
  * Le périmètre et l'époque courants, **sans effet** : une requête pure, qui ne clôt pas le chargement de la page d'arrivée
- * (R143, St12-5). Aucun code de `src/` ne l'appelle hors de ce module : une lecture qui part estampille. Elle reste exportée
- * pour les specs qui n'envoient rien, ou qui prouvent justement qu'une lecture pure ne clôt rien ; un spec qui envoie une
- * lecture lit la portée de son estampille (#748, R158, Q8), comme le fait le faux client.
+ * (R143, St12-5). Une lecture qui part estampille avec `stampBackofficeRead()`, qui clôt ce chargement puis lit ce couple.
  */
 export function currentRefusalScope(): ReadRefusalScope {
   return { kind: 'read', scope: moduleState.scope, epoch: moduleState.epoch }
@@ -178,7 +171,7 @@ export function markBackofficeAccessRefused(sentIn: RefusalScope, account: strin
  */
 export function clearBackofficeAccessRefusal(): void {
   state.value = NO_REFUSAL
-  moduleState = resetTo(moduleState.scope + 1, moduleState.epoch)
+  moduleState = { ...INITIAL_STATE, scope: moduleState.scope + 1, epoch: moduleState.epoch }
 }
 
 /**
