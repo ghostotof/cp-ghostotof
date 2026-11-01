@@ -109,7 +109,7 @@ describe('useAdminTranslation', () => {
     })
   })
 
-  it('rend null et expose la raison quand le repository échoue, sans lever', async () => {
+  it("un échec du repository : translate rend faux sans lever, accept n'est pas appelée et la raison est exposée", async () => {
     const repository: AdminTranslationRepository = {
       translate: vi.fn(async () => { throw new AdminTranslationError('rate-limited', 'Quota atteint.') }),
     }
@@ -207,7 +207,7 @@ describe('useAdminTranslation', () => {
     expect(composable.isRefused.value).toBe(false)
   })
 
-  it('expire() périme la traduction en vol : sa réponse rend null (#748, R114)', async () => {
+  it("expire() périme la traduction en vol : sa réponse n'appelle pas accept (#748, R114)", async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
     const composable = mountWithComposable({ translate })
@@ -305,7 +305,7 @@ describe('useAdminTranslation', () => {
     expect(composable.isExpiredCallPending.value).toBe(false)
   })
 
-  it('une identité de formulaire changée pendant la traduction : isTranslating retombe, la réponse rend null (#748, R124)', async () => {
+  it("une identité changée pendant la traduction : isTranslating retombe, la réponse n'appelle pas accept (#748, R124)", async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
     const identity = ref(identityOf('a'))

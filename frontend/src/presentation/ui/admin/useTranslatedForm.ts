@@ -8,6 +8,8 @@ import {
 import type { FormIdentity } from '../../../application/admin/translation/FormIdentity'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
+import type { AdminTranslationErrorReason } from '../../../domain/admin/translation/errors/AdminTranslationError'
+import type fr from '../../../infrastructure/i18n/locales/fr.json'
 import { describedBy } from './describedBy'
 
 /** Ce que `removeEntry` lit d'une entrée qu'on supprime : sa clé et son groupe de traduction. */
@@ -48,13 +50,11 @@ export interface ProseFieldAttrs {
 
 export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult, 'expire' | 'translate'> {
   /**
-   * Fait avancer la génération du formulaire : à appeler en premier par **chaque** geste qui remplit ou vide le formulaire —
-   * remise à zéro (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…), « Modifier » (`startEdit`…), « Créer la version
-   * XX » (`startCreateVersion`…). Un tel geste peut ne changer ni l'entrée, ni la langue, ni le groupe (un formulaire déjà
-   * vierge, « Modifier » de l'entrée déjà éditée, « Créer la version XX » de la même ligne), et la réponse d'une traduction
-   * partie avant lui poserait sa proposition sur le formulaire vidé ou rechargé : la génération, elle, change, et périme la
-   * traduction en vol comme elle efface l'échec (ce qu'aucune identité ne voit, la suppression d'une entrée, passe par
-   * `removeEntry`).
+   * Fait avancer la génération du formulaire : à appeler en premier par **chaque** geste de la page qui remplit ou vide le
+   * formulaire. Un tel geste peut ne changer ni l'entrée, ni la langue, ni le groupe (un formulaire déjà vierge, l'entrée déjà
+   * éditée rechargée, la même ligne choisie deux fois), et la réponse d'une traduction partie avant lui poserait sa proposition
+   * sur le formulaire vidé ou rechargé : la génération, elle, change, et périme la traduction en vol comme elle efface l'échec
+   * (ce qu'aucune identité ne voit, la suppression d'une entrée, passe par `removeEntry`).
    */
   readonly renewForm: () => void
   /** Un champ de `proseFields` du formulaire n'est pas blanc : sans prose, rien à traduire (le refus exposé le contient). */
@@ -191,18 +191,38 @@ function isTranslationOf(identity: Omit<FormIdentity, 'generation'>, deleted: De
   return deleted.id === editingId || isSourceOfAttachedCreation
 }
 
-/** Le texte, traduit, de la raison de l'échec (`admin.translation.errors.<raison>`), `null` sans échec. */
-function useTranslationErrorText(errorReason: Readonly<Ref<string | null>>): Readonly<Ref<string | null>> {
+/**
+ * La clé i18n du texte de chaque raison d'échec. Une table fermée sur `AdminTranslationErrorReason`, dont chaque clé est lue dans
+ * le fichier de messages : une raison sans entrée, ou une clé absente du fichier (`admin.translation.errors.<raison>`), ne compile
+ * pas, là où une clé construite (`${reason}`) ne verrait rien.
+ */
+type TranslationErrorTexts = typeof fr.admin.translation.errors
+const ERROR_TEXT_KEYS: {
+  readonly [R in AdminTranslationErrorReason]: `admin.translation.errors.${R & keyof TranslationErrorTexts}`
+} = {
+  validation: 'admin.translation.errors.validation',
+  'rate-limited': 'admin.translation.errors.rate-limited',
+  unavailable: 'admin.translation.errors.unavailable',
+  unknown: 'admin.translation.errors.unknown',
+}
+
+/** Le texte, traduit, de la raison de l'échec (`ERROR_TEXT_KEYS`), `null` sans échec. */
+function useTranslationErrorText(
+  errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>,
+): Readonly<Ref<string | null>> {
   const { t } = useI18n()
 
   return computed(() => {
     const reason = errorReason.value
 
-    return reason ? t(`admin.translation.errors.${reason}`) : null
+    return null === reason ? null : t(ERROR_TEXT_KEYS[reason])
   })
 }
 
-/** Les attributs d'un champ de prose : lecture seule pendant la traduction, décrit par l'aide du champ puis par le texte de l'attente. */
+/**
+ * Les attributs d'un champ de prose : lecture seule pendant la traduction, décrit par l'aide du champ puis par le texte de la
+ * lecture seule (`proseReadonlyHintId`).
+ */
 function proseFieldAttrsOf(isTranslating: Readonly<Ref<boolean>>, helpId: string | undefined, readonlyHintId: string): ProseFieldAttrs {
   return {
     readonly: isTranslating.value,

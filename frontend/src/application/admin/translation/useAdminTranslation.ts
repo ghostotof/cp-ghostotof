@@ -46,9 +46,9 @@ export interface UseAdminTranslationResult {
     accept: (proposal: TranslationProposal) => void,
   ) => Promise<boolean>
   /**
-   * Périme la traduction en vol : sa réponse rend `null` et ne pose ni état ni raison. Pour ce que `formIdentity` ne
-   * voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée, qui ne change rien au
-   * formulaire —, que l'appelant juge et dit ici ; le guetteur d'identité du composable l'appelle de lui-même pour tout
+   * Périme la traduction en vol : sa réponse ne pose ni état ni raison (`translate` rend faux sans appeler `accept`). Pour ce
+   * que `formIdentity` ne voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée, qui ne change
+   * rien au formulaire —, que l'appelant juge et dit ici ; le guetteur d'identité du composable l'appelle de lui-même pour tout
    * le reste : un geste qui change le formulaire change son identité.
    */
   expire: () => void
@@ -66,10 +66,10 @@ export interface UseAdminTranslationOptions {
    * Ce qui fait l'identité du formulaire (`FormIdentity`) : l'entrée éditée, la langue, le groupe source, la génération.
    * Comparée champ par champ (`sameFormIdentity`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la
    * traduction en vol est périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé :
-   * `isTranslating` retombe aussitôt et la réponse rend `null`. Ce que l'identité ne voit pas — la suppression de
-   * l'entrée éditée ou de la source d'une création rattachée —, `expire()` le périme. La prose n'en fait pas partie :
-   * elle est en lecture seule pendant la traduction, et la raison d'un échec ne disparaît que par un changement
-   * d'identité ou la traduction suivante, pas par la frappe qui corrige la prose.
+   * `isTranslating` retombe aussitôt et sa réponse ne pose rien (`translate` rend faux sans appeler `accept`). Ce que
+   * l'identité ne voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée —, `expire()` le
+   * périme. La prose n'en fait pas partie : elle est en lecture seule pendant la traduction, et la raison d'un échec ne
+   * disparaît que par un changement d'identité ou la traduction suivante, pas par la frappe qui corrige la prose.
    */
   readonly formIdentity?: () => FormIdentity
 }
@@ -146,6 +146,45 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     }
   }
 
+  /**
+   * L'appel part : il devient la traduction courante, l'échec précédent s'efface, et le guetteur d'identité est là pour la
+   * suite. Rend le jeton que la réponse présentera à `retainIfCurrent` et à `recordFailure`.
+   */
+  function startCall(): number {
+    const token = requests.begin()
+    isAnyCallRunning.value = true
+    isAwaitingCurrent.value = true
+    failure.value = null
+    watchIdentity()
+
+    return token
+  }
+
+  /** Le jugement de la réponse : la proposition seulement si l'appel est encore le courant (ni `expire()` ni l'identité n'ont joué). */
+  function retainIfCurrent(token: number, proposal: TranslationProposal): TranslationProposal | null {
+    return requests.isCurrent(token) ? proposal : null
+  }
+
+  /** L'échec de l'appel : sa raison est posée, sauf s'il est périmé ou si la session est finie (le bandeau l'annonce seul, #748). */
+  function recordFailure(token: number, error: unknown): void {
+    if (!requests.isCurrent(token)) {
+      return
+    }
+
+    failure.value =
+      visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
+  }
+
+  /** La fin de l'appel, réponse ou échec : plus rien en vol, et plus rien d'attendu si c'est encore la traduction courante. */
+  function endCall(token: number): void {
+    isAnyCallRunning.value = false
+    // Une traduction périmée ne touche plus l'état : `expire()` l'a déjà rendu.
+    if (requests.isCurrent(token)) {
+      isAwaitingCurrent.value = false
+    }
+  }
+
+  // Une fonction fléchée : le dépôt, vérifié plus haut, y reste rétréci à « fourni ».
   const translate = async (
     sourceLocale: Locale,
     targetLocale: Locale,
@@ -156,34 +195,17 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       return false
     }
 
-    const token = requests.begin()
-    isAnyCallRunning.value = true
-    isAwaitingCurrent.value = true
-    failure.value = null
-    watchIdentity()
-
-    // La proposition retenue : jugée courante dans le point de contrôle qui suit la réponse, posée dans ce même point.
+    const token = startCall()
+    // La proposition retenue : jugée dans le point de contrôle qui suit la réponse, posée dans ce même point.
     let retained: TranslationProposal | null = null
     try {
-      const proposal = await repository.translate(sourceLocale, targetLocale, fields)
-
-      retained = requests.isCurrent(token) ? proposal : null
+      retained = retainIfCurrent(token, await repository.translate(sourceLocale, targetLocale, fields))
     } catch (error) {
-      if (!requests.isCurrent(token)) {
-        return false
-      }
+      recordFailure(token, error)
 
-      // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
-      const reason =
-        visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
-      failure.value = reason
       return false
     } finally {
-      isAnyCallRunning.value = false
-      // Une traduction périmée ne touche plus l'état : `expire()` l'a déjà rendu.
-      if (requests.isCurrent(token)) {
-        isAwaitingCurrent.value = false
-      }
+      endCall(token)
     }
 
     if (null === retained) {
@@ -191,7 +213,7 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     }
 
     // Hors du `try` : une exception de `accept` n'est pas un échec de la traduction, elle ne pose aucune raison. Aucun `await`
-    // entre le jugement et ici (le `finally` est synchrone) : la pose est sous le jugement.
+    // entre le jugement (`retainIfCurrent`) et ici (le `finally` est synchrone) : la pose est sous le jugement.
     accept(retained)
 
     return true
