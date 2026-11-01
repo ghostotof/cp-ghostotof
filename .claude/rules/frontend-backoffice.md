@@ -14,6 +14,7 @@ paths:
   - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
   - "frontend/tests/application/admin/sessionEndedLoad.spec.ts"
   - "frontend/tests/presentation/pages/admin/emptyStateNeedsLoaded.spec.ts"
+  - "frontend/tests/presentation/pages/admin/translatedFormDeclarationOrder.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -193,7 +194,9 @@ and what to do with the proposal.
   `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what
   `useAdminTranslation` exposes bar `expire` and `translate` (R153, D4 of the thirteenth review). Whatever `isRefused` and
   `identity` read, the order draft (`rows`, `useOrderDraft`) above all, is declared before the call too: their closures hide a
-  later declaration from the compiler, so that order is a convention (R189). The page keeps its form and its gestures
+  later declaration from the compiler, so that order is an order a source guard checks (R189b, `translatedFormDeclarationOrder.spec.ts`:
+  every file of `presentation/pages/admin` that calls `useTranslatedForm`, the constants those two options read and, step by step, the
+  ones their initialisers read). The page keeps its form and its gestures
   (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
   `TranslationReadonlyHint`, the error alert —, which each page writes because each of its bindings carries a value of the
   page (the form's locale, the lock's help, its `describedBy`). A form new to the assistant writes its list of prose fields
