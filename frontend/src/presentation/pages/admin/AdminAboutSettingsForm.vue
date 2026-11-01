@@ -56,7 +56,7 @@ const errorText = computed(() => {
  * de la cible en échec (erreur ordinaire, refus 403), faute de « Réessayer » sur la page : un changement de langue est alors
  * le seul chemin vers un nouveau chargement — ; **abandonnée** par « Abandonner » (`handleDiscardProposal`). Une fin de
  * session la **garde** : la lecture de la cible reprend au retour de la session et la pose alors (Q10). Aucun guetteur de
- * fin de lecture : il n'aurait rien retiré qu'un changement de langue ne retire déjà (R157b, décision de l'auteur).
+ * fin de lecture : il ne retirerait rien qu'un changement de langue ne retire déjà (R157b, décision de l'auteur).
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).

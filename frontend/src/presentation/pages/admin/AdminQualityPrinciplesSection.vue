@@ -37,7 +37,7 @@ import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entiti
  * Moitié de `AdminQualityPage`, sur le modèle des sections d'« À propos ».
  *
  * **La langue est un champ de formulaire, pas un état de page**
- * (`principleForm.locale`) : c'est la langue de l'entrée en cours d'édition ou
+ * (`form.locale`) : c'est la langue de l'entrée en cours d'édition ou
  * de création, et elle ne pilote rien d'autre que ce formulaire et son
  * assistant. « Modifier » sur une entrée d'une autre langue aligne celle du
  * formulaire (sans cela, l'enregistrement réécrirait l'entrée anglaise en
@@ -51,7 +51,7 @@ import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entiti
  * `isLocked` (un brouillon d'ordre modifié, ici ou dans l'autre section) et
  * annonce le sien par `orderDirtyChange`, la page faisant la somme et rendant
  * l'aide une seule fois (`lockedHintId`). Le refus de traduire lit **son**
- * brouillon (`isPrincipleOrderDirty`) tout de suite et celui de l'autre section
+ * brouillon (`isOrderDirty`) tout de suite et celui de l'autre section
  * par `isLocked`, à jour après le rendu de la page : voir la limite dans
  * `AdminQualityPage`.
  */
@@ -63,15 +63,15 @@ const { t } = useI18n()
 
 const {
   principles,
-  isLoading: isLoadingPrinciples,
-  hasError: hasPrinciplesError,
-  isLoaded: isPrinciplesLoaded,
-  errorMessage: principleErrorMessage,
-  load: loadPrinciples,
-  create: createPrinciple,
-  update: updatePrinciple,
-  remove: removePrinciple,
-  reorder: reorderPrinciples,
+  isLoading,
+  hasError,
+  isLoaded,
+  errorMessage,
+  load,
+  create,
+  update,
+  remove,
+  reorder,
 } = useAdminQualityPrinciples()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
@@ -90,7 +90,7 @@ interface PrincipleForm {
   iconKey: string
 }
 
-const principleForm = reactive<PrincipleForm>({
+const form = reactive<PrincipleForm>({
   locale: SUPPORTED_LOCALES[0],
   translationGroup: '',
   title: '',
@@ -98,8 +98,8 @@ const principleForm = reactive<PrincipleForm>({
   iconKey: '',
 })
 
-const editingPrincipleId = ref<string | null>(null)
-const isSubmittingPrinciple = ref(false)
+const editingId = ref<string | null>(null)
+const isSubmitting = ref(false)
 
 /**
  * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
@@ -109,16 +109,16 @@ const isSubmittingPrinciple = ref(false)
  * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
  * aucune traduction et que le sélecteur affichait donc « aucune ».
  */
-const principleSourceGroup = ref<string | null>(null)
+const sourceGroup = ref<string | null>(null)
 
 /** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const principleProposalSourceLocale = ref<Locale | null>(null)
+const proposalSourceLocale = ref<Locale | null>(null)
 
-const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
-const principleLock = useEntryFormLock({
+const isEditing = computed(() => null !== editingId.value)
+const lock = useEntryFormLock({
   hintId: 'admin-quality-principle-entry-lock-help',
-  isEditing: isEditingPrinciple,
-  proposalSourceLocale: principleProposalSourceLocale,
+  isEditing,
+  proposalSourceLocale,
   localeHelpId: 'admin-quality-principle-locale-help',
 })
 
@@ -127,75 +127,75 @@ const principleLock = useEntryFormLock({
  * attente et son message d'erreur.
  */
 const {
-  isTranslating: isTranslatingPrinciple,
-  isExpiredCallPending: isExpiredCallPendingPrinciple,
-  isRefused: isPrincipleTranslationRefused,
-  translationErrorText: principleTranslationErrorText,
-  proposeFrom: proposePrincipleFrom,
-  removeEntry: removePrincipleEntry,
-  renewForm: renewPrincipleForm,
-  proseReadonlyHintId: principleProseReadonlyHintId,
-  translationHintId: principleTranslationHintId,
-  proseFieldAttrs: principleProseFieldAttrs,
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-quality-principle',
-  form: () => principleForm,
+  form: () => form,
   proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
   // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui de l'autre section qu'après l'`emit`
   // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
   isRefused: () =>
-    isSubmittingPrinciple.value || isPrincipleOrderDirty.value || props.isLocked || principleLock.isProposalLocked,
+    isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
-    entry: editingPrincipleId.value,
-    locale: principleForm.locale,
-    group: principleSourceGroup.value,
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
   }),
 })
 
-const principleErrorText = computed(() => {
-  const reason = principleErrorMessage.value?.reason
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
 })
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
-const principleRows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))
+const rows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))
 
 const {
-  draft: principleOrderDraft,
-  isDirty: isPrincipleOrderDirty,
-  isSaving: isSavingPrincipleOrder,
-  errorReason: principleOrderErrorReason,
-  move: movePrincipleInDraft,
-  reset: resetPrincipleOrder,
-  save: savePrincipleOrder,
+  draft: orderDraft,
+  isDirty: isOrderDirty,
+  isSaving: isOrderSaving,
+  errorReason: orderErrorReason,
+  move: moveInDraft,
+  reset: resetOrder,
+  save: saveOrder,
 } = useOrderDraft({
-  serverKeys: () => principleRows.value.map((row) => row.key),
-  reorder: reorderPrinciples,
-  reload: loadPrinciples,
+  serverKeys: () => rows.value.map((row) => row.key),
+  reorder,
+  reload: load,
 })
 
 // L'ordre modifié de cette section est annoncé à la page, qui verrouille toutes les mutations ; `immediate` pour que
 // l'état initial (à jour) soit posé sans attendre un premier déplacement.
-watch(isPrincipleOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
+watch(isOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
 
 const {
-  draggingIndex: draggingPrincipleIndex,
-  onDragStart: onPrincipleDragStart,
-  onDragOver: onPrincipleDragOver,
-  onDrop: onPrincipleDrop,
-  onDragEnd: onPrincipleDragEnd,
-} = useRowDragAndDrop(movePrincipleInDraft)
+  draggingIndex,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+} = useRowDragAndDrop(moveInDraft)
 
 const {
-  registerHandleCell: registerPrincipleHandleCell,
-  moveRow: movePrincipleRow,
-  lastMove: principleLastMove,
-} = useOrderHandleFocus(movePrincipleInDraft, () => orderedPrincipleRows.value.length)
+  registerHandleCell,
+  moveRow,
+  lastMove,
+} = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
-const orderedPrincipleRows = computed(() => orderRowsByDraft(principleRows.value, principleOrderDraft.value))
+const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.
@@ -203,27 +203,27 @@ const orderedPrincipleRows = computed(() => orderRowsByDraft(principleRows.value
  * exacte). L'option « aucune » est préfixée ici, son libellé étant un texte
  * traduit — le module partagé reste framework-free.
  */
-const principleTranslationOptions = computed(() => [
+const translationOptions = computed(() => [
   { value: '', label: t('admin.quality.translationOfNone') },
   ...translationGroupOptions(
     principles.value,
-    principleForm.locale,
-    principleForm.translationGroup,
-    editingPrincipleId.value,
+    form.locale,
+    form.translationGroup,
+    editingId.value,
     (principle) => `${principle.locale.toUpperCase()} · ${principle.title}`,
   ),
 ])
 
-function resetPrincipleForm(): void {
-  renewPrincipleForm()
-  editingPrincipleId.value = null
-  principleProposalSourceLocale.value = null
-  principleSourceGroup.value = null
-  principleForm.locale = SUPPORTED_LOCALES[0]
-  principleForm.translationGroup = ''
-  principleForm.title = ''
-  principleForm.description = ''
-  principleForm.iconKey = ''
+function resetForm(): void {
+  renewForm()
+  editingId.value = null
+  proposalSourceLocale.value = null
+  sourceGroup.value = null
+  form.locale = SUPPORTED_LOCALES[0]
+  form.translationGroup = ''
+  form.title = ''
+  form.description = ''
+  form.iconKey = ''
 }
 
 // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
@@ -231,16 +231,16 @@ function resetPrincipleForm(): void {
 // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
-function startEditPrinciple(principle: AdminQualityPrinciple): void {
-  renewPrincipleForm()
-  editingPrincipleId.value = principle.id
-  principleProposalSourceLocale.value = null
-  principleSourceGroup.value = principle.translationGroup
-  principleForm.locale = principle.locale
-  principleForm.translationGroup = hasSibling(principles.value, principle) ? principle.translationGroup : ''
-  principleForm.title = principle.title
-  principleForm.description = principle.description
-  principleForm.iconKey = principle.iconKey
+function startEdit(principle: AdminQualityPrinciple): void {
+  renewForm()
+  editingId.value = principle.id
+  proposalSourceLocale.value = null
+  sourceGroup.value = principle.translationGroup
+  form.locale = principle.locale
+  form.translationGroup = hasSibling(principles.value, principle) ? principle.translationGroup : ''
+  form.title = principle.title
+  form.description = principle.description
+  form.iconKey = principle.iconKey
 }
 
 /**
@@ -249,42 +249,42 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
  * existante (cf. QUALITY_PRINCIPLE_PROSE_FIELDS par complément) et la prose reste vide :
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
-function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
-  renewPrincipleForm()
+function startCreateVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
-  editingPrincipleId.value = null
-  principleProposalSourceLocale.value = null
-  principleSourceGroup.value = row.key
-  principleForm.locale = locale
-  principleForm.translationGroup = row.key
-  principleForm.iconKey = existing?.iconKey ?? ''
-  principleForm.title = ''
-  principleForm.description = ''
+  editingId.value = null
+  proposalSourceLocale.value = null
+  sourceGroup.value = row.key
+  form.locale = locale
+  form.translationGroup = row.key
+  form.iconKey = existing?.iconKey ?? ''
+  form.title = ''
+  form.description = ''
 }
 
-async function handleSubmitPrinciple(): Promise<void> {
-  isSubmittingPrinciple.value = true
+async function handleSubmit(): Promise<void> {
+  isSubmitting.value = true
 
   const input = {
-    locale: principleForm.locale,
+    locale: form.locale,
     // D3 : aucun `position` n'est jamais envoyé. `null` = contenu neuf à la
     // création, détachement sur une mise à jour.
-    translationGroup: '' === principleForm.translationGroup ? null : principleForm.translationGroup,
-    title: principleForm.title,
-    description: principleForm.description,
-    iconKey: principleForm.iconKey,
+    translationGroup: '' === form.translationGroup ? null : form.translationGroup,
+    title: form.title,
+    description: form.description,
+    iconKey: form.iconKey,
   }
 
   const succeeded =
-    null !== editingPrincipleId.value
-      ? await updatePrinciple(editingPrincipleId.value, input)
-      : await createPrinciple(input)
+    null !== editingId.value
+      ? await update(editingId.value, input)
+      : await create(input)
 
-  isSubmittingPrinciple.value = false
+  isSubmitting.value = false
 
   if (succeeded) {
-    resetPrincipleForm()
+    resetForm()
   }
 }
 
@@ -292,41 +292,41 @@ async function handleSubmitPrinciple(): Promise<void> {
  * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
  * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
  */
-async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
-  await proposePrincipleFrom(targetLocale, (sourceLocale) => {
-    editingPrincipleId.value = null
-    principleForm.locale = targetLocale
-    principleForm.translationGroup = principleSourceGroup.value ?? ''
-    principleProposalSourceLocale.value = sourceLocale
+async function handleTranslate(targetLocale: Locale): Promise<void> {
+  await proposeFrom(targetLocale, (sourceLocale) => {
+    editingId.value = null
+    form.locale = targetLocale
+    form.translationGroup = sourceGroup.value ?? ''
+    proposalSourceLocale.value = sourceLocale
   })
 }
 
-async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
+async function handleDelete(principle: AdminQualityPrinciple): Promise<void> {
   if (!window.confirm(t('admin.quality.principle.confirmDelete', { title: principle.title }))) {
     return
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  await removePrincipleEntry(principle, () => removePrinciple(principle.id))
+  await removeEntry(principle, () => remove(principle.id))
 }
 </script>
 
 <template>
   <div class="surface-panel p-3 p-sm-4">
     <h2 class="h6 fw-bold text-white mb-3">
-      {{ isEditingPrinciple ? t('admin.quality.principle.edit') : t('admin.quality.principle.create') }}
+      {{ isEditing ? t('admin.quality.principle.edit') : t('admin.quality.principle.create') }}
     </h2>
 
     <form
       novalidate
-      @submit.prevent="handleSubmitPrinciple"
+      @submit.prevent="handleSubmit"
     >
       <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
         id="admin-quality-principle-locale"
-        v-model="principleForm.locale"
-        :disabled="principleLock.isEntryLocked"
-        :aria-describedby="principleLock.localeDescribedBy"
+        v-model="form.locale"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.localeDescribedBy"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -337,34 +337,34 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
         {{ t('admin.quality.localeHelp') }}
       </p>
       <EntryFormLockHint
-        :id="principleLock.hintId"
-        :state="principleLock.state"
+        :id="lock.hintId"
+        :state="lock.state"
       />
       <BaseSelect
         id="admin-quality-principle-translation-group"
-        v-model="principleForm.translationGroup"
-        :disabled="principleLock.isProposalLocked"
-        :aria-describedby="principleLock.proposalDescribedBy"
+        v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.quality.translationOfLabel')"
-        :options="principleTranslationOptions"
+        :options="translationOptions"
       />
       <BaseTextInput
         id="admin-quality-principle-title"
-        v-model="principleForm.title"
-        v-bind="principleProseFieldAttrs()"
+        v-model="form.title"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.quality.principle.titleLabel')"
         required
       />
       <BaseTextarea
         id="admin-quality-principle-description"
-        v-model="principleForm.description"
-        v-bind="principleProseFieldAttrs()"
+        v-model="form.description"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.quality.principle.descriptionLabel')"
         required
       />
       <BaseTextInput
         id="admin-quality-principle-icon-key"
-        v-model="principleForm.iconKey"
+        v-model="form.iconKey"
         :label="t('admin.quality.principle.iconKeyLabel')"
         required
       />
@@ -376,59 +376,59 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
       -->
       <div class="mb-3">
         <TranslateEntryButton
-          :form-locale="principleForm.locale"
-          :is-translating="isTranslatingPrinciple"
-          :is-expired-call-pending="isExpiredCallPendingPrinciple"
-          :hint-id="principleTranslationHintId"
-          :disabled="isPrincipleTranslationRefused"
-          :aria-describedby="describedBy(lockedHintId, principleLock.proposalDescribedBy)"
-          @translate="handleTranslatePrinciple"
+          :form-locale="form.locale"
+          :is-translating="isTranslating"
+          :is-expired-call-pending="isExpiredCallPending"
+          :hint-id="translationHintId"
+          :disabled="isTranslationRefused"
+          :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
+          @translate="handleTranslate"
         />
       </div>
 
       <TranslationReadonlyHint
-        :id="principleProseReadonlyHintId"
-        :shown="isTranslatingPrinciple"
+        :id="proseReadonlyHintId"
+        :shown="isTranslating"
       />
 
       <p
-        v-if="principleProposalSourceLocale"
+        v-if="proposalSourceLocale"
         class="alert alert-info small"
         role="status"
       >
-        {{ t('admin.translation.proposalNotice', { locale: principleProposalSourceLocale.toUpperCase() }) }}
+        {{ t('admin.translation.proposalNotice', { locale: proposalSourceLocale.toUpperCase() }) }}
       </p>
 
       <p
-        v-if="principleTranslationErrorText"
+        v-if="translationErrorText"
         class="text-danger-emphasis small"
         role="alert"
       >
-        {{ principleTranslationErrorText }}
+        {{ translationErrorText }}
       </p>
 
       <p
-        v-if="principleErrorText"
+        v-if="errorText"
         class="text-danger-emphasis small"
         role="alert"
       >
-        {{ principleErrorText }}
+        {{ errorText }}
       </p>
 
       <div class="d-flex gap-2">
         <button
           type="submit"
           class="btn btn-gradient"
-          :disabled="isSubmittingPrinciple || isLocked"
+          :disabled="isSubmitting || isLocked"
           :aria-describedby="lockedHintId"
         >
           {{ t('admin.quality.save') }}
         </button>
         <button
-          v-if="principleLock.isEntryLocked"
+          v-if="lock.isEntryLocked"
           type="button"
           class="btn btn-outline-light"
-          @click="resetPrincipleForm"
+          @click="resetForm"
         >
           {{ t('admin.quality.cancel') }}
         </button>
@@ -442,26 +442,26 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
     </h3>
 
     <p
-      v-if="isLoadingPrinciples"
+      v-if="isLoading"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.quality.loading') }}
     </p>
     <p
-      v-else-if="hasPrinciplesError"
+      v-else-if="hasError"
       class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('admin.quality.loadError') }}
     </p>
     <p
-      v-else-if="!isPrinciplesLoaded"
+      v-else-if="!isLoaded"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.notLoaded') }}
     </p>
     <p
-      v-else-if="0 === orderedPrincipleRows.length"
+      v-else-if="0 === orderedRows.length"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.quality.principle.empty') }}
@@ -469,12 +469,12 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
     <template v-else>
       <OrderToolbar
         class="mb-3"
-        :is-dirty="isPrincipleOrderDirty"
-        :is-saving="isSavingPrincipleOrder"
-        :error-reason="principleOrderErrorReason"
-        :last-move="principleLastMove"
-        @save="savePrincipleOrder"
-        @cancel="resetPrincipleOrder"
+        :is-dirty="isOrderDirty"
+        :is-saving="isOrderSaving"
+        :error-reason="orderErrorReason"
+        :last-move="lastMove"
+        @save="saveOrder"
+        @cancel="resetOrder"
       />
 
       <div class="table-responsive">
@@ -506,24 +506,24 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
           </thead>
           <tbody>
             <tr
-              v-for="(row, index) in orderedPrincipleRows"
+              v-for="(row, index) in orderedRows"
               :key="row.key"
               draggable="true"
-              :class="{ 'opacity-50': index === draggingPrincipleIndex }"
-              @dragstart="onPrincipleDragStart(index)"
-              @dragover="onPrincipleDragOver"
-              @drop="onPrincipleDrop(index)"
-              @dragend="onPrincipleDragEnd"
+              :class="{ 'opacity-50': index === draggingIndex }"
+              @dragstart="onDragStart(index)"
+              @dragover="onDragOver"
+              @drop="onDrop(index)"
+              @dragend="onDragEnd"
             >
               <td
-                :ref="registerPrincipleHandleCell"
+                :ref="registerHandleCell"
                 :data-order-key="row.key"
               >
                 <OrderHandle
                   :index="index"
-                  :count="orderedPrincipleRows.length"
+                  :count="orderedRows.length"
                   :label="firstEntry(row, SUPPORTED_LOCALES)?.title ?? ''"
-                  @move="(from, to) => movePrincipleRow(row.key, from, to)"
+                  @move="(from, to) => moveRow(row.key, from, to)"
                 />
               </td>
               <td>
@@ -562,7 +562,7 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
                       class="btn btn-sm btn-outline-light"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="startEditPrinciple(line.entry)"
+                      @click="startEdit(line.entry)"
                     >
                       {{ t('admin.quality.principle.editAction') }}
                     </button>
@@ -571,7 +571,7 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
                       class="btn btn-sm btn-outline-danger"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="handleDeletePrinciple(line.entry)"
+                      @click="handleDelete(line.entry)"
                     >
                       {{ t('admin.quality.delete') }}
                     </button>
@@ -582,7 +582,7 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
                       class="btn btn-sm btn-outline-light"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="startCreatePrincipleVersion(row, line.locale)"
+                      @click="startCreateVersion(row, line.locale)"
                     >
                       {{ t('admin.order.createVersion', { locale: line.locale.toUpperCase() }) }}
                     </button>

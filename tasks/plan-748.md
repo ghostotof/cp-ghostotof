@@ -11170,6 +11170,15 @@ seule. **Fait** :
   "button\[aria-busy\]\|'Enregistrer'\|'Supprimer'\|'Proposer la version" frontend/tests/support/entryFormLock.ts` : vide.
 - [ ] **Step 5 : commit** — `test(frontend): les specs de la traduction lisent leurs textes, disent leurs préconditions et tiennent en fonctions courtes (#748)`.
 
+**Ajout décidé par l'auteur (2026-11-01).** Les deux sections de Qualité (`AdminQualityPrinciplesSection.vue`,
+`AdminQualityTraitsSection.vue`) gardaient l'alias préfixé `translationErrorText: principleTranslationErrorText` /
+`traitTranslationErrorText` et tous leurs autres noms préfixés (`isTranslatingPrinciple`, `proposePrincipleFrom`,
+`renewPrincipleForm`, `principleForm`…), hérités de la page qui portait les deux formulaires. Depuis R155 chaque section n'a
+qu'un formulaire : l'alias et ces préfixes sont retirés (noms nus, comme les autres formulaires), sans changer ids, textes ni
+comportement ; la décision D4 (« l'alias disparaît des neuf sites ») s'applique à la lettre. Refactoring pur : suite verte
+avant et après, `AdminQualityPage.spec.ts` inchangé ; une mutation qui prouve que la section est gardée (le verrou ou
+`translationErrorText`) est vue rouge. Fait dans le commit de R175.
+
 ---
 
 ### Task R176 : Deux textes affichés justes (Q14 : Sp14-5 ; St14-18)

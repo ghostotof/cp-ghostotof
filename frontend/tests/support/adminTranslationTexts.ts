@@ -17,3 +17,6 @@ export const PROSE_READONLY_FR: string = fr.admin.translation.proseReadonly
 
 /** `admin.translation.errors.unavailable` : le message d'une traduction en échec (503), tel que le formulaire le rend. */
 export const TRANSLATION_UNAVAILABLE_FR: string = fr.admin.translation.errors.unavailable
+
+/** `admin.translation.inProgress` : le libellé du bouton de traduction tant que l'appel est en vol, à la place de « Proposer… ». */
+export const TRANSLATION_IN_PROGRESS_FR: string = fr.admin.translation.inProgress

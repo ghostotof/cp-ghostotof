@@ -5,8 +5,18 @@ import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { proseFieldId } from './proseFieldId'
-import { EXPIRED_CALL_PENDING_FR, PROSE_READONLY_FR, TRANSLATION_UNAVAILABLE_FR } from './adminTranslationTexts'
-import { ENTRY_LOCK_EDITING_FR, ENTRY_LOCK_PROPOSAL_FR } from './entryFormLockTexts'
+import {
+  EXPIRED_CALL_PENDING_FR,
+  PROSE_READONLY_FR,
+  TRANSLATION_IN_PROGRESS_FR,
+  TRANSLATION_UNAVAILABLE_FR,
+} from './adminTranslationTexts'
+import {
+  ENTRY_FORM_CANCEL_LABELS_FR,
+  ENTRY_LOCK_EDITING_FR,
+  ENTRY_LOCK_PROPOSAL_FR,
+  PROPOSE_VERSION_PREFIX_FR,
+} from './entryFormLockTexts'
 import { AdminTranslationError } from '../../src/domain/admin/translation/errors/AdminTranslationError'
 
 /**
@@ -40,23 +50,29 @@ export function textsDescribing(wrapper: VueWrapper, element: Pick<DOMWrapper<El
 
 /**
  * Le « Annuler » du formulaire d'un contenu (le `form`-ième de la page) : la barre d'ordre du tableau porte le
- * sien, qu'on ne vise pas ici. Sans `form`, le premier « Annuler » de n'importe quel formulaire de la page.
+ * sien, qu'on ne vise pas ici. Sans `form`, le premier « Annuler » de n'importe quel formulaire de la page. Son libellé est lu
+ * du catalogue (`ENTRY_FORM_CANCEL_LABELS_FR`), jamais écrit ici.
  */
 export function formCancelButton(wrapper: VueWrapper, form?: number): DOMWrapper<Element> | undefined {
   const buttons = undefined === form ? wrapper.findAll('form button') : wrapper.findAll('form')[form].findAll('button')
 
-  return buttons.find((candidate) => candidate.text() === 'Annuler')
+  return buttons.find((candidate) => ENTRY_FORM_CANCEL_LABELS_FR.includes(candidate.text()))
 }
 
 /**
- * Le bouton « Proposer la version XX » du `form`-ième formulaire de la page (le libellé dépend de la langue du
- * formulaire, d'où la recherche par préfixe).
+ * Le bouton de traduction du `form`-ième formulaire de la page, trouvé par son nom accessible : « Proposer la version XX »
+ * (le libellé dépend de la langue du formulaire, d'où la recherche par préfixe) ou, tant que l'appel est en vol,
+ * « Traduction en cours… ». Les deux textes sont lus du catalogue.
  */
 export function translateEntryButton(wrapper: VueWrapper, form: number): DOMWrapper<Element> {
   const button = wrapper
     .findAll('form')
     [form].findAll('button')
-    .find((candidate) => candidate.text().startsWith('Proposer la version'))
+    .find((candidate) => {
+      const name = candidate.text()
+
+      return name.startsWith(PROPOSE_VERSION_PREFIX_FR) || TRANSLATION_IN_PROGRESS_FR === name
+    })
   if (undefined === button) {
     throw new Error('Bouton de traduction introuvable.')
   }
@@ -105,18 +121,24 @@ export interface EntryFormLockCase {
   readonly permanentHelp?: string
   /** Rang, dans la page (`findAll('table')`), du tableau dont `moveFirstRowDown` modifie l'ordre ; 0 par défaut. */
   readonly orderTable?: number
-  /** Ouvre une entrée existante en édition. */
+  /**
+   * Ouvre une entrée existante en édition. **Contrat** : c'est l'entrée source de la ligne que `startCreateVersion` ouvre en
+   * création, celle que `deleteEditedEntry` supprime ; le cas « source d'une création rattachée » le vérifie avant de supprimer.
+   */
   readonly startEdit: (wrapper: VueWrapper) => Promise<void>
   /** Ouvre en édition une autre entrée que celle de `startEdit` : ce qui remplace le formulaire par celui d'une autre. */
   readonly startEditOther: (wrapper: VueWrapper) => Promise<void>
-  /** « Créer la version XX » d'une ligne du tableau : ouvre une création rattachée, prose vide. */
+  /**
+   * « Créer la version XX » de la ligne dont l'entrée est celle de `startEdit` : ouvre une création rattachée au groupe de cette
+   * ligne, prose vide.
+   */
   readonly startCreateVersion: (wrapper: VueWrapper) => Promise<void>
   /** Depuis l'entrée en édition, demande la proposition de traduction et attend qu'elle s'affiche. */
   readonly propose: (wrapper: VueWrapper) => Promise<void>
   /**
    * Supprime l'entrée en édition depuis le tableau (son bouton « Supprimer »). Le `window.confirm` de la page est simulé à
    * `true` par le support, qui le rétablit ensuite. C'est aussi l'entrée source de la ligne que `startCreateVersion` ouvre en
-   * création rattachée : le support la supprime pour ce cas, sans second geste à écrire.
+   * création rattachée (contrat de `startEdit`) : le support la supprime pour ce cas, sans second geste à écrire.
    */
   readonly deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>
   /**
@@ -131,8 +153,60 @@ export interface EntryFormLockCase {
   readonly holdNextSave: () => void
 }
 
+/** Le dépôt de traduction d'un cas et la page montée avec lui. */
+interface MountedCase {
+  readonly translation: AdminTranslationRepository
+  readonly wrapper: VueWrapper
+}
+
 /** Les outils que partagent les familles de cas d'un même formulaire : un seul chemin vers chaque élément et chaque geste. */
-function lockToolkit(lockCase: EntryFormLockCase) {
+interface LockToolkit {
+  readonly ids: EntryFormLockCase['ids']
+  /** Les identifiants (sans `#`) des champs de prose, dérivés de la liste de la page. */
+  readonly proseIds: readonly string[]
+  /** Les sélecteurs CSS de la langue et du groupe de traduction. */
+  readonly locale: string
+  readonly group: string
+  /** Le préfixe des noms de test, vide pour une page à un seul formulaire. */
+  readonly prefix: string
+  /** L'aide permanente de la langue, en liste (vide quand le formulaire n'en a pas). */
+  readonly permanent: readonly string[]
+  headingOf(wrapper: VueWrapper): string
+  formOf(wrapper: VueWrapper): DOMWrapper<HTMLFormElement>
+  titleValue(wrapper: VueWrapper): string
+  localeValue(wrapper: VueWrapper): string
+  fieldValue(wrapper: VueWrapper, id: string): string
+  typeTitle(wrapper: VueWrapper, value: string): Promise<void>
+  /** L'avis de proposition que porte le formulaire et son alerte d'erreur. */
+  proposalNotice(wrapper: VueWrapper): DOMWrapper<Element>
+  errorAlert(wrapper: VueWrapper): DOMWrapper<Element>
+  /** Le composant du bouton de traduction (`translateEntryButton`, exporté plus haut, est le bouton DOM). */
+  translateButtonComponent(wrapper: VueWrapper): VueWrapper
+  /** Un « translate » émis par programme, comme le ferait le bouton, puis les promesses réglées. */
+  emitTranslate(wrapper: VueWrapper, target: string | undefined): Promise<void>
+  /** Un « Annuler » cliqué dans le formulaire, puis les promesses réglées. */
+  cancelForm(wrapper: VueWrapper): Promise<void>
+  /** Le formulaire du cas et un dépôt de traduction neuf, monté ; `mountEdited` y ouvre en plus l'entrée de `startEdit`. */
+  mountCase(): Promise<MountedCase>
+  mountEdited(): Promise<MountedCase>
+  /** Le titre de l'entrée que `startEdit` ouvre, lu sur une page montée à part. */
+  titleOfEditedEntry(): Promise<string>
+  /**
+   * Précondition du cas « source d'une création rattachée » : la page est une création (le titre du formulaire vierge) dont le
+   * sélecteur « Version de » est sur le groupe de l'entrée de titre `sourceTitle`.
+   */
+  expectCreationAttachedTo(wrapper: VueWrapper, sourceTitle: string): void
+  /** Une langue autre que celle du formulaire : la cible d'une traduction. */
+  otherLocale(formLocale: string): string | undefined
+  /** Chaque champ de prose du formulaire est vide. */
+  expectProseEmpty(wrapper: VueWrapper): void
+  /** Rend la prochaine traduction en échec, par une erreur du service. */
+  failNextTranslation(translation: AdminTranslationRepository): void
+  /** Exécute un geste de suppression avec un `window.confirm` simulé à `true`, rétabli ensuite. */
+  confirmingDelete(gesture: () => Promise<void>): Promise<void>
+}
+
+function lockToolkit(lockCase: EntryFormLockCase): LockToolkit {
   const { ids, form } = lockCase
   // Le préfixe des identifiants du formulaire, tiré de celui de sa langue ; l'ordre inverse (un préfixe puis `-locale`) serait
   // une seconde source du même fait.
@@ -143,6 +217,7 @@ function lockToolkit(lockCase: EntryFormLockCase) {
   // Les identifiants des champs de prose, dérivés de la liste de la page : ceux que la traduction envoie et remplace.
   const proseIds = lockCase.proseFields.map((field) => proseFieldId(formPrefix, field))
   const formOf = (wrapper: VueWrapper) => wrapper.findAll('form')[form]
+  const headingOf = (wrapper: VueWrapper): string => wrapper.findAll('h2')[form].text()
   // La valeur d'un champ du formulaire, par son identifiant (sans `#`).
   const fieldValue = (wrapper: VueWrapper, id: string): string =>
     (wrapper.get(`#${id}`).element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value
@@ -155,54 +230,60 @@ function lockToolkit(lockCase: EntryFormLockCase) {
     group: `#${ids.group}`,
     prefix: '' === lockCase.name ? '' : `${lockCase.name} : `,
     permanent: undefined === lockCase.permanentHelp ? [] : [lockCase.permanentHelp],
-    headingOf: (wrapper: VueWrapper): string => wrapper.findAll('h2')[form].text(),
+    headingOf,
     formOf,
     titleValue: (wrapper: VueWrapper): string => fieldValue(wrapper, ids.title),
     localeValue: (wrapper: VueWrapper): string => fieldValue(wrapper, ids.locale),
     fieldValue,
     typeTitle: (wrapper: VueWrapper, value: string) => wrapper.get(`#${ids.title}`).setValue(value),
-    // L'avis de proposition que porte le formulaire, son alerte d'erreur et le composant de son bouton de traduction
-    // (`translateEntryButton`, exporté plus haut, est le bouton DOM).
     proposalNotice: (wrapper: VueWrapper) => formOf(wrapper).find('[role="status"]'),
     errorAlert: (wrapper: VueWrapper) => formOf(wrapper).find('[role="alert"]'),
     translateButtonComponent,
-    /** Un « translate » émis par programme, comme le ferait le bouton, puis les promesses réglées. */
     async emitTranslate(wrapper: VueWrapper, target: string | undefined): Promise<void> {
       translateButtonComponent(wrapper).vm.$emit('translate', target)
       await flushPromises()
     },
-    /** Un « Annuler » cliqué dans le formulaire, puis les promesses réglées. */
     async cancelForm(wrapper: VueWrapper): Promise<void> {
       await formCancelButton(wrapper, form)?.trigger('click')
       await flushPromises()
     },
-    /** Le formulaire du cas et un dépôt de traduction neuf, monté. */
-    async mountCase(): Promise<{ translation: AdminTranslationRepository; wrapper: VueWrapper }> {
+    async mountCase(): Promise<MountedCase> {
       const translation = lockCase.createTranslation()
 
       return { translation, wrapper: await lockCase.mount(translation) }
     },
-    /** Comme `mountCase`, l'entrée du cas ouverte en édition. */
-    async mountEdited(): Promise<{ translation: AdminTranslationRepository; wrapper: VueWrapper }> {
+    async mountEdited(): Promise<MountedCase> {
       const translation = lockCase.createTranslation()
       const wrapper = await lockCase.mount(translation)
       await lockCase.startEdit(wrapper)
 
       return { translation, wrapper }
     },
-    /** Une langue autre que celle du formulaire : la cible d'une traduction. */
+    async titleOfEditedEntry(): Promise<string> {
+      const probe = await lockCase.mount(lockCase.createTranslation())
+      await lockCase.startEdit(probe)
+
+      return fieldValue(probe, ids.title)
+    },
+    expectCreationAttachedTo(wrapper: VueWrapper, sourceTitle: string): void {
+      expect(sourceTitle, "le titre de l'entrée de `startEdit`").not.toBe('')
+      expect(headingOf(wrapper), 'le formulaire est une création').toBe(lockCase.heading)
+      const group = wrapper.get(`#${ids.group}`).element as HTMLSelectElement
+      expect(group.value, 'la création est rattachée à un groupe').not.toBe('')
+      // Les options de « Version de » portent le titre de l'entrée du groupe : la création est celle de la ligne de cette entrée.
+      expect(group.selectedOptions[0]?.text, "la ligne de `startCreateVersion` est celle de l'entrée de `startEdit`").toContain(
+        sourceTitle,
+      )
+    },
     otherLocale: (formLocale: string) => SUPPORTED_LOCALES.find((candidate) => candidate !== formLocale),
-    /** Chaque champ de prose du formulaire est vide. */
     expectProseEmpty(wrapper: VueWrapper): void {
       for (const id of proseIds) {
         expect(fieldValue(wrapper, id), `#${id}`).toBe('')
       }
     },
-    /** Rend la prochaine traduction en échec, par une erreur du service. */
     failNextTranslation(translation: AdminTranslationRepository): void {
       vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
     },
-    /** Exécute un geste de suppression avec un `window.confirm` simulé à `true`, rétabli ensuite. */
     async confirmingDelete(gesture: () => Promise<void>): Promise<void> {
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
       try {
@@ -214,8 +295,6 @@ function lockToolkit(lockCase: EntryFormLockCase) {
     },
   }
 }
-
-type LockToolkit = ReturnType<typeof lockToolkit>
 
 /**
  * Déclare, dans le `describe` appelant, les cas du verrou d'un formulaire par entrée, en cinq familles :
@@ -457,11 +536,20 @@ function describeRefusals(lockCase: EntryFormLockCase, kit: LockToolkit): void {
 
 /**
  * La péremption : chaque geste qui change le formulaire, ou supprime ce que la traduction suppose, en périme la réponse ;
- * ce qui ne le change pas (la suppression de l'autre langue) la laisse se poser.
+ * ce qui ne le change pas (la suppression de l'autre langue) la laisse se poser. Une famille de gestes par fonction.
  */
 function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  describeExpiryByCancel(lockCase, kit)
+  describeExpiryByAnotherForm(lockCase, kit)
+  describeExpiryByRepeatedGesture(lockCase, kit)
+  describeExpiryByDeletion(lockCase, kit)
+  describeExpiryByFormChange(lockCase, kit)
+}
+
+/** « Annuler » : la réponse qui arrive ne remplit rien, et l'appel parti refuse le suivant jusqu'à sa réponse. */
+function describeExpiryByCancel(lockCase: EntryFormLockCase, kit: LockToolkit): void {
   const { form } = lockCase
-  const { locale, prefix } = kit
+  const { prefix } = kit
 
   it(`${prefix}« Annuler » pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
     const { translation, wrapper } = await kit.mountEdited()
@@ -497,6 +585,12 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
 
+}
+
+/** Un geste qui remplace le formulaire par celui d'une autre entrée, ou par une création : la réponse n'y pose rien. */
+function describeExpiryByAnotherForm(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { prefix } = kit
+
   // Chaque geste qui remplace le contenu du formulaire périme la traduction en vol : sa réponse n'y pose ni prose ni avis.
   it(`${prefix}« Modifier » une autre entrée pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
     const { translation, wrapper } = await kit.mountEdited()
@@ -523,6 +617,12 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     expect(kit.titleValue(wrapper)).toBe('')
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
+
+}
+
+/** Le même geste refait sur la même ligne ou la même entrée : l'identité est inchangée, la génération du formulaire avance. */
+function describeExpiryByRepeatedGesture(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { prefix } = kit
 
   // Un geste qui remplit ou vide le formulaire sans changer son identité (même ligne, même langue, même entrée) avance quand même sa
   // génération : recliquer « Créer la version XX » ou « Modifier » vide ou recharge la prose, et la réponse partie avant ne s'y pose pas.
@@ -562,6 +662,12 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
 
+}
+
+/** Une suppression : ce que l'identité du formulaire ne voit pas, que `removeEntry` juge ; l'autre langue ne périme rien. */
+function describeExpiryByDeletion(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { prefix } = kit
+
   // Ce que l'identité du formulaire ne voit pas : supprimer l'entrée éditée ne change rien au formulaire, `removeEntry` de
   // `useTranslatedForm` périme la traduction. Changer la langue d'une création change l'identité : le composable la périme seul.
   it(`${prefix}supprimer l'entrée en édition pendant une traduction : la réponse ne pose rien`, async () => {
@@ -581,8 +687,10 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
   // proposition serait posée sur un groupe sans membre, alors que son entrée source n'existe plus (R140). Cette source est
   // l'entrée que `startEdit` ouvre, celle de `deleteEditedEntry`.
   it(`${prefix}supprimer l'entrée source d'une création rattachée pendant une traduction : la réponse ne pose rien`, async () => {
+    const sourceTitle = await kit.titleOfEditedEntry()
     const { translation, wrapper } = await kit.mountCase()
     await lockCase.startCreateVersion(wrapper)
+    kit.expectCreationAttachedTo(wrapper, sourceTitle)
     await kit.typeTitle(wrapper, 'Titre saisi')
     const formLocale = kit.localeValue(wrapper)
     const reply = deferNextTranslation(translation)
@@ -614,6 +722,13 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     expect(kit.proposalNotice(wrapper).exists()).toBe(true)
   })
 
+}
+
+/** Un enregistrement ou un changement de langue du formulaire pendant la traduction : sa réponse ne pose rien. */
+function describeExpiryByFormChange(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { form } = lockCase
+  const { locale, prefix } = kit
+
   // Un formulaire vierge enregistré pendant une traduction : l'enregistrement le remet à zéro sans changer l'entrée, la langue ni
   // le groupe, et la réponse du modèle, arrivée après, ne doit rien poser sur ce formulaire vidé (la génération du formulaire).
   it(`${prefix}un formulaire vierge enregistré pendant une traduction : la réponse ne pose rien`, async () => {
@@ -623,7 +738,7 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
 
     await kit.emitTranslate(wrapper, 'en')
     // Pendant l'attente le bouton dit qu'il travaille ; l'enregistrement qui suit ne le libère pas (l'appel est en vol).
-    expect(kit.formOf(wrapper).get('button[aria-busy]').attributes('aria-busy')).toBe('true')
+    expect(translateEntryButton(wrapper, form).attributes('aria-busy')).toBe('true')
     await kit.formOf(wrapper).trigger('submit.prevent')
     await flushPromises()
     await reply.release()
@@ -635,7 +750,7 @@ function describeExpiry(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     expect(kit.headingOf(wrapper)).toBe(lockCase.heading)
     // Retour du bouton : plus occupé (`aria-busy="false"`, le composant ne retire pas l'attribut), inactif faute de prose,
     // actif dès qu'une prose est saisie — la réponse périmée ne le laisse pas bloqué.
-    expect(kit.formOf(wrapper).get('button[aria-busy]').attributes('aria-busy')).toBe('false')
+    expect(translateEntryButton(wrapper, form).attributes('aria-busy')).toBe('false')
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
     await kit.typeTitle(wrapper, 'Nouveau titre')
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeUndefined()

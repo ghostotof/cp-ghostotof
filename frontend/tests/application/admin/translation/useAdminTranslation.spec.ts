@@ -165,25 +165,40 @@ describe('useAdminTranslation', () => {
 
   // Le refus suit le prédicat de l'appelant dans les deux sens : la valeur exposée et `translate()` lisent la même source (#748,
   // R114, R137). Le prédicat est lu par un calculé, que seule une source réactive (une `ref`) fait relire.
-  it.each([
-    { name: 'vrai puis faux', initial: true },
-    { name: 'faux puis vrai', initial: false },
-  ])('isRefused $name : la valeur exposée et translate() lisent le prédicat de la page (#748, R114, R137)', async ({ initial }) => {
+  it('isRefused vrai puis faux : la valeur exposée et translate() suivent la source de la page (#748, R114, R137)', async () => {
     const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
-    const refused = ref(initial)
+    const refused = ref(true)
     const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
 
-    for (const isRefused of [initial, !initial]) {
-      refused.value = isRefused
-      expect(composable.isRefused.value).toBe(isRefused)
-      const proposal = await proposalOf(composable)
+    expect(composable.isRefused.value).toBe(true)
+    expect(await proposalOf(composable)).toBeNull()
+    expect(translate).not.toHaveBeenCalled()
 
-      expect(proposal).toEqual(isRefused ? null : PROPOSAL)
-      expect(composable.isTranslating.value).toBe(false)
-      expect(composable.errorReason.value).toBeNull()
-    }
-    // Une seule requête : celle de l'état non refusé.
+    refused.value = false
+
+    expect(composable.isRefused.value).toBe(false)
+    expect(await proposalOf(composable)).toEqual(PROPOSAL)
     expect(translate).toHaveBeenCalledTimes(1)
+    expect(composable.isTranslating.value).toBe(false)
+    expect(composable.errorReason.value).toBeNull()
+  })
+
+  it('isRefused faux puis vrai : la valeur exposée et translate() suivent la source de la page (#748, R114, R137)', async () => {
+    const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
+    const refused = ref(false)
+    const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
+
+    expect(composable.isRefused.value).toBe(false)
+    expect(await proposalOf(composable)).toEqual(PROPOSAL)
+    expect(translate).toHaveBeenCalledTimes(1)
+
+    refused.value = true
+
+    expect(composable.isRefused.value).toBe(true)
+    expect(await proposalOf(composable)).toBeNull()
+    expect(translate).toHaveBeenCalledTimes(1)
+    expect(composable.isTranslating.value).toBe(false)
+    expect(composable.errorReason.value).toBeNull()
   })
 
   it("isRefused est faux quand la page n'en dit rien (#748, R137)", () => {

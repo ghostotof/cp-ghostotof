@@ -1483,7 +1483,7 @@ describe('AdminAboutPage', () => {
     })
 
     // Un seul préfixe d'identifiants pour les réglages, celui de leurs textes d'aide (`admin-about-settings-…`) : les cartes
-    // gardent `admin-about-site-card-…` et `admin-about-me-card-…`, et l'ancien `admin-about-site-eyebrow` s'y confondait.
+    // gardent `admin-about-site-card-…` et `admin-about-me-card-…`, avec lesquels un `admin-about-site-eyebrow` se confondrait.
     it("réglages : chaque identifiant du panneau porte le même préfixe, celui des textes d'aide (#748, R157)", async () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
         translate: vi.fn(() => new Promise<TranslationProposal>(() => {})),
@@ -1865,9 +1865,10 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 
-    // Une proposition en attente (la page est passée à la cible, dont les réglages se lisent) ne survit pas à ce qui la
-    // rendrait posée sur un formulaire que la personne n'attendait plus : un retour à une autre langue, ou une lecture de
-    // la cible qui échoue (une erreur ordinaire, un refus 403). Au chargement suivant de la cible, rien n'est posé.
+    // Une proposition en attente (la page est passée à la cible, dont les réglages se lisent) est retirée quand la page va à
+    // une autre langue que sa cible : la personne n'attend plus cette traduction, et au chargement suivant de la cible rien
+    // n'est posé. Une lecture de la cible qui échoue (une erreur ordinaire, un refus 403) ne la retire pas (R157b) : la page
+    // n'a pas de « Réessayer », le changement de langue est le seul chemin vers un nouveau chargement, et c'est lui qui la retire.
     // Une lecture interrompue par une fin de session la garde : voir « une proposition en attente ne se pose pas sur un
     // formulaire non chargé, elle se pose au retour », ci-dessous.
     const SERVER_EN = { ...SETTINGS_EN, siteEyebrow: 'Server EN' }

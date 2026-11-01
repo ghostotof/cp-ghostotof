@@ -38,10 +38,10 @@ import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/A
  * « Créer la version XX »).
  *
  * Mêmes règles que les principes : la langue est un champ du formulaire
- * (`traitForm.locale`), l'assistant bascule **ce** formulaire vers la locale
+ * (`form.locale`), l'assistant bascule **ce** formulaire vers la locale
  * cible en gardant le groupe de la source (D9), et le verrou d'ordre (D6) est
  * global à la page : `isLocked` reçu, `orderDirtyChange` annoncé, et le refus de traduire lit
- * son propre brouillon (`isTraitOrderDirty`) tout de suite.
+ * son propre brouillon (`isOrderDirty`) tout de suite.
  */
 
 const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
@@ -51,15 +51,15 @@ const { t } = useI18n()
 
 const {
   traits,
-  isLoading: isLoadingTraits,
-  hasError: hasTraitsError,
-  isLoaded: isTraitsLoaded,
-  errorMessage: traitErrorMessage,
-  load: loadTraits,
-  create: createTrait,
-  update: updateTrait,
-  remove: removeTrait,
-  reorder: reorderTraits,
+  isLoading,
+  hasError,
+  isLoaded,
+  errorMessage,
+  load,
+  create,
+  update,
+  remove,
+  reorder,
 } = useAdminQualityTraits()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
@@ -70,22 +70,22 @@ interface TraitForm {
   label: string
 }
 
-const traitForm = reactive<TraitForm>({ locale: SUPPORTED_LOCALES[0], translationGroup: '', label: '' })
+const form = reactive<TraitForm>({ locale: SUPPORTED_LOCALES[0], translationGroup: '', label: '' })
 
-const editingTraitId = ref<string | null>(null)
-const isSubmittingTrait = ref(false)
+const editingId = ref<string | null>(null)
+const isSubmitting = ref(false)
 
 /** Groupe de l'entrée dont le formulaire est issu : voir `AdminQualityPrinciplesSection` (D9). */
-const traitSourceGroup = ref<string | null>(null)
+const sourceGroup = ref<string | null>(null)
 
 /** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const traitProposalSourceLocale = ref<Locale | null>(null)
+const proposalSourceLocale = ref<Locale | null>(null)
 
-const isEditingTrait = computed(() => null !== editingTraitId.value)
-const traitLock = useEntryFormLock({
+const isEditing = computed(() => null !== editingId.value)
+const lock = useEntryFormLock({
   hintId: 'admin-quality-trait-entry-lock-help',
-  isEditing: isEditingTrait,
-  proposalSourceLocale: traitProposalSourceLocale,
+  isEditing,
+  proposalSourceLocale,
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 
@@ -94,168 +94,168 @@ const traitLock = useEntryFormLock({
  * attente et son message d'erreur.
  */
 const {
-  isTranslating: isTranslatingTrait,
-  isExpiredCallPending: isExpiredCallPendingTrait,
-  isRefused: isTraitTranslationRefused,
-  translationErrorText: traitTranslationErrorText,
-  proposeFrom: proposeTraitFrom,
-  removeEntry: removeTraitEntry,
-  renewForm: renewTraitForm,
-  proseReadonlyHintId: traitProseReadonlyHintId,
-  translationHintId: traitTranslationHintId,
-  proseFieldAttrs: traitProseFieldAttrs,
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-quality-trait',
-  form: () => traitForm,
+  form: () => form,
   proseFields: QUALITY_TRAIT_PROSE_FIELDS,
   // Le brouillon d'ordre de cette section est lu tout de suite : voir `AdminQualityPrinciplesSection`.
-  isRefused: () => isSubmittingTrait.value || isTraitOrderDirty.value || props.isLocked || traitLock.isProposalLocked,
+  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
-    entry: editingTraitId.value,
-    locale: traitForm.locale,
-    group: traitSourceGroup.value,
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
   }),
 })
 
-const traitErrorText = computed(() => {
-  const reason = traitErrorMessage.value?.reason
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
 })
 
-const traitRows = computed(() => groupByTranslationGroup(traits.value, SUPPORTED_LOCALES))
+const rows = computed(() => groupByTranslationGroup(traits.value, SUPPORTED_LOCALES))
 
 const {
-  draft: traitOrderDraft,
-  isDirty: isTraitOrderDirty,
-  isSaving: isSavingTraitOrder,
-  errorReason: traitOrderErrorReason,
-  move: moveTraitInDraft,
-  reset: resetTraitOrder,
-  save: saveTraitOrder,
+  draft: orderDraft,
+  isDirty: isOrderDirty,
+  isSaving: isOrderSaving,
+  errorReason: orderErrorReason,
+  move: moveInDraft,
+  reset: resetOrder,
+  save: saveOrder,
 } = useOrderDraft({
-  serverKeys: () => traitRows.value.map((row) => row.key),
-  reorder: reorderTraits,
-  reload: loadTraits,
+  serverKeys: () => rows.value.map((row) => row.key),
+  reorder,
+  reload: load,
 })
 
 // L'ordre modifié de cette section est annoncé à la page, qui verrouille toutes les mutations ; `immediate` pour que
 // l'état initial (à jour) soit posé sans attendre un premier déplacement.
-watch(isTraitOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
+watch(isOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
 
 const {
-  draggingIndex: draggingTraitIndex,
-  onDragStart: onTraitDragStart,
-  onDragOver: onTraitDragOver,
-  onDrop: onTraitDrop,
-  onDragEnd: onTraitDragEnd,
-} = useRowDragAndDrop(moveTraitInDraft)
+  draggingIndex,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+} = useRowDragAndDrop(moveInDraft)
 
 const {
-  registerHandleCell: registerTraitHandleCell,
-  moveRow: moveTraitRow,
-  lastMove: traitLastMove,
-} = useOrderHandleFocus(moveTraitInDraft, () => orderedTraitRows.value.length)
+  registerHandleCell,
+  moveRow,
+  lastMove,
+} = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
-const orderedTraitRows = computed(() => orderRowsByDraft(traitRows.value, traitOrderDraft.value))
+const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
-const traitTranslationOptions = computed(() => [
+const translationOptions = computed(() => [
   { value: '', label: t('admin.quality.translationOfNone') },
   ...translationGroupOptions(
     traits.value,
-    traitForm.locale,
-    traitForm.translationGroup,
-    editingTraitId.value,
+    form.locale,
+    form.translationGroup,
+    editingId.value,
     (trait) => `${trait.locale.toUpperCase()} · ${trait.label}`,
   ),
 ])
 
-function resetTraitForm(): void {
-  renewTraitForm()
-  editingTraitId.value = null
-  traitProposalSourceLocale.value = null
-  traitSourceGroup.value = null
-  traitForm.locale = SUPPORTED_LOCALES[0]
-  traitForm.translationGroup = ''
-  traitForm.label = ''
+function resetForm(): void {
+  renewForm()
+  editingId.value = null
+  proposalSourceLocale.value = null
+  sourceGroup.value = null
+  form.locale = SUPPORTED_LOCALES[0]
+  form.translationGroup = ''
+  form.label = ''
 }
 
-function startEditTrait(trait: AdminQualityTrait): void {
-  renewTraitForm()
-  editingTraitId.value = trait.id
-  traitProposalSourceLocale.value = null
-  traitSourceGroup.value = trait.translationGroup
-  traitForm.locale = trait.locale
-  traitForm.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
-  traitForm.label = trait.label
+function startEdit(trait: AdminQualityTrait): void {
+  renewForm()
+  editingId.value = trait.id
+  proposalSourceLocale.value = null
+  sourceGroup.value = trait.translationGroup
+  form.locale = trait.locale
+  form.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
+  form.label = trait.label
 }
 
 /** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
-function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
-  renewTraitForm()
-  editingTraitId.value = null
-  traitProposalSourceLocale.value = null
-  traitSourceGroup.value = row.key
-  traitForm.locale = locale
-  traitForm.translationGroup = row.key
-  traitForm.label = ''
+function startCreateVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
+  renewForm()
+  editingId.value = null
+  proposalSourceLocale.value = null
+  sourceGroup.value = row.key
+  form.locale = locale
+  form.translationGroup = row.key
+  form.label = ''
 }
 
-async function handleSubmitTrait(): Promise<void> {
-  isSubmittingTrait.value = true
+async function handleSubmit(): Promise<void> {
+  isSubmitting.value = true
 
   const input = {
-    locale: traitForm.locale,
-    translationGroup: '' === traitForm.translationGroup ? null : traitForm.translationGroup,
-    label: traitForm.label,
+    locale: form.locale,
+    translationGroup: '' === form.translationGroup ? null : form.translationGroup,
+    label: form.label,
   }
 
-  const succeeded = null !== editingTraitId.value ? await updateTrait(editingTraitId.value, input) : await createTrait(input)
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
-  isSubmittingTrait.value = false
+  isSubmitting.value = false
 
   if (succeeded) {
-    resetTraitForm()
+    resetForm()
   }
 }
 
-async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
-  await proposeTraitFrom(targetLocale, (sourceLocale) => {
-    editingTraitId.value = null
-    traitForm.locale = targetLocale
-    traitForm.translationGroup = traitSourceGroup.value ?? ''
-    traitProposalSourceLocale.value = sourceLocale
+async function handleTranslate(targetLocale: Locale): Promise<void> {
+  await proposeFrom(targetLocale, (sourceLocale) => {
+    editingId.value = null
+    form.locale = targetLocale
+    form.translationGroup = sourceGroup.value ?? ''
+    proposalSourceLocale.value = sourceLocale
   })
 }
 
-async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
+async function handleDelete(trait: AdminQualityTrait): Promise<void> {
   if (!window.confirm(t('admin.quality.trait.confirmDelete', { label: trait.label }))) {
     return
   }
 
   // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
-  await removeTraitEntry(trait, () => removeTrait(trait.id))
+  await removeEntry(trait, () => remove(trait.id))
 }
 </script>
 
 <template>
   <div class="surface-panel p-3 p-sm-4">
     <h2 class="h6 fw-bold text-white mb-3">
-      {{ isEditingTrait ? t('admin.quality.trait.edit') : t('admin.quality.trait.create') }}
+      {{ isEditing ? t('admin.quality.trait.edit') : t('admin.quality.trait.create') }}
     </h2>
 
     <form
       novalidate
-      @submit.prevent="handleSubmitTrait"
+      @submit.prevent="handleSubmit"
     >
       <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
         id="admin-quality-trait-locale"
-        v-model="traitForm.locale"
-        :disabled="traitLock.isEntryLocked"
-        :aria-describedby="traitLock.localeDescribedBy"
+        v-model="form.locale"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.localeDescribedBy"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -266,80 +266,80 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         {{ t('admin.quality.localeHelp') }}
       </p>
       <EntryFormLockHint
-        :id="traitLock.hintId"
-        :state="traitLock.state"
+        :id="lock.hintId"
+        :state="lock.state"
       />
       <BaseSelect
         id="admin-quality-trait-translation-group"
-        v-model="traitForm.translationGroup"
-        :disabled="traitLock.isProposalLocked"
-        :aria-describedby="traitLock.proposalDescribedBy"
+        v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.quality.translationOfLabel')"
-        :options="traitTranslationOptions"
+        :options="translationOptions"
       />
       <BaseTextInput
         id="admin-quality-trait-label"
-        v-model="traitForm.label"
-        v-bind="traitProseFieldAttrs()"
+        v-model="form.label"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.quality.trait.labelLabel')"
         required
       />
 
       <div class="mb-3">
         <TranslateEntryButton
-          :form-locale="traitForm.locale"
-          :is-translating="isTranslatingTrait"
-          :is-expired-call-pending="isExpiredCallPendingTrait"
-          :hint-id="traitTranslationHintId"
-          :disabled="isTraitTranslationRefused"
-          :aria-describedby="describedBy(lockedHintId, traitLock.proposalDescribedBy)"
-          @translate="handleTranslateTrait"
+          :form-locale="form.locale"
+          :is-translating="isTranslating"
+          :is-expired-call-pending="isExpiredCallPending"
+          :hint-id="translationHintId"
+          :disabled="isTranslationRefused"
+          :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
+          @translate="handleTranslate"
         />
       </div>
 
       <TranslationReadonlyHint
-        :id="traitProseReadonlyHintId"
-        :shown="isTranslatingTrait"
+        :id="proseReadonlyHintId"
+        :shown="isTranslating"
       />
 
       <p
-        v-if="traitProposalSourceLocale"
+        v-if="proposalSourceLocale"
         class="alert alert-info small"
         role="status"
       >
-        {{ t('admin.translation.proposalNotice', { locale: traitProposalSourceLocale.toUpperCase() }) }}
+        {{ t('admin.translation.proposalNotice', { locale: proposalSourceLocale.toUpperCase() }) }}
       </p>
 
       <p
-        v-if="traitTranslationErrorText"
+        v-if="translationErrorText"
         class="text-danger-emphasis small"
         role="alert"
       >
-        {{ traitTranslationErrorText }}
+        {{ translationErrorText }}
       </p>
 
       <p
-        v-if="traitErrorText"
+        v-if="errorText"
         class="text-danger-emphasis small"
         role="alert"
       >
-        {{ traitErrorText }}
+        {{ errorText }}
       </p>
 
       <div class="d-flex gap-2">
         <button
           type="submit"
           class="btn btn-gradient"
-          :disabled="isSubmittingTrait || isLocked"
+          :disabled="isSubmitting || isLocked"
           :aria-describedby="lockedHintId"
         >
           {{ t('admin.quality.save') }}
         </button>
         <button
-          v-if="traitLock.isEntryLocked"
+          v-if="lock.isEntryLocked"
           type="button"
           class="btn btn-outline-light"
-          @click="resetTraitForm"
+          @click="resetForm"
         >
           {{ t('admin.quality.cancel') }}
         </button>
@@ -353,26 +353,26 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
     </h3>
 
     <p
-      v-if="isLoadingTraits"
+      v-if="isLoading"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.quality.loading') }}
     </p>
     <p
-      v-else-if="hasTraitsError"
+      v-else-if="hasError"
       class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('admin.quality.loadError') }}
     </p>
     <p
-      v-else-if="!isTraitsLoaded"
+      v-else-if="!isLoaded"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.notLoaded') }}
     </p>
     <p
-      v-else-if="0 === orderedTraitRows.length"
+      v-else-if="0 === orderedRows.length"
       class="text-body-secondary mb-0"
     >
       {{ t('admin.quality.trait.empty') }}
@@ -380,12 +380,12 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
     <template v-else>
       <OrderToolbar
         class="mb-3"
-        :is-dirty="isTraitOrderDirty"
-        :is-saving="isSavingTraitOrder"
-        :error-reason="traitOrderErrorReason"
-        :last-move="traitLastMove"
-        @save="saveTraitOrder"
-        @cancel="resetTraitOrder"
+        :is-dirty="isOrderDirty"
+        :is-saving="isOrderSaving"
+        :error-reason="orderErrorReason"
+        :last-move="lastMove"
+        @save="saveOrder"
+        @cancel="resetOrder"
       />
 
       <div class="table-responsive">
@@ -411,24 +411,24 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           </thead>
           <tbody>
             <tr
-              v-for="(row, index) in orderedTraitRows"
+              v-for="(row, index) in orderedRows"
               :key="row.key"
               draggable="true"
-              :class="{ 'opacity-50': index === draggingTraitIndex }"
-              @dragstart="onTraitDragStart(index)"
-              @dragover="onTraitDragOver"
-              @drop="onTraitDrop(index)"
-              @dragend="onTraitDragEnd"
+              :class="{ 'opacity-50': index === draggingIndex }"
+              @dragstart="onDragStart(index)"
+              @dragover="onDragOver"
+              @drop="onDrop(index)"
+              @dragend="onDragEnd"
             >
               <td
-                :ref="registerTraitHandleCell"
+                :ref="registerHandleCell"
                 :data-order-key="row.key"
               >
                 <OrderHandle
                   :index="index"
-                  :count="orderedTraitRows.length"
+                  :count="orderedRows.length"
                   :label="firstEntry(row, SUPPORTED_LOCALES)?.label ?? ''"
-                  @move="(from, to) => moveTraitRow(row.key, from, to)"
+                  @move="(from, to) => moveRow(row.key, from, to)"
                 />
               </td>
               <td>
@@ -464,7 +464,7 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
                       class="btn btn-sm btn-outline-light"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="startEditTrait(line.entry)"
+                      @click="startEdit(line.entry)"
                     >
                       {{ t('admin.quality.trait.editAction') }}
                     </button>
@@ -473,7 +473,7 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
                       class="btn btn-sm btn-outline-danger"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="handleDeleteTrait(line.entry)"
+                      @click="handleDelete(line.entry)"
                     >
                       {{ t('admin.quality.delete') }}
                     </button>
@@ -484,7 +484,7 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
                       class="btn btn-sm btn-outline-light"
                       :disabled="isLocked"
                       :aria-describedby="lockedHintId"
-                      @click="startCreateTraitVersion(row, line.locale)"
+                      @click="startCreateVersion(row, line.locale)"
                     >
                       {{ t('admin.order.createVersion', { locale: line.locale.toUpperCase() }) }}
                     </button>
