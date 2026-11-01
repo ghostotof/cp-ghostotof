@@ -189,7 +189,8 @@ synchronously in the very checkpoint that judges the response current, and retur
 what the nine forms share. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
 and what to do with the proposal.
 
-- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` returns `hasProse`, `errorText`
+- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is `() => form`, read at each use, so the
+  call may precede the form's declaration) returns `hasProse`, `translationErrorText`
   (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`, `proposeFrom(target, switchForm)`,
   `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar
   `expire` and `translate` (R153, D4 of the thirteenth review). The page keeps its form and its gestures (`startEdit`,
@@ -198,7 +199,7 @@ and what to do with the proposal.
   page (the form's locale, the lock's help, its `describedBy`). A form new to the assistant writes its list of prose fields
   (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm`, its template block and its `EntryFormLockCase`
   (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred,
-  read `hasProse` and `errorText` and call `requestProposal` themselves.
+  read `hasProse` and `translationErrorText` and call `requestProposal` themselves.
 - `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
   inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
   checkpoint as the response cannot slip between the judgment and the application. Since spec 0004 every
@@ -228,16 +229,16 @@ and what to do with the proposal.
   `useTranslatedForm`, called first by each `resetForm`, `startEdit` and `startCreateVersion` (R139, decision 1 of the
   twelfth review; R152, D1 of the thirteenth): a blank form saved during a translation, or a « Modifier » or a
   « Créer la version XX » clicked again on the same entry or line, keeps its entry, locale and group, and only the
-  generation tells it from the form the call left. What no identity sees, a deletion, goes through `expireIfDeleted()` of
-  `useTranslatedForm`: the entry being edited, or the source of a creation attached to its group (R124, R140). A page deletes
-  through `removeEntry(entry, remove)`, which calls it first and then awaits `remove`: a refused deletion still expires the
+  generation tells it from the form the call left. What no identity sees, a deletion, goes through `removeEntry(entry, remove)` of
+  `useTranslatedForm` (the entry being edited, or the source of a creation attached to its group, R124, R140), which expires
+  the translation first and then awaits `remove`: a refused deletion still expires the
   translation (accepted, D7 of the thirteenth review: expiring after the success would let an answer that arrived during the
   `DELETE` land on a deleted entry); deleting another member of the edited entry's group changes nothing.
 - One model call in flight per mounted form: an expired call still running refuses the next one (`isExpiredCallPending`, R125,
   decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened,
   or a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a
   text referenced by `aria-describedby` only while it waits, `admin.translation.expiredCallPending`. « Expire » is the word for
-  a translation made stale (`expire`, `expireIfDeleted`); « discard » names only the settings' dropped proposal (R154, Q7).
+  a translation made stale (`expire`, the expiry of `removeEntry`); « discard » names only the settings' dropped proposal (R154, Q7).
 - While a translation runs, the form's prose fields are `readonly` (not `disabled`: readable and focusable), each described
   by `admin.translation.proseReadonly` (`TranslationReadonlyHint`), rendered only then — `useTranslatedForm` writes that once
   (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one `hintIdPrefix`), the field lists

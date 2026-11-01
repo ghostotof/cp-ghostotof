@@ -46,7 +46,7 @@ function mountTranslatedForm(
     setup() {
       captured = useTranslatedForm<Field>({
         hintIdPrefix: PREFIX,
-        form: fields,
+        form: () => fields,
         proseFields: PROSE_FIELDS,
         identity: () => ({ entry: null, locale: 'fr', group: null }),
         isRefused: () => false,
@@ -176,9 +176,9 @@ describe('useTranslatedForm', () => {
     expect(form.errorReason.value).toBeNull()
   })
 
-  // Supprimer une entrée ne change rien au formulaire : la page le dit au composable, qui juge si la traduction en vol y
-  // était rattachée — l'entrée éditée, ou la source d'une création rattachée à son groupe (#748, R140).
-  describe('expireIfDeleted', () => {
+  // Supprimer une entrée ne change rien au formulaire : la page le dit au composable (`removeEntry`), qui juge si la traduction
+  // en vol y était rattachée — l'entrée éditée, ou la source d'une création rattachée à son groupe (#748, R140).
+  describe("la traduction rattachée à l'entrée supprimée", () => {
     const GROUP = 'groupe-source'
     const OTHER_GROUP = 'autre-groupe'
 
@@ -190,7 +190,7 @@ describe('useTranslatedForm', () => {
       const { form, release } = mountTranslatedForm({ identity: () => ({ ...identity, locale: 'fr' }) })
       const pending = proposalOf(form)
 
-      form.expireIfDeleted(deleted)
+      await form.removeEntry(deleted, async () => true)
 
       release(PROPOSAL)
       return { form, answer: await pending }
@@ -243,6 +243,34 @@ describe('useTranslatedForm', () => {
     })
   })
 
+  // `form` est lu à chaque usage : l'appel du composable peut précéder la déclaration du formulaire (#748, R174, CR14-5).
+  it("lit le formulaire à l'usage : déclaré après l'appel du composable, il est celui que le composable voit (#748, R174)", async () => {
+    let captured: UseTranslatedFormResult | undefined
+    let declaredLater: { title: string; impact: string } | undefined
+    const Host = defineComponent({
+      setup() {
+        captured = useTranslatedForm<Field>({
+          hintIdPrefix: PREFIX,
+          form: () => declaredLater as { title: string; impact: string },
+          proseFields: PROSE_FIELDS,
+          identity: () => ({ entry: null, locale: 'fr', group: null }),
+          isRefused: () => false,
+        })
+        declaredLater = reactive({ title: 'Panne', impact: '' })
+
+        return () => h('div')
+      },
+    })
+    const repository: AdminTranslationRepository = { translate: vi.fn(async () => PROPOSAL) }
+    mount(Host, { global: { plugins: [createAppI18n()], provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: repository } } })
+
+    expect(captured?.hasProse.value).toBe(true)
+    await captured?.proposeFrom('en', vi.fn())
+
+    expect(repository.translate).toHaveBeenCalledWith('fr', 'en', { title: 'Panne' })
+    expect(declaredLater?.title).toBe('Outage')
+  })
+
   describe('hasProse', () => {
     it("est faux pour une prose de blancs, vrai dès un champ de la liste rempli, insensible à un champ hors liste (#748, R153)", () => {
       const { form, fields } = mountTranslatedForm()
@@ -259,19 +287,19 @@ describe('useTranslatedForm', () => {
     })
   })
 
-  describe('errorText', () => {
+  describe('translationErrorText', () => {
     it("vaut le texte de la raison de l'échec de la traduction, null sinon (#748, R153)", async () => {
       const repository: AdminTranslationRepository = {
         translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),
       }
       const { form } = mountTranslatedForm({}, repository)
-      expect(form.errorText.value).toBeNull()
+      expect(form.translationErrorText.value).toBeNull()
 
       await proposalOf(form)
-      expect(form.errorText.value).toBe(TRANSLATION_UNAVAILABLE_FR)
+      expect(form.translationErrorText.value).toBe(TRANSLATION_UNAVAILABLE_FR)
 
       form.renewForm()
-      expect(form.errorText.value).toBeNull()
+      expect(form.translationErrorText.value).toBeNull()
     })
   })
 
@@ -426,6 +454,29 @@ describe('useTranslatedForm', () => {
       expect(remove).toHaveBeenCalledOnce()
       release(PROPOSAL)
       expect(await pending).toBeNull()
+    })
+
+    // D7 : la péremption précède `remove`. Le faux `remove` lit l'état de la traduction à son appel : périmée pendant la suppression,
+    // pas après, ce qu'une péremption placée après `await remove()` (même dans un `finally`) ne fait pas.
+    it("périme la traduction avant d'appeler remove (#748, R174)", async () => {
+      const { form, release } = mountTranslatedForm({ identity: () => ({ entry: 'a', locale: 'fr', group: 'groupe-source' }) })
+      const pending = proposalOf(form)
+      const seenByRemove: { isTranslating: boolean | null; isExpiredCallPending: boolean | null } = {
+        isTranslating: null,
+        isExpiredCallPending: null,
+      }
+      const remove = vi.fn(async () => {
+        seenByRemove.isTranslating = form.isTranslating.value
+        seenByRemove.isExpiredCallPending = form.isExpiredCallPending.value
+
+        return true
+      })
+
+      await form.removeEntry(EDITED, remove)
+
+      expect(seenByRemove).toEqual({ isTranslating: false, isExpiredCallPending: true })
+      release(PROPOSAL)
+      await pending
     })
 
     it("périme la traduction même quand remove rejette, et laisse l'erreur remonter (#748, R153)", async () => {

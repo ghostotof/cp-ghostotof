@@ -124,13 +124,13 @@ const principleLock = useEntryFormLock({
 
 /**
  * Une instance de composable de traduction par formulaire : chacun a son
- * attente et son message d'erreur. Après les formulaires, que le composable lit dès l'appel.
+ * attente et son message d'erreur.
  */
 const {
   isTranslating: isTranslatingPrinciple,
   isExpiredCallPending: isExpiredCallPendingPrinciple,
   isRefused: isPrincipleTranslationRefused,
-  errorText: principleTranslationErrorText,
+  translationErrorText: principleTranslationErrorText,
   proposeFrom: proposePrincipleFrom,
   removeEntry: removePrincipleEntry,
   renewForm: renewPrincipleForm,
@@ -139,7 +139,7 @@ const {
   proseFieldAttrs: principleProseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-quality-principle',
-  form: principleForm,
+  form: () => principleForm,
   proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
   // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui de l'autre section qu'après l'`emit`
   // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
@@ -215,7 +215,6 @@ const principleTranslationOptions = computed(() => [
 ])
 
 function resetPrincipleForm(): void {
-  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
   renewPrincipleForm()
   editingPrincipleId.value = null
   principleProposalSourceLocale.value = null
@@ -233,7 +232,6 @@ function resetPrincipleForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewPrincipleForm()
   editingPrincipleId.value = principle.id
   principleProposalSourceLocale.value = null
@@ -252,7 +250,6 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewPrincipleForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
@@ -292,12 +289,8 @@ async function handleSubmitPrinciple(): Promise<void> {
 }
 
 /**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
- * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
- * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
- * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
+ * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
+ * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
  */
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
   await proposePrincipleFrom(targetLocale, (sourceLocale) => {

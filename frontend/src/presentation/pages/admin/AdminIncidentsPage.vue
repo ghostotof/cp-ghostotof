@@ -96,12 +96,11 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-// Après le formulaire : le composable en lit l'objet dès l'appel.
 const {
   isTranslating,
   isExpiredCallPending,
   isRefused: isTranslationRefused,
-  errorText: translationErrorText,
+  translationErrorText,
   proposeFrom,
   removeEntry,
   renewForm,
@@ -110,7 +109,7 @@ const {
   proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-incident',
-  form,
+  form: () => form,
   proseFields: INCIDENT_PROSE_FIELDS,
   isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
@@ -185,7 +184,6 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
-  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
   renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
@@ -202,7 +200,6 @@ function resetForm(): void {
 }
 
 function startEdit(incident: AdminIncident): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewForm()
   editingId.value = incident.id
   proposalSourceLocale.value = null
@@ -230,7 +227,6 @@ function startEdit(incident: AdminIncident): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminIncident>, locale: Locale): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
@@ -275,12 +271,8 @@ async function handleSubmit(): Promise<void> {
 }
 
 /**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
- * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
- * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
- * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
+ * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
+ * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   await proposeFrom(targetLocale, (sourceLocale) => {

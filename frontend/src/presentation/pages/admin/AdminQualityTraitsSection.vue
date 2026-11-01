@@ -91,13 +91,13 @@ const traitLock = useEntryFormLock({
 
 /**
  * Une instance de composable de traduction par formulaire : chacun a son
- * attente et son message d'erreur. Après les formulaires, que le composable lit dès l'appel.
+ * attente et son message d'erreur.
  */
 const {
   isTranslating: isTranslatingTrait,
   isExpiredCallPending: isExpiredCallPendingTrait,
   isRefused: isTraitTranslationRefused,
-  errorText: traitTranslationErrorText,
+  translationErrorText: traitTranslationErrorText,
   proposeFrom: proposeTraitFrom,
   removeEntry: removeTraitEntry,
   renewForm: renewTraitForm,
@@ -106,7 +106,7 @@ const {
   proseFieldAttrs: traitProseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-quality-trait',
-  form: traitForm,
+  form: () => traitForm,
   proseFields: QUALITY_TRAIT_PROSE_FIELDS,
   // Le brouillon d'ordre de cette section est lu tout de suite : voir `AdminQualityPrinciplesSection`.
   isRefused: () => isSubmittingTrait.value || isTraitOrderDirty.value || props.isLocked || traitLock.isProposalLocked,
@@ -173,7 +173,6 @@ const traitTranslationOptions = computed(() => [
 ])
 
 function resetTraitForm(): void {
-  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
   renewTraitForm()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
@@ -184,7 +183,6 @@ function resetTraitForm(): void {
 }
 
 function startEditTrait(trait: AdminQualityTrait): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewTraitForm()
   editingTraitId.value = trait.id
   traitProposalSourceLocale.value = null
@@ -196,7 +194,6 @@ function startEditTrait(trait: AdminQualityTrait): void {
 
 /** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
 function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
-  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
   renewTraitForm()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
