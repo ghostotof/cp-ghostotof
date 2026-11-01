@@ -108,17 +108,18 @@ and lists every refused value. This rule names it too; the `Env :` headers of th
 The first: the substring `AUDIT_BASIC_AUTH`, even inside a longer word, appears only as
 `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
 The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth and fourteenth reviews).
-It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options only: `declare -x`)
+It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options in `-` or `+`, or `--`, only:
+`declare -x`, `declare +x`, `export --`, `declare -x --`, `typeset +r`)
 and, with a `p` option in **any** cluster of options, `declare -p`, `export -p`, `declare -g -p NAME`; `declare`, `typeset` and `local`
 with an `n` option in any cluster (a nameref reads a variable by name: `local -r -n ref=NAME`);
-`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`),
-bare or followed by a redirection, a pipe, `;`, `&&` or `||`; `eval`; `printenv`; `env` as a command; `${!`;
-`ps` with the BSD option `e` in any position (`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`), not the POSIX `-e`
-(every process, not its environment: `ps -ef` passes); and the word `environ`, prose included, however `/proc/<pid>/environ`
-is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
+`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`) or a
+quote (`bash -c 'set'`, `bash -c "set"`), bare or followed by a redirection, a pipe, `;`, `&&`, `||` or a quote; `eval`; `printenv`;
+`env` as a command; `${!`; `ps` with the BSD option `e` in any position (`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`),
+not the POSIX `-e` (every process, not its environment: `ps -ef` passes); and the word `environ`, prose included,
+however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
 French prose writes « à peu près » or « près de », never that word, in a comment of these files.
-`export -n -- NAME`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `if set -o | grep -q xtrace`,
-`x="${env}"` and `environment` pass.
+`export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
+`if set -o | grep -q xtrace`, `x="${env}"` and `environment` pass.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
 and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence) is rephrased.

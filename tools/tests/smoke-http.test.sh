@@ -1322,7 +1322,8 @@ ps_lists_environment() {
 env_dump_lines() {
   local file="$1" n=0 line in_reader=0
   local word_before='(^|[^[:alnum:]_.-])'
-  local list_end='([[:space:]]+-[[:alnum:]]+)*[[:space:]]*($|[;&|)#]|[0-9]*[<>])'
+  # Après le mot : des grappes d'options en `-` ou en `+` (`declare +x`) et le séparateur `--`, qui ne nomment rien.
+  local list_end='([[:space:]]+(-|\+)[[:alnum:]]+|[[:space:]]+--)*[[:space:]]*($|[;&|)#]|[0-9]*[<>])'
   local pat_bare="${word_before}(declare|typeset|local|readonly|export)${list_end}"
   # Une option `p` ou `n` dans n'importe quelle grappe d'options (`declare -g -p NOM`, `local -r -n ref=NOM`), pas la première seule.
   local pat_listing='(^|[^[:alnum:]_])(declare|typeset|local|readonly|export)([[:space:]]+-[[:alpha:]]*)*[[:space:]]+-[[:alpha:]]*p'
@@ -1333,7 +1334,8 @@ env_dump_lines() {
   local pat_env='(^|[^[:alnum:]_.${-])env([^[:alnum:]_]|$)'
   # `set` après n'importe quel mot (`if set`, `then set`, `! set`, `time set`, `do set`), seul ou suivi d'une redirection, d'un
   # tube, d'un `;`, d'un `&&` ou d'un `||` ; `set -o`, `set -e`, `set +x` n'énumèrent rien.
-  local pat_set='(^|[[:space:];&|(`{!]|\$\()set[[:space:]]*($|[|>;&)#]|[0-9]*[<>])'
+  # Un guillemet avant ou après le mot le rend visible dans une chaîne de `bash -c 'set'` ou `bash -c "set"`.
+  local pat_set='(^|[[:space:];&|(`{!'"'"'"]|\$\()set[[:space:]]*($|[|>;&)#'"'"'"]|[0-9]*[<>])'
   local pat_indirect='\$\{!'
   # `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore (R148b).
   local pat_environ='(^|[^[:alnum:]_])environ([^[:alnum:]_]|$)'
@@ -1442,6 +1444,14 @@ dump_forbidden=(
   'p=/proc/self; cat "$p/environ"'
   'cat environ'
   'xargs -0 -n1 < environ'
+  # R184 (C15-1) : `--` et les options en `+` ne sont pas des noms, et un `set` entre guillemets (`bash -c 'set'`) vide l'environnement.
+  'declare --'
+  'declare +x'
+  'export --'
+  'declare -x --'
+  'typeset +r'
+  "bash -c 'set'"
+  'bash -c "set"'
 )
 for line in "${dump_forbidden[@]}"; do
   if [ -n "$(mutant_dump "$line")" ]; then
@@ -1493,6 +1503,11 @@ dump_allowed=(
   'local -r name="$1"'
   'declare -g -r NOM=1'
   'echo "# à peu près trois secondes"'
+  # R184 : un nom suit `--` ou une option en `+` ; un `set` entre guillemets suivi d'une option n'énumère rien.
+  'export -n -- NOM'
+  'declare +x NOM=1'
+  "bash -c 'set -e'"
+  'bash -c "set +x"'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
