@@ -16,18 +16,20 @@ paths:
 The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
 It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
 `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
-The file writer `_smoke_write_auth_config` is private (R148): only `smoke_use_auth_config` calls it; the test calls it too, for its cases.
+The writer `_smoke_write_auth_config` is private (R148): `smoke_use_auth_config` is its only production caller (St14-27); tests call it too.
 The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
 The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
-As soon as the value is read, before any validation and before the `mktemp`, the variable is no longer exported (`export -n`, C13-5):
-no process started afterwards (`mktemp`, curl, dig, openssl) receives it, whatever the value, a refused one included.
+As soon as the value is read, before any validation and before the `mktemp`, the variable is unset (D3 of the fourteenth review):
+no `set`, `declare -p` nor child process (`mktemp`, curl, dig, openssl) started afterwards sees it, whatever the value, a refused one
+included; a private flag, `_smoke_auth_defined`, keeps “defined” for the empty-secret check.
+The flag is set before the reading, read by `_smoke_require_auth_config` alone, and reset to 0 by `smoke_cleanup` and at the source.
 The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the reading, still receives the second name if it is exported:
 the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;
 reordering would complicate the failure path of the name for no risk).
-`export -n` does not wipe the shell's own copy of its environment, which `/proc/<pid>/environ` still shows (R148b).
+`unset` does not wipe the copy of the environment the process received at its launch, which `/proc/<pid>/environ` still shows (R148b).
 General limit of the children: a process started **before** `smoke_use_auth_config` receives the variable of the Basic Auth, today the
 `mktemp` of the `headers_file` (and of the `body_file` of `smoke-mcp.sh`), the `date +%s` of `smoke-login-throttling.sh` and the
-`openssl rand` of `smoke-dead-session-cookie.sh`. `export -n` only spares the children started afterwards from logging their environment,
+`openssl rand` of `smoke-dead-session-cookie.sh`. `unset` only spares the children started afterwards from logging their environment,
 and none of today's children logs anything: the same good-faith spirit as the limit of the guards below (D3 of the thirteenth review).
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
@@ -62,7 +64,7 @@ With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 «
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
 so the value is never expanded outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
-still exported there, and no process may start before the library removes the export.
+still exported there, and no process may start before the library unsets it.
 The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31).
 Each offline test, the audit's included, records the environment of a fake `dirname` (`write_env_noting_dirname`).
 Of the audit, the smokes and the library, the library's header is the only file that describes the variable
@@ -70,13 +72,18 @@ and lists every refused value. This rule names it too; the `Env :` headers of th
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
 The first: the substring `AUDIT_BASIC_AUTH`, even inside a longer word, appears only as
 `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
-The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth review).
+The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth and fourteenth reviews).
 It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options only: `declare -x`)
-and, with a `p` option, `declare -p`, `export -p`; `declare`, `typeset` and `local` with an `n` option (a nameref reads a variable by name);
-`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` bare or followed by a redirection or a pipe; `eval`; `printenv`;
-`env` as a command; `${!`; `ps` with an option that carries `e` (`ps e`, `ps eww`, `ps -ef`); and the word `environ`,
-however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b).
-`export -n -- NAME`, `readonly LIMIT=3`, `local name="$1"`, `set -e`, `set +x`, `x="${env}"` and `environment` pass.
+and, with a `p` option in **any** cluster of options, `declare -p`, `export -p`, `declare -g -p NAME`; `declare`, `typeset` and `local`
+with an `n` option in any cluster (a nameref reads a variable by name: `local -r -n ref=NAME`);
+`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`),
+bare or followed by a redirection, a pipe, `;`, `&&` or `||`; `eval`; `printenv`; `env` as a command; `${!`;
+`ps` with the BSD option `e` in any position (`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`), not the POSIX `-e`
+(every process, not its environment: `ps -ef` passes); and the word `environ`, prose included, however `/proc/<pid>/environ`
+is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
+French prose writes « à peu près » or « près de », never that word, in a comment of these files.
+`export -n -- NAME`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `if set -o | grep -q xtrace`,
+`x="${env}"` and `environment` pass.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
 and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence) is rephrased.

@@ -248,10 +248,12 @@ if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ -z "
 else
   fail "smoke_use_auth_config (non définie)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
-UNE_AUTH="$(generated_basic_auth)"
+# La variable est retirée du shell dès sa lecture (R168) : la valeur attendue est gardée à part.
+full_auth="$(generated_basic_auth)"
+UNE_AUTH="$full_auth"
 rc=0
 smoke_use_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$UNE_AUTH\"" ]; then
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$full_auth\"" ]; then
   pass "smoke_use_auth_config : variable pleine → retour 0, le fichier -K est écrit"
 else
   fail "smoke_use_auth_config (pleine)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
@@ -308,8 +310,9 @@ unset UNE_AUTH
 token="g$RANDOM$RANDOM"
 # Un côté fait seulement de blancs (espaces, tabulation) est creux comme un côté vide (C12-9).
 for hollow in ':' "${token}:" ":${token}" "::${token}" " :${token}" "${token}: " $'\t'":${token}" "${token}:"$'\t' "   :   "; do
-  UNE_AUTH="$hollow"
   for entry in _smoke_write_auth_config smoke_use_auth_config; do
+    # Chaque appel retire la variable (R168) : elle est reposée avant chacun.
+    UNE_AUTH="$hollow"
     rc=0
     "$entry" UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
     if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/stderr" \
@@ -320,6 +323,7 @@ for hollow in ':' "${token}:" ":${token}" "::${token}" " :${token}" "${token}: "
       fail "$entry : valeur à côté vide" "rc=$rc ; stderr : $(grep -vF "$token" "$TMP/stderr" | cat -A) ; fichiers : $(ls -A "$TMP/tmpdir")"
     fi
   done
+  UNE_AUTH="$hollow"
   ( set -x; smoke_use_auth_config UNE_AUTH || true ) > /dev/null 2> "$TMP/trace"
   if grep -q 'sans utilisateur ou sans mot de passe' "$TMP/trace" && ! grep -qF "$token" "$TMP/trace"; then
     pass "le refus d'une valeur à côté vide (${#hollow} caractères) ne laisse pas la valeur dans la trace set -x"
@@ -676,9 +680,9 @@ else
   fail "SMOKE_CURL_OPTS sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
 fi
 
-# --- C12-10 : la valeur lue n'a aucune raison de rester dans l'environnement des processus que
-# l'appelant lance (curl, dig, openssl) : smoke_use_auth_config retire l'attribut d'export de la variable
-# une fois le fichier écrit, la valeur restant lisible dans le shell. Rien n'y change si la variable n'était pas exportée.
+# --- C12-10, D3 de la quatorzième relecture : la valeur lue n'a aucune raison de rester dans l'environnement des processus
+# que l'appelant lance (curl, dig, openssl) : smoke_use_auth_config retire la variable du shell une fois le fichier écrit
+# (la valeur n'est plus que dans le fichier -K), exportée ou non.
 exported_auth="$(generated_basic_auth)"
 UNE_AUTH="$exported_auth"
 export UNE_AUTH
@@ -689,23 +693,93 @@ else
 fi
 rc=0
 smoke_use_auth_config UNE_AUTH || rc=$?
-if [ "$rc" -eq 0 ] && [[ "${UNE_AUTH@a}" != *x* ]] && [ "$UNE_AUTH" = "$exported_auth" ] \
-   && ! bash -c '[[ -v UNE_AUTH ]]' && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$exported_auth\"" ]; then
-  pass "smoke_use_auth_config retire l'export de la variable : absente d'un processus fils, valeur inchangée dans le shell"
+if [ "$rc" -eq 0 ] && ! [[ -v UNE_AUTH ]] && ! bash -c '[[ -v UNE_AUTH ]]' \
+   && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$exported_auth\"" ]; then
+  pass "smoke_use_auth_config retire la variable exportée : absente d'un processus fils, valeur dans le fichier -K"
 else
-  fail "export non retiré" \
-    "rc=$rc ; attributs : [${UNE_AUTH@a}] ; fils : $(bash -c '[[ -v UNE_AUTH ]] && echo la_voit || echo ne_la_voit_pas')"
+  fail "variable exportée non retirée" \
+    "rc=$rc ; shell : $([[ -v UNE_AUTH ]] && echo définie || echo absente) ;" \
+    "fils : $(bash -c '[[ -v UNE_AUTH ]] && echo la_voit || echo ne_la_voit_pas')"
 fi
 smoke_cleanup
 unset UNE_AUTH
 UNE_AUTH="$(generated_basic_auth)"
 smoke_use_auth_config UNE_AUTH
-if [[ "${UNE_AUTH@a}" != *x* ]]; then
-  pass "smoke_use_auth_config sur une variable non exportée : elle ne l'est pas davantage"
+if ! [[ -v UNE_AUTH ]]; then
+  pass "smoke_use_auth_config retire aussi une variable non exportée"
 else
-  fail "variable non exportée" "attributs : ${UNE_AUTH@a}"
+  fail "variable non exportée non retirée" "attributs : ${UNE_AUTH@a}"
 fi
 smoke_cleanup
+
+# --- R168 (D3 de la quatorzième relecture) : dès la lecture, la variable n'existe plus dans le shell (`unset`, qui retire aussi
+# son export) : ni `[[ -v ]]`, ni `declare -p`, ni `set`, ni un fils ne la voient, quelle que soit la valeur lue.
+for kind in pleine vide refusee; do
+  case "$kind" in
+    pleine) UNE_AUTH="$(generated_basic_auth)"; expected=0 ;;
+    vide) UNE_AUTH=""; expected=2 ;;
+    refusee) UNE_AUTH="sansdeuxpoints"; expected=2 ;;
+  esac
+  export UNE_AUTH
+  rc=0
+  smoke_use_auth_config UNE_AUTH > /dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq "$expected" ] && ! [[ -v UNE_AUTH ]] && [ -z "$(declare -p UNE_AUTH 2>/dev/null || true)" ] \
+     && [ -z "$(set | grep '^UNE_AUTH=' || true)" ] && ! bash -c '[[ -v UNE_AUTH ]]'; then
+    pass "smoke_use_auth_config : valeur $kind → retour $expected, la variable n'est plus définie (ni -v, ni declare -p, ni set, ni fils)"
+  else
+    fail "variable encore définie ($kind)" "rc=$rc (attendu $expected) ; définie : $([[ -v UNE_AUTH ]] && echo oui || echo non)"
+  fi
+  smoke_cleanup
+  unset UNE_AUTH
+done
+
+# Le drapeau privé `_smoke_auth_defined` garde « définie » pour le contrôle du vide : lu par _smoke_require_auth_config
+# (jamais `[[ -v ]]`, la variable n'existe plus), remis à 0 par smoke_cleanup et à la source.
+SMOKE_AUTH_CONFIG=""
+UNE_AUTH=""
+_smoke_auth_defined=0
+rc=0
+_smoke_require_auth_config UNE_AUTH > /dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "_smoke_require_auth_config : drapeau à 0 → retour 0, même si la variable du même nom est définie et vide"
+else
+  fail "_smoke_require_auth_config lit la variable" "rc=$rc"
+fi
+unset UNE_AUTH
+_smoke_auth_defined=1
+rc=0
+_smoke_require_auth_config UNE_AUTH > /dev/null 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : secret de Basic Auth vide, rien de vérifié$' "$TMP/stderr"; then
+  pass "_smoke_require_auth_config : drapeau à 1 et aucune configuration → retour 2, « secret de Basic Auth vide », variable absente"
+else
+  fail "_smoke_require_auth_config lit le drapeau" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+_smoke_auth_defined=1
+smoke_cleanup
+if [ "${_smoke_auth_defined-absent}" = 0 ]; then
+  pass "smoke_cleanup remet le drapeau _smoke_auth_defined à 0"
+else
+  fail "smoke_cleanup et le drapeau" "drapeau : ${_smoke_auth_defined-absent}"
+fi
+sourced_flag="$(_smoke_auth_defined=1 bash -c 'source "$1"; printf "%s" "${_smoke_auth_defined-absent}"' _ "$LIB")"
+if [ "$sourced_flag" = 0 ]; then
+  pass "sourcer la bibliothèque remet le drapeau _smoke_auth_defined à 0, quoi que l'environnement ait contenu"
+else
+  fail "drapeau hérité" "obtenu : $sourced_flag"
+fi
+# Un second appel avec un autre nom ne réutilise pas le drapeau du premier : premier défini et vide, second non défini → 0.
+UNE_AUTH=""
+smoke_use_auth_config UNE_AUTH > /dev/null 2>&1 || true
+unset AUTRE_AUTH
+rc=0
+smoke_use_auth_config AUTRE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stderr" ] && [ "${_smoke_auth_defined-absent}" = 0 ]; then
+  pass "smoke_use_auth_config : après une variable définie et vide, un second nom non défini → retour 0, drapeau à 0"
+else
+  fail "drapeau du premier appel réutilisé" "rc=$rc ; drapeau : ${_smoke_auth_defined-absent} ; stderr : $(cat -A "$TMP/stderr")"
+fi
+smoke_cleanup
+unset UNE_AUTH AUTRE_AUTH sourced_flag expected kind
 unset UNE_AUTH exported_auth args_auth
 
 # --- St12-14 : smoke_write_auth_config (sans tiret bas) n'existe pas ; smoke_use_auth_config est la seule
@@ -840,32 +914,61 @@ done
 # --- Garde des vidages d'environnement (C12-2, D3 de la treizième relecture) : aucune ligne de l'audit, des trois
 # smokes ni de la bibliothèque n'énumère l'environnement ni ne lit une variable par son nom. Refusés :
 #   - `declare`, `typeset`, `local`, `export`, `readonly` **sans nom** (seuls, ou suivis d'options seules : `declare -x`,
-#     `export -n`), qui listent ; avec une option `p` ; `declare`, `typeset`, `local` avec une option `n` (une référence de
-#     nom, `declare -n ref=X`, qui lit X par son nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ;
-#   - `compgen` avec `-v`, `-e`, `-A variable` ou `-A export` ; `set` seul, ou suivi d'une redirection ou d'un tube ;
+#     `export -n`), qui listent ; avec une option `p` dans une grappe quelconque (`declare -g -p NOM`) ; `declare`, `typeset`,
+#     `local` avec une option `n` dans une grappe quelconque (une référence de nom, `local -r -n ref=X`, qui lit X par son
+#     nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ;
+#   - `compgen` avec `-v`, `-e`, `-A variable` ou `-A export` ; `set` après n'importe quel mot (`if set`, `then set`, `! set`,
+#     `time set`), seul ou suivi d'une redirection, d'un tube, de `;`, `&&` ou `||` ; `set -o` passe ;
 #   - `eval`, `printenv`, `env` (la commande : `"${env}"` n'en est pas une), `${!…}` ;
-#   - `ps` dont une option porte `e` (`ps e`, `ps eww`, `ps -ef`) ;
-#   - le mot `environ` (`/proc/<pid>/environ` écrit de toute façon : `cd /proc/self && cat environ`, `"$p/environ"`) ;
-#     `environment` passe.
+#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`) ; `-e` POSIX liste les processus et
+#     non leur environnement : `ps -ef` passe (voir ps_lists_environment) ;
+#   - le mot `environ`, prose comprise (`/proc/<pid>/environ` écrit de toute façon : `cd /proc/self && cat environ`,
+#     `"$p/environ"`) ; la prose française écrit « à peu près » ; `environment` passe.
 # Chaque ligne est lue, commentaires et heredocs compris. Un motif ancré sur des limites de mot : `set -e`, `set +x` passent.
 # **L'exemption est une ligne** : `  _smoke_value="${!_smoke_name:-}"`, comparée par égalité, dans le corps de
 # _smoke_write_auth_config ; tout autre ajout dans ce corps est jugé comme ailleurs.
 # **Limite écrite** : la garde vise les fautes de bonne foi (une trace de débogage oubliée). Une liste de motifs n'est jamais
 # complète contre un contournement délibéré (`eval` d'un nom composé, un `bash -c` dont la chaîne est assemblée) : celui-là
 # est arrêté par la relecture du diff, pas par ce test.
+# ps_lists_environment <ligne> : vrai si une commande `ps` de la ligne porte l'option BSD `e` (`ps e`, `ps eww`, `ps auxe`), en
+# toute position (`ps -p $$ e`, `ps -o args= -p $$ ewww`). Les options à tiret ne comptent pas : `-e` POSIX liste les processus,
+# pas leur environnement (`ps -ef` passe), et la valeur d'une option qui en prend une (`-o etime=`, `-p $$`) est sautée. La
+# ligne est coupée aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`.
+ps_lists_environment() {
+  local segment token skip=0
+  local ps_word='(^|[^[:alnum:]_.-])ps([[:space:]]|$)'
+  local -a tokens
+  while IFS= read -r segment; do
+    if ! [[ "$segment" =~ $ps_word ]]; then continue; fi
+    segment="${segment#*"${BASH_REMATCH[0]}"}"
+    read -r -a tokens <<< "$segment"
+    skip=0
+    for token in "${tokens[@]}"; do
+      if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+      case "$token" in
+        -[opCuUgGtsNOqw]) skip=1 ;;
+        -*) ;;
+        *) if [[ "$token" =~ ^[[:alpha:]]*e[[:alpha:]]*$ ]]; then return 0; fi ;;
+      esac
+    done
+  done <<< "${1//[|;&()<>#]/$'\n'}"
+  return 1
+}
 env_dump_lines() {
   local file="$1" n=0 line in_reader=0
   local word_before='(^|[^[:alnum:]_.-])'
   local list_end='([[:space:]]+-[[:alnum:]]+)*[[:space:]]*($|[;&|)#]|[0-9]*[<>])'
   local pat_bare="${word_before}(declare|typeset|local|readonly|export)${list_end}"
-  local pat_listing='(^|[^[:alnum:]_])(declare|typeset|local|readonly|export)[[:space:]]+-[[:alpha:]]*p'
-  local pat_nameref='(^|[^[:alnum:]_])(declare|typeset|local)[[:space:]]+-[[:alpha:]]*n'
+  # Une option `p` ou `n` dans n'importe quelle grappe d'options (`declare -g -p NOM`, `local -r -n ref=NOM`), pas la première seule.
+  local pat_listing='(^|[^[:alnum:]_])(declare|typeset|local|readonly|export)([[:space:]]+-[[:alpha:]]*)*[[:space:]]+-[[:alpha:]]*p'
+  local pat_nameref='(^|[^[:alnum:]_])(declare|typeset|local)([[:space:]]+-[[:alpha:]]*)*[[:space:]]+-[[:alpha:]]*n'
   local pat_compgen="${word_before}compgen[[:space:]]+(-[[:alpha:]]*[ve]|-A[[:space:]]+(variable|export))"
   local pat_eval='(^|[^[:alnum:]_.-])eval([^[:alnum:]_-]|$)'
   local pat_printenv='(^|[^[:alnum:]_.-])printenv([^[:alnum:]_]|$)'
   local pat_env='(^|[^[:alnum:]_.${-])env([^[:alnum:]_]|$)'
-  local pat_set='(^|[;&|(`{]|\$\()[[:space:]]*set[[:space:]]*($|[|>;&)#]|[0-9]*[<>])'
-  local pat_ps="${word_before}ps[[:space:]]+(-?[[:alpha:]]*e[[:alpha:]]*([[:space:]]|\$)|([^[:space:]]+[[:space:]]+)*-[[:alpha:]]*e)"
+  # `set` après n'importe quel mot (`if set`, `then set`, `! set`, `time set`, `do set`), seul ou suivi d'une redirection, d'un
+  # tube, d'un `;`, d'un `&&` ou d'un `||` ; `set -o`, `set -e`, `set +x` n'énumèrent rien.
+  local pat_set='(^|[[:space:];&|(`{!]|\$\()set[[:space:]]*($|[|>;&)#]|[0-9]*[<>])'
   local pat_indirect='\$\{!'
   # `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore (R148b).
   local pat_environ='(^|[^[:alnum:]_])environ([^[:alnum:]_]|$)'
@@ -881,7 +984,7 @@ env_dump_lines() {
     fi
     if [[ "$line" =~ $pat_bare || "$line" =~ $pat_listing || "$line" =~ $pat_nameref || "$line" =~ $pat_compgen \
           || "$line" =~ $pat_eval || "$line" =~ $pat_printenv || "$line" =~ $pat_env || "$line" =~ $pat_set \
-          || "$line" =~ $pat_ps || "$line" =~ $pat_indirect || "$line" =~ $pat_environ ]]; then
+          || "$line" =~ $pat_indirect || "$line" =~ $pat_environ ]] || ps_lists_environment "$line"; then
       printf '%s:%s\n' "$n" "$line"
     fi
   done < "$file"
@@ -949,9 +1052,26 @@ dump_forbidden=(
   # D3 : les processus et /proc écrit autrement.
   'ps e'
   'ps eww -p $$'
-  'ps -ef'
-  'ps -p $$ -e'
   'ps auxe'
+  # R168 (D3 de la quatorzième relecture) : `set` après n'importe quel mot, une option `p` ou `n` dans une grappe
+  # qui n'est pas la première, l'option BSD `e` de `ps` en toute position, la prose qui écrit le mot `environ`.
+  'if set; then'
+  'if set | grep X'
+  'then set'
+  'time set'
+  '! set > f'
+  'do set'
+  '{ set; }'
+  '( set )'
+  'true && set || true'
+  'declare -g -p NOM'
+  'typeset -r -p NOM'
+  'local -r -n ref=NOM'
+  'ps -p $$ e'
+  'ps -o args= -p $$ ewww'
+  'echo $(ps -p $$ eww)'
+  'ps -p $$ -o comm=; ps e'
+  '# environ 3 secondes'
   'cd /proc/self && cat environ'
   'cat "/proc"/self/environ'
   'p=/proc/self; cat "$p/environ"'
@@ -998,6 +1118,16 @@ dump_allowed=(
   'compgen -f -- "$prefix"'
   'ps -p $$ -o comm='
   'echo "declare keyword."'
+  # R168 : `-e` POSIX liste les processus, pas leur environnement ; `set` suivi d'une option n'est pas un vidage.
+  'ps -ef'
+  'ps -p $$ -e'
+  'ps -o etime= -p $$'
+  'ps -o etime -p $$'
+  'ps -p $$ | grep -q e'
+  'if set -o | grep -q xtrace; then'
+  'local -r name="$1"'
+  'declare -g -r NOM=1'
+  'echo "# à peu près trois secondes"'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
