@@ -12,9 +12,20 @@ relectures, le fil principal a rejoué sur conteneurs redémarrés les cinq cibl
 mesuré : le cas existe et rougit dans les quatre tests).
 
 ## Décisions de l'utilisateur
-_(à prendre — voir les questions ci-dessous)_
+Prises le 2026-11-01 :
+- Q1 → **régression + antérieurs** : `ClassNameResolver::scopes()` compte les accolades par identifiant de jeton (+ cas), et
+  `UnsortedImports`, `AnonymousClassesAndFreeFunctions`, `ProblemDetailStaysStaticTest` passent par la même lecture.
+- Q2 → **refuser sauf exception** : avec la Basic Auth, une valeur `@…` refusée pour `-H` et `-d` ; pour `--data-binary`,
+  admise seulement vers un fichier du dossier temporaire du smoke, jamais le fichier `-K` ; `-b` exige un `=` ; un cas par forme.
+- Q3 → FR de `admin.entryLock.proposal` : « « Annuler » la retire et vide le formulaire. »
+- Q4 → **factoriser dans #748** (contre la recommandation) : `AdminQualityPrinciplesSection.vue` et
+  `AdminQualityTraitsSection.vue` en une section générique paramétrée par ses champs, tâche dédiée, gardée par les 90 tests de
+  Qualité.
+- Q5 → **écrire un cas** (contre la recommandation) pour les réglages « À propos » de R172 (un `load()` résolu dans le même
+  point de contrôle que la réponse) ; s'il reste vert d'emblée, le dire et le prouver par mutation.
+- Tout le reste se corrige (critère « tout jusqu'à zéro »).
 
-Questions à poser :
+Questions posées :
 1. **C15-2 (régression de R180) + St15-29** : `ClassNameResolver::scopes()` compte les accolades par leur texte ; un fragment
    de chaîne interpolée `}`/`{` décale la profondeur (mesuré : un site de `Cookie` non vu). Le même motif existe, antérieur à
    la série, dans `UnsortedImports.php:74-76`, `AnonymousClassesAndFreeFunctions.php:104-115` et
