@@ -324,8 +324,15 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
 /** Le verrou : la langue, « Version de » et « Proposer la version XX » pendant une proposition, et le texte qui le dit. */
 function describeLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  describeLanguageLock(lockCase, kit)
+  describeTranslateButtonLock(lockCase, kit)
+  describeGroupLock(lockCase, kit)
+}
+
+/** Le sélecteur de langue : désactivé pendant une proposition, rendu par « Annuler », et le texte du verrou expliqué en édition. */
+function describeLanguageLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
   const { form } = lockCase
-  const { ids, locale, group, prefix, permanent } = kit
+  const { ids, locale, prefix, permanent } = kit
 
   it(`${prefix}après une proposition, le sélecteur de langue est désactivé et « Annuler » est affiché`, async () => {
     const { wrapper } = await kit.mountCase()
@@ -372,6 +379,12 @@ function describeLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
 
     expect(describedTexts(wrapper, locale)).toEqual([...permanent, ENTRY_LOCK_EDITING_FR])
   })
+}
+
+/** Le bouton « Proposer la version XX » : désactivé et décrit par le texte du verrou pendant une proposition, libre après « Annuler ». */
+function describeTranslateButtonLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { form } = lockCase
+  const { prefix } = kit
 
   // Décision 1 de la huitième relecture (R93, CR8-1) : une seconde traduction depuis la proposition remettait
   // le formulaire dans la langue source, groupe gardé (Sp7-1) ; le serveur la refuse (409). Le bouton est
@@ -399,6 +412,11 @@ function describeLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
     // (une IDREF vers un texte retiré serait pendante, et `textsDescribing` échoue sur elle).
     expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([])
   })
+}
+
+/** « Version de » : verrouillé pendant une proposition, libre en édition ; l'explication du verrou de la langue, que « Annuler » retire. */
+function describeGroupLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { ids, locale, group, prefix, permanent } = kit
 
   // Décision 3 de la huitième relecture (R94, Sp8-5) : pendant une proposition, « Version de » est verrouillé comme
   // la langue. « aucune » détacherait la proposition de sa source (D-b) ; « Annuler » est la sortie. En édition,
@@ -444,6 +462,12 @@ function describeLock(lockCase: EntryFormLockCase, kit: LockToolkit): void {
 
 /** Le refus : un « translate » émis par programme ne lance rien quand le bouton est désactivé, ni en double. */
 function describeRefusals(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  describeRefusalsByLockOrOrder(lockCase, kit)
+  describeRefusalsBySaveProseOrRepeat(lockCase, kit)
+}
+
+/** Le refus pendant une proposition et pendant un brouillon d'ordre : l'appel émis ne lance rien, le bouton est désactivé. */
+function describeRefusalsByLockOrOrder(lockCase: EntryFormLockCase, kit: LockToolkit): void {
   const { form } = lockCase
   const { prefix } = kit
 
@@ -491,6 +515,12 @@ function describeRefusals(lockCase: EntryFormLockCase, kit: LockToolkit): void {
 
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
   })
+}
+
+/** Le refus pendant l'enregistrement du formulaire, sans prose à traduire, ou avant la première réponse. */
+function describeRefusalsBySaveProseOrRepeat(lockCase: EntryFormLockCase, kit: LockToolkit): void {
+  const { form } = lockCase
+  const { prefix } = kit
 
   // R127b (décision de l'auteur du 2026-10-31) : le bouton est aussi désactivé pendant l'enregistrement du formulaire et sans
   // aucune prose à traduire ; `isRefused` reprend ces deux conditions, faute de quoi un « translate » émis les passerait.

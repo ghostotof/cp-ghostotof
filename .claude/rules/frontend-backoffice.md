@@ -115,13 +115,11 @@ status announcement) that a fork would silently lose:
 - **What a `PUT` cannot change is disabled in edit, not hidden**: the locale of every per-entry form
   (#170 R2; the server refuses another one with a 409 of type `locale-immutable` since #582, which no
   repository maps — nothing in the UI can send it, so it would read as `translation-already-exists`) and
-  the **category of a me-card**
-  (issue #578). The category used to stay active: changing it emptied « Version de » (the
+  the **category of a me-card** (issue #578). The category used to stay active: changing it emptied « Version de » (the
   `flush: 'sync'` watcher, meant for creation), the `PUT` left with `translationGroup: null`, and the
   server, which ignored the category, detached the card from its translation and sent it to the end of
   its category, under a 200. It is now disabled in editing (and, since R79b, while the form holds a translation
-  proposal), with a visible hint
-  (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
+  proposal), with a visible hint (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
   referenced by `aria-describedby` **only while the lock holds** (editing; during a translation proposal the
   category is described by the form's proposal text instead, R93) — the hint is not rendered otherwise, and an IDREF to a missing element
   is an a11y fault. The server refuses another category with a 409 of type
@@ -134,8 +132,8 @@ status announcement) that a fork would silently lose:
 - **A locale selector says why it is locked, and the help it always has** (#582; #748, R79b D-a, R92): About's settings
   selector (`AdminAboutPage.vue`) carries a static `aria-describedby` to its always-rendered help; the per-entry forms
   (site and me cards, Quality's principles and traits, which also always render a help, and the four others) bind it.
-  Every per-entry form's lock goes through `presentation/ui/admin/useEntryFormLock.ts` (`state`: `'none' | 'editing' |
-  'proposal'`), whose `EntryFormLockHint.vue` text is rendered **only during the lock** and referenced by
+  Every per-entry form's lock goes through `presentation/ui/admin/useEntryFormLock.ts` (`state`:
+  `'none' | 'editing' | 'proposal'`), whose `EntryFormLockHint.vue` text is rendered **only during the lock** and referenced by
   `aria-describedby` only then, after the permanent help when there is one (`localeDescribedBy`: one or two ids); one
   text per state. A proposal is born of an edit, of « Créer la version XX » or of a blank form, and the language lock
   holds in the three (the proposed prose is in the target language). `tests/support/entryFormLock.ts`
@@ -258,8 +256,8 @@ and what to do with the proposal.
   road to a new load) — and kept through an ended session, which runs the read again on return and applies it then (R157,
   D6 of the thirteenth review; R157b, the author's decision: no guard on the end of a read).
   The button is disabled while an order draft is dirty (a proposal the locked form could not save would burn
-  quota for nothing) and, for the settings, while a proposal is shown (a second translation would replace it with no «
-  Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
+  quota for nothing) and, for the settings, while a proposal is shown (a second translation would replace it with no
+  « Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
   (`admin.about.settings.proposalDiscard`, R127c, R141): a `type="button"` shown only during the proposal, no confirmation,
   that drops it and re-reads the shown language's form (saved values back, focus to the first field, not announced like the
   per-entry « Annuler »); any arrival of settings drops the proposal, whatever its language — invisible, the notice being

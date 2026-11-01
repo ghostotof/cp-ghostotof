@@ -139,16 +139,16 @@ _smoke_is_variable_name() {
 # l'ordre compliquerait le chemin d'échec du nom pour un risque nul.
 #
 # Dès la lecture, avant toute validation et tout `mktemp`, la variable est retirée du shell (`unset -v`, D3 de la
-# quatorzième relecture ; C12-10 et C13-5 ne lui ôtaient que l'exportation), pour toute valeur lue, refusée comprise :
-# aucun vidage du shell, ni le `mktemp -d` de cette fonction, curl, dig ou openssl ne la voient. Le drapeau privé
-# `_smoke_auth_defined`, posé juste avant la lecture, garde « elle était définie » : c'est lui que lit
+# quatorzième relecture ; n'en retirer que l'exportation, C12-10 et C13-5, la laisserait lisible par un vidage du shell), pour
+# toute valeur lue, refusée comprise : aucun vidage du shell, ni le `mktemp -d` de cette fonction, curl, dig ou openssl ne la
+# voient. Le drapeau privé `_smoke_auth_defined`, posé juste avant la lecture, garde « elle était définie » : c'est lui que lit
 # _smoke_require_auth_config.
 #
 # Une fois le fichier écrit (une Basic Auth pleine), elle retire aussi du shell les variables que curl lit et qui changeraient
 # où part l'identifiant ou ce qu'on en voit : `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`,
 # `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`, `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (R169, Q8 ; les deux
 # autres, décision de l'auteur du 2026-11-01 : le choix du moteur TLS et le journal QUIC). `CURL_HOME` et `XDG_CONFIG_HOME` ne
-# servent qu'au `.curlrc`, que `-q` en tête de chaque appel ne lit plus. Sans Basic Auth, rien n'est retiré.
+# servent qu'au `.curlrc`, que curl ne lit pas sous `-q` en tête de chaque appel. Sans Basic Auth, rien n'est retiré.
 #
 # Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
 # leur `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup' EXIT`) puis écrivent

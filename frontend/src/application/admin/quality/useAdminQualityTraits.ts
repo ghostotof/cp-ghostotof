@@ -25,10 +25,10 @@ export interface UseAdminQualityTraitsResult extends AdminLoadState {
  * appelante traduit `errorMessage.reason`, ce qui garde ce composable testable
  * sans instance i18n.
  *
- * `load()` ne prend plus de locale depuis la spec 0004 (D8) : le tableau du
- * backoffice affiche toutes les langues, le sélecteur de la page ne pilote
- * plus que les formulaires. La liste se charge donc une fois, à la création du
- * composable, et non plus à chaque changement de langue.
+ * `load()` ne prend pas de locale (spec 0004, D8) : le tableau du backoffice
+ * affiche toutes les langues, le sélecteur de chaque section ne pilote que son
+ * formulaire. La liste se charge donc une fois, à la création du composable, et
+ * non à chaque changement de langue.
  */
 export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
   const repository = inject(ADMIN_QUALITY_TRAIT_REPOSITORY)

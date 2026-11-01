@@ -63,7 +63,7 @@ Once the Basic Auth is written, the library unsets the variables curl reads that
 `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`,
 `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log of TLS or QUIC left by a debugging session, the
 choice of the TLS backend; the author added `CURL_SSL_BACKEND` and `QLOGDIR` on 2026-11-01). Not without a Basic Auth. `CURL_HOME` and
-`XDG_CONFIG_HOME` only serve the `.curlrc`, which `-q` no longer reads.
+`XDG_CONFIG_HOME` only serve the `.curlrc`, which curl does not read under `-q`.
 The names come from curl 8.5.0's `ENVIRONMENT` section (`curl --manual`).
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.

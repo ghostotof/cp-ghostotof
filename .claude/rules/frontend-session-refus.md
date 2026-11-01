@@ -25,8 +25,8 @@ paths:
   hour — the JWT's lifetime — was lost with it). The verdict is judged by **session generation** (`frontend-session-retour.md`, « The
   session generation »), not « idempotent »: several lists of a page answering 401 together leave under the same generation, the first end
   counts and the others announce nothing more. The registry lives in the module, so `infrastructure/` imports neither the session nor the
-  router. The type (`BackofficeSessionReaction` and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind:
-  'read', scope, epoch }` or `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import: no
+  router. The type (`BackofficeSessionReaction` and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`:
+  `{ kind: 'read', scope, epoch }` or `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import: no
   `infrastructure/` file imports `application/` (R28).
 
 ## A real refusal (#748, R7)
@@ -131,8 +131,8 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
   conversation is accepted (the author's decision of 2026-10-29); « Mes connexions MCP » keeps no input to protect.
   This differs from the ended-session link (`SignInAgainLink`, a new tab, on the assistant and the MCP page; the same tab on the consent).
 - **No « Réessayer »** on the MCP page (the same request takes the same verdict) and **every « Révoquer » disabled**; the
-  focus goes to the `<h1>` on any refusal of a revocation. `useMcpConnections.refusal` (`'session-ended' | 'forbidden'
-  | null`, reset at the start of each `load()` and `revoke()`) replaced `sessionExpired`.
+  focus goes to the `<h1>` on any refusal of a revocation. `useMcpConnections.refusal`
+  (`'session-ended' | 'forbidden' | null`, reset at the start of each `load()` and `revoke()`) replaced `sessionExpired`.
 - The login page opened by `reauth=1` announces a **neutral** `auth.reauthNotice` (the ten-minute rule is said by the
   consent's own alert, before its link).
 

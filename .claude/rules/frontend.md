@@ -175,8 +175,8 @@ to the TypeScript parser (non type-checked — type errors are already caught by
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
 strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
-no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
-lint:fix` for the auto-fixable (mostly formatting) rules.
+no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot).
+`npm run lint:fix` for the auto-fixable (mostly formatting) rules.
 
 **The TypeScript-in-SFC wiring is written by hand, not `@vue/eslint-config-typescript`** (issue #328,
 2026-10-03). That wrapper pulled `fast-glob` → `micromatch` → `braces`, and `braces` ≤ 3.0.3 got a *high*

@@ -11393,6 +11393,192 @@ série a réellement fait » à la fin de cette section (avant « ### Task 11 »
   proposition en attente jusqu'au prochain chargement réussi de la même clé : c'est le cas « fin de session, posée au
   retour » voulu (Q10 de la treizième section), et R157b a établi qu'aucun autre chemin ne relit la cible.
 
+### Ce que la quatorzième série a réellement fait *(écrit par R181 le 2026-11-01)*
+
+Cette sous-section couvre **R168 à R181 et R173b** (la série que l'utilisateur nomme la quinzième ; la section garde son titre
+« quatorzième relecture »). Elle est écrite par R181 sur HEAD f4865124, après lecture de chaque commit : un écart déclaré par un agent
+n'y figure que s'il se lit dans le diff, et un écart que le diff montre sans que l'agent l'ait déclaré y figure aussi. Les sections
+passées restent des archives.
+
+**Commits.** R168 0bc9e52a, R169 eec7f85a, R170 6c1109e1, R171 f9603503, R172 4e4f00a0, R173 a506efd8, R173b e0aed9b0, R174 882a9754,
+R175 0e4b5a1e, R176 7b209294, R177 b061011e, R178 20dc25f9, R179 0e901433, R180 f4865124 ; R181 : le commit de ce balayage.
+
+- **R168** : écart. Des cas existants de `smoke-http.test.sh` sont adaptés exprès (la variable n'existe plus après l'appel : `[[ -v ]]`
+  et `declare -p` remplacent la lecture de `${UNE_AUTH@a}`) ; `ps -p $$ -e` passe de la liste des refus à celle des permis avec `ps -ef`
+  (`-e` POSIX liste les processus, pas l'environnement) ; une fonction non prévue, `ps_lists_environment`, juge l'option BSD `e` en
+  toute position ; des commentaires sont reformulés pour que la garde les laisse passer (nombre non recompté).
+- **R169** : écart. `_smoke_option_arity` pose `_smoke_arity` (0 ou 1) et `_smoke_judge_args` pose `_smoke_refused_rank` ; `CASE_RANK`
+  rejoint les variables de `run_case` ; `audit-prod.test.sh` fait noter `argv` au faux curl (`calls.argv`) et lit `-q` en premier sur
+  chaque appel, puis chaque commande `curl` du source de l'audit ; le bloc C12-13/D2 de `smoke-http.test.sh` est remplacé, et ses
+  voisins `--progress-bar`, `--proto-default`, `--compressed`, `--data`, qui passaient, sont refusés exprès (`refuse_args`) ; de la
+  règle disparaissent le paragraphe des préfixes et des grappes et la mesure de `--proto-r`, la phrase sur `--proto` et sa mesure du
+  2026-10-31 restant.
+- **R170** : écart. `CDPATH=''` (et non `CDPATH=`, que shellcheck refuse : SC1007), aussi aux deux `source` de l'audit ; `CASE_ENV_FILE`
+  et `CASE_EXPECTED_RC` rejoignent `run_case` ; le cas `CDPATH` n'existe que pour `smoke-dead-session-cookie.sh` et pour l'audit
+  (`RUN_SCRIPT` fait lancer le chemin relatif), non pour `smoke-mcp.sh` ni `smoke-login-throttling.sh` ; le script à la racine
+  (`script_dir` vide) n'a aucun test ; l'ajout de l'auteur (`QLOGDIR`, `CURL_SSL_BACKEND`) est fait (`curl_variables`, règle,
+  docblock) ; le commit porte aussi `tasks/plan-748.md` (+5 lignes, le paragraphe « Ajout décidé »), hors de l'exception du brief.
+- **R171** : écart. `run_case` déclare dix variables `CASE_*` en `local +x` ; le fils voit la valeur exportée par l'appelant, et le test
+  exige qu'aucune valeur posée par `run_case` ne s'y trouve ; `case_vars_set` pose `CASE_VARS` ; les moignons de `deploiement-nginx.md`
+  (hors la liste du plan) sont recollés.
+- **R172** : écart. Le cas des réglages (`AdminAboutPage.spec.ts`) n'est pas écrit : l'identité des réglages est `props.locale`, aucun
+  geste synchrone ne peut tomber entre le jugement et la pose, et le fichier est intact dans le commit ; `accept` est appelée hors du
+  `try` de `translate` (une exception de `accept` n'est pas un échec de la traduction) ; l'appelant de `sessionEndedLoad.spec.ts` est
+  adapté ; le helper `proposalOf` est ajouté au spec.
+- **R173** : écart. Les deux paragraphes D8 de `7b6de067` sont répartis (« Les tableaux affichent toutes les langues » à la page,
+  « Rien n'est rechargé derrière… » à la section des principes) ; le test émet `translate` depuis le composant `TranslateEntryButton` ;
+  le commit touche aussi `AdminQualityTraitsSection.vue`.
+- **R173b** : conforme à la décision de l'auteur (2026-11-01) : `isOrderDirty` côté « site », `isAnyOrderDirty` côté « moi », un cas par
+  section ; écart au brief : le commit porte la section R173b de `tasks/plan-748.md` (+25 lignes).
+- **R174** : écart. Un cas de plus que le plan (« lit le formulaire à l'usage : déclaré après l'appel du composable ») ; les préfixes de
+  Qualité sont gardés, puis retirés par R175 (décision de l'auteur) ; `expireIfDeleted` devient une fonction interne ;
+  `grep -rn 'Avant toute écriture' frontend/src` : 0 (les vingt-quatre lignes sont retirées, aucune n'est gardée).
+- **R175** : écart. St14-14 est dans `useAdminTranslation.spec.ts` (l'`it.each` s'y trouvait, non dans `useTranslatedForm.spec.ts`) ;
+  « Annuler » est lu de l'ensemble des clés `cancel` (`ENTRY_FORM_CANCEL_LABELS_FR`) ; `translated` et `form` sont renommés dans les
+  sections de Qualité ; `describeLock` et `describeRefusals` sont laissés en l'état (St14-19 côté support), faits par R181 (B) ; le
+  commit porte aussi `tasks/plan-748.md` (+9 lignes, l'ajout de l'auteur), hors de l'exception du brief.
+- **R176** : écart. Des assertions positives (le texte exact, FR et EN) s'ajoutent aux deux gardes négatives du plan ; les textes sont
+  ceux de Q14, mot pour mot.
+- **R177** : écart. `listCase` est introduit et les réglages restent un littéral ; 8 des 13 entrées de `sessionEndedLoad.spec.ts`
+  tiennent sur une ligne (les cinq autres, sur plusieurs lignes) ; que les trois mutations soient vues à la place de celle du plan est
+  déclaré par l'agent et ne se lit pas dans le diff.
+- **R178** : écart. Le second rappel de `then` (`.then(a, b)`, `alsoCallback`) est lu, avec `onBeforeRouteLeave` ; le receveur d'une
+  méthode de promesse n'est pas lu (le nom suffit) ; un alias de `vue-router` non résolu est écrit dans « Non vu » (règle et docblock).
+- **R179** : écart. La réinstallation garde la section (`--save-prod` ou `--save-dev` selon la section où il est déclaré) ; le plan ne
+  parlait que de la commande `npm pkg set`.
+- **R180** : écart. Le cas `namespace X { use A\B; } new B;` s'ajoute ; `ofName` et `ofCall` reçoivent `$previous` (une seule lecture) ;
+  St14-33 est tranché en limite écrite (la chaîne interpolée n'est pas lue, un cas la fige) ; les docblocks d'import groupé sont
+  corrigés hors de la liste du plan ; Sp14-21 est lu comme un dédoublonnage par fournisseur de données ; `CompiledNestedReading.php` est
+  identique à d8f481a2 (`git diff d8f481a2 HEAD -- backend/tests/Support/CompiledNestedReading.php` : vide).
+
+**Décisions de l'auteur en cours de série** : `QLOGDIR` et `CURL_SSL_BACKEND` dans la liste des variables de curl (R170) ; R173b (la
+fenêtre de la micro-tâche fermée aussi pour « À propos ») ; les préfixes de Qualité retirés (R175) ; et, à la demande du fil principal,
+deux ajouts à R181 : A (« le sélecteur de la page » des deux composables de Qualité), B (`describeLock` et `describeRefusals` en
+fonctions nommées).
+
+**Questions Q1 à Q14 et réponse suivie** (l'auteur : « les quatorze recommandations », 2026-11-01) : Q1 (A) le drapeau privé
+`_smoke_auth_defined` ; Q2 (A) une fonction à `case` ; Q3 (A) une table pour les deux sources ; Q4 (A) `SMOKE_CURL_OPTS` gardé et jugé ;
+Q5 (A) le rang, jamais le texte ; Q6 (A) `-q` sur chaque appel de `smoke_fetch` et de l'audit ; Q7 (A) jugé avec la Basic Auth
+seulement ; Q8 (A) les variables de curl retirées du shell ; Q9 (A) `translate(…, accept)` ; Q10 (A) `requestProposal` ;
+Q11 (A) chaque section lit son brouillon, étendu à « À propos » par R173b ; Q12 (A) `form: () => …` ; Q13 (A) `imports()` lit l'import
+groupé ; Q14 les deux textes recommandés.
+
+**Lignes de plus de 140 caractères laissées** (`awk 'length>140'` sur les 62 fichiers de `git diff --name-only 8747d019...HEAD` : 1 379
+lignes, dont 1 133 de `tasks/` ; `git blame` sur chacune : 33 écrites dans `8747d019..HEAD`, aucune de code) :
+- `frontend/src/infrastructure/i18n/locales/en.json:400` et `fr.json:400` : `admin.translation.proseReadonly`, JSON (R176) ;
+- 31 lignes de `tasks/plan-748.md` écrites par le commit du plan e398f751 : onze titres de tâche (R168 à R171, R173 à R175, R177, R178,
+  R180, R181), dix lignes « Step … : commit » (le message de commit entre guillemets) et dix lignes de la table des fichiers ; ni titre,
+  ni message de commit ni ligne de table ne se coupe ;
+- aucun `echo` d'un seul tenant n'est écrit par la série ; les autres lignes du périmètre sont antérieures (tables Markdown, JSON,
+  littéraux de `content/*.ts`, `echo` des smokes de #650, regex de tests de sécurité).
+
+**Balayage de R181.** Secrets et dépendances exclus (`X` ci-dessous), périmètre `P` ; pour chaque recherche : la commande, le nombre de
+lignes, la raison de chaque ligne gardée.
+
+```bash
+X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=var)
+P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)
+```
+
+1. **Noms disparus** : **7** lignes, toutes `export -n` (les cinq autres noms : 0).
+
+   ```bash
+   grep -rn "${X[@]}" -e _SMOKE_REFUSED_LONG -e _smoke_is_refused_arg -e write_env_noting_dirname -e 'export -n' \
+     -e 'errorText: translationErrorText' -e 'button\[aria-busy\]' "${P[@]}"
+   ```
+
+   Gardées, car la garde des vidages cite cette forme : `outillage-smoke.md:94` (ce qui passe), `smoke-http.test.sh:1032` et `:1034`
+   (en-tête de la garde), `:1088` (commentaire de `pat_environ`), `:1144` (`export -n` seul, refusé), `:1209` et `:1224`
+   (`export -n -- NOM`, permis). `grep -n 'export -n' tools/lib/smoke-http.sh` : 0.
+2. **Vocabulaire** : **6** lignes au départ, **2** après correction.
+
+   ```bash
+   grep -rn "${X[@]}" -e 'aucun processus ne doit' -e 'General limit of the children' -e 'Si elle aboutit' -e 'discards it' \
+     -e 'partagent déjà leur sélecteur' -e 'sélecteur de la page' "${P[@]}"
+   ```
+
+   Corrigées : le « sélecteur de la page » de `useAdminQualityPrinciples.ts:29` et de `useAdminQualityTraits.ts:29` (ajout A, réécrit
+   au présent : le sélecteur de chaque section). Gardées : `security-authentication-sessions.md:162` (« Lexik still builds and discards
+   its 401 » : sans rapport) et `adminTranslationTexts.spec.ts:22` (la garde négative qui refuse « Si elle aboutit »).
+3. **Identifiants de constat dans les noms de tests** (la recherche de R135, rejouée) : **17** lignes, aucune écrite par la série
+   (`git blame` dans `8747d019..HEAD` : 0 ; dans `0e581b42..HEAD` : 2, les faux positifs `%E0`).
+
+   ```bash
+   RE='\b(CR|St|Sp|C|A|F|S|B|E|I|M)[0-9]+(-[0-9]+)?[a-z]?\b'
+   RE="$RE|\bB/F[0-9]+\b|\bF-I[0-9]+\b"
+   grep -rnP "\b(it|describe|test)(\.each\([^)]*\))?\(\s*['\"\x60].*($RE)" frontend/tests
+   grep -rnP "function test\w*\(|yield ['\"]" backend/tests | grep -P "$RE"
+   grep -rnP "\b(pass|fail) ['\"].*($RE)" tools/tests
+   ```
+
+   Quinze sont antérieures à #748 (`audit A7`, `#650, S2/F5/F-I1`, `#647, F1`, `A1`, les balises Unicode `E000` et `E0041`, `S256`) ;
+   deux sont des faux positifs écrits par #748 plus tôt : les `%E0` de `sessionAwareFetch.spec.ts:99` et `csrfCookie.spec.ts:40`.
+4. **Récits au passé** : 60 fichiers, **105** lignes au départ (104 après), dont 11 écrites par la série (`git blame`).
+
+   ```bash
+   git diff --name-only 8747d019...HEAD -- frontend backend tools .claude | xargs grep -nE \
+     "(depuis R[0-9]+|n'est plus|n'a plus|ne .* plus |restait|recopiait|autrefois|voyait|lisait|a été supprimé|il permettait|\
+     l'ancien|used to|no longer)"
+   ```
+
+   Un complément hors liste, sur les seules lignes ajoutées par la série, rend 18 lignes dont les deux reformulations de `smoke-http.sh`
+   ci-dessous (les autres décrivent un état : « elle était définie » du drapeau privé, la réponse arrivée pendant le `DELETE`) :
+
+   ```bash
+   git diff -U0 8747d019...HEAD -- frontend backend tools .claude | grep -E '^\+' \
+     | grep -E "plus[.,;:)]|ôtaient|était |a été |avait |was |had |used to|no longer|avant R[0-9]|depuis R[0-9]|supprimé|retiré "
+   ```
+
+   Reformulées au présent : `outillage-smoke.md:66` (« which `-q` no longer reads » → « which curl does not read under `-q` ») ;
+   `smoke-http.sh` (« C12-10 et C13-5 ne lui ôtaient que l'exportation » → ce que ne retirer que l'exportation laisserait lisible ;
+   « que `-q` … ne lit plus » → « que curl ne lit pas sous `-q` », que l'expression du plan ne voyait pas : `plus.`) ; `smoke-cases.sh:63`
+   (« répétait mot pour mot » → « aurait à répéter »). Gardées (10) : un état présent ou « plus tard » (le futur) :
+   `useTranslatedForm.ts:82` et `:157`, `useAdminTranslation.spec.ts:62` et `:99`, `AdminAboutPage.spec.ts:1869`,
+   `useTranslatedForm.spec.ts:396`, `smoke-http.test.sh:758`, `:800` et `:843` (la variable n'est plus dans le shell après l'appel :
+   le contrat de D3, non un récit) ; et `CompiledNestedReading.php:12`, le docblock rétabli par R180, qu'un balayage ne réécrit pas.
+5. **Longueurs** : **1 379** lignes de plus de 140 caractères dans les 62 fichiers du diff, **33** écrites par la série (listées plus
+   haut : 2 JSON, 31 du plan), aucune de code ni de règle.
+
+   ```bash
+   for f in $(git diff --name-only 8747d019...HEAD); do awk -v F=$f 'length>140 {print F":"FNR}' $f; done
+   # puis, pour chaque ligne : git blame --porcelain -L n,n -- fichier, comparé à git rev-list 8747d019..HEAD
+   ```
+6. **Moignons**, sur les six règles touchées par la série (`deploiement-nginx.md`, `frontend-backoffice.md`, `frontend-session-refus.md`,
+   `frontend.md`, `outillage-smoke.md`, `security-authentication-sessions.md`) :
+
+   ```bash
+   awk 'length<=45 && NF' règle                                   # lignes courtes
+   grep -nE '^[[:space:]]*[,;:.)»]' règle                         # ponctuation de tête
+   perl -ne 'print "$.\n" if (() = /\x60/g) % 2' règle            # code en ligne coupé
+   grep -nE '«[[:space:]]*$|^[[:space:]]*»' règle                 # guillemet orphelin
+   cmp <(tr -s '[:space:]' '\n' < avant) <(tr -s '[:space:]' '\n' < après)   # aucun mot changé
+   ```
+
+   Trouvés et recollés, suite de mots identique (`cmp`) : `frontend-backoffice.md` — **Sp14-9** (le « ouvrant de « Annuler » restait en
+   fin de ligne, l. 261-262), deux lignes courtes au milieu d'une phrase (l. 118 et 123) et un code en ligne coupé
+   (`'none' | 'editing' | 'proposal'`, l. 137-138) ; `frontend-session-refus.md` — **Sp14-12** (`{ kind: 'read', scope, epoch }`,
+   l. 28-29) et un second code coupé (`'session-ended' | 'forbidden' | null`, l. 134-135) ; `frontend.md` (`npm run lint:fix`, l. 178-179).
+   Après : ponctuation de tête 0, accents graves impairs 0, guillemet orphelin 0 dans les six règles ; les lignes de 45 caractères ou
+   moins qui restent (3, 12, 8, 18, 3 et 5, hors en-tête) terminent une puce ou un paragraphe, sauf trois qui terminent une phrase avant
+   la suivante (`deploiement-nginx.md:50`, `outillage-smoke.md:36` et `:69`).
+7. **Règles relues avec `Read`** (`outillage-smoke.md`, `frontend-backoffice.md`, `frontend-session-refus.md`, `frontend.md`, et le diff de
+   `deploiement-nginx.md` et de `security-authentication-sessions.md`) contre le code de HEAD : la seule phrase fausse est celle de la
+   recherche 4 (`outillage-smoke.md:66`), remplacée ; la liste des variables de curl (13 noms), les neuf options, `useTranslatedForm` et ses
+   membres, la lecture du brouillon par section, la garde des chargements et la commande de `vueCompilerAlignment.spec.ts` concordent.
+8. **Docblocks d'en-tête** de ce que R168 à R180 ont modifié sous `src/`, `tests/support/`, `backend/tests/Support/` et `tools/`, relus
+   contre le code : `smoke-http.sh` (deux écarts de style corrigés, recherche 4), `smoke-cases.sh` (un), les trois smokes et l'audit
+   (l'ordre D2 et `CDPATH=''` : conformes), `useTranslatedForm.ts`, `useAdminTranslation.ts`, `sourceText.ts`, `MemberCalls.php`,
+   `ClassNameResolver.php`, `AuthorizationSites.php` (conformes) ; `CompiledNestedReading.php` : non réécrit, identique à d8f481a2, aucun
+   écart à signaler.
+
+**Ajouts de R181.** A : `useAdminQualityPrinciples.ts` et `useAdminQualityTraits.ts` disent que le sélecteur de chaque section ne pilote
+que son formulaire. B (St14-19 côté support) : `describeLock` (118 lignes) devient `describeLanguageLock`, `describeTranslateButtonLock`
+et `describeGroupLock` (50, 31 et 44 lignes) ; `describeRefusals` (90 lignes) devient `describeRefusalsByLockOrOrder` et
+`describeRefusalsBySaveProseOrRepeat` (49 et 45 lignes) ; la liste des 429 tests des six specs qui l'appellent, noms, ordre et verdicts,
+est identique avant et après (`cmp`), `make front-test` : 2 588 avant, 2 588 après ; mutation vue rouge : l'assertion de « Version de »
+de `describeGroupLock` changée → un test rouge (« après une proposition, « Version de » est désactivé… ») ; l'appel de
+`describeRefusalsBySaveProseOrRepeat` retiré → 45 tests au lieu de 48 sur `AdminIncidentsPage.spec.ts`.
+
 ---
 
 

@@ -60,7 +60,7 @@ write_env_noting() {
 # case_vars_set <fichier stderr> <fichier des appels> <fichier stdout> [<valeur de Basic Auth>]
 #
 # Pose le tableau CASE_VARS : les affectations CASE_ERR, CASE_CALLS, CASE_OUT (et CASE_VALUE si la valeur est donnée) que
-# presque chaque appel de `run_case` répétait mot pour mot (St14-34). Un test l'écrit une fois, juste avant l'appel :
+# presque chaque appel de `run_case` aurait à répéter mot pour mot (St14-34). Un test l'écrit une fois, juste avant l'appel :
 #   case_vars_set "$TMP/err" "$TMP/calls" "$TMP/out" "$basic_auth"
 #   run_case check_non_https_refused "<libellé>" "$rc" "${CASE_VARS[@]}"
 # Ce qu'un appel ajoute en plus (CASE_TMPDIR, CASE_RANK…) reste écrit à l'appel.
