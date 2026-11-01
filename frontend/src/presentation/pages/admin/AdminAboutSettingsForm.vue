@@ -51,12 +51,14 @@ const errorText = computed(() => {
  * de la session, lancée alors par le composable lui-même. La proposition attend
  * donc ce retour, jamais posée sur un formulaire non chargé.
  *
- * `pendingProposal` part de trois façons (R157, décision 6 de la treizième relecture ; R157b) : **posée** sur le formulaire
- * de sa cible une fois lue ; **retirée** quand la page va à une autre langue que sa cible — la seule sortie après une lecture
- * de la cible en échec (erreur ordinaire, refus 403), faute de « Réessayer » sur la page : un changement de langue est alors
- * le seul chemin vers un nouveau chargement — ; **abandonnée** par « Abandonner » (`handleDiscardProposal`). Une fin de
- * session la **garde** : la lecture de la cible reprend au retour de la session et la pose alors (Q10). Aucun guetteur de
- * fin de lecture : il ne retirerait rien qu'un changement de langue ne retire déjà (R157b, décision de l'auteur).
+ * `pendingProposal` part de trois façons (R157, décision 6 de la treizième relecture ; R157b ; R187b) : **posée** sur le
+ * formulaire de sa cible une fois lue ; **retirée** quand la langue demandée n'est pas sa cible, qu'elle soit montrée (le
+ * `watch`) ou choisie par la personne (le geste sur le sélecteur, même si FR → EN → FR se joue avant le rendu) — c'est la
+ * seule sortie après une lecture de la cible en échec (erreur ordinaire, refus 403), faute de « Réessayer » sur la page : un
+ * changement de langue est alors le seul chemin vers un nouveau chargement — ; **abandonnée** par « Abandonner »
+ * (`handleDiscardProposal`). Une fin de session la **garde** : la lecture de la cible reprend au retour de la session et la
+ * pose alors (Q10). Aucun guetteur de fin de lecture : il ne retirerait rien qu'un changement de langue ne retire déjà
+ * (R157b, décision de l'auteur).
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).
@@ -126,14 +128,25 @@ watch(
 watch(
   () => props.locale,
   (locale) => {
-    if (pendingProposal.value && locale !== pendingProposal.value.targetLocale) {
-      pendingProposal.value = null
-    }
-
+    dropPendingProposalNotFor(locale)
     void load(locale)
   },
   { immediate: true },
 )
+
+/**
+ * Retire la proposition en attente si la langue demandée n'est pas sa cible (R157, R187b). Deux appelants : le `watch` de la
+ * langue montrée, et la page, au geste de la personne sur le sélecteur (`defineExpose`). Le second est nécessaire : FR → EN → FR
+ * joués avant le rendu ne font jamais changer `props.locale`, le `watch` ne voit rien, et la proposition aurait été posée plus
+ * tard, au choix d'EN. La bascule de `handleTranslate` ne passe pas par le geste : elle est la demande de la cible elle-même.
+ */
+function dropPendingProposalNotFor(requested: Locale): void {
+  if (pendingProposal.value && requested !== pendingProposal.value.targetLocale) {
+    pendingProposal.value = null
+  }
+}
+
+defineExpose({ dropPendingProposalNotFor })
 
 // Les réglages de `props.locale` viennent d'être posés et recopiés dans le formulaire : la proposition en
 // attente, si c'est leur locale qu'elle visait, se pose par-dessus (spec 0002). Aussi au retour d'une session

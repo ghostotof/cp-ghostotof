@@ -1313,6 +1313,38 @@ describe('AdminAboutPage', () => {
       },
     )
 
+    // R187b, décision de l'auteur du 2026-11-01 : la proposition parquée pour EN part dès que la personne demande une autre
+    // langue, même si FR → EN → FR se joue avant le rendu : le formulaire ne voit alors jamais la langue changer, et la
+    // proposition se serait posée plus tard, au choix d'EN.
+    it(
+      "réglages : un retour à FR au même point de contrôle que la réponse, puis EN plus tard, ne pose aucune proposition (#748, R187b)",
+      async () => {
+        let answer!: (proposal: TranslationProposal) => void
+        const held = new Promise<TranslationProposal>((resolve) => { answer = resolve })
+        const translation = createTranslationRepository(TRANSLATED_SETTINGS, { translate: vi.fn(() => held) })
+        const serverEnglish: AdminAboutSettings = { ...SETTINGS_EN, siteEyebrow: 'Texte EN du serveur' }
+        const settingsRepository = createSettingsRepository({
+          get: vi.fn(async (locale: string) => ('en' === locale ? serverEnglish : SETTINGS)),
+        })
+        const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+        await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+        void held.then(() => { void wrapper.get('#admin-about-locale').setValue('fr') })
+        answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
+        await flushPromises()
+
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+
+        await wrapper.get('#admin-about-locale').setValue('en')
+        await flushPromises()
+
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('Texte EN du serveur')
+        expect(formOf(wrapper, SETTINGS_FORM).find('[role="status"]').exists()).toBe(false)
+      },
+    )
+
     // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
     const SETTINGS_PROPOSAL_LOCKED_HINT = '#admin-about-settings-proposal-locked-help'

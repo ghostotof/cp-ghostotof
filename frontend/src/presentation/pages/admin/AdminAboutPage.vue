@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import BaseSelect from '../../ui/BaseSelect.vue'
@@ -38,6 +38,17 @@ const { t } = useI18n()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 const selectedLocale = ref<Locale>(SUPPORTED_LOCALES[0])
+const settingsForm = useTemplateRef('settingsForm')
+
+/**
+ * Le geste de la personne sur le sélecteur : la langue est prise, et la proposition que les réglages tenaient en attente pour
+ * une autre langue part aussitôt (R187b). Le formulaire ne la verrait pas partir seul si la langue faisait FR → EN → FR avant
+ * le rendu : sa langue montrée ne change alors jamais. La bascule demandée par la traduction passe par `@switch-locale`, pas ici.
+ */
+function chooseLocale(locale: string): void {
+  selectedLocale.value = locale as Locale
+  settingsForm.value?.dropPendingProposalNotFor(locale as Locale)
+}
 
 /**
  * L'aide du verrou est **rendue visible**, jamais portée par un `title` :
@@ -70,10 +81,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <div class="surface-panel p-3 p-sm-4">
       <BaseSelect
         id="admin-about-locale"
-        v-model="selectedLocale"
+        :model-value="selectedLocale"
         aria-describedby="admin-about-locale-help"
         :label="t('admin.about.settings.localeLabel')"
         :options="localeOptions"
+        @update:model-value="chooseLocale"
       />
       <p
         id="admin-about-locale-help"
@@ -89,6 +101,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
       (la proposition est appliquée après, cf. AdminAboutSettingsForm).
     -->
     <AdminAboutSettingsForm
+      ref="settingsForm"
       :locale="selectedLocale"
       :is-locked="isAnyOrderDirty"
       :locked-hint-id="lockedHintId"
