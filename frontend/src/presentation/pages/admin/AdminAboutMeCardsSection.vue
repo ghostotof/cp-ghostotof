@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutMeCards } from '../../../application/admin/about/useAdminAboutMeCards'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
@@ -25,6 +25,7 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
 import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { ME_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
@@ -114,11 +115,9 @@ const form = reactive<MeCardForm>({
 /** Aide du sélecteur de catégorie en édition (issue #578). */
 const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 
-const editingId = ref<string | null>(null)
-const isSubmitting = ref(false)
-
-/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const proposalSourceLocale = ref<Locale | null>(null)
+// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
@@ -127,16 +126,6 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
   localeHelpId: 'admin-about-me-card-locale-help',
 })
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher la
- * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
- * aucune traduction et que le sélecteur affichait donc « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
 
 /**
  * Tout ce qu'il faut pour ordonner une catégorie : ses lignes groupées, son
@@ -343,7 +332,7 @@ async function handleSubmit(): Promise<void> {
 
 /** La bascule (`switchToProposedCreation`) ne touche ni la catégorie ni l'icône du formulaire : elles restent. */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(card: AdminAboutMeCard): Promise<void> {

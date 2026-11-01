@@ -9,7 +9,7 @@ import {
   earlierSaveRefused,
   settleBackofficeAccessRefusalsOnMount,
 } from '../../../application/admin/shared/backofficeAccessRefusal'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { DEFAULT_LOCALE, isSupportedLocale } from '../../../domain/portfolio/entities/Locale'
 import { usePublishedHeight } from '../../layout/usePublishedHeight'
 import { switchAccountLocation } from '../../router/reauthentication'
 
@@ -62,7 +62,10 @@ import { switchAccountLocation } from '../../router/reauthentication'
 const { t, locale } = useI18n()
 const route = useRoute()
 
-const switchAccountTarget = computed(() => switchAccountLocation(route, locale.value as Locale))
+// La langue de repli du lien, quand la route n'en porte pas : celle de l'interface si le site la prend en charge, sinon la
+// langue par défaut (jamais une `string` quelconque posée en tête de l'adresse de connexion).
+const fallbackLocale = computed(() => (isSupportedLocale(locale.value) ? locale.value : DEFAULT_LOCALE))
+const switchAccountTarget = computed(() => switchAccountLocation(route, fallbackLocale.value))
 // Faux au premier rendu : l'alerte est insérée après le montage, donc annoncée même quand un enregistrement refusé
 // pendant l'absence l'attend déjà (R64).
 const isMounted = ref(false)

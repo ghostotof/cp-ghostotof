@@ -16,6 +16,7 @@ import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { startEditThroughSetup } from '../../../support/startEditThroughSetup'
 import { describeEntryFormLock, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
 import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
@@ -581,5 +582,14 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage()
 
     await expectNoAccessibilityViolation(wrapper)
+  })
+
+  it("une langue non prise en charge n'est pas posée : le sélecteur garde la précédente (#748, R204)", async () => {
+    const { wrapper } = await mountPage()
+    await startEditThroughSetup(wrapper, AdminCaseStudiesPage, EN_ONE)
+
+    await startEditThroughSetup(wrapper, AdminCaseStudiesPage, { ...FR_ONE, locale: 'de' })
+
+    expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('en')
   })
 })

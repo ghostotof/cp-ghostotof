@@ -179,7 +179,9 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
    * La fin de l'appel, réponse ou échec : plus rien en vol, plus rien d'attendu. Cela repose sur un invariant : il n'y a qu'un
    * appel en vol par formulaire (`translate` refuse le suivant tant que `isAnyCallRunning`), donc l'appel qui finit est le seul
    * qui ait pu poser `isAwaitingCurrent`, et un appel périmé (`expire()` l'a déjà rendu faux) ne finit jamais pendant qu'un plus
-   * récent tourne.
+   * récent tourne. Le test « une traduction en vol refuse la suivante sans requête (#748, R114) » de `useAdminTranslation.spec.ts`
+   * garde cet invariant : c'est pourquoi la fonction ne vérifie pas qu'elle termine « son » appel (condition retirée après R188,
+   * par décision de l'auteur, D3 de la seizième relecture).
    */
   function endCall(): void {
     isAnyCallRunning.value = false

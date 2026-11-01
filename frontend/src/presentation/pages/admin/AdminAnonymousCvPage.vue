@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminAnonymousCvSections } from '../../../application/admin/anonymousCv/useAdminAnonymousCvSections'
@@ -27,18 +27,21 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
 import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { ANONYMOUS_CV_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
-import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
+import { isSupportedLocale, LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminAnonymousCvSection } from '../../../domain/admin/anonymousCv/entities/AdminAnonymousCvSection'
 
 const { t } = useI18n()
 const { sections, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminAnonymousCvSections()
 
-const editingId = ref<string | null>(null)
+// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 
 /**
  * Typé explicitement : sans annotation, `reactive` infère `locale` au type
@@ -65,25 +68,6 @@ const form = reactive<SectionForm>({
   yearsOfExperience: 0,
   achievements: '',
 })
-const isSubmitting = ref(false)
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant de traduction bascule le formulaire vers l'autre locale et doit
- * y rattacher la proposition au groupe de la **source** (D9), y compris quand
- * ce groupe n'avait aucune traduction et que le sélecteur affichait donc
- * « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
-
-/**
- * Locale de l'entrée dont le formulaire courant est une proposition traduite,
- * `null` sinon : porte la bannière « proposition générée par IA ». Effacée dès que
- * le formulaire repart d'une entrée réelle ou d'une page blanche.
- */
-const proposalSourceLocale = ref<Locale | null>(null)
 
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
@@ -197,7 +181,11 @@ function startEdit(section: AdminAnonymousCvSection): void {
   editingId.value = section.id
   proposalSourceLocale.value = null
   sourceGroup.value = section.translationGroup
-  form.locale = section.locale as Locale
+  // Une langue hors de `SUPPORTED_LOCALES` n'est pas posée : le tableau n'en montre aucune (`groupByTranslationGroup`),
+  // la garde ne sert que si une entrée de cette sorte arrivait jusqu'ici (même forme que `chooseLocale` d'« À propos »).
+  if (isSupportedLocale(section.locale)) {
+    form.locale = section.locale
+  }
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
   // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
@@ -255,7 +243,7 @@ async function handleSubmit(): Promise<void> {
 }
 
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(section: AdminAnonymousCvSection): Promise<void> {

@@ -78,11 +78,11 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * prose est remplacée, le reste gardé. Rien n'est enregistré (ADR 0004, D4). Sur un refus, un échec ou une réponse périmée, il
    * ne se passe rien : le formulaire reste intact et `translationErrorText` dit l'échec. Sinon, `switchForm(sourceLocale)` est appelée
    * **avant** que la prose soit remplacée : la page y pose ce qu'elle seule sait (l'entrée éditée vidée, la langue cible, le
-   * groupe source, l'avis de proposition : `switchToProposedCreation`, pour les huit formulaires par entrée). Les deux gestes se
-   * font dans le point de contrôle qui juge la réponse courante : la proposition est posée sous ce jugement, jamais une
-   * micro-tâche plus tard (R172). Une exception de `switchForm` remonte au gestionnaire `@translate` de la page, dont Vue passe le
-   * rejet à `app.config.errorHandler` : le formulaire peut rester à moitié basculé, une faute de programmation que le
-   * gestionnaire d'erreurs rend visible (limite acceptée, R187).
+   * groupe source, l'avis de proposition : `switchToProposedCreation`). Les deux gestes se font dans le point de contrôle qui
+   * juge la réponse courante : la proposition est posée sous ce jugement, jamais une micro-tâche plus tard (R172). Une exception
+   * de `switchForm` remonte au gestionnaire `@translate` de la page, dont Vue passe le rejet à `app.config.errorHandler` : le
+   * formulaire peut rester à moitié basculé, une faute de programmation que le gestionnaire d'erreurs rend visible (limite
+   * acceptée, R187).
    */
   readonly proposeFrom: (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void) => Promise<void>
   /**

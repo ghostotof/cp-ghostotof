@@ -130,6 +130,31 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     wrapper.unmount()
   })
 
+  it("une langue d'interface non prise en charge, route sans langue : connexion dans la langue par défaut (#748, R204)", async () => {
+    // Une route hors `/:locale(fr|en)` : le lien ne peut lire sa langue que de celle de l'interface, ici hors des langues du site.
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/sans-langue', component: StubPage, meta: { requiresAuth: true } },
+        { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
+      ],
+    })
+    await router.push('/admin/sans-langue')
+    await router.isReady()
+    const i18n = createAppI18n()
+    i18n.global.locale.value = 'de' as never
+    const wrapper = mount(AccessRefusedNotice, {
+      attachTo: document.body,
+      global: { plugins: [i18n, router], provide: { [AUTH_REPOSITORY as symbol]: repository } },
+    })
+
+    refuse()
+    await flushPromises()
+
+    expect(wrapper.get('a').attributes('href')).toBe('/fr/login?redirect=/admin/sans-langue&reauth=1')
+    wrapper.unmount()
+  })
+
   it("un second refus remplace le message : l'alerte et son lien restent le même élément", async () => {
     const { wrapper } = await mountNotice()
     refuse()

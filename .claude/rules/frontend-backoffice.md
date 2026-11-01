@@ -190,7 +190,7 @@ what the nine forms share. Each page alone decides which of its fields are prose
 and what to do with the proposal.
 
 - `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is the reactive object itself, so the page
-  declares it **before** the call: `vue-tsc` refuses a use before its declaration, TS2448, which a getter did not see) returns
+  declares it **before** the call: `vue-tsc` refuses a use before its declaration, TS2448, which a getter would not show) returns
   `hasProse`, `translationErrorText` (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`,
   `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what
   `useAdminTranslation` exposes bar `expire` and `translate` (R153, D4 of the thirteenth review). Whatever `isRefused` and
@@ -202,11 +202,16 @@ and what to do with the proposal.
   `TranslationReadonlyHint`, the error alert —, which each form component writes because each of its bindings carries a value of
   the form (the form's locale, the lock's help, its `describedBy`); the generic section of Quality writes it once for its two
   instances, its bindings reading its props (R190). A form new to the assistant writes its list of prose fields
-  (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm` (`switchToProposedCreation(state, target)` of
-  `presentation/ui/admin/proposedCreation.ts`, written once for the eight per-entry forms: it empties `editingId`, sets the
-  target locale, the source's group and `proposalSourceLocale`), its template block and its `EntryFormLockCase`
-  (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred,
-  read `hasProse` and `translationErrorText` and call `requestProposal` themselves.
+  (`proseFields.ts`), its state (`useEntryFormState()` of `presentation/ui/admin/entryFormState.ts`: `editingId`, `isSubmitting`,
+  `sourceGroup`, `proposalSourceLocale`, one object kept whole for the switch and destructured **before** the `useTranslatedForm`
+  call, whose options read it), its `identity`, its `isRefused` terms, its `switchForm`
+  (`switchToProposedCreation(state, form, target)` of `presentation/ui/admin/proposedCreation.ts`, written once: it empties
+  `editingId`, sets the target locale, the source's group and `proposalSourceLocale`), its template block and its
+  `EntryFormLockCase` (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred, read `hasProse` and
+  `translationErrorText` and call `requestProposal` themselves.
+  A form's `locale` is never set from an entry with `as Locale`: `isSupportedLocale` first, and a language the site does not
+  carry is not set (R204; `groupByTranslationGroup` keeps only the supported ones, so the table never offers such an entry and
+  the guard is what another source of entries would meet; `tests/support/startEditThroughSetup.ts` reaches it in the specs).
 - `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
   inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
   checkpoint as the response cannot slip between the judgment and the application. An exception of `accept` (of `switchForm`)

@@ -25,12 +25,12 @@ const GUARDED_DIRS = ['presentation/pages/admin/', 'presentation/ui/admin/']
 const REPOSITORY_CALLS = new Set(['list', 'get', 'fetch', 'translate'])
 /**
  * Les fichiers que la garde lit, par dossier (#748, R203, Q12 (A)), les `.ts` comme les `.vue` (`proseFields.ts`…) : quinze dans
- * `presentation/pages/admin/` (treize `.vue`, deux `.ts`), onze dans `presentation/ui/admin/`. Une égalité, non un plancher :
- * un fichier qui sort d'un dossier (déplacé, renommé) sort de la garde, un fichier qui entre y entre, et dans les deux cas la
- * garde rougit au lieu de changer de périmètre en silence ; le message dit la constante à changer.
+ * `presentation/pages/admin/` (treize `.vue`, deux `.ts`), douze dans `presentation/ui/admin/` (`entryFormState.ts` depuis R204).
+ * Une égalité, non un plancher : un fichier qui sort d'un dossier (déplacé, renommé) sort de la garde, un fichier qui entre y
+ * entre, et dans les deux cas la garde rougit au lieu de changer de périmètre en silence ; le message dit la constante à changer.
  */
 const PAGES_FILES = 15
-const UI_FILES = 11
+const UI_FILES = 12
 
 function isGuarded(path: string): boolean {
   return GUARDED_DIRS.some((dir) => path.startsWith(dir))
