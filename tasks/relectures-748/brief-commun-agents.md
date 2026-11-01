@@ -9,20 +9,20 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R182 et suivantes**, la section
-  « Corrections de la quinzième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série précédente
-  a réellement fait, décisions D1 à D5, vérification des constats, ordre, choix tranchés, questions Q1 à Q14, Review
-  Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R168–R181, R173b : « … quatorzième
-  relecture » ; R152–R167, R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ;
-  R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième
-  relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième
-  relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième
-  relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de
-  relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-15-constats.md` (R168–R181 :
-  `relecture-14-constats.md` ; R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ;
-  R121–R136 : `relecture-11-constats.md`). Les sections passées sont l'archive de leur moment : une note
-  « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes
-  ont pu le changer), adapte au plus près de son intention et note l'écart, ou rends la question.
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R196 et suivantes**, la section « Corrections de la
+  seizième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série précédente a réellement fait, décisions D1 à
+  D4, vérification des constats, ordre, choix tranchés, questions Q1 à Q12, Review Focus, contraintes d'exécution, table des
+  fichiers), puis **ta tâche**. (R182–R195, R187b, R189b : « … quinzième relecture » ; R168–R181, R173b : « … quatorzième
+  relecture » ; R152–R167, R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ; R121–R136 :
+  « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 :
+  « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième relecture » ;
+  R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 :
+  « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
+  `tasks/relectures-748/relecture-16-constats.md` (R182–R195 : `relecture-15-constats.md` ; R168–R181 : `relecture-14-constats.md` ;
+  R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les
+  sections passées sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si
+  elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de son intention et note l'écart,
+  ou rends la question.
 - **Une décision de l'auteur listée au plan ou ici ne se contourne pas par une interprétation** : R166 a coupé des `echo`
   que l'auteur avait décidé de garder d'un seul tenant. Si une décision te semble contredire ta tâche, arrête-toi et rends
   la question.
@@ -35,6 +35,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   par l'agent seul, Sp15-1). Un cas qui reste vert d'emblée s'écrit quand même et se prouve par la mutation que la tâche nomme.
 - **Une décision prise en cours de série est écrite au plan par le fil principal avant que la tâche parte** (Sp15-3) ; l'agent
   de la tâche n'écrit pas au plan ce qu'il applique.
+- **Un correctif d'une classe de défaut s'applique à toutes les formes voisines du même mécanisme dans le périmètre** (C16-1 :
+  `-b '@a=b'` passait le jugement de `-b` ; C16-2 : la garde des vidages ne voyait ni guillemet ni accent grave ; Sp16-17 :
+  `bodyOf` corrigé ailleurs, `arguments()` lisait encore `,` par le texte) : cherche-les (le mécanisme, pas la ligne citée),
+  nomme-les dans ton commit, et dis celles que tu laisses et pourquoi.
+- **Une procédure écrite dans une règle se suit à la lettre** : si tu en ajoutes une ou en modifies une, liste **chaque**
+  endroit à toucher (St16-25 : « Pour ajouter une option… Rien d'autre » omettait le jugement des valeurs, et la suivre à la
+  lettre rouvrait la fuite) ; un endroit oublié est un défaut de la procédure, pas de qui la suit.
 - Règles : avec l'outil **Read** (jamais cat/sed/grep, qui ne chargent pas les règles path-scoped), celles que ta tâche
   cite ou modifie, plus, pour le frontend, `.claude/rules/frontend.md` et `.claude/rules/frontend-a11y.md`, et au moins
   un fichier de chaque zone touchée (`frontend/src`, `backend/src`, `backend/tests`, `tools/`) avant d'y écrire. Lis une
@@ -88,9 +95,10 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne serait pas mesurée et un test
   resterait vert à tort (R99 : une mutation faite par Edit est restée verte dans le conteneur backend). On restaure
   depuis la copie, puis on vérifie par `cmp`. En cas de doute sur ce que voit le conteneur : `docker compose restart
-  backend` ou `docker compose restart frontend`. **Chaque mutation se rend avec sa commande et la ligne de sortie qui rougit**
-  (Sp15-8 : six mutations annoncées par la quatorzième série ne se lisaient nulle part). Pour un refactoring pur, le
-  filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
+  backend` ou `docker compose restart frontend`. **Chaque mutation s'écrit dans le corps de ton message de commit**, avec sa
+  commande et la ligne de sortie qui rougit (décision de l'auteur du 2026-11-01, Sp16-1 : rendues aux seuls rendus, elles ne se
+  lisaient ni dans le diff ni au plan) ; format dans « Commit ». Pour un refactoring pur, le filet est la suite existante, verte
+  avant et après, nombre de tests noté au même endroit ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
 - **« ≤ 140 » est la longueur d'une ligne en caractères** (`awk 'length>140'`), jamais la taille d'un diff ni un nombre
@@ -107,6 +115,21 @@ déplacé), message en français au préfixe que donne la tâche, terminé par l
 
 Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
 
+**Le corps du message porte les mutations** (R196 et suivantes), un bloc par commit, après le paragraphe qui dit ce que fait le
+commit et avant les deux lignes de fin, lignes ≤ 140 (une ligne rouge plus longue se cite entière, sur sa ligne) :
+
+```
+Mutations :
+- M1 <fichier>:<ligne> : <ce qui change, en une phrase ou « avant » → « après »>
+  commande : <la commande exacte, telle que lancée>
+  rouge : <la ligne de sortie qui rougit, copiée> (<nombre> échec(s))
+- M2 …
+Filet : <commande> — <n> avant, <n> après   (pour un refactoring ; « Filet : aucun » sinon)
+```
+
+Une mutation qui reste verte s'y écrit aussi (« rouge : aucune — <raison> ») et se rend en question. Le balayage de la série les
+relit par `git log` : une mutation annoncée par le plan et absente du corps est « non attestée ».
+
 ## Interdits
 **Jamais `git add -N`** (ni `--intent-to-add`), **pas même en tête d'une commande, par réflexe, pour « voir » un fichier
 nouveau dans `git diff`** : quatre agents de la quatorzième série l'ont lancé ainsi. Un fichier nouveau se voit par
@@ -117,14 +140,15 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R195 écrit la sous-section « Ce que la quinzième
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R208 écrit la sous-section « Ce que la dix-septième
 série a réellement fait » du plan, avec les commandes et les nombres de son balayage) ; ne coche rien —
 **aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
 comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur : arrête-toi et rends la question.
 
 ## Rendu
-Fichiers touchés, SHA du commit, preuve : commande et extrait du test rouge (raison de l'échec, ou mutation), lignes de
+Fichiers touchés, SHA du commit, preuve : commande et extrait du test rouge (raison de l'échec, ou mutation — la même que
+celle du corps du commit), lignes de
 résumé et codes de sortie des cibles make, des tests hors ligne et de check-claude-rules, taille des règles touchées,
 **écarts au plan, chacun nommé** (ce que la tâche disait, ce que le code fait, pourquoi : R181 les reporte au plan —
 la treizième relecture a reproché au plan de les avoir perdus), questions ouvertes.
