@@ -118,7 +118,7 @@ final class ClassNameResolver
         $separator = $tokens[$index] ?? null;
         $brace = $tokens[$index + 1] ?? null;
 
-        return null !== $separator && $separator->is(\T_NS_SEPARATOR) && null !== $brace && '{' === $brace->text;
+        return null !== $separator && $separator->is(\T_NS_SEPARATOR) && null !== $brace && PhpSources::isChar($brace, '{');
     }
 
     /**
@@ -133,12 +133,12 @@ final class ClassNameResolver
     private static function groupedImports(array $tokens, int $index, string $prefix): array
     {
         $imports = [];
-        while (null !== ($token = $tokens[$index] ?? null) && '}' !== $token->text) {
+        while (null !== ($token = $tokens[$index] ?? null) && !PhpSources::closesBrace($token)) {
             if ($token->is(self::IMPORTED_NAMES)) {
                 [$alias, $class, $index] = self::importedAt($tokens, $index, $prefix);
                 $imports[$alias] = $class;
             } elseif ($token->is([\T_FUNCTION, \T_CONST])) {
-                while (null !== ($token = $tokens[$index] ?? null) && !\in_array($token->text, [',', '}'], true)) {
+                while (null !== ($token = $tokens[$index] ?? null) && !$token->is(',') && !PhpSources::closesBrace($token)) {
                     ++$index;
                 }
             } else {
@@ -152,12 +152,14 @@ final class ClassNameResolver
     /**
      * Chaque jeton du code avec l'espace de noms et les imports qui valent à
      * cet endroit : la boucle que partagent les recenseurs de sites
-     * ({@see BareExceptionInstantiations}, {@see CookieConstructions}). Les
-     * jetons `namespace` et `use` eux-mêmes ne sont pas rendus ; les imports
-     * repartent de zéro à chaque `namespace`, et à la fin d'un bloc
-     * `namespace X { … }`. Seul un `use` de l'espace de noms importe : celui
-     * d'un corps de classe est un trait, celui d'une fonction anonyme une
-     * capture.
+     * ({@see BareExceptionInstantiations}, {@see CookieConstructions}, le modèle
+     * de `ProblemDetailStaysStaticTest`). Les jetons `namespace` et `use`
+     * eux-mêmes ne sont pas rendus ; les imports repartent de zéro à chaque
+     * `namespace`, et à la fin d'un bloc `namespace X { … }`. Seul un `use` de
+     * l'espace de noms importe : celui d'un corps de classe est un trait, celui
+     * d'une fonction anonyme une capture. Les accolades se comptent par
+     * l'identifiant du jeton ({@see PhpSources::opensBrace()}), non par son
+     * texte : le fragment `}` d'une chaîne interpolée n'en ferme aucune.
      *
      * @param list<PhpToken> $tokens
      *
@@ -168,10 +170,10 @@ final class ClassNameResolver
         $namespace = '';
         /** @var array<string, string> $imports alias en minuscules => classe importée en minuscules */
         $imports = [];
-        $depth = 0;
         // La profondeur d'accolades du corps d'un `namespace X { … }` ; null pour un `namespace X;` ou aucun.
         $blockDepth = null;
-        foreach ($tokens as $index => $token) {
+        foreach (self::depthsBefore($tokens) as $index => $depth) {
+            $token = $tokens[$index];
             if ($token->is(\T_NAMESPACE)) {
                 $namespace = self::namespaceDeclaredAt($tokens, $index);
                 $imports = [];
@@ -181,17 +183,34 @@ final class ClassNameResolver
                     $imports = array_merge($imports, self::imports($tokens, $index + 1));
                 }
             } else {
-                if (PhpSources::opensBrace($token)) {
-                    ++$depth;
-                } elseif ($token->is('}')) {
-                    if ($depth === $blockDepth) {
-                        $namespace = '';
-                        $imports = [];
-                        $blockDepth = null;
-                    }
-                    --$depth;
+                if (PhpSources::closesBrace($token) && $depth === $blockDepth) {
+                    $namespace = '';
+                    $imports = [];
+                    $blockDepth = null;
                 }
                 yield $index => [$namespace, $imports];
+            }
+        }
+    }
+
+    /**
+     * Chaque jeton avec la profondeur d'accolades qui vaut avant lui : celle où
+     * il se trouve, un `{` ou un `}` compris (le premier ouvre le niveau
+     * suivant, le second ferme celui où il est).
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return Generator<int, int> index du jeton => profondeur avant le jeton
+     */
+    private static function depthsBefore(array $tokens): Generator
+    {
+        $depth = 0;
+        foreach ($tokens as $index => $token) {
+            yield $index => $depth;
+            if (PhpSources::opensBrace($token)) {
+                ++$depth;
+            } elseif (PhpSources::closesBrace($token)) {
+                --$depth;
             }
         }
     }
@@ -206,7 +225,7 @@ final class ClassNameResolver
         $name = $tokens[$index + 1] ?? null;
         $next = null !== $name && $name->is([\T_STRING, \T_NAME_QUALIFIED]) ? $tokens[$index + 2] ?? null : $name;
 
-        return null !== $next && '{' === $next->text;
+        return null !== $next && PhpSources::isChar($next, '{');
     }
 
     /**
@@ -224,7 +243,7 @@ final class ClassNameResolver
         }
 
         // Classe anonyme : son parent se lit avant l'accolade du corps.
-        for ($cursor = $index + 1; null !== ($token = $tokens[$cursor] ?? null) && '{' !== $token->text; ++$cursor) {
+        for ($cursor = $index + 1; null !== ($token = $tokens[$cursor] ?? null) && !PhpSources::isChar($token, '{'); ++$cursor) {
             if ($token->is(\T_EXTENDS)) {
                 $parent = $tokens[$cursor + 1] ?? null;
 

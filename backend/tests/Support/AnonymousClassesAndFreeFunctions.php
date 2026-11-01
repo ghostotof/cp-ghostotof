@@ -112,11 +112,11 @@ final class AnonymousClassesAndFreeFunctions
                 if ($opensBody) {
                     array_pop($pendingBodies);
                 }
-            } elseif ('}' === $token->text) {
+            } elseif (PhpSources::closesBrace($token)) {
                 array_pop($braces);
-            } elseif ('(' === $token->text) {
+            } elseif (PhpSources::isChar($token, '(')) {
                 ++$parentheses;
-            } elseif (')' === $token->text) {
+            } elseif (PhpSources::isChar($token, ')')) {
                 --$parentheses;
             }
         }

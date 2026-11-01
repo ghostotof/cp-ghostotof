@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\ClassNameResolver;
+use App\Tests\Support\InterpolatedStrings;
 use App\Tests\Support\PhpSources;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -139,6 +140,19 @@ final class ClassNameResolverTest extends TestCase
         ];
         // PHP refuse du code hors d'un bloc quand le fichier en compte, mais le recenseur lit des jetons : il ne garde rien.
         yield 'imports remis à zéro à la fin du bloc' => ["<?php\nnamespace X { use A\\B; }\nnew B;", 'b'];
+
+        // Un fragment de chaîne interpolée dont le texte est `}` ou `{` n'est pas une accolade du code : l'import
+        // qui suit reste au premier niveau (C15-2 : lu par le texte, il résolvait `C` vers `app\c`).
+        foreach (InterpolatedStrings::BRACES as $label => $string) {
+            yield 'import après '.$label => [
+                "<?php\nnamespace App;\n\$j = ".$string.";\nuse Symfony\\Component\\HttpFoundation\\Cookie as C;\nnew C('x');",
+                'symfony\component\httpfoundation\cookie',
+            ];
+            yield 'fin de bloc namespace après '.$label => [
+                "<?php\nnamespace App { function f() { return ".$string."; }\nuse A\\B; }\nnew B;",
+                'b',
+            ];
+        }
     }
 
     #[DataProvider('scoped')]

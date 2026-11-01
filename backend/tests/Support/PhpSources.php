@@ -78,11 +78,37 @@ final class PhpSources
     }
 
     /**
-     * Un jeton qui ouvre une accolade, que `}` refermera. `"{$a}"` l'ouvre par
-     * T_CURLY_OPEN, dont le texte est `{`, et `"${a}"` par `${`.
+     * Un jeton qui ouvre une accolade, que {@see self::closesBrace()} refermera :
+     * l'accolade du code (identifiant `{`), `"{$a}"` par T_CURLY_OPEN et `"${a}"`
+     * par `${`. Lu par l'identifiant, jamais par le texte : le fragment d'une
+     * chaîne interpolée (T_ENCAPSED_AND_WHITESPACE) peut avoir le texte `{`, et
+     * `"$x{"` ou `"{\"id\":$id}"` n'ouvrent rien (issue #748, C15-2).
      */
     public static function opensBrace(PhpToken $token): bool
     {
-        return '{' === $token->text || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES);
+        return \ord('{') === $token->id || \T_CURLY_OPEN === $token->id || \T_DOLLAR_OPEN_CURLY_BRACES === $token->id;
+    }
+
+    /**
+     * Un jeton qui ferme une accolade ouverte par {@see self::opensBrace()} : le
+     * `}` du code, jamais le fragment `}` d'une chaîne interpolée
+     * (`"$x}"`, `"{\"id\":$id}"`, `"\{$a}"`), dont le texte seul est le même.
+     */
+    public static function closesBrace(PhpToken $token): bool
+    {
+        return \ord('}') === $token->id;
+    }
+
+    /**
+     * Le jeton est-il ce caractère du code (`(`, `)`, `[`, `]`…) ? Lu par
+     * l'identifiant, que seul le jeton d'un caractère du code porte :
+     * `PhpToken::is('(')` compare le texte, que le fragment `(` d'une chaîne
+     * interpolée (`"$x("`) a aussi.
+     *
+     * @param string $char un seul caractère
+     */
+    public static function isChar(PhpToken $token, string $char): bool
+    {
+        return \ord($char[0]) === $token->id;
     }
 }

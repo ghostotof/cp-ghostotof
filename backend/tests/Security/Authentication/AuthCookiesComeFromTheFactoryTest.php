@@ -6,6 +6,7 @@ namespace App\Tests\Security\Authentication;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Tests\Support\CookieConstructions;
+use App\Tests\Support\InterpolatedStrings;
 use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -99,6 +100,13 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'en-tête écrit à la main' => ["<?php\nnamespace App;\n\$response->headers->set('Set-Cookie', \$raw);\n", [3]];
         yield 'en-tête natif interpolé' => ["<?php\nnamespace App;\nheader(\"set-cookie: BEARER=\$jwt\");\n", [3]];
         yield 'plusieurs sites, dans l\'ordre' => [$use."\$a = Cookie::create('a');\n\$b = new Cookie('b');\n", [4, 5]];
+        // Le texte d'un fragment de chaîne interpolée n'est pas une accolade du code : l'import qui suit reste vu (C15-2).
+        foreach (InterpolatedStrings::BRACES as $label => $string) {
+            yield 'importée après '.$label => [
+                "<?php\nnamespace App;\n\$j = ".$string.";\nuse Symfony\\Component\\HttpFoundation\\Cookie as C;\nnew C('x');\n",
+                [5],
+            ];
+        }
         yield 'nom partiellement qualifié' => ["<?php\nnamespace App;\nuse Symfony\\Component\\HttpFoundation;\n\$c = HttpFoundation\\Cookie::create('x');\n", [4]];
         yield 'retouche de Partitioned' => ["<?php\nnamespace App;\n\$c = \$cookie->withPartitioned(false);\n", [3]];
         // Une sous-classe nommée porte ses propres défauts ; ses `new` et ses

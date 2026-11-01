@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\AnonymousClassesAndFreeFunctions;
+use App\Tests\Support\InterpolatedStrings;
 use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -94,5 +95,27 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
         yield 'import groupé de fonctions' => ["<?php\nnamespace App;\nuse Foo\\{Bar, function baz, function qux};\n", []];
         // Une accolade d'interpolation se referme comme une autre : la méthode suivante reste une méthode.
         yield 'accolade d\'interpolation dans une méthode' => ["<?php\nnamespace App;\nfinal class A {\n    public function m(): string { return \"{\$this->a}\"; }\n    public function n(): void {}\n}\n", []];
+
+        // Le texte d'un fragment de chaîne interpolée n'est pas une accolade ni une parenthèse du code (C15-2) : la
+        // méthode qui suit reste une méthode, la fonction déclarée dans la méthode reste vue, et le corps de la
+        // classe anonyme s'ouvre à la bonne profondeur de parenthèses.
+        foreach (InterpolatedStrings::BRACES as $label => $string) {
+            yield 'méthode après '.$label => [
+                "<?php\nnamespace App;\nfinal class A {\n    public function m(): void { \$s = ".$string."; }\n"
+                    ."    public function n(): void {}\n}\n",
+                [],
+            ];
+            yield 'fonction déclarée dans une méthode après '.$label => [
+                "<?php\nnamespace App;\nfinal class A {\n    public function m(): void {\n        \$s = ".$string.";\n"
+                    ."        function inner(): void {}\n    }\n}\n",
+                ['6: fonction inner()'],
+            ];
+        }
+        foreach (InterpolatedStrings::PARENTHESES as $label => $string) {
+            yield 'classe anonyme dont l\'argument est '.$label => [
+                "<?php\nnamespace App;\n\$a = new class(".$string.") {\n    public function m(): void {}\n};\n",
+                ['3: classe anonyme'],
+            ];
+        }
     }
 }

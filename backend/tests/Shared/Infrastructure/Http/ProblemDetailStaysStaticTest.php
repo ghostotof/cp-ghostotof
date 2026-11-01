@@ -11,6 +11,7 @@ use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Tests\Support\ClassNameResolver;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\InterpolatedStrings;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
 use PhpToken;
@@ -235,6 +236,17 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'namespace\\ ailleurs' => [$header."throw new namespace\\Problem('x'.\$c);", 0];
         yield 'imports remis à zéro au namespace suivant' => [$header."namespace App\\Q;\nthrow new Problem('x'.\$c);", 0];
         yield 'espace de noms à accolades' => ["<?php\nnamespace App\\X {\nuse App\\Y\\Problem;\nthrow new Problem('x'.\$c);\n}", 1];
+        // Les imports d'un bloc `namespace X { … }` ne valent plus après sa fin (St15-29 : la boucle du modèle
+        // n'avait pas cette remise à zéro, que ClassNameResolver::scopes() fait).
+        yield 'imports remis à zéro à la fin du bloc' => [
+            "<?php\nnamespace App\\X {\nuse App\\Y\\Problem;\n}\nthrow new Problem('x'.\$c);",
+            0,
+        ];
+        yield 'getDetail dynamique dans un bloc, suivi d\'un autre bloc' => [
+            "<?php\nnamespace App\\X {\nfinal class Foo {}\n}\nnamespace App\\Y {\nfinal class Problem extends \\DomainException {\n"
+            ."    public function getDetail(): string { return \$this->c; }\n}\n}\n",
+            1,
+        ];
 
         $class = "<?php\nnamespace App\\Y;\nfinal class Problem extends \\DomainException {\n";
         yield 'fabrique new self' => [$class."    public static function tooLong(string \$c): self { return new self('Trop long : '.\$c); }\n}", 1];
@@ -348,6 +360,53 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'décompression vers un parent qui transmet' => [$namespace."abstract class Base extends \\DomainException {\n    public function __construct(?\\Throwable \$p, string \$m) { parent::__construct(\$m); }\n}\n"
             ."final class Problem extends Base {\n    public function __construct(string ...\$a) { parent::__construct(...\$a); }\n}\n".$thrower("'x'.\$c"), 1];
         yield 'constructeur du parent appelé par son nom' => [$forwarding("\\DomainException::__construct('x'.\$m);"), 1];
+
+        // Le texte d'un fragment de chaîne interpolée n'est ni une accolade, ni une parenthèse, ni un crochet du code
+        // (C15-2, St15-29) : chaque niveau que le modèle compte se lit par l'identifiant du jeton.
+        foreach (InterpolatedStrings::BRACES as $label => $string) {
+            yield 'getDetail dynamique après '.$label.' dans une méthode' => [
+                $class.'    public function f(): string { return '.$string."; }\n"
+                    ."    public function getDetail(): string { return \$this->c; }\n}",
+                1,
+            ];
+            yield 'constructeur qui formate, après '.$label => [
+                $class.'    public function __construct(string $c) { $s = '.$string."; parent::__construct('Trop long : '.\$c); }\n}",
+                1,
+            ];
+            yield 'site composé dont le premier argument porte '.$label => [
+                $own.$thrower('new \\RuntimeException('.$string."), 'x'.\$c"),
+                1,
+            ];
+            yield 'paramètre réaffecté après '.$label => [
+                $forwarding('$s = '.$string.'; $m = \'x\'.$m; parent::__construct($m);').$thrower("'Vide.'"),
+                1,
+            ];
+        }
+        foreach (InterpolatedStrings::PARENTHESES as $label => $string) {
+            yield 'site composé dont le premier argument porte '.$label => [
+                $own.$thrower('new \\RuntimeException('.$string."), 'x'.\$c"),
+                1,
+            ];
+        }
+        yield 'déstructuration par clé interpolée avec un crochet' => [
+            $forwarding('["$k]" => $m] = $v; parent::__construct($m);', 'string $m, array $v, string $k')
+                .$thrower("'Vide.', [\$c], 'k'"),
+            1,
+        ];
+        yield 'foreach déstructuré par clé interpolée avec une parenthèse fermante' => [
+            $forwarding('foreach ($v as ["$x)" => $m]) {} parent::__construct($m);', 'string $m, array $v').$thrower("'Vide.', [\$c]"),
+            1,
+        ];
+        yield 'foreach déstructuré par clé interpolée avec une parenthèse ouvrante' => [
+            $forwarding('foreach ($v as ["$x(" => $k]) {} parent::__construct($m);', 'string $m, array $v').$thrower("'Vide.', [\$c]"),
+            0,
+        ];
+        yield 'paramètre promu à crochet de propriété dont le corps porte une accolade fermante interpolée' => [
+            $namespace."final class Problem extends \\DomainException {\n"
+                ."    public function __construct(public string \$a { get => \"\$a}\"; }, string \$m) { parent::__construct(\$m); }\n}\n"
+                .$thrower("'x', 'Vide.'"),
+            0,
+        ];
         yield 'paramètre sous attribut, transmis' => [$namespace."final class Problem extends \\DomainException {\n    public function __construct(#[\\SensitiveParameter] string \$p, string \$m) { parent::__construct(\$m); }\n}\n".$thrower("\$c, 'Vide.'"), 0];
         yield 'transmis sur deux niveaux, site composé' => [$namespace."abstract class Root extends \\DomainException {\n    public function __construct(string \$r) { parent::__construct(\$r); }\n}\n"
             ."abstract class Base extends Root {\n    public function __construct(?\\Throwable \$p, string \$b) { parent::__construct(\$b); }\n}\n".$child.$thrower("\$e, 'x'.\$c"), 1];
@@ -1009,6 +1068,10 @@ final class ProblemDetailStaysStaticTest extends TestCase
     {
         $tokens = PhpSources::significantTokens($code);
 
+        // L'espace de noms et les imports qui valent à chaque jeton, lus comme les lisent les autres recenseurs de
+        // sites, remise à zéro de fin de bloc `namespace X { … }` comprise (St15-29). `namespace` et `use` n'y sont
+        // pas rendus : ils gardent ce qui valait au jeton d'avant, ce que veut le `use` d'un trait.
+        $scopes = iterator_to_array(ClassNameResolver::scopes($tokens));
         $namespace = '';
         $imports = [];
         // La déclaration en cours et la profondeur de son corps : ce qui
@@ -1026,18 +1089,13 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $constructions = [];
 
         foreach ($tokens as $index => $token) {
+            [$namespace, $imports] = $scopes[$index] ?? [$namespace, $imports];
             if (PhpSources::opensBrace($token)) {
                 ++$depth;
-            } elseif ($token->is('}')) {
+            } elseif (PhpSources::closesBrace($token)) {
                 if (--$depth < $bodyDepth) {
                     $current = null;
                 }
-            } elseif ($token->is(\T_NAMESPACE)) {
-                $namespace = ClassNameResolver::namespaceDeclaredAt($tokens, $index);
-                $imports = [];
-            } elseif ($token->is(\T_USE) && null === $current) {
-                // Un import, au premier niveau ou dans un `namespace { … }`.
-                $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
             } elseif ($token->is(\T_USE) && null !== $current && $depth === $bodyDepth) {
                 [$used, $next] = $this->usedTraits($tokens, $index + 1, $namespace, $imports);
                 $traits[$current] = [...$traits[$current] ?? [], ...$used];
@@ -1139,7 +1197,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $insteadof = [];
         $aliases = [];
         $statement = [];
-        for ($index = $open + 1, $count = \count($tokens); $index < $count && !$tokens[$index]->is('}'); ++$index) {
+        for ($index = $open + 1, $count = \count($tokens); $index < $count && !PhpSources::closesBrace($tokens[$index]); ++$index) {
             if (!$tokens[$index]->is(';')) {
                 $statement[] = $tokens[$index];
 
@@ -1160,6 +1218,21 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
 
         return ['insteadof' => $insteadof, 'aliases' => $aliases];
+    }
+
+    /**
+     * Le jeton ouvre-t-il un niveau d'imbrication : `(`, `[` ou une accolade ({@see PhpSources::opensBrace()}) ?
+     * Lu par l'identifiant : le fragment `(` d'une chaîne interpolée n'en ouvre aucun.
+     */
+    private function opensALevel(PhpToken $token): bool
+    {
+        return PhpSources::isChar($token, '(') || PhpSources::isChar($token, '[') || PhpSources::opensBrace($token);
+    }
+
+    /** Le jeton ferme-t-il un niveau ouvert par {@see self::opensALevel()} : `)`, `]` ou `}` du code ? */
+    private function closesALevel(PhpToken $token): bool
+    {
+        return PhpSources::isChar($token, ')') || PhpSources::isChar($token, ']') || PhpSources::closesBrace($token);
     }
 
     /**
@@ -1285,9 +1358,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $open + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is(['(', '[']) || PhpSources::opensBrace($token)) {
+            if ($this->opensALevel($token)) {
                 ++$level;
-            } elseif ($token->is([')', ']', '}'])) {
+            } elseif ($this->closesALevel($token)) {
                 if (0 === $level) {
                     break;
                 }
@@ -1575,7 +1648,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             $token = $tokens[$index];
             if (PhpSources::opensBrace($token)) {
                 ++$depth;
-            } elseif ($token->is('}') && 0 === --$depth) {
+            } elseif (PhpSources::closesBrace($token) && 0 === --$depth) {
                 break;
             } elseif ($depth > 0 && $token->is(ClassNameResolver::NAMES) && !\in_array(strtolower($token->text), ['self', 'static'], true)
                 && $this->tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
@@ -1609,7 +1682,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             $token = $tokens[$index];
             if (PhpSources::opensBrace($token)) {
                 ++$depth;
-            } elseif ($token->is('}') && 0 === --$depth) {
+            } elseif (PhpSources::closesBrace($token) && 0 === --$depth) {
                 break;
             }
             if ($token->is([\T_AS, \T_CATCH])) {
@@ -1643,9 +1716,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is('(')) {
+            if (PhpSources::isChar($token, '(')) {
                 ++$level;
-            } elseif ($token->is(')') && 0 === $level--) {
+            } elseif (PhpSources::isChar($token, ')') && 0 === $level--) {
                 break;
             } elseif ($token->is(\T_VARIABLE)) {
                 $variables[] = substr($token->text, 1);
@@ -1665,14 +1738,14 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     private function destructuredBefore(array $tokens, int $close): array
     {
-        [$opener, $closer] = $tokens[$close]->is(']') ? ['[', ']'] : ['(', ')'];
+        [$opener, $closer] = PhpSources::isChar($tokens[$close], ']') ? ['[', ']'] : ['(', ')'];
         $variables = [];
         $level = 0;
         for ($index = $close; $index >= 0; --$index) {
             $token = $tokens[$index];
-            if ($token->is($closer)) {
+            if (PhpSources::isChar($token, $closer)) {
                 ++$level;
-            } elseif ($token->is($opener) && 0 === --$level) {
+            } elseif (PhpSources::isChar($token, $opener) && 0 === --$level) {
                 $isDestructuring = '[' === $opener ? !$this->tokenAt($tokens, $index - 1, [\T_VARIABLE, ']', ')', \T_STRING]) : $this->tokenAt($tokens, $index - 1, \T_LIST);
 
                 return $isDestructuring ? $variables : [];
@@ -1700,9 +1773,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $function + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is(['(', '[', \T_ATTRIBUTE]) || PhpSources::opensBrace($token)) {
+            if ($this->opensALevel($token) || $token->is(\T_ATTRIBUTE)) {
                 ++$level;
-            } elseif ($token->is([')', ']', '}']) && 0 === --$level) {
+            } elseif ($this->closesALevel($token) && 0 === --$level) {
                 break;
             } elseif (1 === $level && $token->is(\T_VARIABLE)) {
                 $parameters[] = substr($token->text, 1);
