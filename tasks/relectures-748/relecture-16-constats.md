@@ -10,9 +10,16 @@ principal a rejoué sur conteneurs redémarrés les cinq cibles `make`, les 26 t
 par `php -r`) ; CR15-4 et C15-1 fermés sauf des formes voisines (C16-1, C16-2).
 
 ## Décisions de l'utilisateur
-_(à prendre — voir les questions ci-dessous)_
+Prises le 2026-11-01 : **les quatre recommandations**.
+- Q1 → le fil principal reporte au plan les mutations rendues par les agents de R182 à R195 (commande, ligne rouge) ; à partir de
+  la dix-septième série, chaque agent écrit ses mutations dans le **corps de son message de commit**.
+- Q2 → retirer les quatre `as` d'`AdminQualityEntrySection.vue` (`reactive` typé, `QualityEntryInput<F>`, garde d'exhaustivité).
+- Q3 → garder le retrait de la condition d'`endCall` ; son commentaire nomme le test de R125 qui garde l'invariant.
+- Q4 → ouvrir le ticket P15-1 maintenant (texte montré à l'auteur avant l'envoi) ; `bodyOf`, `arguments()`, `constantsAt` restent
+  dans #748.
+- Tout le reste se corrige (critère « tout jusqu'à zéro »).
 
-Questions à poser :
+Questions posées :
 1. **Sp16-1 = Sp16-20** (Sp15-8 répété) : les mutations des tâches figurent dans les rendus des agents, que le fil principal
    a vérifiés, mais pas au plan. Reco : le fil principal reporte au plan, dans la sous-section de la série, chaque mutation
    rendue (commande, ligne rouge) ; à partir de la série suivante, chaque agent écrit ses mutations dans le **corps du message

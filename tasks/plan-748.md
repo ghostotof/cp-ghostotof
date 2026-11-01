@@ -12759,6 +12759,72 @@ proposition ») passe par un helper qui la capte, nom laissé.
 
 ---
 
+#### Les mutations de la série, reportées des rendus des agents *(ajouté par le fil principal le 2026-11-01, Sp16-1 = Sp16-20)*
+
+Chaque mutation ci-dessous a été faite en place par Python sur une copie vérifiée par `cmp`, puis restaurée (`cmp` identique) ;
+« → » donne la ligne qui rougit. Source : le rendu de l'agent de chaque tâche, relu par le fil principal à la vérification de la
+tâche ; celles marquées « rejouée » l'ont été aussi par le balayage R195 ou par la seizième relecture.
+
+- **R182** (`smoke-http.test.sh`, `audit-prod.test.sh`) — (A) `if [[ -v $_smoke_name ]]` → `if false` : `FAIL retrait impossible
+  (lecture-seule)`, `FAIL retrait impossible (locale-masquante)` (rejouée par R195) ; (B) `smoke_cleanup` sans condition :
+  `FAIL audit : nom invalide` (`outils lancés : == rm == rm`).
+- **R183** (`smoke-http.test.sh` ; m : `smoke-mcp.test.sh` ; n : `audit-prod.test.sh`) — (a) `--data-binary` non jugé : `FAIL
+  smoke_fetch : « --data-binary @…/curl-auth.conf » avec la Basic Auth → retour 2, rang 4` (10 FAIL ; rejouée par la 16e
+  relecture) ; (b) `--noproxy` retiré : `FAIL smoke_fetch avec auth` (20 ; rejouée par R195) ; (c) `smoke_cleanup` ne vide plus
+  le tableau : `FAIL deux smoke_data_file` (5) ; (d)–(f) `-H`, `-d`, `-b` non jugés : `FAIL … « -H @/etc/hostname » … rang 4`,
+  `« -d @f »`, `« -b cookies.txt »` ; (g) correspondance par préfixe : le cas du suffixe ; (h) `smoke_cleanup` ne retire plus les
+  fichiers ; (i) `smoke_data_file` n'enregistre pas ; (j) `-b` refusé avec `=` : `FAIL smoke_fetch : -b 'BEARER=x'` ; (k) `-H`
+  refusé sans `@` : 16 FAIL ; (l) le `-K` admis par `--data-binary` ; (m) `smoke-mcp.sh` revenu à `mktemp` : `FAIL corps de
+  l'étape 2 avec la Basic Auth` ; (n) audit sans `--noproxy` : `FAIL chaque appel qui porte -K porte --noproxy *`.
+- **R184** (`smoke-http.test.sh`) — M1 `(-|\+)` → `-` dans `list_end` : `FAIL … : declare +x`, `typeset +r` (rejouée par R195) ;
+  M2 `--` retiré : `FAIL … : declare --`, `export --`, `declare -x --` ; M3/M4 guillemets avant/après dans `pat_set` : `FAIL … :
+  bash -c 'set'`, `bash -c "set"`.
+- **R185** (`smoke-http.test.sh`) — (a) `_smoke_value_problem` rend 0 sur une valeur sans « : » : 23 FAIL dont `FAIL
+  _smoke_write_auth_config : valeur sans « : »` (rejouée par la 16e relecture : 1 FAIL sur le cas visé) ; (b) `umask 077` retiré :
+  le test du mode 600 ; (c) `unset -v http_proxy …` retiré : `FAIL variables de curl encore posées` ; (d) l'appel à
+  `_smoke_write_config_file` retiré : sortie anticipée (`cat: '' …`).
+- **R186** (tests des quatre scripts, `smoke-http.test.sh`) — la ligne `[ -n "$script_dir" ] || script_dir=/` retirée : `FAIL un
+  script à la racine …` ; `CDPATH=''` retiré : `FAIL CDPATH posé et chemin relatif …` (`rc=2`) ; `CASE_RANK` retiré de
+  `CASE_NAMES` : 88 FAIL ; `local +x` retiré pour `CASE_LABEL` : `FAIL run_case : les valeurs posées par run_case atteignent un fils`
+  (1 variable ; 9 pour la boucle) ; un nom ajouté à l'`unset -v` : `FAIL liste des variables de curl` (rejouées par la 16e
+  relecture).
+- **R187** — `await requestProposal(` → `void requestProposal(` dans `proposeFrom` (`useTranslatedForm.spec.ts`) : `expected
+  "vi.fn()" to be called once, but got 0 times` ; même ligne pour le `setTimeout` du test ; `categoryOrders.slice(0, 1)` : `cartes
+  « moi » (personal)`, `(hobby)` rouges ; `await Promise.resolve()` avant `accept` (`AdminAboutPage.spec.ts -t "même point de
+  contrôle"`) : `expected 'en' to be 'fr'`.
+- **R187b** (`AdminAboutPage.spec.ts`) — l'appel `dropPendingProposalNotFor` retiré de `chooseLocale` : `FAIL … un retour à FR au
+  même point de contrôle que la réponse, puis EN plus tard, ne pose aucune proposition (#748, R187b)` (`Received: "About this
+  site"`).
+- **R188** (`tests/application/admin/translation`, `useTranslatedForm.spec.ts`) — M0 `await` entre le jugement et `accept` : 3
+  failed (`accept … est appelée avec la proposition avant tout rappel …`) ; M1 `failure.value = null` retiré : `efface la raison de
+  l'erreur précédente …` ; M2 `retainIfCurrent` toujours vrai : 17 ; M3 garde de péremption de `recordFailure` : 2 ; M4b/M4c
+  `endCall` : 9 / 10 ; M5 garde d'entrée : 3 ; types (`vue-tsc -b`, sortie 2) : `TS2741` (raison ajoutée), `TS2322` (clé mal
+  écrite), `TS2741` (entrée retirée).
+- **R189** — `const form` déplacé après l'appel (`AdminIncidentsPage.vue`, `make front-build`) : `error TS2448: Block-scoped
+  variable 'form' used before its declaration` ; `switchToProposedCreation` qui oublie `proposalSourceLocale` : 73 échecs dans 7
+  fichiers.
+- **R189b** (`translatedFormDeclarationOrder.spec.ts`) — la comparaison de la garde neutralisée : 9 failed ; `useOrderDraft`
+  déplacé après l'appel (`AdminIncidentsPage.vue`) : `… : isOrderDirty (lu par isRefused, déclaré ligne 140, après l'appel de
+  useTranslatedForm ligne 114)` ; `categoryOrders` déplacé (`AdminAboutMeCardsSection.vue`) : `… déclaré ligne 211 … ligne 195`.
+- **R190** — la garde `isLoaded` de l'état vide neutralisée (`emptyStateNeedsLoaded.spec.ts`) : `AdminQualityEntrySection.vue : 1
+  état(s) vide(s), 0 garde(s) isLoaded` ; `copiedToNewVersion` ignoré (`AdminQualityPage.spec.ts`) : `principe : ouvre une
+  création rattachée, l'icône recopiée …` (1 failed) ; `isOrderDirty` retiré d'`isRefused` : les deux cas R173 (2 failed).
+- **R191** — « Modifier » → « Éditer » dans `fr.json` : 134 failed avant l'hygiène (`Bouton « Modifier » introuvable`), 240
+  passed après (le catalogue est lu) ; `emitTranslateRightAfterMove` sans le déplacement : 6 failed ; `capturedProposal` qui ne
+  retient rien : 12 ; nom accessible vide : 32.
+- **R192** (`sourceText.spec.ts`) — `onDeactivated` retiré de `DEFERRED_HOOKS` : `× deferredCallsOf lit les hooks de démontage …
+  expected [] to deeply equal [ 'load' ]` (rejouée par R195 : 2 failed) ; les vingt hooks retirés un à un : chacun ≥ 1 rouge.
+- **R193** (les cinq tests des recenseurs) — M1 `closesBrace` par le texte : 28 (`…@import après un objet JSON écrit entre
+  guillemets` ; rejouée par R195) ; M2 sans `T_CURLY_OPEN` : 12 ; M3 sans `T_DOLLAR_OPEN_CURLY_BRACES` : 11 ; M4 `{` par le texte :
+  7 ; M5 `isChar` par le texte : 7 ; M6–M8 par recenseur : 3, 6, 2 ; M9 sans remise à zéro de fin de bloc : 8 ; M11 boucle de
+  `parse()` à la main : 1 (`testTheDetector@imports remis à zéro à la fin du bloc` ; rejouée par la 16e relecture) ; M12–M18 : 5,
+  2, 2, 1, 3, 3, 3 ; M20 `scopes()` sans namespace : 104.
+- **R194** — la garde `$before instanceof PhpToken` retirée (`MemberCallsTest.php`) : `testAnIndexOutsideTheTokensIsNoCall` (`Call
+  to a member function is() on null`) ; `$previous` lu à `$index + 1` (`AuthorizationLivesInAccessControlTest.php`) :
+  `testNoAuthorizationIsDeclaredOutsideAccessControl` ; `importedAt` inversé (`ClassNameResolverTest.php`) :
+  `testResolvesLikePhp@second d'une liste à virgules, avec alias` (rejouée par la 16e relecture : 25 failures sur 52).
+
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
