@@ -70,7 +70,7 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # le fichier, donc aucun `-K` n'y est périmé. `--proto =https` et `--proto-redir =https` l'accompagnent : un appel
 # authentifié n'envoie sa première requête qu'à une URL en https (une URL sans schéma, que curl devine en
 # `http://`, est refusée par curl lui-même) et ne suit une redirection (`-L`) que vers https, jamais vers http://
-# ni un autre schéma, où l'identifiant partirait en clair ; sans `-K`, les deux options n'ont pas lieu d'être
+# ni un autre schéma, où l'identifiant partirait en clair ; sans `-K`, les trois options n'ont pas lieu d'être
 # (les sondes de la section 3 visent des URL en `http://` exprès). `--noproxy '*'` les suit : un proxy d'environnement exporté
 # après `smoke_use_auth_config` (la bibliothèque n'en retire qu'une fois) ne reçoit pas l'identifiant (R183, C15-4).
 # Le `trap` précède la création du dossier : un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier

@@ -21,10 +21,14 @@ The name is validated: refused if it starts with `_smoke_` (the library's own lo
 empties, `SMOKE_AUTH_DATA_FILE` included: emptied before the reading, it would answer « secret de Basic Auth vide »).
 The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
 As soon as the value is read, before any validation and before the `mktemp`, the variable is unset (D3 of the fourteenth review):
-no `set`, `declare -p` nor child process (`mktemp`, curl, dig, openssl) started afterwards sees it, whatever the value, a refused one
-included; a private flag, `_smoke_auth_defined`, keeps “defined” for the empty-secret check.
+once the unset has worked, no `set`, `declare -p` nor child process (`mktemp`, curl, dig, openssl) started afterwards sees it, whatever
+the value, a refused one included; a private flag, `_smoke_auth_defined`, keeps “defined” for the empty-secret check.
 If the variable is still defined afterwards (read-only, or a global a caller's local was hiding), the call exits 2 before anything is
-written, naming the variable and never its value (R182). An invalid name exits 2 before the reading, so the variable stays
+written, naming the variable and never its value (R182). That refusal hides nothing (Sp16-23): a read-only variable stays visible to a
+dump of the shell, and the exported global a local was hiding stays visible to child processes. Limit (C16-3): under
+`shopt -s localvar_unset` the unset of a caller's local leaves it defined and empty, `[[ -v ]]` answers false, the removal passes for done
+and the exported global stays visible to child processes (measured on 2026-11-01, bash 5.2.37); none of the four scripts sets that option.
+An invalid name exits 2 before the reading, so the variable stays
 exported: a limit, since the first guard below forces the literal call, and the `trap` of the four scripts starts no process then
 (`audit-prod.test.sh` proves it for the audit).
 The flag is set before the reading, read by `_smoke_require_auth_config` alone, and reset to 0 by `smoke_cleanup` and at the source.
@@ -37,11 +41,13 @@ it is builtins only: a `$(…)` copies the shell, it executes nothing): the `tra
 `openssl` and `date` (D2 of the fourteenth review). The smokes' `trap` removes the `headers_file`, empty until `mktemp` made it, then runs
 `smoke_cleanup`, which removes the `-K` directory and the files of `smoke_data_file` (`smoke-mcp.sh`'s body file); the audit's is
 `smoke_cleanup` alone, it has no `headers_file`. The only program left before the reading is that head `rm -rf` of a second call, above.
-A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
+A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it
+(`_smoke_judge_value`: 0 for a value admitted, empty included, 2 for a value refused).
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
 An undefined one sends no Basic Auth.
-`smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
+`smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`; the refusals it
+says before the call are judged by `_smoke_judge_auth_call` (the URL, `SMOKE_CURL_OPTS`, `"$@"`, the `-K` file, in that order).
 `-q` is the **first** argument of every call, with or without the Basic Auth: curl then reads no `.curlrc` (under `CURL_HOME`,
 `XDG_CONFIG_HOME` or `HOME`), which could carry `location-trusted` or a proxy. It only holds in first position.
 Measured on 2026-11-01 on `curlimages/curl@sha256:08e466006f0860e54fc299378de998935333e0e130a15f6f98482e9f8dab3058` (curl 8.5.0,
@@ -80,6 +86,8 @@ no `@` leads the value, it is a cookie, or it writes outside the Basic Auth's di
 puts it in `SMOKE_AUTH_DATA_FILE`; it prints nothing, since `"@$(smoke_data_file)"` would run it in a subshell that loses the record.
 `smoke_cleanup` removes those files and empties both variables, and a second `smoke_use_auth_config` calls it first: a path from before
 it is no longer admitted. Both variables are empty at the source. `smoke-mcp.sh` makes its body file with it, not with `mktemp`.
+Limit (Sp16-25): `smoke_fetch` judges the file's name, not the file: a link that replaced one of those files between its creation and the
+call would be read by curl as the body file, unseen. Only the smoke's own user can put it there, under `TMPDIR`: outside the model.
 The message gives the **rank** of the argument, never its text (a glued value could be a secret):
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
