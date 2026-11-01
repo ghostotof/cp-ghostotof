@@ -6,7 +6,7 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import AdminAboutSettingsForm from './AdminAboutSettingsForm.vue'
 import AdminAboutSiteCardsSection from './AdminAboutSiteCardsSection.vue'
 import AdminAboutMeCardsSection from './AdminAboutMeCardsSection.vue'
-import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
+import { isSupportedLocale, LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 
 /**
  * Quatre tableaux ordonnés indépendamment — les cartes « site », puis une
@@ -41,13 +41,31 @@ const selectedLocale = ref<Locale>(SUPPORTED_LOCALES[0])
 const settingsForm = useTemplateRef('settingsForm')
 
 /**
- * Le geste de la personne sur le sélecteur : la langue est prise, et la proposition que les réglages tenaient en attente pour
- * une autre langue part aussitôt (R187b). Le formulaire ne la verrait pas partir seul si la langue faisait FR → EN → FR avant
- * le rendu : sa langue montrée ne change alors jamais. La bascule demandée par la traduction passe par `@switch-locale`, pas ici.
+ * **Les deux canaux entre cette page et le formulaire des réglages** (R187b, R201), en sens inverse, chacun pour une raison :
+ *
+ * - **Page → formulaire, le geste de la personne sur le sélecteur** (`defineExpose` : cette fonction appelle
+ *   `dropPendingProposalNotFor`). La langue est prise, et la proposition que les réglages tenaient en attente pour une autre
+ *   langue part aussitôt. Une prop ne porte pas ce geste : FR → EN → FR joué avant le rendu laisse `locale` inchangée, le `watch`
+ *   du formulaire ne voit rien, et la proposition se serait posée plus tard, au choix d'EN.
+ * - **Formulaire → page, la bascule demandée par la traduction** (`@switch-locale`, gabarit). Le formulaire demande la langue de
+ *   sa cible pour la poser : ce n'est pas un geste de la personne, la proposition qu'il vient de parquer doit survivre, elle ne
+ *   passe donc pas par ici.
+ *
+ * La valeur reçue est une `string` (le sélecteur n'en émet pas d'autre) : une langue hors de `SUPPORTED_LOCALES` n'est ni
+ * montrée, ni lue du serveur, ni cause du retrait d'une proposition — elle est ignorée, la langue montrée reste celle d'avant.
  */
-function chooseLocale(locale: string): void {
-  selectedLocale.value = locale as Locale
-  settingsForm.value?.dropPendingProposalNotFor(locale as Locale)
+function chooseLocale(value: string): void {
+  if (!isSupportedLocale(value)) {
+    return
+  }
+
+  selectedLocale.value = value
+
+  // Le formulaire n'est pas monté : aucune proposition parquée, rien à retirer.
+  const form = settingsForm.value
+  if (form !== null) {
+    form.dropPendingProposalNotFor(value)
+  }
 }
 
 /**

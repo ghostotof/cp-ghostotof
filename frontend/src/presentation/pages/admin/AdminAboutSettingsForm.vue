@@ -136,10 +136,8 @@ watch(
 )
 
 /**
- * Retire la proposition en attente si la langue demandée n'est pas sa cible (R157, R187b). Deux appelants : le `watch` de la
- * langue montrée, et la page, au geste de la personne sur le sélecteur (`defineExpose`). Le second est nécessaire : FR → EN → FR
- * joués avant le rendu ne font jamais changer `props.locale`, le `watch` ne voit rien, et la proposition aurait été posée plus
- * tard, au choix d'EN. La bascule de `handleTranslate` ne passe pas par le geste : elle est la demande de la cible elle-même.
+ * Retire la proposition en attente si la langue demandée n'est pas sa cible (R157, R187b). Exposée (`defineExpose`) : la page
+ * l'appelle au geste de la personne sur le sélecteur, et les deux canaux entre elles sont décrits une fois, sur `chooseLocale`.
  */
 function dropPendingProposalNotFor(requested: Locale): void {
   if (pendingProposal.value && requested !== pendingProposal.value.targetLocale) {

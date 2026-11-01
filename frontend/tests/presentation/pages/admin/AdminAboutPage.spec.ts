@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-
 import { defineComponent, h } from 'vue'
 import AdminAboutPage from '../../../../src/presentation/pages/admin/AdminAboutPage.vue'
 import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
+import BaseSelect from '../../../../src/presentation/ui/BaseSelect.vue'
 import AdminAboutSettingsForm from '../../../../src/presentation/pages/admin/AdminAboutSettingsForm.vue'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSettings'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSiteCards'
@@ -1344,6 +1345,53 @@ describe('AdminAboutPage', () => {
         expect(formOf(wrapper, SETTINGS_FORM).find('[role="status"]').exists()).toBe(false)
       },
     )
+
+    // R201 (St16-2 = C16-7) : le sélecteur n'émet qu'une `string` ; une valeur hors de `SUPPORTED_LOCALES` (un `<option>` ajouté,
+    // un événement programmatique) n'est ni montrée, ni lue du serveur, ni cause du retrait d'une proposition parquée.
+    const emitLocaleChoice = (wrapper: VueWrapper, value: string): void => {
+      wrapper.getComponent(BaseSelect).vm.$emit('update:modelValue', value)
+    }
+
+    it("réglages : une langue non prise en charge n'est ni montrée ni lue (#748, R201)", async () => {
+      const settingsRepository = createSettingsRepository()
+      const { wrapper } = await mountPage(settingsRepository)
+      vi.mocked(settingsRepository.get).mockClear()
+
+      emitLocaleChoice(wrapper, 'de')
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+      expect(settingsRepository.get).not.toHaveBeenCalled()
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+    })
+
+    it("réglages : une langue non prise en charge ne retire pas la proposition parquée (#748, R201)", async () => {
+      let readEnglish!: (settings: AdminAboutSettings) => void
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn((locale: string) => ('en' === locale
+          ? new Promise<AdminAboutSettings>((resolve) => { readEnglish = resolve })
+          : Promise.resolve(SETTINGS))),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      // La traduction bascule la page en EN : la proposition est parquée, la lecture d'EN reste en vol.
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+
+      emitLocaleChoice(wrapper, 'de')
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(settingsRepository.get).not.toHaveBeenCalledWith('de')
+
+      readEnglish({ ...SETTINGS_EN, siteEyebrow: 'Texte EN du serveur' })
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+    })
 
     // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
