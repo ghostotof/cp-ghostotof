@@ -36,7 +36,8 @@ export interface UseAdminTranslationResult {
    * réponse courante** : aucune micro-tâche ne sépare le jugement de la pose, si bien qu'un geste de la page résolu au même
    * point de contrôle que la réponse (une remise à zéro, une suppression) ne passe jamais entre les deux (R172). Rend vrai si
    * la proposition a été acceptée ; faux sur un refus, un échec (la raison est exposée) ou une réponse périmée, `accept` n'étant
-   * alors pas appelée. Une exception de `accept` remonte à l'appelant : ce n'est pas un échec de la traduction.
+   * alors pas appelée. Une exception de `accept` remonte à l'appelant : ce n'est pas un échec de la traduction. Appelée par le
+   * gestionnaire `@translate` d'une page, elle devient son rejet, que Vue passe à `app.config.errorHandler` (R187).
    */
   translate: (
     sourceLocale: Locale,

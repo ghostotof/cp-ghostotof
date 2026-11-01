@@ -200,7 +200,10 @@ and what to do with the proposal.
   read `hasProse` and `translationErrorText` and call `requestProposal` themselves.
 - `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
   inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
-  checkpoint as the response cannot slip between the judgment and the application. Since spec 0004 every
+  checkpoint as the response cannot slip between the judgment and the application. An exception of `accept` (of `switchForm`)
+  is no translation failure: it rises to the page's `@translate` handler, whose rejection Vue hands to `app.config.errorHandler`
+  (measured, `useTranslatedForm.spec.ts`, R187), so no rejection goes unhandled and `isTranslating` falls; the form may stay
+  half switched, an accepted limit: a programming fault, which the error handler makes visible. Since spec 0004 every
   per-entry form (Incidents, Contributions, CV sans identité, Quality principles/traits, About site/me cards) behaves the
   same way: the form switches to *creation* in the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…)
   are kept, **the source entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's

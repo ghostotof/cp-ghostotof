@@ -25,6 +25,7 @@ import type {
   AdminAboutMeCardCategory,
 } from '../../../../src/domain/admin/about/entities/AdminAboutMeCard'
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
+import { ME_CARD_CATEGORIES } from '../../../../src/domain/admin/about/entities/AdminAboutMeCard'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
@@ -650,16 +651,21 @@ describe('AdminAboutPage', () => {
       expect(formOf(wrapper, SITE_FORM).find('[role="status"]').exists()).toBe(false)
     })
 
-    it("cartes « moi » : l'ordre modifié d'une catégorie refuse la traduction sans attendre le rendu (#748, R173b)", async () => {
-      const translation = createTranslationRepository({ title: 'Senior developer', description: 'Description' })
-      const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+    // Un cas par catégorie, lues de la liste que le domaine exporte : un `isAnyOrderDirty` qui n'en lirait qu'une resterait vert
+    // si seule celle-là était exercée (#748, R187, Sp15-7).
+    it.each(ME_CARD_CATEGORIES)(
+      "cartes « moi » (%s) : l'ordre modifié de la catégorie refuse la traduction sans attendre le rendu (#748, R173b)",
+      async (category) => {
+        const translation = createTranslationRepository({ title: 'Senior developer', description: 'Description' })
+        const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], ME_FIXTURES[category].titles[0]), 'Modifier').trigger('click')
 
-      await emitTranslateRightAfterMove(wrapper, ME_TABLE.technical, ME_FORM)
+        await emitTranslateRightAfterMove(wrapper, ME_TABLE[category], ME_FORM)
 
-      expect(translation.translate).not.toHaveBeenCalled()
-      expect(formOf(wrapper, ME_FORM).find('[role="status"]').exists()).toBe(false)
-    })
+        expect(translation.translate).not.toHaveBeenCalled()
+        expect(formOf(wrapper, ME_FORM).find('[role="status"]').exists()).toBe(false)
+      },
+    )
   })
 
   describe('« Créer la version » et rattachement', () => {
@@ -1275,6 +1281,37 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(button().attributes('disabled')).toBeUndefined()
     })
+
+    // D5, Sp15-1 = C15-7 (#748, R187) : un geste de la personne résolu au même point de contrôle que la réponse de la traduction
+    // (`p.then` est accroché après l'appel : il court juste après la pose, avant tout rendu). La page y revient à la langue
+    // montrée : la proposition posée une micro-tâche trop tard le reprendrait sur la langue cible.
+    it(
+      "réglages : un geste résolu au même point de contrôle que la réponse ne reçoit pas de proposition périmée (#748, R187)",
+      async () => {
+        let answer!: (proposal: TranslationProposal) => void
+        const held = new Promise<TranslationProposal>((resolve) => { answer = resolve })
+        const translation = createTranslationRepository(TRANSLATED_SETTINGS, { translate: vi.fn(() => held) })
+        const settingsRepository = createSettingsRepository({
+          get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        })
+        const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+        const events: string[] = []
+
+        await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+        void held.then(() => {
+          events.push('retour à la langue montrée')
+          void wrapper.get('#admin-about-locale').setValue('fr')
+        })
+        answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
+        await flushPromises()
+
+        expect(events).toEqual(['retour à la langue montrée'])
+        expect(translation.translate).toHaveBeenCalledOnce()
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+        expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+        expect(formOf(wrapper, SETTINGS_FORM).find('[role="status"]').exists()).toBe(false)
+      },
+    )
 
     // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.

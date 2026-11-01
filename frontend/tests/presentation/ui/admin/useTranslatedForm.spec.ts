@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
@@ -12,6 +12,7 @@ import {
   type UseTranslatedFormOptions,
   type UseTranslatedFormResult,
 } from '../../../../src/presentation/ui/admin/useTranslatedForm'
+import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { TRANSLATION_UNAVAILABLE_FR } from '../../../support/adminTranslationTexts'
 
 const PREFIX = 'admin-incident'
@@ -438,6 +439,65 @@ describe('useTranslatedForm', () => {
         expect(events).toContain('remove')
         expect(events.slice(events.indexOf('remove'))).not.toContain('switch')
       })
+    })
+  })
+
+  // Une exception du rappel de la page (le `switchForm` d'une page qui lève : une faute de programmation) : la page l'écrit
+  // dans un gestionnaire `@translate` asynchrone, que Vue appelle par `callWithAsyncErrorHandling` — il attache un `catch` à la
+  // promesse rendue et passe l'erreur à `app.config.errorHandler`. Mesuré (#748, R187, CR15-5, Q7 (A)) : aucun rejet non géré,
+  // la traduction ne reste pas en cours ; la bascule faite à moitié est une limite écrite (`frontend-backoffice.md`).
+  describe("une exception du rappel de la page : l'erreur va au gestionnaire de Vue (#748, R187)", () => {
+    const unhandled: unknown[] = []
+    const recordUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+
+    afterEach(() => {
+      process.off('unhandledRejection', recordUnhandled)
+      unhandled.length = 0
+    })
+
+    it("une bascule qui lève : l'erreur va au gestionnaire de Vue, la traduction ne reste pas en cours (#748, R187)", async () => {
+      process.on('unhandledRejection', recordUnhandled)
+      const failure = new Error('bascule')
+      const errorHandler = vi.fn()
+      const repository: AdminTranslationRepository = { translate: vi.fn(async () => PROPOSAL) }
+      const form = reactive({ title: 'Panne', impact: '', note: '' })
+      let captured: UseTranslatedFormResult | undefined
+      // Comme les neuf pages : un gestionnaire `async` qui attend `proposeFrom`, lié par `@translate` au vrai bouton.
+      const Host = defineComponent({
+        setup() {
+          const translated = useTranslatedForm<Field>({
+            hintIdPrefix: PREFIX,
+            form: () => form,
+            proseFields: PROSE_FIELDS,
+            identity: () => ({ entry: null, locale: 'fr', group: null }),
+            isRefused: () => false,
+          })
+          captured = translated
+          const handleTranslate = async (target: Locale): Promise<void> => {
+            await translated.proposeFrom(target, () => { throw failure })
+          }
+
+          return () => h(TranslateEntryButton, { formLocale: 'fr', isTranslating: false, hintId: HINT, onTranslate: handleTranslate })
+        },
+      })
+      const wrapper = mount(Host, {
+        global: {
+          plugins: [createAppI18n()],
+          provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: repository },
+          config: { errorHandler },
+        },
+      })
+
+      await wrapper.get('button').trigger('click')
+      await flushPromises()
+      // Un rejet non géré n'est annoncé qu'au tour de boucle suivant.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(errorHandler).toHaveBeenCalledOnce()
+      expect(errorHandler.mock.calls[0]?.[0]).toBe(failure)
+      expect(unhandled).toEqual([])
+      expect(captured?.isTranslating.value).toBe(false)
+      expect(captured?.isExpiredCallPending.value).toBe(false)
     })
   })
 
