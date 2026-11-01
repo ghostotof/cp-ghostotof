@@ -6,6 +6,8 @@ import { ENTRY_LOCK_PROPOSAL_FR } from '../../support/entryFormLockTexts'
 /**
  * La justesse des deux textes de la traduction assistée (#748, R142) : c'est ici, et nulle part ailleurs, que leur
  * rédaction se juge ; les specs de page, elles, comparent l'identité du texte que désigne un `aria-describedby`.
+ * Les fragments que ces cas cherchent ou refusent sont **littéraux, exprès** : une garde négative qui les lirait du catalogue
+ * qu'elle juge (`fr.json`, `en.json`) ne jugerait rien, elle suivrait toute retouche du texte au lieu de la refuser.
  */
 describe('textes de la traduction assistée (#748, R142)', () => {
   it("l'aide de la prose en lecture seule ne promet ni la perte de la saisie ni son remplacement par la réponse", () => {
@@ -28,11 +30,17 @@ describe('textes de la traduction assistée (#748, R142)', () => {
     expect(en.admin.translation.proseReadonly).toContain('which may open a proposal in the target language')
   })
 
-  it("l'aide du verrou de proposition, en anglais, dit que « Cancel » abandonne et vide le formulaire, sans « discard »", () => {
-    // « discard » est réservé aux réglages « À propos » (R154) ; le français, lui, reste « l'abandonne et vide le formulaire ».
+  it("l'aide du verrou de proposition, en anglais, dit que « Cancel » la retire et vide le formulaire, sans « discard »", () => {
+    // « discard » est réservé aux réglages « À propos » (R154) : le bouton de ces réglages s'appelle « Abandonner ».
     expect(en.admin.entryLock.proposal).not.toContain('discards')
     expect(en.admin.entryLock.proposal).toContain('“Cancel” drops it and clears the form.')
-    expect(ENTRY_LOCK_PROPOSAL_FR).toContain("« Annuler » l'abandonne et vide le formulaire.")
+  })
+
+  it("l'aide du verrou de proposition, en français, dit que « Annuler » la retire et vide le formulaire, sans « abandonne »", () => {
+    // Même raison (D3 de la quinzième relecture, R191) : « Abandonner » est le libellé du bouton des réglages « À propos », pas
+    // celui du formulaire par entrée, dont le bouton s'appelle « Annuler ».
+    expect(ENTRY_LOCK_PROPOSAL_FR).not.toContain("l'abandonne")
+    expect(ENTRY_LOCK_PROPOSAL_FR).toContain('« Annuler » la retire et vide le formulaire.')
   })
 
   it("l'attente du bouton parle de la traduction précédente, pas d'une traduction annulée par un seul geste", () => {

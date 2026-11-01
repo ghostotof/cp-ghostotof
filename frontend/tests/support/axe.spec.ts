@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import { expectNoAccessibilityViolation } from './axe'
+import { accessibleNameOf, expectNoAccessibilityViolation } from './axe'
 
 /**
  * L'adaptateur se teste lui-même, et ce n'est pas de la coquetterie : un audit
@@ -58,5 +58,38 @@ describe('expectNoAccessibilityViolation', () => {
     })
 
     await expect(expectNoAccessibilityViolation(mount(SansAlt))).rejects.toThrow(/coupable\.png/)
+  })
+})
+
+/**
+ * `accessibleNameOf` sert à retrouver un bouton par son nom, celui que lit un lecteur d'écran, plutôt que par le texte du DOM :
+ * les deux diffèrent dès qu'un bouton porte une étiquette ARIA ou un contenu masqué.
+ */
+describe('accessibleNameOf', () => {
+  it("rend le contenu d'un bouton sans ce qu'il masque aux lecteurs d'écran", () => {
+    const Bouton = defineComponent({
+      template: '<button type="button"><span aria-hidden="true">chargement</span><span>Proposer la version EN</span></button>',
+    })
+
+    expect(accessibleNameOf(mount(Bouton).element)).toBe('Proposer la version EN')
+  })
+
+  it("préfère l'étiquette ARIA au contenu, comme le fait un lecteur d'écran", () => {
+    const Etiquette = defineComponent({
+      template: '<button type="button" aria-label="Fermer"><span>×</span></button>',
+    })
+
+    expect(accessibleNameOf(mount(Etiquette).element)).toBe('Fermer')
+  })
+
+  it("laisse l'élément et le document tels qu'ils étaient : l'élément reste détaché", () => {
+    const Bouton = defineComponent({ template: '<button type="button">Texte</button>' })
+    const wrapper = mount(Bouton)
+    const before = document.body.innerHTML
+
+    accessibleNameOf(wrapper.element)
+
+    expect(document.body.contains(wrapper.element)).toBe(false)
+    expect(document.body.innerHTML).toBe(before)
   })
 })

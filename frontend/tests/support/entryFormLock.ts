@@ -1,7 +1,7 @@
 import { flushPromises, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { expect, it, vi } from 'vitest'
 import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntryButton.vue'
-import { expectNoAccessibilityViolation } from './axe'
+import { accessibleNameOf, expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { proseFieldId } from './proseFieldId'
@@ -60,16 +60,16 @@ export function formCancelButton(wrapper: VueWrapper, form?: number): DOMWrapper
 }
 
 /**
- * Le bouton de traduction du `form`-ième formulaire de la page, trouvé par son nom accessible : « Proposer la version XX »
- * (le libellé dépend de la langue du formulaire, d'où la recherche par préfixe) ou, tant que l'appel est en vol,
- * « Traduction en cours… ». Les deux textes sont lus du catalogue.
+ * Le bouton de traduction du `form`-ième formulaire de la page, trouvé par son nom accessible (`accessibleNameOf`, celui
+ * qu'axe-core calcule, non le texte du DOM) : « Proposer la version XX » (le libellé dépend de la langue du formulaire, d'où la
+ * recherche par préfixe) ou, tant que l'appel est en vol, « Traduction en cours… ». Les deux textes sont lus du catalogue.
  */
 export function translateEntryButton(wrapper: VueWrapper, form: number): DOMWrapper<Element> {
   const button = wrapper
     .findAll('form')
     [form].findAll('button')
     .find((candidate) => {
-      const name = candidate.text()
+      const name = accessibleNameOf(candidate.element)
 
       return name.startsWith(PROPOSE_VERSION_PREFIX_FR) || TRANSLATION_IN_PROGRESS_FR === name
     })
@@ -87,6 +87,18 @@ export function translateEntryButton(wrapper: VueWrapper, form: number): DOMWrap
  */
 export async function moveFirstRowDown(wrapper: VueWrapper, table = 0): Promise<void> {
   await wrapper.findAll('table')[table].findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
+}
+
+/**
+ * Déplace la première ligne du tableau `table` puis émet « translate » depuis le bouton du `form`-ième formulaire de la page,
+ * **sans rien attendre** entre les deux : le brouillon d'ordre de la section est modifié, mais la page n'a pas encore reçu
+ * `orderDirtyChange` ni rendu `isLocked` (#748, R173). Les promesses ne sont réglées qu'à la fin. Écrite une fois pour « À propos »
+ * et « Qualité » ; `moveFirstRowDown` n'est pas attendue (`void`) : son premier geste, le `keydown`, part de façon synchrone.
+ */
+export async function emitTranslateRightAfterMove(wrapper: VueWrapper, table: number, form: number): Promise<void> {
+  void moveFirstRowDown(wrapper, table)
+  wrapper.findAllComponents(TranslateEntryButton)[form].vm.$emit('translate', 'en')
+  await flushPromises()
 }
 
 /** Un formulaire par entrée, tel que les cas partagés du verrou le montent et le conduisent (#748, St8-5). */
@@ -161,24 +173,33 @@ interface MountedCase {
 
 /** Les outils que partagent les familles de cas d'un même formulaire : un seul chemin vers chaque élément et chaque geste. */
 interface LockToolkit {
+  /** Les identifiants (sans `#`) du formulaire, ceux de `EntryFormLockCase.ids`. */
   readonly ids: EntryFormLockCase['ids']
   /** Les identifiants (sans `#`) des champs de prose, dérivés de la liste de la page. */
   readonly proseIds: readonly string[]
-  /** Les sélecteurs CSS de la langue et du groupe de traduction. */
+  /** Le sélecteur CSS du sélecteur de langue. */
   readonly locale: string
+  /** Le sélecteur CSS du sélecteur de groupe de traduction (« Version de »). */
   readonly group: string
   /** Le préfixe des noms de test, vide pour une page à un seul formulaire. */
   readonly prefix: string
   /** L'aide permanente de la langue, en liste (vide quand le formulaire n'en a pas). */
   readonly permanent: readonly string[]
+  /** Le titre `h2` du formulaire, celui du `form`-ième de la page. */
   headingOf(wrapper: VueWrapper): string
+  /** Le formulaire du cas : le `form`-ième de la page. */
   formOf(wrapper: VueWrapper): DOMWrapper<HTMLFormElement>
+  /** La valeur du champ de titre. */
   titleValue(wrapper: VueWrapper): string
+  /** La valeur du sélecteur de langue. */
   localeValue(wrapper: VueWrapper): string
+  /** La valeur d'un champ du formulaire, par son identifiant (sans `#`). */
   fieldValue(wrapper: VueWrapper, id: string): string
+  /** Saisit une valeur dans le champ de titre. */
   typeTitle(wrapper: VueWrapper, value: string): Promise<void>
-  /** L'avis de proposition que porte le formulaire et son alerte d'erreur. */
+  /** L'avis de proposition que porte le formulaire (`role="status"`). */
   proposalNotice(wrapper: VueWrapper): DOMWrapper<Element>
+  /** L'alerte d'erreur du formulaire (`role="alert"`). */
   errorAlert(wrapper: VueWrapper): DOMWrapper<Element>
   /** Le composant du bouton de traduction (`translateEntryButton`, exporté plus haut, est le bouton DOM). */
   translateButtonComponent(wrapper: VueWrapper): VueWrapper
@@ -186,8 +207,9 @@ interface LockToolkit {
   emitTranslate(wrapper: VueWrapper, target: string | undefined): Promise<void>
   /** Un « Annuler » cliqué dans le formulaire, puis les promesses réglées. */
   cancelForm(wrapper: VueWrapper): Promise<void>
-  /** Le formulaire du cas et un dépôt de traduction neuf, monté ; `mountEdited` y ouvre en plus l'entrée de `startEdit`. */
+  /** Le formulaire du cas et un dépôt de traduction neuf, monté. */
   mountCase(): Promise<MountedCase>
+  /** Comme `mountCase`, et ouvre en plus en édition l'entrée de `startEdit`. */
   mountEdited(): Promise<MountedCase>
   /** Le titre de l'entrée que `startEdit` ouvre, lu sur une page montée à part. */
   titleOfEditedEntry(): Promise<string>
@@ -614,7 +636,6 @@ function describeExpiryByCancel(lockCase: EntryFormLockCase, kit: LockToolkit): 
     expect(kit.titleValue(wrapper)).toBe('')
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
-
 }
 
 /** Un geste qui remplace le formulaire par celui d'une autre entrée, ou par une création : la réponse n'y pose rien. */
@@ -647,7 +668,6 @@ function describeExpiryByAnotherForm(lockCase: EntryFormLockCase, kit: LockToolk
     expect(kit.titleValue(wrapper)).toBe('')
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
-
 }
 
 /** Le même geste refait sur la même ligne ou la même entrée : l'identité est inchangée, la génération du formulaire avance. */
@@ -691,7 +711,6 @@ function describeExpiryByRepeatedGesture(lockCase: EntryFormLockCase, kit: LockT
     expect(kit.headingOf(wrapper)).toBe(editHeading)
     expect(kit.proposalNotice(wrapper).exists()).toBe(false)
   })
-
 }
 
 /** Une suppression : ce que l'identité du formulaire ne voit pas, que `removeEntry` juge ; l'autre langue ne périme rien. */
@@ -751,7 +770,6 @@ function describeExpiryByDeletion(lockCase: EntryFormLockCase, kit: LockToolkit)
     expect(kit.headingOf(wrapper)).toBe(lockCase.heading)
     expect(kit.proposalNotice(wrapper).exists()).toBe(true)
   })
-
 }
 
 /** Un enregistrement ou un changement de langue du formulaire pendant la traduction : sa réponse ne pose rien. */

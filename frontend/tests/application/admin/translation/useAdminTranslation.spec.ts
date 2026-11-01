@@ -9,6 +9,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import type { FormIdentity } from '../../../../src/application/admin/translation/FormIdentity'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
+import { capturedProposal } from '../../../support/capturedProposal'
 
 const FIELDS = { title: 'Panne', impact: 'Formulaire en 500.' }
 const PROPOSAL: TranslationProposal = { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', impact: 'Form down.' } }
@@ -18,7 +19,8 @@ function identityOf(entry: string): FormIdentity {
   return { entry, locale: 'fr', group: null, generation: 0 }
 }
 
-function mountWithComposable(repository: AdminTranslationRepository, options?: Parameters<typeof useAdminTranslation>[0]) {
+/** Monte le composable dans un hôte qui fournit le dépôt : le composable et le montage (que `unmount()` arrête). */
+function mountHost(repository: AdminTranslationRepository, options?: Parameters<typeof useAdminTranslation>[0]) {
   let captured: ReturnType<typeof useAdminTranslation> | undefined
   const Host = defineComponent({
     setup() {
@@ -26,17 +28,18 @@ function mountWithComposable(repository: AdminTranslationRepository, options?: P
       return () => h('div')
     },
   })
-  mount(Host, { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: repository } } })
+  const wrapper = mount(Host, { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: repository } } })
   if (!captured) throw new Error("Le composable n'a pas été capturé.")
-  return captured
+  return { composable: captured, wrapper }
 }
 
-/** Appelle `translate` avec un `accept` qui garde la proposition reçue : celle-ci, ou `null` quand `accept` n'a pas été appelée. */
-async function proposalOf(composable: ReturnType<typeof useAdminTranslation>): Promise<TranslationProposal | null> {
-  let received: TranslationProposal | null = null
-  await composable.translate('fr', 'en', FIELDS, (proposal) => { received = proposal })
+function mountWithComposable(repository: AdminTranslationRepository, options?: Parameters<typeof useAdminTranslation>[0]) {
+  return mountHost(repository, options).composable
+}
 
-  return received
+/** La proposition que `translate` remet à `accept` : celle-ci, ou `null` quand `accept` n'a pas été appelée. */
+function proposalOf(composable: ReturnType<typeof useAdminTranslation>): Promise<TranslationProposal | null> {
+  return capturedProposal((accept) => composable.translate('fr', 'en', FIELDS, accept))
 }
 
 describe('useAdminTranslation', () => {
@@ -73,25 +76,40 @@ describe('useAdminTranslation', () => {
       expect(events).toEqual(['accept', 'geste de la page'])
     })
 
-    it('n\'est pas appelée sur un refus, un échec ni une réponse périmée, et translate rend faux (#748, R172)', async () => {
+    it("n'est pas appelée sur un refus, et translate rend faux sans appeler le dépôt (#748, R172)", async () => {
       const accept = vi.fn()
-      const refused = ref(true)
-      let resolve!: (proposal: TranslationProposal) => void
+      const translate = vi.fn<AdminTranslationRepository['translate']>()
+      const composable = mountWithComposable({ translate }, { isRefused: () => true })
+
+      expect(await composable.translate('fr', 'en', FIELDS, accept)).toBe(false)
+
+      expect(translate).not.toHaveBeenCalled()
+      expect(accept).not.toHaveBeenCalled()
+    })
+
+    it("n'est pas appelée sur un échec, et translate rend faux avec la raison exposée (#748, R172)", async () => {
+      const accept = vi.fn()
       const translate = vi.fn<AdminTranslationRepository['translate']>()
         .mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
-        .mockImplementationOnce(() => new Promise<TranslationProposal>((r) => { resolve = r }))
-      const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
+      const composable = mountWithComposable({ translate })
 
       expect(await composable.translate('fr', 'en', FIELDS, accept)).toBe(false)
-      expect(translate).not.toHaveBeenCalled()
 
-      refused.value = false
-      expect(await composable.translate('fr', 'en', FIELDS, accept)).toBe(false)
       expect(composable.errorReason.value).toBe('unavailable')
+      expect(accept).not.toHaveBeenCalled()
+    })
+
+    it("n'est pas appelée sur une réponse périmée, et translate rend faux (#748, R172)", async () => {
+      const accept = vi.fn()
+      let resolve!: (proposal: TranslationProposal) => void
+      const translate = vi.fn<AdminTranslationRepository['translate']>()
+        .mockImplementationOnce(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+      const composable = mountWithComposable({ translate })
 
       const stale = composable.translate('fr', 'en', FIELDS, accept)
       composable.expire()
       resolve(PROPOSAL)
+
       expect(await stale).toBe(false)
       expect(accept).not.toHaveBeenCalled()
     })
@@ -165,41 +183,30 @@ describe('useAdminTranslation', () => {
 
   // Le refus suit le prédicat de l'appelant dans les deux sens : la valeur exposée et `translate()` lisent la même source (#748,
   // R114, R137). Le prédicat est lu par un calculé, que seule une source réactive (une `ref`) fait relire.
-  it('isRefused vrai puis faux : la valeur exposée et translate() suivent la source de la page (#748, R114, R137)', async () => {
-    const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
-    const refused = ref(true)
-    const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
+  // Une ligne par sens du changement, les valeurs écrites en toutes lettres : ni boucle ni condition dans le corps du cas.
+  it.each([
+    { sens: 'vrai puis faux', before: true, after: false, proposalBefore: null, proposalAfter: PROPOSAL, callsBefore: 0, callsAfter: 1 },
+    { sens: 'faux puis vrai', before: false, after: true, proposalBefore: PROPOSAL, proposalAfter: null, callsBefore: 1, callsAfter: 1 },
+  ])(
+    'isRefused $sens : la valeur exposée et translate() suivent la source de la page (#748, R114, R137)',
+    async ({ before, after, proposalBefore, proposalAfter, callsBefore, callsAfter }) => {
+      const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
+      const refused = ref(before)
+      const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
 
-    expect(composable.isRefused.value).toBe(true)
-    expect(await proposalOf(composable)).toBeNull()
-    expect(translate).not.toHaveBeenCalled()
+      expect(composable.isRefused.value).toBe(before)
+      expect(await proposalOf(composable)).toEqual(proposalBefore)
+      expect(translate).toHaveBeenCalledTimes(callsBefore)
 
-    refused.value = false
+      refused.value = after
 
-    expect(composable.isRefused.value).toBe(false)
-    expect(await proposalOf(composable)).toEqual(PROPOSAL)
-    expect(translate).toHaveBeenCalledTimes(1)
-    expect(composable.isTranslating.value).toBe(false)
-    expect(composable.errorReason.value).toBeNull()
-  })
-
-  it('isRefused faux puis vrai : la valeur exposée et translate() suivent la source de la page (#748, R114, R137)', async () => {
-    const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
-    const refused = ref(false)
-    const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
-
-    expect(composable.isRefused.value).toBe(false)
-    expect(await proposalOf(composable)).toEqual(PROPOSAL)
-    expect(translate).toHaveBeenCalledTimes(1)
-
-    refused.value = true
-
-    expect(composable.isRefused.value).toBe(true)
-    expect(await proposalOf(composable)).toBeNull()
-    expect(translate).toHaveBeenCalledTimes(1)
-    expect(composable.isTranslating.value).toBe(false)
-    expect(composable.errorReason.value).toBeNull()
-  })
+      expect(composable.isRefused.value).toBe(after)
+      expect(await proposalOf(composable)).toEqual(proposalAfter)
+      expect(translate).toHaveBeenCalledTimes(callsAfter)
+      expect(composable.isTranslating.value).toBe(false)
+      expect(composable.errorReason.value).toBeNull()
+    },
+  )
 
   it("isRefused est faux quand la page n'en dit rien (#748, R137)", () => {
     const composable = mountWithComposable({ translate: vi.fn() })
@@ -444,15 +451,8 @@ describe('useAdminTranslation', () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
     const identity = ref(identityOf('a'))
-    let captured: ReturnType<typeof useAdminTranslation> | undefined
-    const Host = defineComponent({
-      setup() {
-        captured = useAdminTranslation({ formIdentity: () => identity.value })
-        return () => h('div')
-      },
-    })
-    mount(Host, { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate } } } }).unmount()
-    if (!captured) throw new Error("Le composable n'a pas été capturé.")
+    const { composable: captured, wrapper } = mountHost({ translate }, { formIdentity: () => identity.value })
+    wrapper.unmount()
 
     // Lancer un effet dans une portée arrêtée fait avertir Vue (« cannot run an inactive effect scope ») : la garde l'évite.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

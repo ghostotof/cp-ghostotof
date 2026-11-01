@@ -86,6 +86,26 @@ export async function expectNoAccessibilityViolation(wrapper: VueWrapper): Promi
   }
 }
 
+/**
+ * Le nom accessible d'un élément (#748, R191), tel qu'axe-core le calcule : l'étiquette ARIA avant le contenu, sans ce que
+ * `aria-hidden` retire aux lecteurs d'écran. Un bouton se retrouve ainsi par ce que lit un lecteur d'écran, pas par le texte du DOM.
+ *
+ * axe ne calcule que pour ce qui est dans le document, et @vue/test-utils monte hors du document : on rattache **une copie** de
+ * l'élément le temps du calcul (le même geste que `expectNoAccessibilityViolation`, sans déplacer l'élément lui-même).
+ * Limite : une copie perd son contexte, donc un `aria-labelledby` vers un élément hors de l'élément n'y est pas résolu.
+ */
+export function accessibleNameOf(element: Element): string {
+  const copy = element.cloneNode(true) as Element
+  document.body.append(copy)
+  axe.setup(copy)
+  try {
+    return axe.commons.text.accessibleText(copy).trim()
+  } finally {
+    axe.teardown()
+    copy.remove()
+  }
+}
+
 function assertRulesActuallyRan(results: axe.AxeResults): void {
   const executed = new Set([
     ...results.violations.map((r) => r.id),

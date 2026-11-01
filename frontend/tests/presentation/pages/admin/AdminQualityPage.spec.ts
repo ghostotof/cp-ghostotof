@@ -3,11 +3,11 @@ import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/tes
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AdminQualityPage from '../../../../src/presentation/pages/admin/AdminQualityPage.vue'
-import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { ADMIN_QUALITY_PRINCIPLE_REPOSITORY } from '../../../../src/application/admin/quality/useAdminQualityPrinciples'
 import { ADMIN_QUALITY_TRAIT_REPOSITORY } from '../../../../src/application/admin/quality/useAdminQualityTraits'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import type { AdminQualityPrincipleRepository } from '../../../../src/domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import type { AdminQualityTraitRepository } from '../../../../src/domain/admin/quality/repositories/AdminQualityTraitRepository'
 import type { AdminQualityPrinciple } from '../../../../src/domain/admin/quality/entities/AdminQualityPrinciple'
@@ -17,7 +17,7 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { describeEntryFormLock, emitTranslateRightAfterMove, translateEntryButton } from '../../../support/entryFormLock'
 import { QUALITY_LOCALE_HELP_FR } from '../../../support/entryFormLockTexts'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
@@ -198,14 +198,13 @@ function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
 }
 
 /**
- * Déplace la première ligne d'un tableau puis émet « translate » depuis le bouton du même panneau, **sans rien attendre**
- * entre les deux : le brouillon d'ordre de la section est modifié, la page n'a pas encore reçu `orderDirtyChange` ni rendu
- * `isLocked` (#748, R173). Les promesses ne sont réglées qu'à la fin.
+ * Le bouton « Modifier » de la ligne de `text` du tableau `which` : son libellé est lu du catalogue (une clé par tableau,
+ * principes ou traits), jamais écrit ici, pour qu'une retouche du libellé ne fasse pas rougir la moitié du fichier.
  */
-async function emitTranslateRightAfterMove(wrapper: VueWrapper, which: number): Promise<void> {
-  void tableOf(wrapper, which).findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
-  wrapper.findAllComponents(TranslateEntryButton)[which].vm.$emit('translate', 'en')
-  await flushPromises()
+function editButton(wrapper: VueWrapper, which: number, text: string): DOMWrapper<HTMLButtonElement> {
+  const label = PRINCIPLES === which ? fr.admin.quality.principle.editAction : fr.admin.quality.trait.editAction
+
+  return buttonLabelled(actionsForLine(wrapper, which, text), label)
 }
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
@@ -405,7 +404,7 @@ describe('AdminQualityPage', () => {
       const hint = wrapper.get('#admin-order-locked-hint')
       expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-      const edit = buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier')
+      const edit = editButton(wrapper, PRINCIPLES, 'DDD in English')
       expect(edit.attributes('disabled')).toBeDefined()
       expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
       expect(
@@ -422,14 +421,14 @@ describe('AdminQualityPage', () => {
       expect(translateEntryButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
 
       // L'autre panneau est verrouillé lui aussi.
-      expect(buttonLabelled(actionsForLine(wrapper, TRAITS, 'Testé'), 'Modifier').attributes('disabled')).toBeDefined()
+      expect(editButton(wrapper, TRAITS, 'Testé').attributes('disabled')).toBeDefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeDefined()
       expect(translateEntryButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
 
       await buttonLabelled(panelOf(wrapper, PRINCIPLES), 'Annuler').trigger('click')
 
       expect(
-        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').attributes('disabled'),
+        editButton(wrapper, PRINCIPLES, 'DDD in English').attributes('disabled'),
       ).toBeUndefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeUndefined()
       expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -440,9 +439,9 @@ describe('AdminQualityPage', () => {
     it("Qualité : un ordre des principes modifié refuse la traduction des principes sans attendre le rendu (#748, R173)", async () => {
       const translation = createTranslationRepository()
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
 
-      await emitTranslateRightAfterMove(wrapper, PRINCIPLES)
+      await emitTranslateRightAfterMove(wrapper, PRINCIPLES, PRINCIPLES)
 
       expect(translation.translate).not.toHaveBeenCalled()
       expect(formOf(wrapper, PRINCIPLES).find('[role="status"]').exists()).toBe(false)
@@ -451,9 +450,9 @@ describe('AdminQualityPage', () => {
     it("Qualité : un ordre des traits modifié refuse la traduction des traits sans attendre le rendu (#748, R173)", async () => {
       const translation = createTranslationRepository(TRANSLATED_TRAIT)
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
 
-      await emitTranslateRightAfterMove(wrapper, TRAITS)
+      await emitTranslateRightAfterMove(wrapper, TRAITS, TRAITS)
 
       expect(translation.translate).not.toHaveBeenCalled()
       expect(formOf(wrapper, TRAITS).find('[role="status"]').exists()).toBe(false)
@@ -491,7 +490,7 @@ describe('AdminQualityPage', () => {
 
       // Modifier l'entrée EN bascule aussi la langue du formulaire : sans cela,
       // l'enregistrement réécrirait l'entrée anglaise en français.
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, 'DDD in English').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_ONE)
 
@@ -514,10 +513,10 @@ describe('AdminQualityPage', () => {
       // enregistré en anglais, sans avertissement ni index unique pour l'arrêter
       // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale). La
       // langue est un champ de chaque formulaire.
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, 'DDD in English').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
 
@@ -541,7 +540,7 @@ describe('AdminQualityPage', () => {
       // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
       // Ces deux tests forment le contrat entre les deux moitiés : les casser
       // séparément doit être impossible sans que l'un des deux vire au rouge.
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe('')
 
       await formOf(wrapper, TRAITS).trigger('submit.prevent')
@@ -618,7 +617,7 @@ describe('AdminQualityPage', () => {
       const translation = createTranslationRepository()
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
@@ -632,7 +631,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
       vi.mocked(principleRepository.list).mockClear()
 
@@ -658,7 +657,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
@@ -680,7 +679,7 @@ describe('AdminQualityPage', () => {
       const traitRepository = createTraitRepository()
       const { wrapper } = await mountPage(createPrincipleRepository(), traitRepository, translation)
 
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       await translateEntryButton(wrapper, TRAITS).trigger('click')
       await flushPromises()
 
@@ -724,13 +723,13 @@ describe('AdminQualityPage', () => {
       heading: 'Ajouter un principe',
       permanentHelp: QUALITY_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+        await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Revue systématique'), 'Modifier').trigger('click')
+        await editButton(wrapper, PRINCIPLES, 'Revue systématique').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
@@ -765,13 +764,13 @@ describe('AdminQualityPage', () => {
       heading: 'Ajouter un trait',
       permanentHelp: QUALITY_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+        await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable'), 'Modifier').trigger('click')
+        await editButton(wrapper, TRAITS, 'Observable').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
@@ -796,7 +795,7 @@ describe('AdminQualityPage', () => {
       })
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 

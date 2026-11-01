@@ -63,7 +63,7 @@
     "localeLabel": "Langue",
     "entryLock": {
       "editing": "La langue d'une entrée existante ne peut pas être modifiée.",
-      "proposal": "Verrouillé par la proposition de traduction en cours ; « Annuler » l'abandonne et vide le formulaire."
+      "proposal": "Verrouillé par la proposition de traduction en cours ; « Annuler » la retire et vide le formulaire."
     },
     "nav": {
       "content": "Contenu",

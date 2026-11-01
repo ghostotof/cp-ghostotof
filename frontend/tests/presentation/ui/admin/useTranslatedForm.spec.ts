@@ -14,6 +14,7 @@ import {
 } from '../../../../src/presentation/ui/admin/useTranslatedForm'
 import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { TRANSLATION_UNAVAILABLE_FR } from '../../../support/adminTranslationTexts'
+import { capturedProposal } from '../../../support/capturedProposal'
 
 const PREFIX = 'admin-incident'
 const HINT = `${PREFIX}-prose-readonly-hint`
@@ -65,12 +66,9 @@ function mountTranslatedForm(
   return { form, translated: captured, repository, release: (proposal: TranslationProposal) => release(proposal) }
 }
 
-/** Demande une proposition vers `en` par `requestProposal` : celle que la page a reçue, ou `null` si `accept` n'a pas été appelée. */
-async function proposalOf(translated: UseTranslatedFormResult): Promise<TranslationProposal | null> {
-  let received: TranslationProposal | null = null
-  await translated.requestProposal('en', (proposal) => { received = proposal })
-
-  return received
+/** La proposition que la page reçoit de `requestProposal` vers `en` : celle-ci, ou `null` si `accept` n'a pas été appelée. */
+function proposalOf(translated: UseTranslatedFormResult): Promise<TranslationProposal | null> {
+  return capturedProposal((accept) => translated.requestProposal('en', accept))
 }
 
 describe('useTranslatedForm', () => {

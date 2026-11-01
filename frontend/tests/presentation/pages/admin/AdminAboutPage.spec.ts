@@ -14,6 +14,7 @@ import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { emitTranslateRightAfterMove } from '../../../support/entryFormLock'
 import { signInAgain } from '../../../support/signInAgain'
 import type { AdminAboutSettingsRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutSettingsRepository'
 import type { AdminAboutSiteCardRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutSiteCardRepository'
@@ -330,14 +331,13 @@ function optionsOf(wrapper: VueWrapper, id: string): string[] {
 }
 
 /**
- * Déplace la première ligne d'un tableau puis émet « translate » depuis le bouton du formulaire de la section, **sans rien
- * attendre** entre les deux : le brouillon d'ordre de la section est modifié, la page n'a pas encore reçu
- * `orderDirtyChange` ni rendu `isLocked` (#748, R173b). Les promesses ne sont réglées qu'à la fin.
+ * Le bouton « Modifier » de la ligne de `text` du tableau `which` : son libellé est lu du catalogue (une clé par tableau, « site »
+ * ou « moi »), jamais écrit ici, pour qu'une retouche du libellé ne fasse pas rougir la moitié du fichier.
  */
-async function emitTranslateRightAfterMove(wrapper: VueWrapper, table: number, form: number): Promise<void> {
-  void tableOf(wrapper, table).findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
-  wrapper.findAllComponents(TranslateEntryButton)[form].vm.$emit('translate', 'en')
-  await flushPromises()
+function editButton(wrapper: VueWrapper, which: number, text: string): DOMWrapper<HTMLButtonElement> {
+  const label = SITE === which ? fr.admin.about.siteCard.editAction : fr.admin.about.meCard.editAction
+
+  return buttonLabelled(actionsForLine(wrapper, which, text), label)
 }
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
@@ -606,7 +606,7 @@ describe('AdminAboutPage', () => {
         const hint = wrapper.get('#admin-order-locked-hint')
         expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-        const edit = buttonLabelled(actionsForLine(wrapper, which, editableTitle), 'Modifier')
+        const edit = editButton(wrapper, which, editableTitle)
         expect(edit.attributes('disabled')).toBeDefined()
         expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
         expect(
@@ -629,7 +629,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(orderScopeOf(wrapper, which), 'Annuler').trigger('click')
 
         expect(
-          buttonLabelled(actionsForLine(wrapper, which, editableTitle), 'Modifier').attributes('disabled'),
+          editButton(wrapper, which, editableTitle).attributes('disabled'),
         ).toBeUndefined()
         expect(buttonLabelled(formOf(wrapper, SETTINGS_FORM), 'Enregistrer').attributes('disabled')).toBeUndefined()
         expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -643,7 +643,7 @@ describe('AdminAboutPage', () => {
     it("cartes « site » : un ordre modifié refuse la traduction sans attendre le rendu (#748, R173b)", async () => {
       const translation = createTranslationRepository({ title: 'Architecture (en)', description: 'Architecture description' })
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
 
       await emitTranslateRightAfterMove(wrapper, SITE, SITE_FORM)
 
@@ -658,7 +658,7 @@ describe('AdminAboutPage', () => {
       async (category) => {
         const translation = createTranslationRepository({ title: 'Senior developer', description: 'Description' })
         const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], ME_FIXTURES[category].titles[0]), 'Modifier').trigger('click')
+        await editButton(wrapper, ME_TABLE[category], ME_FIXTURES[category].titles[0]).trigger('click')
 
         await emitTranslateRightAfterMove(wrapper, ME_TABLE[category], ME_FORM)
 
@@ -708,7 +708,7 @@ describe('AdminAboutPage', () => {
 
       // Modifier l'entrée EN bascule aussi la langue du formulaire : sans cela,
       // l'enregistrement réécrirait l'entrée anglaise en français.
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Architecture (en)').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('en')
       expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe(S_GROUP_ONE)
 
@@ -730,10 +730,10 @@ describe('AdminAboutPage', () => {
       // langue des autres — et la carte française en cours d'édition se serait
       // enregistrée en anglais, sans avertissement ni index unique pour l'arrêter
       // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale).
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, 'Senior developer'), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, 'Senior developer').trigger('click')
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('en')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
       // La langue des réglages, elle, n'a pas non plus bougé.
@@ -759,7 +759,7 @@ describe('AdminAboutPage', () => {
       // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
       // Ces deux tests forment le contrat entre les deux moitiés : les casser
       // séparément doit être impossible sans que l'un des deux vire au rouge.
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe('')
 
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
@@ -812,7 +812,7 @@ describe('AdminAboutPage', () => {
       // qui n'en laisse pas l'occasion à l'utilisateur ; ce qui compte est le
       // corps envoyé (le DOM, lui, garde la valeur écrite de force). Le
       // `disabled` est vérifié plus bas.
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, edited.title), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, edited.title).trigger('click')
       await wrapper.get('#admin-about-me-card-category').setValue('hobby')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')
       await flushPromises()
@@ -824,7 +824,7 @@ describe('AdminAboutPage', () => {
 
       // Désactivé, pas caché : la catégorie reste lisible. L'aide est un texte
       // visible relié au champ, jamais un `title`.
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, edited.title), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, edited.title).trigger('click')
       const category = wrapper.get('#admin-about-me-card-category')
       expect(category.attributes('disabled')).toBeDefined()
       const helpId = category.attributes('aria-describedby')
@@ -835,7 +835,7 @@ describe('AdminAboutPage', () => {
     it('libère la catégorie et retire son aide hors de l’édition', async () => {
       const { wrapper } = await mountPage()
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       await buttonLabelled(formOf(wrapper, ME_FORM), 'Annuler').trigger('click')
 
       const category = wrapper.get('#admin-about-me-card-category')
@@ -864,7 +864,7 @@ describe('AdminAboutPage', () => {
       const meCardRepository = createMeCardRepository({ list: vi.fn(async () => spreadCards) })
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], edited.title), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE[category], edited.title).trigger('click')
 
       // `startEdit` garde le groupe (`hasSibling` cherche dans toutes les
       // catégories), mais « Version de » ne liste que la catégorie du
@@ -887,7 +887,7 @@ describe('AdminAboutPage', () => {
 
       // Le chemin de correction : « — aucune — » envoie `null`, que le serveur
       // lit toutes catégories confondues et traite en vrai détachement (#561).
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], edited.title), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE[category], edited.title).trigger('click')
       await wrapper.get('#admin-about-me-card-translation-group').setValue('')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')
       await flushPromises()
@@ -948,7 +948,7 @@ describe('AdminAboutPage', () => {
       })
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')
       await flushPromises()
 
@@ -980,7 +980,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository()
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
@@ -995,7 +995,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository({ title: 'Technical stack', description: 'Stack description' })
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository, undefined, translation)
 
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Modifier la carte')
       vi.mocked(siteCardRepository.list).mockClear()
 
@@ -1043,7 +1043,7 @@ describe('AdminAboutPage', () => {
 
       // L'entrée solitaire est ici l'anglaise : l'assistant part donc de l'EN
       // vers le FR, dans l'autre sens que pour les cartes « site ».
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, fixture.titles[2]), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, fixture.titles[2]).trigger('click')
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('en')
 
       await translateEntryButton(wrapper, ME_FORM).trigger('click')
@@ -1097,13 +1097,13 @@ describe('AdminAboutPage', () => {
       heading: 'Ajouter une carte',
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+        await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
+        await editButton(wrapper, SITE, 'Architecture').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
@@ -1138,13 +1138,13 @@ describe('AdminAboutPage', () => {
       heading: 'Ajouter une carte',
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+        await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]).trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+        await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
@@ -1168,7 +1168,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository({ title: 'Veille continue', description: 'Description veille' })
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+      await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]).trigger('click')
       await translateEntryButton(wrapper, ME_FORM).trigger('click')
       await flushPromises()
 
@@ -1202,7 +1202,7 @@ describe('AdminAboutPage', () => {
       })
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
-      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
