@@ -31,9 +31,20 @@ const COMPILER = '@vue/compiler-dom'
 /** Toute entrée du lockfile qui installe le compilateur, à la racine ou imbriquée sous un autre paquet. */
 const COMPILER_ENTRY = /(?:^|\/)node_modules\/@vue\/compiler-dom$/
 
-/** Un intervalle ou une version, lus dans `dependencies` puis `devDependencies`. */
+type Section = 'dependencies' | 'devDependencies'
+
+/** La section où `name` est déclaré, `dependencies` lue avant `devDependencies` ; `undefined` s'il n'est dans aucune. */
+function declaredSection(manifest: PackageJson, name: string): Section | undefined {
+  if (undefined !== manifest.dependencies?.[name]) {
+    return 'dependencies'
+  }
+  return undefined !== manifest.devDependencies?.[name] ? 'devDependencies' : undefined
+}
+
+/** Un intervalle ou une version, lus dans la section que `declaredSection` désigne. */
 function declaredRange(manifest: PackageJson, name: string): string | undefined {
-  return manifest.dependencies?.[name] ?? manifest.devDependencies?.[name]
+  const section = declaredSection(manifest, name)
+  return undefined === section ? undefined : manifest[section]?.[name]
 }
 
 /**
@@ -47,10 +58,15 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   // `npm install …@<version>` écrit `^<version>` : avec `vue` en `~` le test refuserait ce qu'il vient de faire faire
   // (#748, CR13-5). `npm pkg set` écrit l'intervalle de `vue` tel quel, `--package-lock-only` aligne l'entrée racine du
   // lockfile (sinon `npm ci` refuse un lockfile en retard sur `package.json`).
+  // La commande écrit la section où le compilateur est déjà déclaré (`devDependencies` quand il est absent) : dans l'autre,
+  // elle le déclarerait deux fois (#748, Sp14-8). `npm install --save-dev` déplace une entrée de `dependencies` vers
+  // `devDependencies` (mesuré) : la réinstallation porte donc le drapeau de la même section.
+  const section = declaredSection(manifest, COMPILER) ?? 'devDependencies'
+  const saveFlag = 'dependencies' === section ? '--save-prod' : '--save-dev'
   const realign =
-    `npm pkg set "devDependencies.${COMPILER}=${vueRange ?? '<intervalle de vue>'}" && npm install --package-lock-only`
+    `npm pkg set "${section}.${COMPILER}=${vueRange ?? '<intervalle de vue>'}" && npm install --package-lock-only`
   // Une installation en trop ou une version fausse se refont par `npm install`, puis l'intervalle se réécrit.
-  const reinstall = `npm install --save-dev ${COMPILER}@${vueVersion ?? '<version de vue>'} && ${realign}`
+  const reinstall = `npm install ${saveFlag} ${COMPILER}@${vueVersion ?? '<version de vue>'} && ${realign}`
 
   const compilerRange = declaredRange(manifest, COMPILER)
   if (undefined === compilerRange || compilerRange !== vueRange) {
@@ -131,6 +147,39 @@ describe('@vue/compiler-dom reste la version de vue', () => {
     // Appliquer ce que la commande écrit réaligne le manifeste : le test ne redemande rien.
     const written = /npm pkg set "devDependencies\.@vue\/compiler-dom=([^"]+)"/.exec(problems[0])?.[1]
     expect(alignmentProblems({ ...manifest, devDependencies: { [COMPILER]: written ?? '' } }, lock)).toEqual([])
+  })
+
+  // Sp14-8 : la commande écrit la section où le compilateur est déclaré, celle que `alignmentProblems` a lue ; écrite dans
+  // l'autre, elle le déclarerait deux fois et le test ne lirait toujours pas ce qu'elle vient d'écrire.
+  it('un compilateur déclaré dans dependencies : la commande écrit dependencies et ne redemande rien (#748, R179)', () => {
+    const { lock } = alignedLock()
+    const manifest: PackageJson = { dependencies: { vue: '^3.5.44', [COMPILER]: '^3.5.0' } }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('npm pkg set "dependencies.@vue/compiler-dom=^3.5.44"')
+    expect(problems[0]).not.toContain('devDependencies')
+
+    // Appliquer ce que la commande écrit, dans la section qu'elle nomme, réaligne le manifeste.
+    const [, section, written] = /npm pkg set "(\w+)\.@vue\/compiler-dom=([^"]+)"/.exec(problems[0]) ?? []
+    expect(section).toBe('dependencies')
+    expect(alignmentProblems({ dependencies: { ...manifest.dependencies, [COMPILER]: written ?? '' } }, lock)).toEqual([])
+  })
+
+  // `npm install --save-dev` déplace une entrée de dependencies vers devDependencies (mesuré dans le conteneur) : la
+  // réinstallation suit la section, sinon la commande qui la suit écrirait dans l'une ce que l'autre vient de retirer.
+  it('une seconde installation, compilateur dans dependencies : la réinstallation garde la section (--save-prod)', () => {
+    const { lock } = alignedLock()
+    lock.packages[`node_modules/x/node_modules/${COMPILER}`] = { version: '3.5.44' }
+    const manifest: PackageJson = { dependencies: { vue: '^3.5.44', [COMPILER]: '^3.5.44' } }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(`npm install --save-prod ${COMPILER}@3.5.44`)
+    expect(problems[0]).not.toContain('--save-dev')
+    expect(problems[0]).toContain('npm pkg set "dependencies.@vue/compiler-dom=^3.5.44"')
   })
 
   it('une seconde installation imbriquée est refusée et nommée', () => {

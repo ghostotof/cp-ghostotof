@@ -235,7 +235,8 @@ more reason the `make front-*` targets exist.
 
 `@vue/compiler-dom` is a direct dev dependency (the spec template reader imports it) and must stay `vue`'s own version, installed once:
 `tests/support/vueCompilerAlignment.spec.ts` reads `package.json` and the lockfile and fails with the command that realigns them (#748):
-`npm pkg set "devDependencies.@vue/compiler-dom=<vue's range>" && npm install --package-lock-only`, preceded by `npm install --save-dev
-@vue/compiler-dom@<vue's version>` when the lockfile holds a second installation or a wrong version. **Never the bare `npm install
-…@<version>` alone**: it writes `^<version>`, which the test refuses when `vue` is declared `~` (the loop of CR13-5); `npm pkg set` writes
-`vue`'s range as is.
+`npm pkg set "<section>.@vue/compiler-dom=<vue's range>" && npm install --package-lock-only`, where `<section>` is the section it is
+declared in (`dependencies` or `devDependencies`, the one the test read; `devDependencies` when it is absent), preceded, when the lockfile
+holds a second installation or a wrong version, by `npm install --save-dev @vue/compiler-dom@<vue's version>` (`--save-prod` when it is
+declared in `dependencies`: `--save-dev` moves it to `devDependencies`). **Never the bare `npm install …@<version>` alone**: it writes
+`^<version>`, which the test refuses when `vue` is declared `~` (the loop of CR13-5); `npm pkg set` writes `vue`'s range as is.
