@@ -23,7 +23,8 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# run_case (check_no_child_sees_basic_auth), write_env_noting : le cas et les faux communs aux smokes et à l'audit.
+# run_case (check_no_child_sees_basic_auth, check_finds_library_under_cdpath, check_root_script_dir_is_slash), write_env_noting :
+# les cas et les faux communs aux smokes et à l'audit.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -32,11 +33,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 # Une exception pour curl : si FAKE_CURL_HTTP_CODE_FOR_WWW est posée, un appel
 # `-w '%{http_code}'` sur une URL https://www. rend ce code sur stdout (sortie 0),
 # la réponse d'un hôte qui exige la Basic Auth (401) ou non.
+# Les trois faux notent aussi leur environnement, sous une ligne `== <nom>`, dans le fichier que nomme $FAKE_TOOL_ENV quand il est
+# posé (St15-25) : ils passent avant ceux de write_env_noting dans le PATH, et curl, qui porte le `-K`, est le fils qui compte.
 mkdir -p "$TMP/bin"
 for fake in dig openssl; do
   cat > "$TMP/bin/$fake" <<FAKE
 #!/usr/bin/env bash
 printf '%s %s\n' "$fake" "\$*" >> "\$FAKE_CALLS"
+[ -z "\${FAKE_TOOL_ENV:-}" ] || { echo '== $fake'; env; } >> "\$FAKE_TOOL_ENV"
 exit 1
 FAKE
   chmod +x "$TMP/bin/$fake"
@@ -44,6 +48,7 @@ done
 cat > "$TMP/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s %s\n' curl "$*" >> "$FAKE_CALLS"
+[ -z "${FAKE_TOOL_ENV:-}" ] || { echo '== curl'; env; } >> "$FAKE_TOOL_ENV"
 # Les mêmes arguments, un par champ (séparés par U+001F, un argument peut porter des blancs), pour juger chaque élément.
 printf '%s\x1f' "$@" >> "$FAKE_CALLS.argv"
 printf '\n' >> "$FAKE_CALLS.argv"
@@ -151,10 +156,10 @@ else
   fail "fichier -K laissé" "$(ls -A "$TMP/nominal.tmpdir")"
 fi
 
-# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
-# `openssl` et `rm` notent leur environnement (le faux `openssl` du dossier $TMP/bin passe avant eux : l'audit n'en lance
-# pas d'autre). L'audit retire la variable (smoke_use_auth_config) avant d'en lancer un ; le témoin commun lit le fichier,
-# qui ne doit pas être vide.
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`, `openssl`
+# et `rm` de write_env_noting notent leur environnement, ceux de $TMP/bin (`dig`, `openssl`, `curl`, plus haut) aussi, et ces
+# derniers passent avant eux dans le PATH : le fichier nomme donc `openssl` par le faux de $TMP/bin. L'audit retire la variable
+# (smoke_use_auth_config) avant d'en lancer un ; le témoin commun lit le fichier, qui ne doit pas être vide.
 write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
 : > "$TMP/witness-env.txt"
 copy_tools witness reelle
@@ -162,6 +167,13 @@ FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" AUDIT_BASIC_A
 run_case check_no_child_sees_basic_auth \
   "audit : aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
   CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=1
+# St15-25 : le témoin voit aussi curl, le fils qui compte (il porte le `-K`). Sans cette ligne, le fichier ne nommerait pas l'outil
+# qui reçoit l'identifiant, et un vert ne dirait rien de lui.
+if grep -q '^== curl$' "$TMP/witness-env.txt"; then
+  pass "audit : le témoin des fils a noté l'environnement de curl"
+else
+  fail "audit : témoin sans curl" "outils notés : $(grep '^== ' "$TMP/witness-env.txt" | sort -u | tr '\n' ' ')"
+fi
 
 # --- R182 (Q2, CR15-3) : la limite du nom invalide. Un nom que la bibliothèque refuse rend 2 avant la lecture : la variable n'est
 # pas retirée du shell, et c'est le seul chemin où elle reste exportée. Aucun script du dépôt ne l'atteint (la première garde de
@@ -193,11 +205,12 @@ set +e
   TMPDIR="$TMP/cdpath.tmpdir" PATH="$TMP/bin:$PATH" bash tools/audit-prod.sh example.invalid >"$TMP/cdpath.out" 2>"$TMP/cdpath.err")
 rc=$?
 set -e
-if [ "$rc" -eq 1 ] && ! grep -q 'introuvable ou invalide' "$TMP/cdpath.err" && [ -s "$TMP/cdpath.calls" ]; then
-  pass "audit : CDPATH posé et chemin relatif, l'audit trouve ses bibliothèques (sortie 1 par ses propres échecs)"
-else
-  fail "audit : CDPATH et chemin relatif" "rc=$rc ; err : $(cat "$TMP/cdpath.err")"
-fi
+run_case check_finds_library_under_cdpath \
+  "audit : CDPATH posé et chemin relatif, l'audit trouve ses bibliothèques (sortie 1 par ses propres échecs)" "$rc" \
+  CASE_ERR="$TMP/cdpath.err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=1
+# Sp15-22 : le script à la racine (dossier vide) lit `/` ; aucun test ne le pose à la racine, le cas relit son bloc d'amorçage.
+run_case check_root_script_dir_is_slash "audit : un script à la racine lit « / » comme dossier de sa bibliothèque" 0 \
+  CASE_SCRIPT="$TOOLS/audit-prod.sh"
 
 # --- C7-8 : le fichier -K naît dans un dossier privé propre à la bibliothèque, sous
 # TMPDIR (pas directement dedans), et ce dossier disparaît à la sortie : aucun

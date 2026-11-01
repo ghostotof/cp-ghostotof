@@ -20,8 +20,8 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth), generated_basic_auth,
-# write_env_noting : communs aux smokes.
+# run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth, check_finds_library_under_cdpath,
+# check_root_script_dir_is_slash), generated_basic_auth, write_env_noting : communs aux smokes.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -240,11 +240,11 @@ here="$PWD"
 cd "$(dirname "$SCRIPT")/.."
 CDPATH="$TMP/cdpath-decoy" RUN_SCRIPT=tools/smoke-login-throttling.sh run cdpath "$toomany"
 cd "$here"
-if [ "$rc" -eq 0 ] && ! grep -q 'introuvable ou invalide' "$TMP/err"; then
-  pass "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque"
-else
-  fail "CDPATH et chemin relatif" "rc=$rc ; err : $(cat "$TMP/err")"
-fi
+run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" "$rc" \
+  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
+# Sp15-22 : le script à la racine (dossier vide) lit `/` ; aucun test ne le pose à la racine, le cas relit son bloc d'amorçage.
+run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" 0 \
+  CASE_SCRIPT="$SCRIPT"
 
 # --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
 # sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.

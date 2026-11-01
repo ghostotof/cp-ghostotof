@@ -9,12 +9,13 @@
 #
 # Un test lance le script (`run`), garde le code de sortie, le stderr, le stdout
 # et la liste des appels du faux `curl`, puis les passe au cas par `run_case`, **un appel** :
-#   run_case <cas> <libellé> <code de sortie> [CASE_ERR=<fichier>] [CASE_OUT=<fichier>] [CASE_CALLS=<fichier>] \
-#     [CASE_TMPDIR=<dossier>] [CASE_VALUE=<valeur>] [CASE_RANK=<rang>] [CASE_ENV_FILE=<fichier>] [CASE_EXPECTED_RC=<code>]
-# `run_case` pose en **locales** les variables que lit le cas (jamais exportées : CASE_VALUE est une Basic Auth
-# générée, qu'aucun processus lancé par le cas n'a à recevoir, St13-42). Elles sont déclarées `local +x` : une locale de bash
-# garde l'attribut d'export de la variable globale qu'elle masque, de sorte qu'un nom déjà exporté par l'appelant porterait
-# la valeur du cas jusqu'aux processus qu'il lance (C14-7) :
+#   run_case <cas> <libellé> <code de sortie> [<NOM>=<valeur>]…      (<NOM> : un des noms de CASE_NAMES, plus bas)
+# `run_case` pose en **locales** les variables que lit le cas : les valeurs qu'il pose n'atteignent jamais un processus lancé
+# par le cas (CASE_VALUE est une Basic Auth générée, qu'aucun fils n'a à recevoir, St13-42). Elles sont déclarées `local +x` :
+# une locale de bash garde l'attribut d'export de la variable globale qu'elle masque, de sorte qu'un nom déjà exporté par
+# l'appelant porterait la valeur du cas jusqu'aux processus qu'il lance (C14-7). `+x` n'en garantit pas plus : un fils voit,
+# sous un nom que l'appelant a exporté, la valeur de l'appelant, la locale n'étant pas exportée (CR15-1, mesuré sur le bash 5.2.37
+# de l'hôte ; celui du runner, 5.2.21, ne se lance pas hors ligne) :
 #   CASE_LABEL    le libellé du cas ;      CASE_RC     le code de sortie du script ;
 #   CASE_ERR      le fichier de stderr ;   CASE_OUT    le fichier de stdout ;
 #   CASE_CALLS    le fichier des appels du faux curl ;
@@ -22,7 +23,8 @@
 #   CASE_VALUE    la valeur de Basic Auth, qui ne doit apparaître nulle part ;
 #   CASE_RANK     (facultatif) le rang de l'argument refusé, que dit le message des deux cas de refus d'argument ;
 #   CASE_ENV_FILE le fichier où les faux outils de write_env_noting ont noté leur environnement, que lit le cas des fils ;
-#   CASE_EXPECTED_RC (facultatif) le code de sortie que le cas des fils exige du script (CASE_RC est celui qu'il a rendu).
+#   CASE_EXPECTED_RC (facultatif) le code de sortie que le cas exige du script (CASE_RC est celui qu'il a rendu) ;
+#   CASE_SCRIPT   (facultatif) le chemin du script dont le cas relit le bloc d'amorçage.
 # Exemple :  case_vars_set "$TMP/err" "$TMP/calls" "$TMP/out"
 #            run_case check_empty_basic_auth "AUDIT_BASIC_AUTH vide" "$rc" "${CASE_VARS[@]}"
 # Une variable que le cas exige et que l'appel ne pose pas est un `fail` nommé, jamais une sortie du test (St13-44).
@@ -46,12 +48,17 @@ generated_basic_auth() {
 # sous une ligne `== <outil>`, puis lance le vrai (son chemin, entre guillemets). Un test place ce dossier en tête du PATH
 # d'un script lancé avec la Basic Auth : un processus lancé avant que la bibliothèque retire la variable la porterait, et le
 # fichier le montrerait sous le nom de l'outil (C13-5, A de R165 ; un témoin commun des fils, D2 de la quatorzième relecture).
+# Un outil que `command -v` ne trouve pas est un `fail` nommé et reste sans faux (CR15-7) : un faux qui lancerait `exec ""` noterait
+# un échec muet, et le témoin dirait « fichier vide » sans dire pourquoi. Le test continue (rendre 1 le ferait sortir sous `set -e`).
 write_env_noting() {
   local dir="$1" tool real
   shift
   mkdir -p "$dir"
   for tool in "$@"; do
-    real="$(command -v "$tool")"
+    if ! real="$(command -v "$tool")"; then
+      fail "write_env_noting : $tool introuvable" "aucun faux n'est écrit pour lui : le PATH du test ne le porte pas"
+      continue
+    fi
     printf '%s\n' '#!/bin/sh' "{ echo '== $tool'; env; } >> \"\$FAKE_TOOL_ENV\"" "exec \"$real\" \"\$@\"" > "$dir/$tool"
     chmod +x "$dir/$tool"
   done
@@ -71,28 +78,43 @@ case_vars_set() {
   fi
 }
 
-# run_case <cas> <libellé> <code de sortie> [CASE_ERR=… CASE_OUT=… CASE_CALLS=… CASE_TMPDIR=… CASE_VALUE=… CASE_RANK=…
-#   CASE_ENV_FILE=… CASE_EXPECTED_RC=…]
+# Les noms de variable de cas qu'un appel de `run_case` peut donner (St15-35), écrits une fois : la déclaration des locales, le
+# contrôle des affectations et le message d'une faute d'appel les lisent. CASE_LABEL et CASE_RC ne sont pas du nombre : ils
+# viennent des deux paramètres qui suivent le cas. Un test qui boucle sur les noms (smoke-http.test.sh) lit ce tableau aussi.
+CASE_NAMES=(CASE_ERR CASE_OUT CASE_CALLS CASE_TMPDIR CASE_VALUE CASE_RANK CASE_ENV_FILE CASE_EXPECTED_RC CASE_SCRIPT)
+
+# _case_assign <NOM=valeur>
 #
-# Pose CASE_LABEL, CASE_RC et les huit autres variables en locales (celles que l'appel ne donne pas restent vides),
+# Rend 0 après avoir posé la variable de cas que nomme l'affectation (la locale de `run_case`, par la portée dynamique), 1 si le
+# nom n'est pas dans CASE_NAMES.
+_case_assign() {
+  local _name
+  for _name in "${CASE_NAMES[@]}"; do
+    if [[ "$1" == "$_name="* ]]; then
+      printf -v "$_name" '%s' "${1#*=}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# run_case <cas> <libellé> <code de sortie> [<NOM>=<valeur>]…
+#
+# Pose CASE_LABEL, CASE_RC et les variables de CASE_NAMES en locales (celles que l'appel ne donne pas restent vides),
 # puis appelle le cas (`check_*`), qui les lit par la portée dynamique de bash. Une affectation qui ne nomme pas une
-# de ces huit variables est une faute d'appel : un `fail`, le cas n'est pas lancé.
+# de ces variables est une faute d'appel : un `fail`, le cas n'est pas lancé. Aucune n'est exportée (`local +x`, voir l'en-tête).
 run_case() {
-  local +x _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment
-  local +x CASE_ERR="" CASE_OUT="" CASE_CALLS="" CASE_TMPDIR="" CASE_VALUE="" CASE_RANK="" CASE_ENV_FILE="" CASE_EXPECTED_RC=""
+  local +x _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment _name _names
+  for _name in "${CASE_NAMES[@]}"; do
+    local +x "$_name="
+  done
   shift 3
   for _assignment in "$@"; do
-    case "$_assignment" in
-      CASE_ERR=* | CASE_OUT=* | CASE_CALLS=* | CASE_TMPDIR=* | CASE_VALUE=* | CASE_RANK=* | CASE_ENV_FILE=* | CASE_EXPECTED_RC=*)
-        printf -v "${_assignment%%=*}" '%s' "${_assignment#*=}"
-        ;;
-      *)
-        fail "$CASE_LABEL" \
-          "run_case : « ${_assignment%%=*} » n'est pas une variable de cas" \
-          "(CASE_ERR, CASE_OUT, CASE_CALLS, CASE_TMPDIR, CASE_VALUE, CASE_RANK, CASE_ENV_FILE, CASE_EXPECTED_RC)"
-        return 0
-        ;;
-    esac
+    if ! _case_assign "$_assignment"; then
+      printf -v _names '%s, ' "${CASE_NAMES[@]}"
+      fail "$CASE_LABEL" "run_case : « ${_assignment%%=*} » n'est pas une variable de cas (${_names%, })"
+      return 0
+    fi
   done
   "$_case"
 }
@@ -213,5 +235,48 @@ check_no_child_sees_basic_auth() {
     pass "$CASE_LABEL"
   else
     fail "$CASE_LABEL" "rc=$CASE_RC (attendu $CASE_EXPECTED_RC) ; outils dont l'environnement porte la variable : ${carriers:-aucun}"
+  fi
+}
+
+# check_finds_library_under_cdpath  (CASE_LABEL, CASE_RC, CASE_EXPECTED_RC, CASE_ERR, CASE_CALLS)
+#
+# Le script a été lancé par un chemin relatif avec un CDPATH qui nomme un dossier de même nom (`$TMP/cdpath-decoy/tools`) : `cd tools`
+# imprimerait alors le dossier que CDPATH trouve, et le `source` de la bibliothèque échouerait (C14-11). Le script a rendu le code
+# attendu (l'audit sort en 1 par ses propres échecs, un smoke en 0), aucune ligne « introuvable ou invalide » n'est sur son stderr,
+# et le faux curl a été appelé (le script est allé jusqu'à ses requêtes). Le test pose le CDPATH et lance le script : le cas juge.
+check_finds_library_under_cdpath() {
+  _case_incomplete CASE_LABEL CASE_RC CASE_EXPECTED_RC CASE_ERR CASE_CALLS && return 0
+  if [ "$CASE_RC" -eq "$CASE_EXPECTED_RC" ] && ! grep -q 'introuvable ou invalide' "$CASE_ERR" && [ -s "$CASE_CALLS" ]; then
+    pass "$CASE_LABEL"
+  else
+    fail "$CASE_LABEL" "rc=$CASE_RC (attendu $CASE_EXPECTED_RC) ; err : $(cat "$CASE_ERR") ; appels : $(head -3 "$CASE_CALLS")"
+  fi
+}
+
+# check_root_script_dir_is_slash  (CASE_LABEL, CASE_SCRIPT)
+#
+# Un script placé à la racine (`/script.sh`) a un dossier vide après `${BASH_SOURCE[0]%/*}` : le bloc d'amorçage lit alors `/`
+# (C14-11, Sp15-22). Aucun test ne peut poser un script à la racine : le cas relit le bloc du script tel qu'il est écrit, de la ligne
+# `<nom>="${BASH_SOURCE[0]}"` à la ligne `# shellcheck source=tools/lib/smoke-http.sh` qui la suit (ses deux repères, dans l'audit
+# comme dans les trois smokes), remplace `${BASH_SOURCE[0]}` par `/script.sh` et l'exécute dans un shell à part : la variable qu'il
+# pose doit valoir `/`. Un bloc introuvable entre ses repères, ou une variable qui vaut autre chose, est un `fail` nommé.
+check_root_script_dir_is_slash() {
+  local block name value needle="\${BASH_SOURCE[0]}"
+  _case_incomplete CASE_LABEL CASE_SCRIPT && return 0
+  block="$(awk '
+    /^[[:space:]]*[A-Za-z_]+="\$\{BASH_SOURCE\[0\]\}"$/ { on = 1 }
+    /^[[:space:]]*# shellcheck source=tools\/lib\/smoke-http\.sh$/ { on = 0 }
+    on { print }' "$CASE_SCRIPT")"
+  if [ -z "$block" ]; then
+    fail "$CASE_LABEL" "le bloc d'amorçage de $CASE_SCRIPT est introuvable entre ses deux repères"
+    return 0
+  fi
+  name="${block%%=*}"
+  name="${name//[[:space:]]/}"
+  value="$(bash -c "${block//"$needle"//script.sh}; printf '%s' \"\${$name}\"" 2>&1)"
+  if [ "$value" = "/" ]; then
+    pass "$CASE_LABEL"
+  else
+    fail "$CASE_LABEL" "un script à la racine lit « $value » dans $name, non « / » ; bloc relu : $(printf '%s' "$block" | tr '\n' ' ')"
   fi
 }

@@ -31,10 +31,11 @@ The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the rea
 the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;
 reordering would complicate the failure path of the name for no risk).
 `unset` does not wipe the copy of the environment the process received at its launch, which `/proc/<pid>/environ` still shows (R148b).
-The three smokes and the audit start no process before `smoke_use_auth_config`: the `trap` first (it removes only a file already
-created, the `headers_file` being empty until then; `smoke-mcp.sh`'s body file is `smoke_data_file`'s, which `smoke_cleanup` removes),
-then the call, then `mktemp`, `smoke_data_file`, `openssl` and `date` (D2 of the fourteenth review). The only child left before the
-reading is that head `rm -rf` of a second call, above.
+The three smokes and the audit run no program before `smoke_use_auth_config` (the `source "$(CDPATH='' cd -- … && pwd)/…"` that precedes
+it is builtins only: a `$(…)` copies the shell, it executes nothing): the `trap` first, then the call, then `mktemp`, `smoke_data_file`,
+`openssl` and `date` (D2 of the fourteenth review). The smokes' `trap` removes the `headers_file`, empty until `mktemp` made it, then runs
+`smoke_cleanup`, which removes the `-K` directory and the files of `smoke_data_file` (`smoke-mcp.sh`'s body file); the audit's is
+`smoke_cleanup` alone, it has no `headers_file`. The only program left before the reading is that head `rm -rf` of a second call, above.
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
@@ -98,10 +99,15 @@ so the value is never expanded outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
 still exported there, and no process may start before the library unsets it. The call is `CDPATH='' cd --` (an inherited `CDPATH` would
 make `cd` print the directory it found and break the `source`), and a script at the root, whose directory is empty, reads `/` (C14-11).
-The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31).
+The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31). The four tests share both checks:
+`check_finds_library_under_cdpath` (a decoy `CDPATH`, a relative path) and `check_root_script_dir_is_slash`, which re-reads the block
+of the script between its two marks, `<name>="${BASH_SOURCE[0]}"` and the `# shellcheck source=` line, runs it with `/script.sh` and
+requires `/` (Sp15-22): keep the marks where they are, or the case fails naming the missing block.
 Each offline test but `smoke-http.test.sh` runs its script behind fake `dirname`, `mktemp`, `date`, `openssl` and `rm` that record their
-environment (`write_env_noting`). The shared case `check_no_child_sees_basic_auth` requires that the record is not empty, that the script
-returned the expected code and that no line carries the variable; a failure names the tools that received it.
+environment (`write_env_noting`; a tool it cannot find is a named `fail`, never a fake that runs `exec ""`, CR15-7). The audit's own fake
+`dig`, `openssl` and `curl` record theirs in the same file, and its test requires a `== curl` line (St15-25). The shared case
+`check_no_child_sees_basic_auth` requires that the record is not empty, that the script returned the expected code and that no line
+carries the variable; a failure names the tools that received it.
 Of the audit, the smokes and the library, the library's header is the only file that describes the variable
 and lists every refused value. This rule names it too; the `Env :` headers of the audit and the three smokes point to it.
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
@@ -143,7 +149,9 @@ an inherited value would set that one with nothing carried (CR14-3).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
 Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
 The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`: their
-variables are locals of `run_case`, never exported, even when the caller already exports the same names (`local +x`: a local keeps the
-export attribute of the global it hides; a generated Basic Auth must not reach the processes a case starts), and a variable a case needs
-that the call leaves out is a named `fail`, never an exit of the test. `case_vars_set <err> <calls> <out> [<value>]` sets the array
-`CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are written once.
+variables are locals of `run_case`, declared `local +x`: the values it sets never reach a child (a local keeps the export attribute of the
+global it hides, which `+x` removes; a generated Basic Auth must not reach the processes a case starts), whereas a name the caller
+exported keeps the caller's value there (CR15-1; measured on the host's bash 5.2.37, the runner's 5.2.21 not being available offline,
+where the test `smoke-http.test.sh` runs). The names a call may give are the array `CASE_NAMES`. A variable a case needs that the call
+leaves out is a named `fail`, never an exit of the test. `case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that
+most calls pass as `"${CASE_VARS[@]}"`, so the names are written once.

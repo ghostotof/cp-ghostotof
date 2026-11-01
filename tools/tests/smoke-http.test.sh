@@ -572,15 +572,16 @@ fi
 args_auth="$(generated_basic_auth)"
 UNE_AUTH="$args_auth"
 smoke_use_auth_config UNE_AUTH
-# refuse_args <rang attendu> <élément…> : smoke_fetch avec `-X POST` puis ces éléments ; le cas vérifie la sortie 2, le message
-# « argument n° <rang> », curl jamais appelé, la valeur absente ; l'élément refusé (celui du rang) n'est jamais cité.
+# refuse_args <rang attendu> <élément…> : smoke_fetch avec le préfixe `-X POST` puis ces éléments ; le rang se compte depuis le
+# premier argument de l'appel, préfixe compris, et l'élément refusé se retrouve par ce même préfixe (St15-37) ; le cas vérifie la
+# sortie 2, le message « argument n° <rang> », curl jamais appelé, la valeur absente ; l'élément refusé n'est jamais cité.
 refuse_args() {
-  local rank="$1" refused
+  local rank="$1" refused rc=0
+  local prefix=(-X POST)
   shift
-  refused="${*:$((rank - 2)):1}"
+  refused="${*:$((rank - ${#prefix[@]})):1}"
   : > "$FAKE_ARGS"
-  rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
   run_case check_args_refused \
     "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
@@ -592,7 +593,7 @@ refuse_args() {
 # Les contournements nommés par la quatorzième relecture : la sortie de curl qui montre l'identifiant (`-v`, `--verbose`, `--trace`,
 # `--trace-ascii`, `--libcurl`, mesuré : `--libcurl -` imprime CURLOPT_USERPWD), une grappe qui porte `v`, une seconde URL
 # `https://`, `--`, le proxy, le résolveur, l'autorité de certification, le socket Unix, le protocole par défaut, une redirection,
-# un fichier de configuration, une valeur collée, une forme longue ou une option future qu'aucune table ne connaît.
+# un fichier de configuration, une valeur collée, une forme longue ou une option future que la liste d'autorisation ne connaît pas.
 refuse_args 3 -v
 refuse_args 3 --verbose
 refuse_args 3 --trace -
@@ -640,7 +641,7 @@ refuse_args 3 '--header' x
 refuse_args 3 '--request' GET
 refuse_args 3 --compressed
 refuse_args 3 --progress-bar
-refuse_args 3 --future-option-unknown-to-the-table
+refuse_args 3 --future-option-unknown
 # Le rang suit la position : l'option refusée est la cinquième, la septième, la dernière.
 refuse_args 5 -H 'A: b' -v
 refuse_args 7 -H 'A: b' -d '{"k":"v"}' -x http://p
@@ -652,7 +653,7 @@ refuse_args 5 -H 'A: b' -d
 # suivante, elle, l'est.
 refuse_args 5 -H -v -v
 refuse_args 5 -d https://autre.example/ -L
-# Voisins permis : chaque option de la table et sa valeur, dans l'appel noté, après `-q` et le `-K`.
+# Voisins permis : chaque option de la liste d'autorisation et sa valeur, dans l'appel noté, après `-q` et le `-K`.
 accept_args() {
   local label="$1" expected="$2"
   shift 2
@@ -685,8 +686,8 @@ if [ "$rc" -eq 0 ] && grep -q 'argument n° 1 hors des options admises avec la B
 else
   fail "refus d'un argument tracé" "rc=$rc ; $(grep -F "${args_auth%%:*}" "$TMP/trace" | head -3)"
 fi
-# SMOKE_CURL_OPTS est jugé par la même table, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> ». L'élément refusé
-# n'est jamais cité.
+# SMOKE_CURL_OPTS est jugé par la même liste d'autorisation, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> ».
+# L'élément refusé n'est jamais cité.
 saved_curl_opts=("${SMOKE_CURL_OPTS[@]}")
 refuse_curl_opts() {
   local rank="$1" refused
@@ -712,7 +713,7 @@ refuse_curl_opts 4 -sS --max-time 15 -v
 refuse_curl_opts 4 -sS --max-time 15 --libcurl
 refuse_curl_opts 4 -sS --max-time 15 https://autre.example/
 refuse_curl_opts 4 -sS --max-time 15 --proxy
-refuse_curl_opts 4 -sS --max-time 15 --future-option-unknown-to-the-table
+refuse_curl_opts 4 -sS --max-time 15 --future-option-unknown
 refuse_curl_opts 1 -s
 refuse_curl_opts 2 -sS --max-time
 # Voisin permis : les trois smokes passent `-sS`, deux délais et `-D <fichier>`.
@@ -746,15 +747,15 @@ if [ "$rc" -eq 0 ] && [ -n "$data_file" ] && [ -f "$data_file" ] && [[ "$data_fi
 else
   fail "smoke_data_file" "rc=$rc ; fichier : ${data_file:-aucun} ; retenus : $(data_files_count)"
 fi
-# refuse_file_args <rang de la valeur> <élément…> : smoke_fetch avec `-X POST` puis ces éléments ; la valeur refusée est celle du
+# refuse_file_args <rang de la valeur> <élément…> : smoke_fetch avec le préfixe `-X POST` puis ces éléments ; la valeur refusée est celle du
 # rang, jamais citée (une valeur vide ne se cherche pas : tout texte la contient).
 refuse_file_args() {
-  local rank="$1" refused
+  local rank="$1" refused rc=0
+  local prefix=(-X POST)
   shift
-  refused="${*:$((rank - 2)):1}"
+  refused="${*:$((rank - ${#prefix[@]})):1}"
   : > "$FAKE_ARGS"
-  rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
   run_case check_args_file_refused \
     "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
@@ -867,7 +868,8 @@ else
 fi
 
 # --- R169 (Q8) : une fois la Basic Auth posée, les variables d'environnement que curl lit (un proxy qui inspecte le TLS, un journal
-# de clés TLS, un lot d'autorités) ne sont plus dans le shell : aucun appel de curl ne les reçoit. Sans Basic Auth, elles restent.
+# de clés TLS ou QUIC, un lot d'autorités, le choix du moteur TLS) ne sont plus dans le shell : aucun appel de curl ne les reçoit.
+# Sans Basic Auth, elles restent.
 curl_variables=(http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
   CURL_CA_BUNDLE CURL_SSL_BACKEND QLOGDIR SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE)
 for variable in "${curl_variables[@]}"; do
@@ -905,7 +907,25 @@ else
 fi
 smoke_cleanup
 for variable in "${curl_variables[@]}"; do unset "$variable"; done
-unset curl_variables variable still_set missing
+# Sp15-24 : la liste ci-dessus recopie celle de la bibliothèque (son `unset -v`, relu ici). Un nom ajouté d'un seul côté rougit : à la
+# bibliothèque seule, ce cas ; au test seul, le premier cas plus haut (la variable resterait posée) et celui-ci.
+lib_unset_names="$(awk '
+  /^[[:space:]]*unset -v [A-Za-z_]/ { on = 1 }
+  on {
+    line = $0
+    more = (line ~ /\\$/)
+    sub(/^[[:space:]]*unset -v /, "", line)
+    sub(/[[:space:]]*\\$/, "", line)
+    printf "%s ", line
+    if (!more) exit
+  }' "$LIB" | tr -s ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')"
+test_unset_names="$(printf '%s\n' "${curl_variables[@]}" | sort | tr '\n' ' ')"
+if [ -n "$lib_unset_names" ] && [ "$lib_unset_names" = "$test_unset_names" ]; then
+  pass "la liste des variables de curl du test est celle que la bibliothèque retire (${#curl_variables[@]} noms)"
+else
+  fail "liste des variables de curl" "bibliothèque : ${lib_unset_names:-introuvable} ; test : $test_unset_names"
+fi
+unset curl_variables variable still_set missing lib_unset_names test_unset_names
 
 # --- R183 (Q4) : le cycle de vie de smoke_data_file. `smoke_cleanup` retire les fichiers et vide SMOKE_AUTH_DATA_FILES et
 # SMOKE_DATA_FILE : un chemin d'un premier appel, même recréé ensuite, n'est plus admis. Un second `smoke_use_auth_config` remplace
@@ -1337,7 +1357,7 @@ env_dump_lines() {
   # Un guillemet avant ou après le mot le rend visible dans une chaîne de `bash -c 'set'` ou `bash -c "set"`.
   local pat_set='(^|[[:space:];&|(`{!'"'"'"]|\$\()set[[:space:]]*($|[|>;&)#'"'"'"]|[0-9]*[<>])'
   local pat_indirect='\$\{!'
-  # `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore (R148b).
+  # `unset` ne vide pas la copie de l'environnement que le processus a reçue à son lancement ; /proc/<pid>/environ la montre encore (R148b).
   local pat_environ='(^|[^[:alnum:]_])environ([^[:alnum:]_]|$)'
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
@@ -1624,29 +1644,46 @@ else
   fail "smoke_fetch sans SMOKE_CURL" "rc=$rc ; statut : $SMOKE_STATUS"
 fi
 
-# --- C14-7 : « jamais exportées » vaut aussi quand l'appelant exporte déjà ces noms. Une locale de bash garde l'attribut
-# d'export de la variable globale qu'elle masque : sans `local +x`, un processus lancé par un cas recevrait la valeur
-# que l'appel de `run_case` vient de poser (une Basic Auth générée). L'appelant exporte les dix noms avec sa propre valeur
-# (`exporte`, que bash laisse voir au fils : c'est la sienne) ; chaque valeur donnée à `run_case` porte un repère généré, que
-# le fils lancé par le cas ne doit voir nulle part.
+# --- CR15-7 : un outil que `command -v` ne trouve pas est un `fail` nommé, jamais un faux qui lancerait `exec ""` : le témoin
+# noterait alors un échec muet au lieu d'un environnement, et le diagnostic dirait « fichier vide » sans dire pourquoi. Le `fail`
+# est capté par une fonction du sous-shell ; aucun faux n'est écrit pour l'outil absent, et un outil présent l'est quand même.
+absent_tool="outil-absent-$RANDOM$RANDOM"
+rc=0
+absent_out="$(fail() { printf 'FAIL %s | %s\n' "$1" "$2"; }; write_env_noting "$TMP/absent-bin" "$absent_tool" sh 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] && [[ "$absent_out" == *"$absent_tool introuvable"* ]] && [ ! -e "$TMP/absent-bin/$absent_tool" ] \
+   && [ -x "$TMP/absent-bin/sh" ] && ! grep -q 'exec ""' "$TMP/absent-bin"/* 2>/dev/null; then
+  pass "write_env_noting : un outil introuvable est un fail nommé, sans faux écrit ni exec vide"
+else
+  fail "write_env_noting : outil introuvable" "rc=$rc ; sortie : $absent_out ; dossier : $(ls -A "$TMP/absent-bin" 2>&1 | tr '\n' ' ')"
+fi
+unset absent_tool absent_out
+
+# --- C14-7, CR15-1 : les valeurs que pose `run_case` n'atteignent jamais un fils, même quand l'appelant exporte déjà ces noms.
+# Une locale de bash garde l'attribut d'export de la variable globale qu'elle masque : sans `local +x`, un processus lancé par un
+# cas recevrait la valeur que l'appel de `run_case` vient de poser (une Basic Auth générée). `local +x` ne garantit que cela : le
+# fils d'un nom exporté par l'appelant voit la valeur **de l'appelant** (`exporte`, que le cas ne cherche pas : c'est la sienne).
+# L'appelant exporte tous les noms avec cette valeur ; chaque valeur donnée à `run_case`, le libellé compris (St15-26), porte un
+# repère généré, que le fils lancé par le cas ne doit voir nulle part. Le libellé est le repère seul : le verdict écrit son propre
+# texte, pour ne pas imprimer le repère.
 case_marker="$(generated_basic_auth)"
 check_case_children_inherit_nothing() {
   local seen
   seen="$(bash -c 'env | grep -cF -- "$1" || true' _ "$case_marker")"
   if [ "$seen" = "0" ]; then
-    pass "$CASE_LABEL"
+    pass "run_case : un fils du cas ne reçoit aucune valeur posée par run_case, même sous un nom exporté par l'appelant"
   else
-    fail "$CASE_LABEL" "un processus lancé par le cas reçoit $seen variable(s) qui portent une valeur posée par run_case"
+    fail "run_case : les valeurs posées par run_case atteignent un fils" "$seen variable(s) de l'environnement d'un fils portent le repère"
   fi
 }
-export CASE_LABEL=exporte CASE_RC=exporte CASE_ERR=exporte CASE_OUT=exporte CASE_CALLS=exporte CASE_TMPDIR=exporte \
-  CASE_VALUE=exporte CASE_RANK=exporte CASE_ENV_FILE=exporte CASE_EXPECTED_RC=exporte
-run_case check_case_children_inherit_nothing \
-  "run_case : un fils du cas ne reçoit aucune valeur posée par run_case, même sous un nom exporté par l'appelant" \
-  "$case_marker-RC" CASE_ERR="$case_marker-ERR" CASE_OUT="$case_marker-OUT" CASE_CALLS="$case_marker-CALLS" \
-  CASE_TMPDIR="$case_marker-TMPDIR" CASE_VALUE="$case_marker-VALUE" CASE_RANK="$case_marker-RANK" \
-  CASE_ENV_FILE="$case_marker-ENV_FILE" CASE_EXPECTED_RC="$case_marker-EXPECTED_RC"
-unset CASE_LABEL CASE_RC CASE_ERR CASE_OUT CASE_CALLS CASE_TMPDIR CASE_VALUE CASE_RANK CASE_ENV_FILE CASE_EXPECTED_RC case_marker
+# Les noms sont ceux de CASE_NAMES (smoke-cases.sh) : un nom ajouté à `run_case` est exporté et marqué ici sans autre ligne.
+case_assignments=()
+export CASE_LABEL=exporte CASE_RC=exporte
+for case_name in "${CASE_NAMES[@]}"; do
+  export "$case_name=exporte"
+  case_assignments+=("$case_name=$case_marker-${case_name#CASE_}")
+done
+run_case check_case_children_inherit_nothing "$case_marker-LABEL" "$case_marker-RC" "${case_assignments[@]}"
+unset CASE_LABEL CASE_RC "${CASE_NAMES[@]}" case_marker case_assignments case_name
 
 echo
 if [ "$failures" -gt 0 ]; then echo "$failures échec(s)"; exit 1; fi
