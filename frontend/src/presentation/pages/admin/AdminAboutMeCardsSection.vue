@@ -25,6 +25,7 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { ME_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
@@ -137,39 +138,6 @@ const lock = useEntryFormLock({
  */
 const sourceGroup = ref<string | null>(null)
 
-const {
-  isTranslating,
-  isExpiredCallPending,
-  isRefused: isTranslationRefused,
-  translationErrorText,
-  proposeFrom,
-  removeEntry,
-  renewForm,
-  proseReadonlyHintId,
-  translationHintId,
-  proseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-about-me-card',
-  form: () => form,
-  proseFields: ME_CARD_PROSE_FIELDS,
-  // Les brouillons d'ordre des trois catégories de cette section sont lus tout de suite ; `props.isLocked` ne dit ceux des autres
-  // sections qu'après l'`emit` et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
-  isRefused: () => isSubmitting.value || isAnyOrderDirty.value || props.isLocked || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingId.value,
-    locale: form.locale,
-    group: sourceGroup.value,
-  }),
-})
-
-const errorText = computed(() => {
-  const reason = errorMessage.value?.reason
-
-  return reason ? t(`admin.about.errors.${reason}`) : null
-})
-
 /**
  * Tout ce qu'il faut pour ordonner une catégorie : ses lignes groupées, son
  * brouillon, son glisser-déposer et son focus clavier. Trois instances plutôt
@@ -213,6 +181,39 @@ const categoryOrders = ME_CARD_CATEGORIES.map(createCategoryOrder)
 // soit posé sans attendre un premier déplacement.
 const isAnyOrderDirty = computed(() => categoryOrders.some((order) => order.draft.isDirty.value))
 watch(isAnyOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
+
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-me-card',
+  form,
+  proseFields: ME_CARD_PROSE_FIELDS,
+  // Les brouillons d'ordre des trois catégories sont lus tout de suite, ceux des autres sections par `props.isLocked` : la limite de cette
+  // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
+  isRefused: () => isSubmitting.value || isAnyOrderDirty.value || props.isLocked || lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
+})
 
 /** Les cartes de la catégorie du formulaire : le périmètre d'un rattachement. */
 const cardsOfFormCategory = computed(() => cards.value.filter((card) => card.category === form.category))
@@ -340,18 +341,9 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-/**
- * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
- * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9) ; la
- * catégorie et l'icône du formulaire restent.
- */
+/** La bascule (`switchToProposedCreation`) ne touche ni la catégorie ni l'icône du formulaire : elles restent. */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, (sourceLocale) => {
-    editingId.value = null
-    form.locale = targetLocale
-    form.translationGroup = sourceGroup.value ?? ''
-    proposalSourceLocale.value = sourceLocale
-  })
+  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
 }
 
 async function handleDelete(card: AdminAboutMeCard): Promise<void> {

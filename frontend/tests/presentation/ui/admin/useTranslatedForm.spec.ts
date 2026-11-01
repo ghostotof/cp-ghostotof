@@ -50,7 +50,7 @@ function mountTranslatedForm(
     setup() {
       captured = useTranslatedForm<Field>({
         hintIdPrefix: PREFIX,
-        form: () => form,
+        form,
         proseFields: PROSE_FIELDS,
         identity: () => ({ entry: null, locale: 'fr', group: null }),
         isRefused: () => false,
@@ -247,34 +247,6 @@ describe('useTranslatedForm', () => {
     })
   })
 
-  // `form` est lu à chaque usage : l'appel du composable peut précéder la déclaration du formulaire (#748, R174, CR14-5).
-  it("lit le formulaire à l'usage : déclaré après l'appel du composable, il est celui que le composable voit (#748, R174)", async () => {
-    let captured: UseTranslatedFormResult | undefined
-    let declaredLater: { title: string; impact: string } | undefined
-    const Host = defineComponent({
-      setup() {
-        captured = useTranslatedForm<Field>({
-          hintIdPrefix: PREFIX,
-          form: () => declaredLater as { title: string; impact: string },
-          proseFields: PROSE_FIELDS,
-          identity: () => ({ entry: null, locale: 'fr', group: null }),
-          isRefused: () => false,
-        })
-        declaredLater = reactive({ title: 'Panne', impact: '' })
-
-        return () => h('div')
-      },
-    })
-    const repository: AdminTranslationRepository = { translate: vi.fn(async () => PROPOSAL) }
-    mount(Host, { global: { plugins: [createAppI18n()], provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: repository } } })
-
-    expect(captured?.hasProse.value).toBe(true)
-    await captured?.proposeFrom('en', vi.fn())
-
-    expect(repository.translate).toHaveBeenCalledWith('fr', 'en', { title: 'Panne' })
-    expect(declaredLater?.title).toBe('Outage')
-  })
-
   describe('hasProse', () => {
     it("est faux pour une prose de blancs, vrai dès un champ de la liste rempli, insensible à un champ hors liste (#748, R153)", () => {
       const { form, translated } = mountTranslatedForm()
@@ -467,7 +439,7 @@ describe('useTranslatedForm', () => {
         setup() {
           const translated = useTranslatedForm<Field>({
             hintIdPrefix: PREFIX,
-            form: () => form,
+            form,
             proseFields: PROSE_FIELDS,
             identity: () => ({ entry: null, locale: 'fr', group: null }),
             isRefused: () => false,

@@ -38,6 +38,16 @@ const errorText = computed(() => {
   return reason ? t(`admin.about.errors.${reason}`) : null
 })
 
+// La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
+// langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
+// ne s'affiche que sous elle, et il part dès que des réglages arrivent du serveur (le `watch` de `settings`, ci-dessous),
+// la proposition non enregistrée étant alors perdue (décision 4 de la sixième série, R141b).
+const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10). Chaque lecteur est dans le
+// formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
+// refusée ou interrompue laisse les réglages nuls, sans formulaire pour les porter. `translate` n'est émis que par ce bouton.
+const isProposalShown = computed(() => proposal.value?.target === props.locale)
+
 /**
  * Assistant de traduction (spec 0002). Les réglages sont un singleton par
  * locale : « proposer la version EN » signifie basculer la page en EN, dont
@@ -77,7 +87,7 @@ const {
   proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-about-settings',
-  form: () => form,
+  form,
   proseFields: ABOUT_SETTINGS_PROSE_FIELDS,
   isRefused: () => isAnySaving.value || props.isLocked || isProposalShown.value,
   identity: () => ({ entry: null, locale: props.locale, group: null }),
@@ -85,15 +95,6 @@ const {
 const pendingProposal = ref<TranslationProposal | null>(null)
 // Le formulaire rendu (absent pendant une lecture) : « Abandonner » y rend le focus au premier champ une fois relu.
 const formElement = ref<HTMLFormElement | null>(null)
-// La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
-// langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
-// ne s'affiche que sous elle, et il part dès que des réglages arrivent du serveur (le `watch` de `settings`, ci-dessous),
-// la proposition non enregistrée étant alors perdue (décision 4 de la sixième série, R141b).
-const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
-// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10). Chaque lecteur est dans le
-// formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
-// refusée ou interrompue laisse les réglages nuls, sans formulaire pour les porter. `translate` n'est émis que par ce bouton.
-const isProposalShown = computed(() => proposal.value?.target === props.locale)
 // Pendant une proposition affichée, le bouton de traduction est verrouillé et désigne ce texte, rendu seulement alors (R127).
 const PROPOSAL_LOCKED_HINT_ID = 'admin-about-settings-proposal-locked-help'
 

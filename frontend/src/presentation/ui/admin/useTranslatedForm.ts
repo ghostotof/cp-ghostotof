@@ -22,11 +22,11 @@ export interface UseTranslatedFormOptions<F extends string> {
    */
   readonly hintIdPrefix: string
   /**
-   * L'objet réactif du formulaire, rendu par une fonction lue à chaque usage : le composable en lit la prose (`hasProse`, la
-   * prose envoyée) et la remplace par la proposition (`proposeFrom`). L'appel du composable peut donc précéder la déclaration
-   * du formulaire.
+   * L'objet réactif du formulaire, passé tel quel : le composable en lit la prose (`hasProse`, la prose envoyée) et la remplace
+   * par la proposition (`proposeFrom`). La page le déclare donc **avant** l'appel : `vue-tsc` refuse un usage avant la
+   * déclaration (TS2448), ce qu'un getter ne verrait pas.
    */
-  readonly form: () => Record<F, string>
+  readonly form: Record<F, string>
   /** Les champs de prose du formulaire, ceux que la traduction envoie et remplace (`presentation/pages/admin/proseFields.ts`). */
   readonly proseFields: readonly F[]
   /**
@@ -78,10 +78,11 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * prose est remplacée, le reste gardé. Rien n'est enregistré (ADR 0004, D4). Sur un refus, un échec ou une réponse périmée, il
    * ne se passe rien : le formulaire reste intact et `translationErrorText` dit l'échec. Sinon, `switchForm(sourceLocale)` est appelée
    * **avant** que la prose soit remplacée : la page y pose ce qu'elle seule sait (l'entrée éditée vidée, la langue cible, le
-   * groupe source, l'avis de proposition). Les deux gestes se font dans le point de contrôle qui juge la réponse courante : la
-   * proposition est posée sous ce jugement, jamais une micro-tâche plus tard (R172). Une exception de `switchForm` remonte
-   * au gestionnaire `@translate` de la page, dont Vue passe le rejet à `app.config.errorHandler` : le formulaire peut rester
-   * à moitié basculé, une faute de programmation que le gestionnaire d'erreurs rend visible (limite acceptée, R187).
+   * groupe source, l'avis de proposition : `switchToProposedCreation`, pour les huit formulaires par entrée). Les deux gestes se
+   * font dans le point de contrôle qui juge la réponse courante : la proposition est posée sous ce jugement, jamais une
+   * micro-tâche plus tard (R172). Une exception de `switchForm` remonte au gestionnaire `@translate` de la page, dont Vue passe le
+   * rejet à `app.config.errorHandler` : le formulaire peut rester à moitié basculé, une faute de programmation que le
+   * gestionnaire d'erreurs rend visible (limite acceptée, R187).
    */
   readonly proposeFrom: (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void) => Promise<void>
   /**
@@ -122,7 +123,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
 export function useTranslatedForm<F extends string>(options: UseTranslatedFormOptions<F>): UseTranslatedFormResult {
   // Le numéro du formulaire : un geste qui le remplit ou le vide le fait avancer, et rien d'autre (voir `renewForm`).
   const generation = ref(0)
-  const hasProse = computed(() => options.proseFields.some((field) => '' !== options.form()[field].trim()))
+  const hasProse = computed(() => options.proseFields.some((field) => '' !== options.form[field].trim()))
   const { expire, translate, ...translation } = useAdminTranslation({
     isRefused: () => !hasProse.value || options.isRefused(),
     formIdentity: () => ({ ...options.identity(), generation: generation.value }),
@@ -165,14 +166,14 @@ function proposalGestures<F extends string>(
   const requestProposal: UseTranslatedFormResult['requestProposal'] = (targetLocale, accept) => {
     const sourceLocale = options.identity().locale
 
-    return translate(sourceLocale, targetLocale, collectProseFields(options.form(), options.proseFields), (proposal) =>
+    return translate(sourceLocale, targetLocale, collectProseFields(options.form, options.proseFields), (proposal) =>
       accept(proposal, sourceLocale),
     )
   }
   const proposeFrom: UseTranslatedFormResult['proposeFrom'] = async (targetLocale, switchForm) => {
     await requestProposal(targetLocale, (proposal, sourceLocale) => {
       switchForm(sourceLocale)
-      applyTranslationProposal(options.form(), options.proseFields, proposal)
+      applyTranslationProposal(options.form, options.proseFields, proposal)
     })
   }
 

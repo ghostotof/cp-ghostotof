@@ -25,6 +25,7 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { SITE_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
@@ -113,39 +114,6 @@ const lock = useEntryFormLock({
  */
 const sourceGroup = ref<string | null>(null)
 
-const {
-  isTranslating,
-  isExpiredCallPending,
-  isRefused: isTranslationRefused,
-  translationErrorText,
-  proposeFrom,
-  removeEntry,
-  renewForm,
-  proseReadonlyHintId,
-  translationHintId,
-  proseFieldAttrs,
-} = useTranslatedForm({
-  hintIdPrefix: 'admin-about-site-card',
-  form: () => form,
-  proseFields: SITE_CARD_PROSE_FIELDS,
-  // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui des autres sections qu'après l'`emit`
-  // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
-  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  identity: () => ({
-    entry: editingId.value,
-    locale: form.locale,
-    group: sourceGroup.value,
-  }),
-})
-
-const errorText = computed(() => {
-  const reason = errorMessage.value?.reason
-
-  return reason ? t(`admin.about.errors.${reason}`) : null
-})
-
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const rows = computed(() => groupByTranslationGroup(cards.value, SUPPORTED_LOCALES))
 
@@ -161,6 +129,39 @@ const {
   serverKeys: () => rows.value.map((row) => row.key),
   reorder,
   reload: load,
+})
+
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-site-card',
+  form,
+  proseFields: SITE_CARD_PROSE_FIELDS,
+  // Son brouillon d'ordre est lu tout de suite, celui des autres sections par `props.isLocked` : la limite de cette
+  // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
+  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
 })
 
 // Le verrou est global à la page : elle seule connaît l'état des quatre
@@ -264,17 +265,8 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-/**
- * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
- * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, (sourceLocale) => {
-    editingId.value = null
-    form.locale = targetLocale
-    form.translationGroup = sourceGroup.value ?? ''
-    proposalSourceLocale.value = sourceLocale
-  })
+  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
 }
 
 async function handleDelete(card: AdminAboutSiteCard): Promise<void> {

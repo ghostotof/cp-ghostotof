@@ -187,15 +187,19 @@ synchronously in the very checkpoint that judges the response current, and retur
 what the nine forms share. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
 and what to do with the proposal.
 
-- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is `() => form`, read at each use, so the
-  call may precede the form's declaration) returns `hasProse`, `translationErrorText`
-  (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`, `proposeFrom(target, switchForm)`,
-  `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar
-  `expire` and `translate` (R153, D4 of the thirteenth review). The page keeps its form and its gestures (`startEdit`,
-  `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
+- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is the reactive object itself, so the page
+  declares it **before** the call: `vue-tsc` refuses a use before its declaration, TS2448, which a getter did not see) returns
+  `hasProse`, `translationErrorText` (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`,
+  `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what
+  `useAdminTranslation` exposes bar `expire` and `translate` (R153, D4 of the thirteenth review). Whatever `isRefused` and
+  `identity` read, the order draft (`rows`, `useOrderDraft`) above all, is declared before the call too: their closures hide a
+  later declaration from the compiler, so that order is a convention (R189). The page keeps its form and its gestures
+  (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
   `TranslationReadonlyHint`, the error alert —, which each page writes because each of its bindings carries a value of the
   page (the form's locale, the lock's help, its `describedBy`). A form new to the assistant writes its list of prose fields
-  (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm`, its template block and its `EntryFormLockCase`
+  (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm` (`switchToProposedCreation(state, target)` of
+  `presentation/ui/admin/proposedCreation.ts`, written once for the eight per-entry forms: it empties `editingId`, sets the
+  target locale, the source's group and `proposalSourceLocale`), its template block and its `EntryFormLockCase`
   (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred,
   read `hasProse` and `translationErrorText` and call `requestProposal` themselves.
 - `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied

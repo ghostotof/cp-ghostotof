@@ -128,8 +128,8 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
   /**
    * Un changement d'identité du formulaire périme la traduction en vol pour de bon, même si le formulaire retrouve ensuite
    * la même, et efface l'échec : la personne est passée par un autre formulaire, ce que `expire()` fait déjà. Le guetteur
-   * naît à la première traduction, pas au montage : l'appelant déclare le composable avant son formulaire, que l'identité
-   * lit. Il reste ensuite, car l'échec d'une traduction survit à l'appel qui l'a posé.
+   * naît à la première traduction, pas au montage : l'identité n'est lue que lorsqu'une traduction en a besoin. Il reste
+   * ensuite, car l'échec d'une traduction survit à l'appel qui l'a posé.
    */
   function watchIdentity(): void {
     if (isWatchingIdentity || (undefined !== scope && !scope.active)) {
@@ -175,13 +175,15 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
   }
 
-  /** La fin de l'appel, réponse ou échec : plus rien en vol, et plus rien d'attendu si c'est encore la traduction courante. */
-  function endCall(token: number): void {
+  /**
+   * La fin de l'appel, réponse ou échec : plus rien en vol, plus rien d'attendu. Cela repose sur un invariant : il n'y a qu'un
+   * appel en vol par formulaire (`translate` refuse le suivant tant que `isAnyCallRunning`), donc l'appel qui finit est le seul
+   * qui ait pu poser `isAwaitingCurrent`, et un appel périmé (`expire()` l'a déjà rendu faux) ne finit jamais pendant qu'un plus
+   * récent tourne.
+   */
+  function endCall(): void {
     isAnyCallRunning.value = false
-    // Une traduction périmée ne touche plus l'état : `expire()` l'a déjà rendu.
-    if (requests.isCurrent(token)) {
-      isAwaitingCurrent.value = false
-    }
+    isAwaitingCurrent.value = false
   }
 
   // Une fonction fléchée : le dépôt, vérifié plus haut, y reste rétréci à « fourni ».
@@ -205,7 +207,7 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
 
       return false
     } finally {
-      endCall(token)
+      endCall()
     }
 
     if (null === retained) {

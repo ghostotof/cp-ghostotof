@@ -26,6 +26,7 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { CONTRIBUTION_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
@@ -94,6 +95,23 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
+/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
+const rows = computed(() => groupByTranslationGroup(contributions.value, SUPPORTED_LOCALES))
+
+const {
+  draft: orderDraft,
+  isDirty: isOrderDirty,
+  isSaving: isOrderSaving,
+  errorReason: orderErrorReason,
+  move: moveInDraft,
+  reset: resetOrder,
+  save: saveOrder,
+} = useOrderDraft({
+  serverKeys: () => rows.value.map((row) => row.key),
+  reorder,
+  reload: load,
+})
+
 const {
   isTranslating,
   isExpiredCallPending,
@@ -107,7 +125,7 @@ const {
   proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-contribution',
-  form: () => form,
+  form,
   proseFields: CONTRIBUTION_PROSE_FIELDS,
   isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
@@ -126,23 +144,6 @@ const errorText = computed(() => {
 })
 
 const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
-
-/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
-const rows = computed(() => groupByTranslationGroup(contributions.value, SUPPORTED_LOCALES))
-
-const {
-  draft: orderDraft,
-  isDirty: isOrderDirty,
-  isSaving: isOrderSaving,
-  errorReason: orderErrorReason,
-  move: moveInDraft,
-  reset: resetOrder,
-  save: saveOrder,
-} = useOrderDraft({
-  serverKeys: () => rows.value.map((row) => row.key),
-  reorder,
-  reload: load,
-})
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
 
@@ -264,17 +265,8 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-/**
- * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
- * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, (sourceLocale) => {
-    editingId.value = null
-    form.locale = targetLocale
-    form.translationGroup = sourceGroup.value ?? ''
-    proposalSourceLocale.value = sourceLocale
-  })
+  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
 }
 
 async function handleDelete(contribution: AdminContribution): Promise<void> {

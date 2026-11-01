@@ -37,10 +37,9 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * geste en cours : un état, une aide, une règle à retenir.
  *
  * **Une section lit son propre brouillon tout de suite, celui de l'autre par
- * `isLocked`** (comme chaque section d'« À propos »). La prop n'est à jour qu'après
- * l'`emit` de la section et le rendu de la page : un « translate » émis entre un
- * déplacement de l'autre section et ce rendu n'est pas refusé. Limite acceptée
- * (une micro-tâche, qu'aucun geste de l'utilisateur ne traverse).
+ * `isLocked`** (comme chaque section d'« À propos ») : la prop n'est à jour qu'après l'`emit` et le rendu de la page, une
+ * limite acceptée (une micro-tâche, qu'aucun geste de l'utilisateur ne traverse) que les sections citent et que
+ * `.claude/rules/frontend-backoffice.md` écrit une fois (« The refusal is written once »).
  *
  * La page ne possède aucune logique d'ordre : elle ne connaît que deux booléens.
  */

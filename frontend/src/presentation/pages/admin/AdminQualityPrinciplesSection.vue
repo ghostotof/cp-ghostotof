@@ -25,6 +25,7 @@ import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy } from '../../ui/admin/describedBy'
 import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
@@ -122,6 +123,23 @@ const lock = useEntryFormLock({
   localeHelpId: 'admin-quality-principle-locale-help',
 })
 
+/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
+const rows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))
+
+const {
+  draft: orderDraft,
+  isDirty: isOrderDirty,
+  isSaving: isOrderSaving,
+  errorReason: orderErrorReason,
+  move: moveInDraft,
+  reset: resetOrder,
+  save: saveOrder,
+} = useOrderDraft({
+  serverKeys: () => rows.value.map((row) => row.key),
+  reorder,
+  reload: load,
+})
+
 /**
  * Une instance de composable de traduction par formulaire : chacun a son
  * attente et son message d'erreur.
@@ -139,12 +157,11 @@ const {
   proseFieldAttrs,
 } = useTranslatedForm({
   hintIdPrefix: 'admin-quality-principle',
-  form: () => form,
+  form,
   proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
-  // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui de l'autre section qu'après l'`emit`
-  // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
-  isRefused: () =>
-    isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
+  // Son brouillon d'ordre est lu tout de suite, celui de l'autre section par `props.isLocked` : la limite de cette
+  // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
+  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
@@ -158,23 +175,6 @@ const errorText = computed(() => {
   const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
-})
-
-/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
-const rows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))
-
-const {
-  draft: orderDraft,
-  isDirty: isOrderDirty,
-  isSaving: isOrderSaving,
-  errorReason: orderErrorReason,
-  move: moveInDraft,
-  reset: resetOrder,
-  save: saveOrder,
-} = useOrderDraft({
-  serverKeys: () => rows.value.map((row) => row.key),
-  reorder,
-  reload: load,
 })
 
 // L'ordre modifié de cette section est annoncé à la page, qui verrouille toutes les mutations ; `immediate` pour que
@@ -288,17 +288,8 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-/**
- * Ce que la page seule pose quand la proposition arrive (`proposeFrom`) : l'entrée éditée vidée, la langue cible et le groupe
- * de l'entrée source, pour que l'enregistrement rattache la version proposée sans geste supplémentaire (spec 0004, D9).
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  await proposeFrom(targetLocale, (sourceLocale) => {
-    editingId.value = null
-    form.locale = targetLocale
-    form.translationGroup = sourceGroup.value ?? ''
-    proposalSourceLocale.value = sourceLocale
-  })
+  await proposeFrom(targetLocale, switchToProposedCreation({ editingId, form, sourceGroup, proposalSourceLocale }, targetLocale))
 }
 
 async function handleDelete(principle: AdminQualityPrinciple): Promise<void> {
