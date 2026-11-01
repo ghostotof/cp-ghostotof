@@ -11092,6 +11092,31 @@ Fait dans le commit de R170, sans nouvelle case.
 
 ---
 
+### Task R173b : « À propos » — l'ordre modifié d'une section refuse sa traduction sans attendre le rendu (décision de l'auteur, 2026-11-01)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutSiteCardsSection.vue`, `AdminAboutMeCardsSection.vue`
+  (`isRefused`, docblocks), `AdminQualityPage.vue` (le docblock qui disait « comme À propos, qui ne lit que la prop »)
+- Test : `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (la puce « The refusal is written once »)
+
+**Décision (auteur, 2026-11-01)** : appliquer aux deux sections d'« À propos » le correctif que R173 a posé dans celles de
+Qualité. **Raison** : R173 (Q11, recommandation A) avait écrit la fenêtre d'une micro-tâche comme une limite commune à Qualité
+et à « À propos » ; une fois fermée pour Qualité, elle ne subsistait plus que dans « À propos », sans raison de la garder
+seule. **Fait** :
+- `isRefused` des cartes « site » lit `isOrderDirty` avant `props.isLocked` ; celui des cartes « moi » lit `isAnyOrderDirty`, la
+  somme calculée de ses trois brouillons (un par catégorie, déjà lue par son `emit`) ; les brouillons des autres sections
+  restent lus par `props.isLocked` ;
+- `AdminAboutPage.spec.ts`, un cas par section (« … refuse la traduction … sans attendre le rendu (#748, R173b) »), sur le
+  modèle de ceux de R173 : « Modifier » une entrée, déplacer la première ligne par `keydown ArrowDown`, émettre `translate`
+  depuis `TranslateEntryButton` sans `await` : le dépôt de traduction n'est pas appelé ; rouge vu sur le code d'avant
+  (`translate` appelé), vert ensuite ; la lecture du brouillon propre retirée d'une section ne rougit que son cas ;
+- la puce de la règle dit que chaque section de Qualité et chaque section de cartes d'« À propos » lit son brouillon tout de
+  suite et les autres par `isLocked` ; les docblocks des deux sections d'« À propos » portent la même phrase, celui
+  d'`AdminQualityPage.vue` ne compare plus à « À propos ».
+
+---
+
 ### Task R174 : Traduction assistée — `translationErrorText`, le formulaire lu à l'usage, `expireIfDeleted` interne, les commentaires recopiés retirés (D4, Q12 : St14-5 ; CR14-5 ; St14-8 pour `expireIfDeleted` ; St14-6 ; St14-9 ; St14-7 = CR14-7 pour `describedBy.ts` ; St14-19 pour `useTranslatedForm` ; refactoring)
 
 **Files :**

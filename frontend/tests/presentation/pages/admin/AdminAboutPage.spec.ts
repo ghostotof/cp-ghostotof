@@ -328,6 +328,17 @@ function optionsOf(wrapper: VueWrapper, id: string): string[] {
   return wrapper.get(id).findAll('option').map((option) => option.text())
 }
 
+/**
+ * Déplace la première ligne d'un tableau puis émet « translate » depuis le bouton du formulaire de la section, **sans rien
+ * attendre** entre les deux : le brouillon d'ordre de la section est modifié, la page n'a pas encore reçu
+ * `orderDirtyChange` ni rendu `isLocked` (#748, R173b). Les promesses ne sont réglées qu'à la fin.
+ */
+async function emitTranslateRightAfterMove(wrapper: VueWrapper, table: number, form: number): Promise<void> {
+  void tableOf(wrapper, table).findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
+  wrapper.findAllComponents(TranslateEntryButton)[form].vm.$emit('translate', 'en')
+  await flushPromises()
+}
+
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, which: number, from: number, to: number): Promise<void> {
   const rows = rowsOf(wrapper, which)
@@ -623,6 +634,32 @@ describe('AdminAboutPage', () => {
         expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
       },
     )
+  })
+
+  describe('verrouillage de la traduction sans attendre le rendu', () => {
+    // Chaque section lit son propre brouillon d'ordre tout de suite (comme celles de Qualité, R173) : un « translate » émis
+    // entre un `move` et le rendu de la page est refusé. Sans cette lecture, `props.isLocked` est encore faux.
+    it("cartes « site » : un ordre modifié refuse la traduction sans attendre le rendu (#748, R173b)", async () => {
+      const translation = createTranslationRepository({ title: 'Architecture (en)', description: 'Architecture description' })
+      const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+
+      await emitTranslateRightAfterMove(wrapper, SITE, SITE_FORM)
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(formOf(wrapper, SITE_FORM).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it("cartes « moi » : l'ordre modifié d'une catégorie refuse la traduction sans attendre le rendu (#748, R173b)", async () => {
+      const translation = createTranslationRepository({ title: 'Senior developer', description: 'Description' })
+      const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+
+      await emitTranslateRightAfterMove(wrapper, ME_TABLE.technical, ME_FORM)
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(formOf(wrapper, ME_FORM).find('[role="status"]').exists()).toBe(false)
+    })
   })
 
   describe('« Créer la version » et rattachement', () => {

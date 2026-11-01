@@ -53,7 +53,10 @@ import type { AdminAboutSiteCard } from '../../../domain/admin/about/entities/Ad
  * **Le verrou d'ordre (D6) est global à la page** : cette section reçoit
  * `isLocked` et annonce son propre `orderDirtyChange`, la page faisant la
  * somme. Un seul brouillon modifié, où qu'il soit, désactive toutes les
- * mutations — un état, une aide, une règle à retenir.
+ * mutations — un état, une aide, une règle à retenir. Le refus de traduire lit
+ * **son** brouillon (`isOrderDirty`) tout de suite et ceux des autres sections
+ * par `isLocked`, à jour après le rendu de la page : voir la limite dans
+ * `AdminQualityPage`.
  */
 
 const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
@@ -126,7 +129,9 @@ const {
   hintIdPrefix: 'admin-about-site-card',
   form,
   proseFields: SITE_CARD_PROSE_FIELDS,
-  isRefused: () => isSubmitting.value || props.isLocked || lock.isProposalLocked,
+  // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui des autres sections qu'après l'`emit`
+  // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
+  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({

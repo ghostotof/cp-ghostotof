@@ -37,11 +37,10 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * geste en cours : un état, une aide, une règle à retenir.
  *
  * **Une section lit son propre brouillon tout de suite, celui de l'autre par
- * `isLocked`.** La prop n'est à jour qu'après l'`emit` de la section et le rendu
- * de la page : un « translate » émis entre un déplacement de l'autre section et
- * ce rendu n'est pas refusé. Limite acceptée (une micro-tâche, qu'aucun geste de
- * l'utilisateur ne traverse), la même que celle d'« À propos », qui ne lit que la
- * prop.
+ * `isLocked`** (comme chaque section d'« À propos »). La prop n'est à jour qu'après
+ * l'`emit` de la section et le rendu de la page : un « translate » émis entre un
+ * déplacement de l'autre section et ce rendu n'est pas refusé. Limite acceptée
+ * (une micro-tâche, qu'aucun geste de l'utilisateur ne traverse).
  *
  * La page ne possède aucune logique d'ordre : elle ne connaît que deux booléens.
  */
