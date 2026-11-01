@@ -236,8 +236,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'namespace\\ ailleurs' => [$header."throw new namespace\\Problem('x'.\$c);", 0];
         yield 'imports remis à zéro au namespace suivant' => [$header."namespace App\\Q;\nthrow new Problem('x'.\$c);", 0];
         yield 'espace de noms à accolades' => ["<?php\nnamespace App\\X {\nuse App\\Y\\Problem;\nthrow new Problem('x'.\$c);\n}", 1];
-        // Les imports d'un bloc `namespace X { … }` ne valent plus après sa fin (St15-29 : la boucle du modèle
-        // n'avait pas cette remise à zéro, que ClassNameResolver::scopes() fait).
+        // Les imports d'un bloc `namespace X { … }` ne valent plus après sa fin (St15-29 : la remise à zéro de fin de bloc
+        // que ClassNameResolver::scopes() fait).
         yield 'imports remis à zéro à la fin du bloc' => [
             "<?php\nnamespace App\\X {\nuse App\\Y\\Problem;\n}\nthrow new Problem('x'.\$c);",
             0,

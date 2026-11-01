@@ -39,8 +39,8 @@ describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
     }
 
     // Le garde-fou de la garde : une expression régulière qui ne trouverait plus rien la ferait passer à vide. Dix fichiers
-    // composent un état vide (onze avant R190 : les deux sections de Qualité n'en font plus qu'une) : le plancher est 9, un
-    // de moins que le compte, comme il l'était (10 pour 11).
+    // composent un état vide (les deux sections de Qualité n'en font qu'une, R190) : le plancher est 9, un de moins que le
+    // compte.
     expect(withEmptyState).toBeGreaterThanOrEqual(9)
     expect(offenders, `états vides sans isLoaded :\n${offenders.join('\n')}`).toEqual([])
   })

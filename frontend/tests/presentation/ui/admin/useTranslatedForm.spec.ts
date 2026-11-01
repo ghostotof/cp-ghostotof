@@ -432,7 +432,7 @@ describe('useTranslatedForm', () => {
       const repository: AdminTranslationRepository = { translate: vi.fn(async () => PROPOSAL) }
       const form = reactive({ title: 'Panne', impact: '', note: '' })
       let captured: UseTranslatedFormResult | undefined
-      // Comme les neuf pages : un gestionnaire `async` qui attend `proposeFrom`, lié par `@translate` au vrai bouton.
+      // Comme les pages des formulaires : un gestionnaire `async` qui attend `proposeFrom`, lié par `@translate` au vrai bouton.
       const Host = defineComponent({
         setup() {
           const translated = useTranslatedForm<Field>({

@@ -12507,9 +12507,255 @@ refactore rien** (Sp15-10) : ce qu'elle trouve à restructurer se rend en questi
   encore trouvée, et un second fichier sourcé pour le porter demanderait le même bloc pour être trouvé. La partie
   « cas `CDPATH` copié dans quatre tests » est corrigée (R186).
 
-### Ce que la quinzième série a réellement fait
+### Ce que la quinzième série a réellement fait *(écrit par R195 le 2026-11-01)*
 
-*(écrit par R195)*
+Cette sous-section couvre **R182 à R195, R187b et R189b** (la série que l'utilisateur nomme la seizième ; la section garde son titre
+« quinzième relecture »). Elle est écrite par R195 sur HEAD 849f25d9, après lecture de chaque commit : un écart n'y figure que s'il se
+lit dans le diff, ce que ce balayage n'a pas pu relire est dit « déclaré, non relu ». Les sections passées restent des archives.
+
+**Commits.** R182 15307082, R183 943b10b6, R184 f028db41, R185 cd3d2ba8, R186 527645b6, R187 19cb1e3d, (plan 72c23463), R187b a115524a,
+R188 7f8a28d6, (plan 4565d817), R189 60143db1, (plan d3032753), R189b 80317f7e, R190 251a5129, R191 affe5150, R192 e304bb06, R193
+14426a78, R194 849f25d9 ; base 381a0740 ; R195 : le commit de ce balayage.
+
+- **R182** : écart de rédaction. La phrase « As soon as the value is read… » de la règle n'est pas remplacée (le plan le disait) mais
+  gardée, car elle reste vraie ; quatre lignes s'y ajoutent (le retrait qui échoue, la limite du nom invalide). Le reste est conforme :
+  deux cas du lecteur (`readonly`, locale masquante) dans `smoke-http.test.sh`, le cas du nom invalide dans `audit-prod.test.sh`.
+- **R183** : écarts. `smoke_data_file` **pose `SMOKE_DATA_FILE`** et n'imprime rien (le plan : « imprime son chemin ») : un
+  `"@$(smoke_data_file)"` tournerait dans un sous-shell qui perdrait l'enregistrement dans `SMOKE_AUTH_DATA_FILES` (retenu par le fil
+  principal, lisible dans l'en-tête de la bibliothèque et la règle l. 68-71) ; des cas ajoutés (`--data-binary @-`, le suffixe, un
+  détour par `..`, `-H @-`, `-d @-`) ; deux cas partagés, `check_args_file_refused` et `check_curl_opts_file_refused`, dans
+  `smoke-cases.sh` ; les noms en minuscules (Sp15-21) sont mesurés et écrits dans la règle.
+- **R184** : écart. Un quatrième voisin permis, `bash -c "set +x"`, s'ajoute aux trois du plan (le diff le montre) ; les deux mutations
+  en plus (un guillemet de chaque côté) sont déclarées, non lisibles dans le diff.
+- **R185** : écarts. La raison de la liste de `audit_call_problems` (St15-43) est écrite dans `tools/tests/audit-prod.test.sh` (trois
+  lignes), où vit la fonction, et non dans `audit-prod.sh`, que le commit ne touche pas ; `_smoke_judge_args` (28 lignes) et
+  `smoke_fetch` (33) dépassent les 25 du plan et sont laissées (`awk` des longueurs, plus bas) ; le message du retrait impossible n'est
+  plus écrit après un `set -x` rétabli : le diff retire le `set -x` de cette branche, si bien que la trace d'un appelant ne le voit pas
+  (accepté par le fil principal).
+- **R186** : écarts. `refuse_file_args` (R183) est corrigé aussi ; `check_finds_library_under_cdpath` et
+  `check_root_script_dir_is_slash` sont deux cas partagés appelés par les quatre tests (`grep -c CDPATH tools/tests/*.test.sh` : 4 par
+  test, une ligne d'appel chacun) ; les mutations sont déclarées, non lisibles dans le diff.
+- **R187** : écart. Le cas des réglages exerce, par décision de l'auteur (« Décision de l'auteur (après R187) »), un **geste de langue**
+  résolu au même point de contrôle que la réponse, non un `load()` : vert d'emblée, prouvé par la mutation `accept` après un `await` ;
+  les deux mutations de CR15-5 sont déclarées, non lisibles dans le diff. Le commit touche aussi les docblocks de
+  `useAdminTranslation.ts` et de `useTranslatedForm.ts` (plan : Modify selon Q7).
+- **R187b** : conforme à la décision de l'auteur, sous la forme « geste de langue » : `AdminAboutSettingsForm` expose
+  `dropPendingProposalNotFor`, que `chooseLocale` de `AdminAboutPage` appelle ; la règle `frontend-backoffice.md` le dit.
+- **R188** : écarts. `ERROR_TEXT_KEYS` est typée **contre `fr.json`** (`typeof fr.admin.translation.errors`), au-delà du simple type
+  `Readonly<Ref<…>>` du plan ; `translate` reste une `const` en fonctions nommées (`startCall`, `retainIfCurrent`, `recordFailure`,
+  `endCall`) ; le nom du test de la l. 249 de `useAdminTranslation.spec.ts` disait encore « null » : corrigé par ce balayage (ajout A).
+- **R189** : écarts. La signature est `switchToProposedCreation(state, targetLocale)` : le `switchForm` rendu reçoit la langue source
+  seule ; l'ordre des fermetures (`isRefused`, `identity`) n'est pas vu par `vue-tsc`, d'où R189b ; le test R174 (« lit le formulaire à
+  l'usage : déclaré après l'appel ») est supprimé, accepté par l'auteur ; l'ajout A de l'auteur est fait (la condition
+  `requests.isCurrent(token)` d'`endCall` retirée, un commentaire nomme l'invariant « un seul appel en vol par formulaire »).
+- **R189b** : écarts de forme, d'après `translatedFormDeclarationOrder.spec.ts` (338 lignes, 15 cas) : la garde lit de proche en proche
+  les constantes que lisent les initialiseurs ; le plancher est `≥ 8` fichiers et `≥ 8` appels, chaque appel lisant au moins deux
+  déclarations ; le commentaire du plancher parlait de neuf fichiers puis de huit « après R190 » avant que R190 existe : réécrit par ce
+  balayage.
+- **R190** : écarts. Quatre `as` entrent dans la section générique, en trois endroits de `AdminQualityEntrySection.vue` : `EntryForm`
+  indexé par `string` (l. 121 `as {…}` puis l. 128 `as unknown as EntryForm`), `form as Record<F, string>` (l. 189) et `as I` (l. 309) ;
+  `proseFields` est dérivé de `prose` par champ ; `withLabels` et `confirmDelete` en fonction sont dans `AdminQualityPage.vue` ;
+  `AdminQualityPage.spec.ts` n'est pas dans le commit (inchangé, 90 tests) ; la règle `frontend-backoffice.md` est modifiée (32 lignes).
+- **R191** : écarts. `capturedProposal.ts` est créé et `proposalOf` partagé ; `axe.ts` et `axe.spec.ts` sont touchés (le nom accessible,
+  `accessibleNameOf`, Sp15-9), deux fichiers que le plan ne listait pas ; le préfixe de la clé D3 est gardé.
+- **R192** : écarts. `sourceText.spec.ts` n'est **pas** dans le commit, bien que le plan le liste : il a déjà un cas par hook de
+  `DEFERRED_HOOKS` (`grep -c` du nom de chacun : au moins 1 pour les vingt) et la mutation du plan le fait rougir, rejouée (plus bas) ;
+  `whenOther` est supprimé ; la réinstallation `npm install --save-dev|--save-prod` est elle aussi entre guillemets simples, et deux
+  `npm pkg delete` (un par section) sont dits pour un compilateur déclaré deux fois ; les limites « Invisible » sont encore décrites
+  deux fois (hors périmètre, non corrigé).
+- **R193** : écarts. `InterpolatedStrings.php` est créé (la lecture partagée du fragment de chaîne) ; le cas des deux blocs
+  `namespace X {…} namespace Y {…}` est vert d'emblée, d'où le cas de fin de bloc `namespace X { use A\B; } new B;` ajouté ;
+  `UnsortedImports.php:79` et `:138` gardent une lecture du texte d'un jeton (une instruction `use` ne contient aucune chaîne : décision
+  du fil principal) ; `AuthCookiesComeFromTheFactoryTest`, `ImportsStaySortedTest` et `NoAnonymousClassNorFreeFunctionTest` reçoivent un
+  cas.
+- **R194** : écarts. La mutation du plan pour St15-45 ne pouvait pas rougir : l'index 0 d'un code commence par la balise ouvrante, la
+  fixture est donc changée (`array_slice(…, 1)`, le premier jeton est `run`) ; `importedAt` rend `array{alias, class, next}` ; la ligne
+  84 de `security-authentication-sessions.md` est juste telle quelle (R180 l'avait changée sans le dire) : la règle n'est pas dans le
+  commit ; `CompiledNestedReading.php` ne diffère de d8f481a2 que par « testent » (`git diff d8f481a2 HEAD`, Q14 (A)) ; `grep '“'` sur
+  `backend/tests/Support` et `backend/tests/Shared` : 0 (St15-46).
+
+**Décisions de l'auteur en cours de série** : D1 à D5 (R193, R183, R191, R190, R187) ; la décision après R187 (le cas des réglages = un
+changement de langue) ; R187b ; l'ajout A après R188 (`endCall`, le corps du composable laissé tel quel) ; R189b.
+
+**Questions Q1 à Q14 et réponse suivie** (l'auteur : « les quatorze recommandations », 2026-11-01) : Q1 (A) un retrait qui échoue est un
+refus ; Q2 (A) la limite du nom invalide écrite, un cas du `trap` ; Q3 (A) le rang, jamais la valeur ; Q4 (B) le chemin exact d'un
+fichier de `smoke_data_file` ; Q5 (A) mesurées sur curl 8.5.0 ; Q6 (A) les globales `_smoke_*` gardées, la convention écrite en tête ;
+Q7 (A) mesuré, l'exception de `accept` va à l'`errorHandler` de Vue, limite écrite ; Q8 (A) `form` est un objet ; Q9 (A)
+`switchToProposedCreation` ; Q10 (A) une section générique ; Q11 (A) la règle « chaque composant écrit son bloc » ; Q12 (A)
+`emptyStateNeedsLoaded.spec.ts` compte `{{ texts.empty }}`, plancher 9 pour 10 fichiers ; Q13 (A) D1 à la lettre, P15-1 en ticket à part
+; Q14 (A) « testent », rien d'autre.
+
+**P15-1, relevé rejoué** (ticket à part, non corrigé) :
+`grep -rnE "is\('[(){}]'\)|'[(){}]' === |=== '[(){}]'|'[(){}]' !== |!== '[(){}]'" backend/tests` rend 25 lignes. Les six fichiers du
+plan : `MemberCalls.php` (1), `MisqualifiedNativeCalls.php` (127, 130, 172, 174), `PathsLeavingTests.php` (4),
+`ChildProcessHarnessTest.php` (338, 341, 353), `ApplicationSecretUsesTest.php` (1), `SignaturesAreNeverComparedByHandTest.php` (115,
+159). **Quatre lignes de plus que le plan ne nommait pas**, toutes des lectures du jeton suivant ou d'une signature, jamais un compteur
+de `}` : `AnonymousClassesAndFreeFunctions.php:101` et `:169`, `CookieConstructions.php:133`,
+`ProblemDetailStaysStaticTest.php:1605-1610` (`bodyOf` : `(`, `)` et `{` entre `function` et le corps, où une chaîne interpolée ne peut
+pas figurer) ; `UnsortedImports.php:79` et `:138` sont dans le cas des « laissés » de R193. À joindre au ticket P15-1. Le grep de
+l'étape 4 de R193 (`is('}')`, `'}' === ` sur les quatre recenseurs) : 0.
+
+**Lignes de plus de 140 caractères laissées** (`awk 'length>140'` sur les 62 fichiers de `git diff --name-only 0c51a767...HEAD` : 1 385
+lignes, dont 220 hors de `tasks/` ; `git blame` sur chacune : 33 écrites dans `0c51a767..HEAD`) :
+- `tools/lib/smoke-http.sh:274`, 144 caractères : le `echo` du retrait impossible, d'un seul tenant (R167 (A)) ;
+- 32 lignes de `tasks/plan-748.md` écrites par les commits du plan : dix lignes de la table des fichiers (l. 11904 à 11916), treize
+  titres de tâche (R182, R183, R185 à R189, R189b, R191, R192, R194, R195) et neuf lignes « Step … : commit » (le message de commit
+  entre guillemets) : ni titre, ni message de commit, ni ligne de table ne se coupe ;
+- aucune ligne de code ni de règle ; les lignes écrites par ce balayage tiennent en 140 (`git diff -U0 | awk 'length>141'` : 0, le `+`
+  de tête compris).
+
+**Balayage de R195.** Secrets et dépendances exclus (`X`), périmètre `P`, base `0c51a767` ; pour chaque recherche : la commande, le
+nombre de lignes, la raison de chaque ligne gardée.
+
+```bash
+X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=var)
+P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)
+```
+
+1. **Noms disparus** : **20** lignes, aucune ne désigne un nom disparu (les six premiers noms : 0).
+
+   ```bash
+   grep -rn "${X[@]}" -e AdminQualityPrinciplesSection -e AdminQualityTraitsSection -e 'form: () => form' \
+     -e resetPrincipleForm -e resetTraitForm -e 'rend null' -e 'rend .null' "${P[@]}"
+   ```
+
+   Gardées : les 20 sont `rend null` ou `rend `null`` d'autres fonctions (`HttpAssistantRepository.spec.ts:215`,
+   `visibleMutationError.spec.ts:21` et `:25`, `csrfCookie.spec.ts:30` ; seize lignes de `backend/src` et `backend/tests` :
+   `preg_replace()`, `create()`, `extract()`… rendent `null`), aucune n'est dans un fichier de la série et aucune ne parle de
+   `translate`, de `expire` ni de `formIdentity`.
+
+2. **Vocabulaire** : **6** lignes, aucune à corriger (`start no process`, `never exported`, `ne différent`, `testaient` : 0).
+
+   ```bash
+   grep -rn "${X[@]}" -e "l'abandonne" -e 'no table' -e 'start no process' -e 'never exported' -e 'ne différent' \
+     -e 'testaient' "${P[@]}"
+   ```
+
+   Gardées : `deploiement-etat-hors-pod.md:72` (« no table » : un verrou sans table, sans rapport), `useUnsavedOrderGuard.ts:6`,
+   `fr.json:99`, `useUnsavedOrderGuard.spec.ts:56` et `AdminAboutPage.spec.ts:1430` (« l'abandonnera », « l'abandonne » : le départ de
+   la page et les réglages, non le verrou de proposition), `adminTranslationTexts.spec.ts:42` (la garde négative qui refuse
+   « l'abandonne »).
+
+3. **Identifiants de constat dans les noms de tests** (la recherche de R135, rejouée) : **17** lignes, **aucune écrite par la série**
+   (`git blame` dans `0c51a767..HEAD` : 0).
+
+   ```bash
+   RE='\b(CR|St|Sp|C|A|F|S|B|E|I|M)[0-9]+(-[0-9]+)?[a-z]?\b'
+   RE="$RE|\bB/F[0-9]+\b|\bF-I[0-9]+\b"
+   grep -rnP "\b(it|describe|test)(\.each\([^)]*\))?\(\s*['\"\x60].*($RE)" frontend/tests
+   grep -rnP "function test\w*\(|yield ['\"]" backend/tests | grep -P "$RE"
+   grep -rnP "\b(pass|fail) ['\"].*($RE)" tools/tests
+   ```
+
+   Les mêmes quinze antérieures à #748 (`audit A7`, `#650, S2/F5/F-I1`, `#647, F1`, `A1`, `E000`, `E0041`, `S256`) et les deux faux
+   positifs `%E0` (`sessionAwareFetch.spec.ts:99`, `csrfCookie.spec.ts:40`).
+
+4. **Récits au passé** : 59 fichiers existants, **81** lignes (81 après), dont **17** écrites par la série (`git blame`) ; le complément
+   sur les lignes ajoutées rend **19** lignes au départ, **15** après correction.
+
+   ```bash
+   git diff --name-only 0c51a767...HEAD -- frontend backend tools .claude | xargs grep -nE \
+     "(depuis R[0-9]+|n'est plus|n'a plus|ne .* plus |restait|recopiait|autrefois|voyait|lisait|a été supprimé|il permettait|\
+   l'ancien|used to|no longer)"
+   git diff -U0 0c51a767...HEAD -- frontend backend tools .claude | grep -E '^\+' \
+     | grep -E "plus[.,;:)]|ôtaient|était |a été |avait |was |had |used to|no longer|avant R[0-9]|depuis R[0-9]|supprimé|retiré "
+   ```
+
+   Reformulées au présent par ce balayage : `translatedFormDeclarationOrder.spec.ts` (« Avant cette garde l'ordre n'était qu'une
+   convention… » ; « les neuf sites à l'écriture, huit après la fusion… » ; le commentaire du plancher), `emptyStateNeedsLoaded.spec.ts`
+   (« onze avant R190… comme il l'était (10 pour 11) »), `ProblemDetailStaysStaticTest.php` (« la boucle du modèle n'avait pas cette
+   remise à zéro »), `useTranslatedForm.spec.ts:435` (« les neuf pages » : huit fichiers appellent le composable). Gardées : un état
+   présent, un conditionnel ou le futur (`outillage-smoke.md` « it is no longer admitted », `smoke-http.test.sh` « n'est plus admis »,
+   `useAdminTranslation.ts:189`, `qualityEntrySection.ts` « ne permettrait plus ») ; « n'avait aucune traduction »
+   (`proposedCreation.ts` et quatre pages : le cas décrit, non un récit) ; « a été lancé » et « a été appelé » de
+   `smoke-cases.sh:243-246` (le scénario du cas) ; les noms des drapeaux entre guillemets (« elle était définie ») ;
+   `CompiledNestedReading.php:12`, rétabli par R194 sur décision, non réécrit.
+
+5. **Longueurs** : voir plus haut (1 385 lignes, 33 écrites par la série : 1 `echo`, 32 du plan).
+
+   ```bash
+   git diff --name-only 0c51a767...HEAD | while read f; do [ -f "$f" ] && awk -v F="$f" 'length>140 {print F":"FNR}' "$f"; done
+   # puis, pour chaque ligne : git blame --porcelain -L n,n -- fichier, comparé à git rev-list 0c51a767..HEAD
+   ```
+
+6. **Moignons**, sur les quatre règles touchées par la série (`frontend-backoffice.md`, `frontend-session-refus.md`, `frontend.md`,
+   `outillage-smoke.md`) : les quatre recherches du brief, plus la suite de mots comparée (`cmp` à HEAD pour la règle que ce balayage
+   change).
+
+   ```bash
+   awk 'length<=45 && NF' règle                                   # lignes courtes
+   grep -nE '^[[:space:]]*[,;:.)»]' règle                         # ponctuation de tête
+   perl -ne 'print "$.\n" if (() = /\x60/g) % 2' règle            # code en ligne coupé
+   grep -nE '«[[:space:]]*$|^[[:space:]]*»' règle                 # guillemet orphelin
+   diff <(git show HEAD:règle | tr -s '[:space:]' '\n') <(tr -s '[:space:]' '\n' < règle)   # aucun mot changé
+   ```
+
+   Résultat : ponctuation de tête 0, accents graves impairs 0, guillemet orphelin 0 dans les quatre règles. Lignes de 45 caractères ou
+   moins (hors en-tête et titres) : `frontend-backoffice.md` 11, `frontend-session-refus.md` 4, `frontend.md` 12, `outillage-smoke.md` 2
+   ; chacune termine une puce ou un paragraphe (ou précède une liste), toutes antérieures à la série sauf, dans `outillage-smoke.md`,
+   deux phrases entières (l. 42 et 95). Recollés dans `outillage-smoke.md`, sans changer un mot hors l'ajout B : deux blocs écrits par
+   R183 dont la dernière ligne était une queue de phrase (« `CURL_OPTS` too, never `CURL_OPTS_ANONYMOUS`. » ; « (every `curl` command
+   followed by `-q`). »), et le paragraphe de l'ajout B, dont la ligne courte venait de la coupe.
+
+7. **Règles relues avec `Read`** (`outillage-smoke.md` en entier ; `frontend-backoffice.md` et `frontend.md` en entier ;
+   `frontend-session-refus.md` l. 100-160 et le diff de ses 22 lignes ; `security-authentication-sessions.md` l. 78-90) contre le code
+   de HEAD : aucune phrase fausse. Vérifiés par `grep` : les identifiants cités par `outillage-smoke.md` (`SMOKE_AUTH_DATA_FILES`,
+   `SMOKE_DATA_FILE`, `smoke_data_file`, `check_finds_library_under_cdpath`, `check_root_script_dir_is_slash`, `CASE_NAMES`,
+   `case_vars_set`, `check_no_child_sees_basic_auth`, `audit_carries_basic_auth`, `_smoke_auth_defined`, `_smoke_option_arity`) existent
+   tous ; `DEFERRED_HOOKS` est à `sourceText.ts:313` ; « sept fonctions publiques » : sept dans `smoke-http.sh` ;
+   `switchToProposedCreation` est écrit pour les huit formulaires par entrée. Une phrase réécrite : « a `set` alone between quotes:
+   `echo 'set'` » (ajout B). Règles modifiées par la série et le dit-elles : `outillage-smoke.md` (R182, R183, R184, R186),
+   `frontend-backoffice.md` (R187, R187b, R189, R189b, R190), `frontend.md` et `frontend-session-refus.md` (R192) : toutes nommées dans
+   les fichiers de leur tâche au plan ; aucune règle modifiée sans être déclarée (Sp15-17).
+
+8. **Docblocks d'en-tête** de ce que R182 à R194 ont modifié sous `src/`, `tests/support/`, `backend/tests/Support/` et `tools/`, relus
+   contre le code : `smoke-http.sh` (l'en-tête : sept fonctions, la convention du canal de retour, `SMOKE_DATA_FILE`),
+   `proposedCreation.ts`, `qualityEntrySection.ts`, `useTranslatedForm.ts`, `useAdminTranslation.ts` (conformes) ;
+   `translatedFormDeclarationOrder.spec.ts` (trois endroits au passé : corrigés) ; `CompiledNestedReading.php` : non réécrit, un seul
+   verbe différent de d8f481a2 (Q14), aucun écart à signaler. Les docblocks des autres fichiers de la série ont été parcourus par `grep`
+   de leurs noms disparus (recherches 1 et 2), non relus ligne à ligne : **déclaré, non relu** pour les neuf pages, `sourceText.ts`,
+   `entryFormLock.ts`, les recenseurs PHP autres que `PhpSources.php`.
+
+9. **Mutations** (Sp15-8). Les commandes et les lignes rouges des agents sont dans leurs rendus, remis au fil principal ; ni les
+   messages de commit ni le diff n'en portent la trace : celles de R185 (`_smoke_value_problem` qui rend 0), R186 (le tableau `CASE_*`,
+   la racine, la dérive de `curl_variables`), R187 (`await` avant `accept`, `isAnyOrderDirty`), R187b, R188 (`await` entre le jugement
+   et `accept`), R189 (TS2448, `proposalSourceLocale`), R189b, R190 (`copiedToNewVersion`, `isOrderDirty`), R191 (« Modifier »), R193
+   (b), R194 (`importedAt`), R183 (a) et (c), sont **non attestées par ce balayage**. Cinq sont **rejouées ici**, en place par Python,
+   copie vérifiée par `cmp`, restaurées, `git diff` vide :
+
+   - R182, `if [[ -v $_smoke_name ]]; then` remplacé par `if false; then` dans `smoke-http.sh` : `bash tools/tests/smoke-http.test.sh`
+     sort 1, `FAIL retrait impossible (lecture-seule)` et `FAIL retrait impossible (locale-masquante)` ;
+   - R183 (b), ` --noproxy '*'` retiré de `_smoke_auth` : sort 1, `FAIL smoke_fetch avec auth` (et cinq autres `smoke_fetch`) ;
+   - R184, `(-|\+)` ramené à `(-)` dans `list_end` : sort 1, `FAIL garde des vidages : declare +x` et `FAIL … typeset +r`, ces deux-là
+     seuls ;
+   - R192, `['onDeactivated', { callback: 0 }]` retiré de `DEFERRED_HOOKS` :
+     `npm test -- tests/support/sourceText.spec.ts tests/presentation/pages/admin/noLoadInOnMounted.spec.ts` : 2 failed | 76 passed,
+     `deferredCallsOf lit les hooks de démontage, de désactivation et de navigation…` et un cas de `noLoadInOnMounted.spec.ts` ;
+   - R193 (a), `closesBrace()` rendu à `'}' === $token->text` : `phpunit` sur `ClassNameResolverTest.php`, `ImportsStaySortedTest.php`
+     et `NoAnonymousClassNorFreeFunctionTest.php` (`tests/Shared/`) sort 1, six cas de `testScopesCarryWhatHoldsAtEachToken` (« après un
+     objet JSON écrit entre guillemets », « après une accolade échappée », « après une accolade fermante après une variable », chacun en
+     `import` et en `fin de bloc namespace`) et deux de `ImportsStaySortedTest`.
+
+**Ajouts du fil principal à R195** (documentation seulement). A : le nom du test de `useAdminTranslation.spec.ts:249` dit « aucune
+requête, aucune proposition posée » (et non « null », que `translate` ne rend pas : il rend un booléen, la proposition va à `accept`) ;
+même nombre de tests. B : `outillage-smoke.md` dit qu'un `set` seul entre guillemets est refusé, même en prose (`echo 'set'`), la garde
+des vidages ayant gagné les guillemets en R184 ; la phrase existante sur la prose est complétée, non doublée.
+
+**Tailles des règles touchées** (octets) : `outillage-smoke.md` 17 462 (12 970 au départ du plan), `frontend-backoffice.md` 38 292 (36
+261), `frontend.md` 20 794 (20 305), `frontend-session-refus.md` 17 848 (17 845) ; non touchées par ce balayage :
+`security-authentication-sessions.md` 22 270, `.claude/CLAUDE.md` 35 014, `backoffice-api.md` 39 834, `security-user.md` 47 922.
+`tools/check-claude-rules.sh` : « Règles .claude/ conformes. », sortie 0.
+
+**Vérification de fin**, après `docker compose restart frontend backend` et le cache de test vidé dans le conteneur ; chaque code lu
+sans pipe : `make front-test` sortie 0, **2 618** tests dans 180 fichiers (2 588 au relevé de la quinzième relecture) ;
+`make front-lint` 0 ; `make front-build` 0 ; `make back-test` 0, **OK (5 751 tests, 115 876 assertions)** (5 681 au relevé) ;
+`make back-quality` 0 (PHPStan « No errors », Rector « is done », Psalm « No errors found », `lsp:check` : les six avertissements
+`config.unknown_key` de `ai.yaml`, déjà connus) ; les 26 `tools/tests/*.test.sh` à 0 ; shellcheck `-x --severity=warning` dans l'image
+`rhysd/actionlint@sha256:b1934ee5…` sur les fichiers du job `tools-tests` : 0.
+
+**Questions ouvertes** : aucune qui bloque. À arbitrer par le fil principal : joindre au ticket P15-1 les quatre lignes de plus relevées
+ci-dessus ; la limite « Invisible » encore écrite deux fois (R192, hors périmètre) ; `useAdminTranslation.spec.ts:46` (« rend la
+proposition ») passe par un helper qui la capte, nom laissé.
 
 ---
 

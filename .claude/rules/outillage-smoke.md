@@ -88,10 +88,9 @@ does not read them. Measured on 2026-11-01 on the pinned image (`--network none`
 creates no file where `SSLKEYLOGFILE` creates one. `curl_ssl_backend` and `qlogdir` cannot be measured there (one TLS backend, no HTTP/3).
 The unset happens once, so a proxy exported **after** the call would reach curl: the call that carries the `-K` also carries
 `--noproxy '*'` after `--proto-redir =https` (measured: `HTTPS_PROXY` set, `--libcurl -` prints `CURLOPT_NOPROXY, "*"`), the audit's
-`CURL_OPTS` too, never `CURL_OPTS_ANONYMOUS`.
-Limit: the library removes what a workstation or a runner acting in good faith leaves behind. An environment an attacker controls
-(`OPENSSL_CONF`, `LD_PRELOAD`, `PATH`, `SMOKE_CURL`, a `SSLKEYLOGFILE` exported again after the call) is outside the model: it would
-see the identifier in the process itself, not through curl.
+`CURL_OPTS` too, never `CURL_OPTS_ANONYMOUS`. Limit: the library removes what a workstation or a runner acting in good faith leaves
+behind. An environment an attacker controls (`OPENSSL_CONF`, `LD_PRELOAD`, `PATH`, `SMOKE_CURL`, a `SSLKEYLOGFILE` exported again after
+the call) is outside the model: it would see the identifier in the process itself, not through curl.
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
@@ -128,19 +127,19 @@ French prose writes « à peu près » or « près de », never that word, in a 
 `if set -o | grep -q xtrace`, `x="${env}"` and `environment` pass.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
-and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence) is rephrased.
-Limit: the guard aims at good-faith slips (a debug trace left behind). A list of patterns is never complete against a
-deliberate bypass, which the review of the diff stops; « no line lists the environment » holds under that limit only.
+and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, a `set` alone between
+quotes: `echo 'set'`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of patterns is never
+complete against a deliberate bypass, which the review of the diff stops; « no line lists the environment » holds under that limit only.
 Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
 on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
-Every call that carries the `-K` also carries `--proto =https --proto-redir =https --noproxy '*'` (the audit's `CURL_OPTS`), and none
-without it carries any. Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads
-each call of the fake curl (`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`,
-`--proto-redir`, `--noproxy`, `-D`, `-o`, `-L`, `-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source
-(every `curl` command followed by `-q`).
+Every call that carries the `-K` also carries `--proto =https --proto-redir =https --noproxy '*'` (the audit's
+`CURL_OPTS`), and none without it carries any. Every `curl` of the audit, the anonymous probes included, starts with
+`-q` (R169): `audit-prod.test.sh` reads each call of the fake curl (`-q` first, only the audit's options `-sS`,
+`--connect-timeout`, `--max-time`, `-K`, `--proto`, `--proto-redir`, `--noproxy`, `-D`, `-o`, `-L`, `-w`, `-H`, one URL
+last, `https://` when the call carries a `-K`) and the source (every `curl` command followed by `-q`).
 The anonymous probes aim at `http://` URLs on purpose, so a `--proto =https` on them would refuse the very redirect they check.
 A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).

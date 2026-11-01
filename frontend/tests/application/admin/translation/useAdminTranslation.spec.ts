@@ -246,7 +246,7 @@ describe('useAdminTranslation', () => {
     expect(composable.isTranslating.value).toBe(false)
   })
 
-  it('expire() puis translate() avant la réponse périmée : aucune requête, null (#748, R125, décision 2)', async () => {
+  it('expire() puis translate() avant la réponse périmée : aucune requête, aucune proposition posée (#748, R125, décision 2)', async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
     const composable = mountWithComposable({ translate })

@@ -8,15 +8,15 @@ import { SRC_SCRIPTS } from '../../../support/srcSources'
  * construction (le refus exposé est un `computed`, l'identité une surveillance) : une `const` lue par l'une d'elles et déclarée
  * après l'appel est alors dans sa zone morte (`ReferenceError` à l'exécution du `setup`), et le compilateur ne le voit pas, la
  * lecture étant dans une fermeture. `form`, lui, est passé tel quel : `vue-tsc` refuse sa déclaration tardive (TS2448, R189), donc
- * la garde ne le relit pas. Avant cette garde l'ordre n'était qu'une convention écrite dans la règle ; ici, un contrôle.
+ * la garde ne le relit pas. L'ordre n'est donc pas une convention écrite dans la règle : c'est un contrôle.
  *
- * Lu : chaque fichier de `presentation/pages/admin/` dont le `<script>` appelle `useTranslatedForm` (les neuf sites à l'écriture,
- * huit après la fusion des deux sections de Qualité, R190 : la section générique est lue comme les autres, par son dossier et son
- * appel, sans liste de noms). Pour chaque appel, les options `isRefused` et `identity` ; les identifiants qu'elles lisent, puis,
- * de proche en proche, ceux que lisent les initialiseurs des constantes du `setup` ainsi atteintes (`isAnyOrderDirty` lit
- * `categoryOrders`, `lock` lit `isEditing`…) : chacun déclaré au niveau du `setup` doit l'être, **fin de sa déclaration comprise**,
- * avant le début de l'appel (la déclaration qui contient l'appel, `const { isRefused } = useTranslatedForm(…)`, est donc refusée si
- * une option la lit). Le message dit le fichier, l'identifiant, l'option qui le lit et les deux lignes.
+ * Lu : chaque fichier de `presentation/pages/admin/` dont le `<script>` appelle `useTranslatedForm` (huit fichiers : la section
+ * générique de Qualité, R190, est lue comme les autres, par son dossier et son appel, sans liste de noms). Pour chaque appel, les
+ * options `isRefused` et `identity` ; les identifiants qu'elles lisent, puis, de proche en proche, ceux que lisent les initialiseurs
+ * des constantes du `setup` ainsi atteintes (`isAnyOrderDirty` lit `categoryOrders`, `lock` lit `isEditing`…) : chacun déclaré au
+ * niveau du `setup` doit l'être, **fin de sa déclaration comprise**, avant le début de l'appel (la déclaration qui contient
+ * l'appel, `const { isRefused } = useTranslatedForm(…)`, est donc refusée si une option la lit). Le message dit le fichier,
+ * l'identifiant, l'option qui le lit et les deux lignes.
  *
  * Non lu, par choix : une déclaration de fonction (`function f() {}`, remontée : lisible à tout endroit) ; l'initialiseur d'une
  * constante qui est elle-même une fonction (`const f = () => …`) : son corps ne court qu'à son appel, que la garde ne suit pas ; un
@@ -212,9 +212,8 @@ describe("ce que lit le refus de traduction est déclaré avant l'appel de useTr
   })
 
   it("la garde lit les formulaires à traduction assistée et ce que leurs options lisent (#748, R189b)", () => {
-    // Plancher : neuf formulaires à l'écriture (sept pages ou sections par entrée, les deux sections de Qualité, les réglages
-    // « À propos » : 9 fichiers), huit après la fusion des deux sections de Qualité en une section générique (R190, un appel
-    // dans un fichier de moins). Sans cette borne, une garde qui ne lit plus rien resterait verte.
+    // Plancher : huit fichiers appellent le composable (sept pages ou sections par entrée, dont la section générique de Qualité,
+    // montée deux fois, R190, et les réglages « À propos »). Sans cette borne, une garde qui ne lit plus rien resterait verte.
     expect(sites.length).toBeGreaterThanOrEqual(8)
     expect(sites.reduce((total, site) => total + site.inspection.calls, 0)).toBeGreaterThanOrEqual(8)
     // Chaque appel lit au moins `isSubmitting` ou `isAnySaving`, `props` ou `lock`… : un site qui n'atteint plus aucune déclaration
