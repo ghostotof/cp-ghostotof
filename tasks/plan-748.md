@@ -10789,6 +10789,10 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
   garder le texte, l'écart accepté. St14-18 : `admin.entryLock.proposal` EN « “Cancel” discards it » → recommandé « “Cancel”
   drops it and clears the form. » (« discard » est réservé aux réglages, R154) ; le FR inchangé.
 
+**Réponses de l'auteur (2026-11-01)** : Q1 à Q14 → **les quatorze recommandations** (Q5 le rang de l'argument, jamais
+son texte ; Q8 les variables d'environnement de curl retirées du shell une fois la Basic Auth posée ; Q14 les nouveaux
+textes). Le plan les suit déjà : aucune tâche ne change.
+
 ### Review Focus (quatorzième relecture)
 
 1. **Un smoke lancé avec la Basic Auth et `-v`, `--libcurl -`, `--trace -`, une seconde URL `https://autre/`, `-x
