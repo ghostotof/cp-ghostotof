@@ -12171,6 +12171,13 @@ chargement de la cible : choisir la forme la plus simple qui tienne, la justifie
 
 ### Task R189 : Les neuf formulaires — l'ordre déclaré avant l'appel, le formulaire passé tel quel, la bascule et la limite écrites une fois (Q8, Q9 : CR15-6 = St15-19 ; CR15-8 ; St15-14 ; St15-11 ; St15-12)
 
+**Ajout décidé par l'auteur (2026-11-01, après R188)** : (A) dans `useAdminTranslation.ts`, la condition
+`if (requests.isCurrent(token))` d'`endCall` est un mutant équivalent (un appel périmé ne finit jamais pendant qu'un appel plus
+récent tourne : `translate` refuse le suivant tant qu'un appel est en vol ; `if (true)` laisse la suite verte, 68/68) — la
+**retirer**, un commentaire nommant l'invariant sur lequel la fin de l'appel repose (un seul appel en vol par formulaire) ;
+suite verte avant/après. Le corps de `useAdminTranslation()` (> 130 lignes) **reste tel quel** (St15-8 ne visait que
+`translate`).
+
 **Files :**
 - Create : `frontend/src/presentation/ui/admin/proposedCreation.ts` (`switchToProposedCreation`)
 - Modify : `useTranslatedForm.ts` (`form: Record<F, string>`, Q8 ; son docblock), les neuf sites
