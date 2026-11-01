@@ -295,6 +295,39 @@ else
 fi
 if ! grep -q -- ' -K ' "$TMP/nominal.args"; then pass "sans AUDIT_BASIC_AUTH → pas de -K"; else fail "sans auth" "args : $(head -1 "$TMP/nominal.args")"; fi
 
+# --- R183 (D2, Q4 de la quinzième relecture) : avec la Basic Auth, curl n'admet `--data-binary @<fichier>` que vers un fichier créé par
+# `smoke_data_file`. Le fichier du corps de l'étape 2 en naît donc, le même pour les deux appels, et `smoke_cleanup` (le `trap`) le
+# retire : le dossier temporaire du script est vide à la sortie, avec la Basic Auth comme sans. Les appels authentifiés portent
+# aussi `--noproxy *` (un proxy d'environnement posé après la bibliothèque ne reçoit pas l'identifiant).
+mkdir "$TMP/mcp-tmpdir" "$TMP/mcp-tmpdir-plain"
+body_auth="$(generated_basic_auth)"
+TMPDIR="$TMP/mcp-tmpdir" AUDIT_BASIC_AUTH="$body_auth" \
+  run bodyfile "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
+body_line_one="$(sed -n 3p "$TMP/bodyfile.args")"
+body_line_two="$(sed -n 4p "$TMP/bodyfile.args")"
+body_path="${body_line_one#*--data-binary @}"
+body_path="${body_path%% *}"
+if [ "$rc" -eq 0 ] && [[ "$body_path" == "$TMP/mcp-tmpdir/"* ]] && [[ "$body_line_two" == *"--data-binary @$body_path "* ]] \
+   && [[ "$body_line_one" == *" -K "* ]] && [[ -z "$(ls -A "$TMP/mcp-tmpdir")" ]]; then
+  pass "avec la Basic Auth, le corps de l'étape 2 est un fichier de smoke_data_file, le même deux fois, retiré à la sortie"
+else
+  fail "corps de l'étape 2 avec la Basic Auth" \
+    "rc=$rc ; chemin : ${body_path:-aucun} ; TMPDIR : $(ls -A "$TMP/mcp-tmpdir") ; err : $(cat "$TMP/err")"
+fi
+if ! grep -qF -- "$body_auth" "$TMP/bodyfile.args" "$TMP/out" "$TMP/err" \
+   && [ "$(grep -cF -- ' --proto-redir =https --noproxy * ' "$TMP/bodyfile.args")" -eq "$(grep -c -- ' -K ' "$TMP/bodyfile.args")" ] \
+   && grep -qF -- ' -K ' "$TMP/bodyfile.args"; then
+  pass "chaque appel qui porte -K porte --noproxy * derrière --proto-redir =https, la valeur n'est dans aucun argument"
+else
+  fail "--noproxy sur les appels du smoke MCP" "$(grep -vF -- '--noproxy' "$TMP/bodyfile.args" | head -2)"
+fi
+TMPDIR="$TMP/mcp-tmpdir-plain" run bodyplain "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
+if [ "$rc" -eq 0 ] && [ -z "$(ls -A "$TMP/mcp-tmpdir-plain")" ] && ! grep -qF -- '--noproxy' "$TMP/bodyplain.args"; then
+  pass "sans Basic Auth, le fichier du corps est retiré à la sortie et aucun appel ne porte --noproxy"
+else
+  fail "corps de l'étape 2 sans Basic Auth" "rc=$rc ; TMPDIR : $(ls -A "$TMP/mcp-tmpdir-plain") ; err : $(cat "$TMP/err")"
+fi
+
 # --- Un retour à la ligne dans la Basic Auth ouvrirait une seconde directive
 # dans le fichier -K : refus, sortie 2, aucun appel, valeur jamais citée.
 AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run newline "$init"

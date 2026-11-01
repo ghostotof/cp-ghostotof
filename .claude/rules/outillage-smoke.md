@@ -32,8 +32,9 @@ the author's decision of 2026-10-31 keeps that order (a child of the same user, 
 reordering would complicate the failure path of the name for no risk).
 `unset` does not wipe the copy of the environment the process received at its launch, which `/proc/<pid>/environ` still shows (R148b).
 The three smokes and the audit start no process before `smoke_use_auth_config`: the `trap` first (it removes only a file already
-created, the `headers_file` and the `body_file` being empty until then), then the call, then `mktemp`, `openssl` and `date`
-(D2 of the fourteenth review). The only child left before the reading is that head `rm -rf` of a second call, above.
+created, the `headers_file` being empty until then; `smoke-mcp.sh`'s body file is `smoke_data_file`'s, which `smoke_cleanup` removes),
+then the call, then `mktemp`, `smoke_data_file`, `openssl` and `date` (D2 of the fourteenth review). The only child left before the
+reading is that head `rm -rf` of a second call, above.
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
@@ -54,21 +55,42 @@ With a `-K`, `"$@"` and each element of `SMOKE_CURL_OPTS` are judged by an **all
 It admits nine options, the ones the three smokes really pass (found by `grep` of their calls): `-sS` (no value) and
 `--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`, `--data-binary`, `-b` (one value each).
 The match is exact: no prefix (curl 8.5.0 takes `--proto-r` for `--proto-redir`), no case folding, no `--option=value`,
-no cluster but `-sS` (`-s`, `-sSv`), no glued value (`-HAccept: x`). A value is never judged: `-H -v` sends the header « -v ».
+no cluster but `-sS` (`-s`, `-sSv`), no glued value (`-HAccept: x`). A value is never judged as an option: `-H -v` sends the header « -v ».
 Anything else exits 2, curl not called: `-v`, `--verbose`, `--trace*`, `--libcurl`, a second URL (the only URL is the one judged),
 `--`, `-x`, `--proxy`, `--doh-url`, `--cacert`, `--unix-socket`, `--proto-default`, a redirection, a configuration file,
-an option with no value after it, and an option no table knows yet.
+an option with no value after it, and an option no line of the `case` knows.
+The value of four options is judged for one thing only: that it makes curl read a local file (D2 of the fifteenth review, the author's
+decision of 2026-11-01), whose content would go to the host. `-H @…` and `-d @…` (a value starting with `@`: `@f`, `@-`) exit 2;
+so does `--data-binary @<path>` unless `<path>` is, **in full**, a file `smoke_data_file` created (a string equality: no `..`, no prefix,
+never the `-K` file nor another file of its directory); and so does `-b` with no « = », which curl reads as a cookie file (`-b ''` too).
+`-b 'BEARER=x'`, `-H 'X: @y'`, `-d '{"a":1}'`, `-d ''` and `--data-binary abc` pass: no `@` leads the value, or it is a cookie.
+`smoke_data_file`, called **after** `smoke_use_auth_config`, runs `mktemp`, keeps the path in the array `SMOKE_AUTH_DATA_FILES` and
+puts it in `SMOKE_DATA_FILE`; it prints nothing, since `"@$(smoke_data_file)"` would run it in a subshell that loses the record.
+`smoke_cleanup` removes those files and empties both variables, and a second `smoke_use_auth_config` calls it first: a path from before
+it is no longer admitted. Both variables are empty at the source. `smoke-mcp.sh` makes its body file with it, not with `mktemp`.
 The message gives the **rank** of the argument, never its text (a glued value could be a secret):
-« argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other.
+« argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
+for a value that reads a file, the rank is the value's:
+« argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth ».
 Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
 To admit a new option: a line of the `case` with its arity, an « accepted » case in `smoke-http.test.sh` (the call leaves, the option
 and its value in the fake curl's call), a line of this rule naming it. Nothing else.
 Once the Basic Auth is written, the library unsets the variables curl reads that would move or expose the identifier: `http_proxy`,
 `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`,
 `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log of TLS or QUIC left by a debugging session, the
-choice of the TLS backend; the author added `CURL_SSL_BACKEND` and `QLOGDIR` on 2026-11-01). Not without a Basic Auth. `CURL_HOME` and
-`XDG_CONFIG_HOME` only serve the `.curlrc`, which curl does not read under `-q`.
-The names come from curl 8.5.0's `ENVIRONMENT` section (`curl --manual`).
+choice of the TLS backend). Not without a Basic Auth. The names come from curl 8.5.0's `ENVIRONMENT` section (`curl --manual`); the others
+of that section are left, each for a reason: `CURL_HOME`, `XDG_CONFIG_HOME`, `HOME`, `APPDATA` and `USERPROFILE` only serve the `.curlrc`,
+which curl does not read under `-q`; `COLUMNS` sizes the progress bar; `SHELL` is read on VMS only.
+The lower-case spellings outside the proxies (`curl_ca_bundle`, `ssl_cert_dir`, `ssl_cert_file`, `sslkeylogfile`) are not unset: curl 8.5.0
+does not read them. Measured on 2026-11-01 on the pinned image (`--network none`, a dummy `-K -`, `--libcurl -`): `curl_ca_bundle`,
+`ssl_cert_file` and `ssl_cert_dir` change neither `CURLOPT_CAINFO` nor `CURLOPT_CAPATH` (`CURL_CA_BUNDLE` does), and `sslkeylogfile`
+creates no file where `SSLKEYLOGFILE` creates one. `curl_ssl_backend` and `qlogdir` cannot be measured there (one TLS backend, no HTTP/3).
+The unset happens once, so a proxy exported **after** the call would reach curl: the call that carries the `-K` also carries
+`--noproxy '*'` after `--proto-redir =https` (measured: `HTTPS_PROXY` set, `--libcurl -` prints `CURLOPT_NOPROXY, "*"`), the audit's
+`CURL_OPTS` too, never `CURL_OPTS_ANONYMOUS`.
+Limit: the library removes what a workstation or a runner acting in good faith leaves behind. An environment an attacker controls
+(`OPENSSL_CONF`, `LD_PRELOAD`, `PATH`, `SMOKE_CURL`, a `SSLKEYLOGFILE` exported again after the call) is outside the model: it would
+see the identifier in the process itself, not through curl.
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
@@ -107,10 +129,11 @@ A library that is missing or does not parse exits 2 saying « introuvable ou inv
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
 on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
-Every call that carries the `-K` also carries `--proto =https --proto-redir =https` (the audit's `CURL_OPTS`), and none without it
-carries either. Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads each call
-of the fake curl (`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`, `--proto-redir`, `-D`,
-`-o`, `-L`, `-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source (every `curl` command followed by `-q`).
+Every call that carries the `-K` also carries `--proto =https --proto-redir =https --noproxy '*'` (the audit's `CURL_OPTS`), and none
+without it carries any. Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads
+each call of the fake curl (`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`,
+`--proto-redir`, `--noproxy`, `-D`, `-o`, `-L`, `-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source
+(every `curl` command followed by `-q`).
 The anonymous probes aim at `http://` URLs on purpose, so a `--proto =https` on them would refuse the very redirect they check.
 A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).

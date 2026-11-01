@@ -330,6 +330,27 @@ else
   pass "aucun appel sans -K ne porte --proto =https (avec et sans Basic Auth)"
 fi
 
+# --- R183 (C15-4 de la quinzième relecture) : un proxy d'environnement posé après la bibliothèque (elle retire ceux qu'elle trouve
+# une fois) suivrait l'identifiant. Chaque appel qui porte `-K` porte donc aussi `--noproxy *` (curl 8.5.0 : `CURLOPT_NOPROXY, "*"`,
+# aucun proxy, quelle que soit la variable) ; un appel sans `-K` ne le porte pas.
+has_noproxy() { grep -qE -- '(^| )--noproxy \*( |$)'; }
+bad="$(lacking avec nominal has_noproxy)"
+if [ -z "$with_k" ]; then
+  fail "chaque appel qui porte -K porte --noproxy *" "aucun appel avec -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "chaque appel qui porte -K porte --noproxy *" "sans l'option : $bad"
+else
+  pass "chaque appel qui porte -K porte --noproxy * ($(wc -l <<< "$with_k") appels)"
+fi
+bad="$(lacking sans sansauth has_noproxy)$(lacking sans nominal has_noproxy)"
+if [ -z "${without_k//$'\n'/}" ]; then
+  fail "aucun appel sans -K ne porte --noproxy" "aucun appel sans -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "aucun appel sans -K ne porte --noproxy" "avec l'option : $bad"
+else
+  pass "aucun appel sans -K ne porte --noproxy (avec et sans Basic Auth)"
+fi
+
 # --- R169 (D1 de la quatorzième relecture, Q6) : chaque appel de curl de l'audit commence par `-q`, sondes anonymes comprises :
 # un `.curlrc` (sous `CURL_HOME`, `XDG_CONFIG_HOME` ou `HOME`) n'est lu que si `-q` n'est pas le premier argument, et un `.curlrc`
 # qui porte `location-trusted` ferait suivre à l'identifiant une redirection vers n'importe quel hôte (curl 8.5.0, mesuré le
@@ -355,7 +376,7 @@ audit_call_problems() {
       if [ "$skip" -eq 1 ]; then skip=0; continue; fi
       case "$word" in
         -sS | -L) ;;
-        --connect-timeout | --max-time | -K | --proto | --proto-redir | -D | -o | -w | -H) skip=1 ;;
+        --connect-timeout | --max-time | -K | --proto | --proto-redir | --noproxy | -D | -o | -w | -H) skip=1 ;;
         -*) printf 'option hors de la liste, argument n° %s : %s\n' "$rank" "${line//$'\x1f'/ }" ;;
         *)
           url_count=$((url_count + 1))

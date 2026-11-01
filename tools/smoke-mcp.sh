@@ -89,17 +89,20 @@ SESSION_MAX_REQUESTS=12
 MODERN_VERSION='2026-07-28'
 
 # Ordre (D2 de la quatorzième relecture) : le `trap` (qui ne retire que les fichiers déjà créés), puis la Basic Auth, puis
-# seulement `mktemp` : la bibliothèque retire la variable du shell en la lisant, donc aucun fils ne la reçoit.
+# seulement `mktemp` : la bibliothèque retire la variable du shell en la lisant, donc aucun fils ne la reçoit. Le fichier du corps
+# n'est pas dans le `trap` : il naît de `smoke_data_file`, que `smoke_cleanup` retire.
 headers_file=""
-body_file=""
-trap '[ -z "$headers_file" ] || rm -f -- "$headers_file"; [ -z "$body_file" ] || rm -f -- "$body_file"; smoke_cleanup' EXIT
+trap '[ -z "$headers_file" ] || rm -f -- "$headers_file"; smoke_cleanup' EXIT
 
 # Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux ; `smoke_fetch` le lit
 # et refuse, avec lui, une URL non https:// ou un argument hors de la liste d'options admises (tools/lib/smoke-http.sh).
 smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
 
 headers_file="$(mktemp)"
-body_file="$(mktemp)"
+# Le corps de l'étape 2 : avec la Basic Auth, `--data-binary @<fichier>` n'est admis que vers un fichier de `smoke_data_file`
+# (tools/lib/smoke-http.sh), qui pose SMOKE_DATA_FILE : un `$(…)` perdrait l'enregistrement du chemin.
+smoke_data_file || exit 2
+body_file="$SMOKE_DATA_FILE"
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.

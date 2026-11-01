@@ -71,8 +71,9 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # authentifié n'envoie sa première requête qu'à une URL en https (une URL sans schéma, que curl devine en
 # `http://`, est refusée par curl lui-même) et ne suit une redirection (`-L`) que vers https, jamais vers http://
 # ni un autre schéma, où l'identifiant partirait en clair ; sans `-K`, les deux options n'ont pas lieu d'être
-# (les sondes de la section 3 visent des URL en `http://` exprès). Le `trap` précède la création du dossier :
-# un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
+# (les sondes de la section 3 visent des URL en `http://` exprès). `--noproxy '*'` les suit : un proxy d'environnement exporté
+# après `smoke_use_auth_config` (la bibliothèque n'en retire qu'une fois) ne reçoit pas l'identifiant (R183, C15-4).
+# Le `trap` précède la création du dossier : un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
 if [[ -v AUDIT_BASIC_AUTH ]]; then
@@ -90,7 +91,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   }
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
-  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https" --noproxy '*')
   audit_carries_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)

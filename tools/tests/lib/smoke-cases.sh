@@ -173,6 +173,27 @@ check_curl_opts_refused() {
   _check_value_refused " : SMOKE_CURL_OPTS, élément n° $CASE_RANK hors des options admises avec la Basic Auth — rien de vérifié\$"
 }
 
+# check_args_file_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
+#
+# Une Basic Auth et, dans les arguments de smoke_fetch, la valeur d'une option admise qui fait lire un fichier local à curl
+# (`-H @f`, `-d @f`, `--data-binary @<autre que smoke_data_file>`, `-b` sans « = ») : sortie 2 avant tout appel de curl,
+# « argument n° <rang> : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié » en queue du
+# message (le rang de la valeur, jamais son texte), la valeur de la Basic Auth nulle part.
+check_args_file_refused() {
+  _case_incomplete CASE_RANK && return 0
+  _check_value_refused " : argument n° $CASE_RANK : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié\$"
+}
+
+# check_curl_opts_file_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
+#
+# Le même refus pour un élément de SMOKE_CURL_OPTS : « SMOKE_CURL_OPTS, élément n° <rang> : une valeur qui lit un fichier local
+# est refusée avec la Basic Auth — rien de vérifié » en queue du message.
+check_curl_opts_file_refused() {
+  _case_incomplete CASE_RANK && return 0
+  _check_value_refused \
+    " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié\$"
+}
+
 # check_no_child_sees_basic_auth  (CASE_LABEL, CASE_RC, CASE_EXPECTED_RC, CASE_ENV_FILE)
 #
 # Aucun processus que le script a lancé ne reçoit la variable de la Basic Auth : le fichier de write_env_noting n'a aucune

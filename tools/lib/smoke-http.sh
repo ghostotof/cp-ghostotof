@@ -7,19 +7,23 @@
 # Sourcée par :
 #   - tools/smoke-dead-session-cookie.sh, tools/smoke-login-throttling.sh,
 #     tools/smoke-mcp.sh (smoke_use_auth_config, smoke_cleanup, smoke_header,
-#     smoke_headers, smoke_excerpt, smoke_fetch) ;
+#     smoke_headers, smoke_excerpt, smoke_fetch ; smoke-mcp.sh seul : smoke_data_file) ;
 #   - tools/audit-prod.sh (smoke_use_auth_config et smoke_cleanup, et seulement
 #     si AUDIT_BASIC_AUTH est définie) ;
 #   - tools/tests/smoke-http.test.sh (hors ligne, faux curl).
 #
-# Six fonctions publiques :
+# Sept fonctions publiques :
 #   smoke_use_auth_config <nom>            la seule entrée de la Basic Auth : écrit le
 #                                          fichier de configuration `-K` de la variable,
 #                                          dans un dossier privé (SMOKE_AUTH_CONFIG),
 #                                          puis refuse (2) une variable définie mais
 #                                          vide ; smoke_fetch lit le fichier ;
-#   smoke_cleanup                          retire ce dossier ; à poser dans le
+#   smoke_cleanup                          retire ce dossier et les fichiers de
+#                                          smoke_data_file ; à poser dans le
 #                                          `trap` de chaque appelant ;
+#   smoke_data_file                        crée un fichier de corps de requête, le seul
+#                                          que `--data-binary @` puisse lire avec la
+#                                          Basic Auth ; son chemin est SMOKE_DATA_FILE ;
 #   smoke_header <fichier> <nom>           la valeur d'un en-tête de réponse (la
 #                                          dernière s'il y en a plusieurs) ;
 #   smoke_headers <fichier> <nom>          toutes ses valeurs, une par ligne ;
@@ -63,6 +67,12 @@
 # Posées par _smoke_write_auth_config seule, lues par les `trap` via smoke_cleanup.
 SMOKE_AUTH_DIR=""
 SMOKE_AUTH_CONFIG=""
+# Les fichiers que smoke_data_file a créés (un tableau : un chemin peut porter un blanc) et le dernier d'entre eux. Vides à la
+# source, pour la même raison que le dossier : une valeur héritée n'est jamais crue, ou `smoke_cleanup` retirerait un fichier qui
+# n'est pas le sien, et `--data-binary @<ce chemin>` serait admis avec la Basic Auth. Le préfixe `SMOKE_AUTH_` est refusé comme nom
+# de variable de la Basic Auth (_smoke_is_variable_name). Posés par smoke_data_file seule, vidés par smoke_cleanup.
+SMOKE_AUTH_DATA_FILES=()
+SMOKE_DATA_FILE=""
 # « La variable de la Basic Auth était définie » (1) ou non (0), le seul souvenir que garde la bibliothèque de la
 # variable qu'elle a retirée du shell. Posé par _smoke_write_auth_config avant le retrait, lu par
 # _smoke_require_auth_config seule. À 0 à la source, quoi que l'environnement ait contenu. Le préfixe `_smoke_` est
@@ -71,19 +81,46 @@ _smoke_auth_defined=0
 
 # smoke_cleanup
 #
-# Retire le dossier que _smoke_write_auth_config a créé (jamais un autre : la
-# variable est vide à la source) et remet les deux variables à vide, le drapeau
-# `_smoke_auth_defined` à 0 : un second appel ne réutilise rien du premier. Retour 0 :
-# c'est la dernière commande d'un `trap`, elle ne change pas le code de sortie.
-# _smoke_write_auth_config l'appelle aussi en tête (voir plus bas).
+# Retire le dossier que _smoke_write_auth_config a créé et les fichiers que smoke_data_file a créés (jamais un autre : les
+# variables sont vides à la source), puis remet les variables à vide, le drapeau `_smoke_auth_defined` à 0 : un second appel ne
+# réutilise rien du premier, pas même un chemin de fichier de corps, qui n'est plus admis. Retour 0 : c'est la dernière commande
+# d'un `trap`, elle ne change pas le code de sortie. _smoke_write_auth_config l'appelle aussi en tête (voir plus bas), donc un
+# second smoke_use_auth_config retire aussi les fichiers de corps du premier : un smoke les crée après son appel.
 smoke_cleanup() {
   if [ -n "$SMOKE_AUTH_DIR" ]; then
     rm -rf -- "$SMOKE_AUTH_DIR"
   fi
+  if [ "${#SMOKE_AUTH_DATA_FILES[@]}" -gt 0 ]; then
+    rm -f -- "${SMOKE_AUTH_DATA_FILES[@]}"
+  fi
   SMOKE_AUTH_DIR=""
   SMOKE_AUTH_CONFIG=""
+  SMOKE_AUTH_DATA_FILES=()
+  SMOKE_DATA_FILE=""
   _smoke_auth_defined=0
   return 0
+}
+
+# smoke_data_file
+#
+# Crée un fichier vide (`mktemp`, sous TMPDIR, en 600), le retient dans SMOKE_AUTH_DATA_FILES et pose son chemin dans
+# SMOKE_DATA_FILE (D2 de la quinzième relecture, Q4). C'est le seul fichier que `--data-binary @<chemin>` peut lire avec la Basic Auth
+# (smoke_fetch compare le chemin entier, rien d'autre ne passe : ni le fichier `-K`, ni un autre fichier du même dossier). Le chemin
+# n'est **pas imprimé** : `"@$(smoke_data_file)"` lancerait la fonction dans un sous-shell, qui perdrait l'enregistrement, et le
+# corps serait refusé. À appeler **après** smoke_use_auth_config (un smoke ne lance aucun processus avant elle, D2 de la quatorzième
+# relecture, et son appel de tête retire les fichiers d'un appel précédent). smoke_cleanup les retire. Avec ou sans Basic Auth : un
+# smoke ne sait pas s'il en porte une. Retour 0 ; 2 si `mktemp` échoue (rien de retenu, SMOKE_DATA_FILE vide), le motif sur stderr.
+smoke_data_file() {
+  local _smoke_file
+  SMOKE_DATA_FILE=""
+  if ! _smoke_file="$(mktemp)"; then
+    echo "smoke_data_file : mktemp a échoué, aucun fichier créé" >&2
+    return 2
+  fi
+  SMOKE_AUTH_DATA_FILES+=("$_smoke_file")
+  # Lue par l'appelant, pas par la bibliothèque.
+  # shellcheck disable=SC2034
+  SMOKE_DATA_FILE="$_smoke_file"
 }
 
 # _smoke_is_variable_name <nom>
@@ -161,8 +198,18 @@ _smoke_is_variable_name() {
 # Une fois le fichier écrit (une Basic Auth pleine), elle retire aussi du shell les variables que curl lit et qui changeraient
 # où part l'identifiant ou ce qu'on en voit : `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`,
 # `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`, `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (R169, Q8 ; les deux
-# autres, décision de l'auteur du 2026-11-01 : le choix du moteur TLS et le journal QUIC). `CURL_HOME` et `XDG_CONFIG_HOME` ne
-# servent qu'au `.curlrc`, que curl ne lit pas sous `-q` en tête de chaque appel. Sans Basic Auth, rien n'est retiré.
+# autres, décision de l'auteur du 2026-11-01 : le choix du moteur TLS et le journal QUIC). `CURL_HOME`, `XDG_CONFIG_HOME`, `HOME`,
+# `APPDATA` et `USERPROFILE` ne servent qu'au `.curlrc`, que curl ne lit pas sous `-q` en tête de chaque appel ; `COLUMNS` règle la
+# largeur de la barre de progression, `SHELL` ne sert que sous VMS. Les variantes en minuscules hors proxy (`curl_ca_bundle`,
+# `ssl_cert_dir`, `ssl_cert_file`, `sslkeylogfile`) ne sont pas lues par curl 8.5.0 : mesuré le 2026-11-01 dans l'image du runner
+# (`--network none`), `curl_ca_bundle`, `ssl_cert_file` et `ssl_cert_dir` ne changent ni `CURLOPT_CAINFO` ni `CURLOPT_CAPATH`, et
+# `sslkeylogfile` ne crée aucun fichier là où `SSLKEYLOGFILE` en crée un ; elles ne sont donc pas retirées. Sans Basic Auth, rien
+# n'est retiré.
+#
+# Limite écrite (R183, C15-4) : la bibliothèque retire ce qu'un poste ou un runner de bonne foi laisse traîner, une fois, à l'appel.
+# Un environnement que contrôle un attaquant (`OPENSSL_CONF`, `LD_PRELOAD`, `PATH`, `SMOKE_CURL`, ou `SSLKEYLOGFILE` exporté de
+# nouveau après l'appel) est hors du modèle : il verrait l'identifiant par le processus lui-même, sans passer par curl. Pour un
+# proxy exporté après l'appel, smoke_fetch pose `--noproxy '*'` avec le `-K`.
 #
 # Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
 # leur `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup' EXIT`) puis écrivent
@@ -298,7 +345,7 @@ smoke_excerpt() {
 # Rend 0 et pose `_smoke_arity` (le nombre de valeurs que l'option prend) pour un argument de la liste, 1 pour tout autre :
 #   - `-sS`                                                        0 valeur ;
 #   - `--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`,
-#     `--data-binary`, `-b`                                        1 valeur.
+#     `--data-binary`, `-b`                                        1 valeur (jugée pour quatre : voir _smoke_judge_args).
 # Ce sont les options que les trois smokes passent réellement (`SMOKE_CURL_OPTS` : `-sS`, deux délais, `-D` ; `"$@"` : `-X`,
 # `-H`, `-d`, `--data-binary`, `-b`), relevées par `grep` des appels. La correspondance est **exacte** : ni préfixe (curl 8.5.0
 # prend `--proto-r` pour `--proto-redir`), ni casse ignorée, ni `--option=valeur`, ni grappe autre que `-sS` (`-s`, `-sSv`),
@@ -316,21 +363,63 @@ _smoke_option_arity() {
   esac
 }
 
+# _smoke_is_data_file <chemin>
+#
+# Vrai si le chemin est, **en entier**, un de ceux que smoke_data_file a retenus : une égalité de chaîne, aucun calcul de chemin
+# (`..`, lien, préfixe de dossier), donc ni le fichier `-K` ni un autre fichier du même dossier ne passent.
+_smoke_is_data_file() {
+  local _smoke_known
+  for _smoke_known in "${SMOKE_AUTH_DATA_FILES[@]}"; do
+    if [[ "$1" == "$_smoke_known" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# _smoke_value_reads_file <option> <valeur>
+#
+# Vrai si la valeur de l'option fait lire un fichier local à curl, ce qu'une Basic Auth ne tolère pas (D2 de la quinzième relecture :
+# le contenu d'un fichier de l'appelant partirait chez l'hôte, ou le fichier `-K` qui porte l'identifiant) :
+#   - `-H` et `-d` : une valeur qui commence par `@` (`-H @f` lit des en-têtes, `-d @f` un corps, `@-` l'entrée standard) ;
+#   - `--data-binary` : `@<chemin>`, sauf le chemin d'un fichier de smoke_data_file (_smoke_is_data_file) ; sans `@`, la valeur
+#     est le corps lui-même ;
+#   - `-b` : une valeur sans « = », que curl lit comme un fichier de cookies (`-b ''` comprise) ; `-b 'nom=valeur'` est un cookie.
+# Les autres options à une valeur (`--connect-timeout`, `--max-time`, `-D`, `-X`) n'en lisent aucune : faux. La valeur n'est jamais
+# imprimée.
+_smoke_value_reads_file() {
+  case "$1" in
+    -H | -d) [[ "$2" == @* ]] ;;
+    --data-binary) [[ "$2" == @* ]] && ! _smoke_is_data_file "${2#@}" ;;
+    -b) [[ "$2" != *=* ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 # _smoke_judge_args <élément…>
 #
-# Juge une liste d'arguments de curl par _smoke_option_arity. Une option admise à une valeur consomme l'élément suivant **sans
-# le juger** (un en-tête, un corps, un cookie, un nom de fichier : `-H -v` envoie l'en-tête « -v ») ; une option à une valeur
-# sans élément suivant est refusée (sinon elle prendrait le `-w` de smoke_fetch pour valeur) ; tout autre élément — une seconde
-# URL, `--`, `-v`, une option inconnue — est refusé. Rend 0 si tout est admis ; sinon 1, et `_smoke_refused_rank` reçoit le rang
-# (de 1 à n) du premier élément refusé. Jamais le texte de l'élément : un argument collé à une option courte porterait un secret.
+# Juge une liste d'arguments de curl par _smoke_option_arity. Une option admise à une valeur consomme l'élément suivant ; la valeur
+# n'est jugée que pour une qui lit un fichier local (_smoke_value_reads_file : les autres, un en-tête, un corps, un cookie,
+# passent telles quelles, `-H -v` envoie l'en-tête « -v ») ; une option à une valeur sans élément suivant est refusée (sinon elle
+# prendrait le `-w` de smoke_fetch pour valeur) ; tout autre élément — une seconde URL, `--`, `-v`, une option inconnue — est
+# refusé. Rend 0 si tout est admis ; sinon 1, `_smoke_refused_rank` reçoit le rang (de 1 à n) du premier élément refusé et
+# `_smoke_refused_reads_file` vaut 1 quand c'est une valeur qui lit un fichier (le rang est alors celui de la valeur), 0 sinon.
+# Jamais le texte de l'élément : un argument collé à une option courte porterait un secret.
 _smoke_refused_rank=0
+_smoke_refused_reads_file=0
 _smoke_judge_args() {
-  local _smoke_rank=0 _smoke_pending=0 _smoke_item
+  local _smoke_rank=0 _smoke_pending=0 _smoke_option="" _smoke_item
   _smoke_refused_rank=0
+  _smoke_refused_reads_file=0
   for _smoke_item in "$@"; do
     _smoke_rank=$((_smoke_rank + 1))
     if [ "$_smoke_pending" -eq 1 ]; then
       _smoke_pending=0
+      if _smoke_value_reads_file "$_smoke_option" "$_smoke_item"; then
+        _smoke_refused_rank="$_smoke_rank"
+        _smoke_refused_reads_file=1
+        return 1
+      fi
       continue
     fi
     if ! _smoke_option_arity "$_smoke_item"; then
@@ -338,6 +427,7 @@ _smoke_judge_args() {
       return 1
     fi
     _smoke_pending="$_smoke_arity"
+    _smoke_option="$_smoke_item"
   done
   if [ "$_smoke_pending" -eq 1 ]; then
     _smoke_refused_rank="$_smoke_rank"
@@ -346,9 +436,22 @@ _smoke_judge_args() {
   return 0
 }
 
+# _smoke_say_refused_arg <libellé> <d'où vient l'élément>
+#
+# Dit sur stderr le refus que _smoke_judge_args vient de rendre : « <libellé> : <d'où> n° <rang> hors des options admises avec la
+# Basic Auth — rien de vérifié » pour une option hors de la liste, « <libellé> : <d'où> n° <rang> : une valeur qui lit un fichier
+# local est refusée avec la Basic Auth — rien de vérifié » pour la valeur d'une option admise. Le rang, jamais le texte.
+_smoke_say_refused_arg() {
+  if [ "$_smoke_refused_reads_file" -eq 1 ]; then
+    echo "$1 : $2 n° $_smoke_refused_rank : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié" >&2
+  else
+    echo "$1 : $2 n° $_smoke_refused_rank hors des options admises avec la Basic Auth — rien de vérifié" >&2
+  fi
+}
+
 # smoke_fetch <libellé> <url> [arguments curl…]
 #
-# Lance `"$SMOKE_CURL" -q "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG" --proto =https --proto-redir =https] "$@"
+# Lance `"$SMOKE_CURL" -q "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG" --proto =https --proto-redir =https --noproxy '*'] "$@"
 # -w '\n%{http_code}' "$url"` et pose :
 #   SMOKE_STATUS   le code HTTP (la dernière ligne de la sortie) ;
 #   SMOKE_BODY     le corps (le reste).
@@ -374,14 +477,20 @@ _smoke_judge_args() {
 #   - SMOKE_AUTH_CONFIG posé et un argument de `"$@"` hors de la liste d'autorisation (_smoke_option_arity ; une seconde URL
 #     en fait partie : la seule URL est celle que cette fonction juge) : « <libellé> : argument n° <rang> hors des options
 #     admises avec la Basic Auth — rien de vérifié » (le rang dans `"$@"`, de 1 à n, jamais le texte) ;
-#   - SMOKE_AUTH_CONFIG posé et un élément de SMOKE_CURL_OPTS hors de la même liste : « <libellé> : SMOKE_CURL_OPTS, élément
-#     n° <rang> hors des options admises avec la Basic Auth — rien de vérifié ». Il part avec le `-K` comme `"$@"` ;
+#   - SMOKE_AUTH_CONFIG posé et la valeur d'une option admise qui lit un fichier local (_smoke_value_reads_file : `-H @f`, `-d @f`,
+#     `--data-binary @<autre que smoke_data_file>`, `-b` sans « = ») : « <libellé> : argument n° <rang> : une valeur qui lit un
+#     fichier local est refusée avec la Basic Auth — rien de vérifié » (le rang de la valeur, jamais son texte) ;
+#   - SMOKE_AUTH_CONFIG posé et un élément de SMOKE_CURL_OPTS hors de la même liste, ou valeur qui lit un fichier : « <libellé> :
+#     SMOKE_CURL_OPTS, élément n° <rang> hors des options admises avec la Basic Auth — rien de vérifié » (ou « … : une valeur qui
+#     lit un fichier local est refusée … »). Il part avec le `-K` comme `"$@"` ;
 #   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
 #     Basic Auth absent — rien de vérifié » (sans `-K`, curl lirait le 401 de la préprod comme un résultat).
 # Sans Basic Auth, rien de tout cela n'est jugé (la prod garde sa liberté : sans identifiant, rien ne fuit).
-# L'appel qui part avec la Basic Auth porte `--proto =https` et `--proto-redir =https` après le `-K` : `--proto` borne aussi la
-# première requête, donc une URL sans schéma (`hôte/chemin`, que curl devine en `http://`) est refusée par curl lui-même ;
-# `--proto-redir` borne les redirections. Aucune option de l'appelant ne peut les redonner : la liste ne les admet pas.
+# L'appel qui part avec la Basic Auth porte `--proto =https`, `--proto-redir =https` et `--noproxy '*'` après le `-K` : `--proto` borne
+# aussi la première requête, donc une URL sans schéma (`hôte/chemin`, que curl devine en `http://`) est refusée par curl lui-même ;
+# `--proto-redir` borne les redirections ; `--noproxy '*'` (mesuré sur curl 8.5.0 : `CURLOPT_NOPROXY, "*"`) écarte tout proxy, y
+# compris celui d'une variable que l'appelant exporte après smoke_use_auth_config (C15-4). Aucune option de l'appelant ne peut les
+# redonner : la liste ne les admet pas.
 # L'appelant : `smoke_fetch … || exit "$?"`.
 smoke_fetch() {
   local label="$1" url="$2" response rc _smoke_auth=()
@@ -392,18 +501,18 @@ smoke_fetch() {
       return 2
     fi
     if ! _smoke_judge_args "${SMOKE_CURL_OPTS[@]}"; then
-      echo "$label : SMOKE_CURL_OPTS, élément n° $_smoke_refused_rank hors des options admises avec la Basic Auth — rien de vérifié" >&2
+      _smoke_say_refused_arg "$label" "SMOKE_CURL_OPTS, élément"
       return 2
     fi
     if ! _smoke_judge_args "$@"; then
-      echo "$label : argument n° $_smoke_refused_rank hors des options admises avec la Basic Auth — rien de vérifié" >&2
+      _smoke_say_refused_arg "$label" "argument"
       return 2
     fi
     if [ ! -f "$SMOKE_AUTH_CONFIG" ]; then
       echo "$label : fichier de la Basic Auth absent — rien de vérifié" >&2
       return 2
     fi
-    _smoke_auth=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
+    _smoke_auth=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https" --noproxy '*')
   fi
   response="$("${SMOKE_CURL:-curl}" -q "${SMOKE_CURL_OPTS[@]}" "${_smoke_auth[@]}" "$@" -w '\n%{http_code}' "$url")" || {
     rc=$?

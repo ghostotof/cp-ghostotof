@@ -499,9 +499,10 @@ _smoke_write_auth_config UNE_AUTH
 first_conf="$SMOKE_AUTH_CONFIG"
 : > "$FAKE_ARGS"
 FAKE_STATUS=200 smoke_fetch "GET /b" https://example.invalid/b
-expected_args="-q -sS --max-time 15 -K $first_conf --proto =https --proto-redir =https -w \\n%{http_code} https://example.invalid/b"
+expected_args="-q -sS --max-time 15 -K $first_conf --proto =https --proto-redir =https --noproxy *"
+expected_args+=" -w \\n%{http_code} https://example.invalid/b"
 if [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
-  pass "smoke_fetch : Basic Auth posée → -q, les options de l'appelant, puis -K <fichier> --proto =https --proto-redir =https"
+  pass "smoke_fetch : Basic Auth posée → -q, les options de l'appelant, puis -K <fichier> --proto =https --proto-redir =https --noproxy *"
 else
   fail "smoke_fetch avec auth" "$(cat -A "$FAKE_ARGS")"
 fi
@@ -566,7 +567,8 @@ fi
 # liste d'autorisation (_smoke_option_arity : `-sS`, `--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`, `--data-binary`,
 # `-b`), correspondance exacte, et une seule URL, celle que smoke_fetch juge. Tout autre argument est refusé avant l'appel,
 # sortie 2, le **rang** de l'argument dans le message et jamais son texte : la valeur d'une option admise (un en-tête, un corps,
-# un cookie, un fichier) n'est pas jugée. Le jugement n'a lieu qu'avec la Basic Auth. Voir `-v`, `--libcurl -`, `-x`, une seconde URL.
+# un cookie) n'est jugée que si elle fait lire un fichier local (R183, plus bas). Le jugement n'a lieu qu'avec la Basic Auth.
+# Voir `-v`, `--libcurl -`, `-x`, une seconde URL.
 args_auth="$(generated_basic_auth)"
 UNE_AUTH="$args_auth"
 smoke_use_auth_config UNE_AUTH
@@ -646,7 +648,7 @@ refuse_args 7 -H 'A: b' -d '{"k":"v"}' -x http://p
 refuse_args 3 -H
 refuse_args 3 -b
 refuse_args 5 -H 'A: b' -d
-# La valeur d'une option admise n'est pas jugée : une valeur qui ressemble à une option ou à une URL passe, et l'option
+# La valeur d'une option admise n'est pas jugée comme option : une valeur qui ressemble à une option ou à une URL passe, et l'option
 # suivante, elle, l'est.
 refuse_args 5 -H -v -v
 refuse_args 5 -d https://autre.example/ -L
@@ -657,7 +659,7 @@ accept_args() {
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  expected="-q -sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https ${expected:+$expected }"
+  expected="-q -sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https --noproxy * ${expected:+$expected }"
   expected+="-w \\n%{http_code} https://example.invalid/x"
   if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected" ]; then
     pass "smoke_fetch : $label passe avec la Basic Auth, l'appel porte l'option et sa valeur"
@@ -668,13 +670,12 @@ accept_args() {
 accept_args "-X POST" "-X POST" -X POST
 accept_args "-H 'Origin: https://…'" "-H Origin: https://x" -H 'Origin: https://x'
 accept_args "-d d'un corps JSON qui cite http://" '-d {"url":"http://x"}' -d '{"url":"http://x"}'
-accept_args "--data-binary @fichier" "--data-binary @f" --data-binary @f
 accept_args "-b 'BEARER=…'" "-b BEARER=x" -b 'BEARER=x'
 accept_args "-H -v (une valeur qui ressemble à une option est une valeur)" "-H -v" -H -v
 accept_args "-sS, --connect-timeout et --max-time dans « \$@ »" "-sS --connect-timeout 5 --max-time 9" -sS --connect-timeout 5 --max-time 9
 accept_args "-D fichier" "-D /tmp/h" -D /tmp/h
-accept_args "toute la liste, dans cet ordre" '-sS -X POST -H A: b -d {"k":"v"} -b C=d --data-binary @f' \
-  -sS -X POST -H 'A: b' -d '{"k":"v"}' -b 'C=d' --data-binary @f
+accept_args "toute la liste, dans cet ordre" '-sS -X POST -H A: b -d {"k":"v"} -b C=d --data-binary corps' \
+  -sS -X POST -H 'A: b' -d '{"k":"v"}' -b 'C=d' --data-binary corps
 accept_args "aucun argument" ""
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -L || true ) > /dev/null 2> "$TMP/trace" || rc=$?
@@ -720,13 +721,114 @@ SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$TMP/headers")
 rc=0
 FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x || rc=$?
 SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
-expected_args="-q -sS --connect-timeout 5 --max-time 15 -D $TMP/headers -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https"
-expected_args+=" -w \\n%{http_code} https://example.invalid/x"
+expected_args="-q -sS --connect-timeout 5 --max-time 15 -D $TMP/headers -K $SMOKE_AUTH_CONFIG"
+expected_args+=" --proto =https --proto-redir =https --noproxy * -w \\n%{http_code} https://example.invalid/x"
 if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
   pass "smoke_fetch : SMOKE_CURL_OPTS des trois smokes (-sS, deux délais, -D <fichier>) passe avec la Basic Auth"
 else
   fail "SMOKE_CURL_OPTS des smokes" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
 fi
+# --- R183 (D2 de la quinzième relecture, Q3 et Q4) : la valeur de quatre options admises est jugée, jamais citée. Avec la Basic Auth,
+# une valeur qui fait lire un fichier local à curl est refusée (sortie 2, curl jamais appelé, le **rang de la valeur** dans le
+# message) : `-H @f` et `-d @f` (le `@` en tête), `--data-binary @<chemin>` sauf le chemin **exact** d'un fichier créé par
+# `smoke_data_file`, `-b` sans « = » (curl lit alors un fichier de cookies). Le fichier `-K` lui-même ne passe jamais.
+# `smoke_data_file` pose SMOKE_DATA_FILE (jamais une impression : une substitution `$(…)` perdrait l'enregistrement du chemin).
+# Le nombre de fichiers que retient la bibliothèque et le premier : sous `set -u` un tableau absent (la fonction manque) ferait
+# sortir le test, qui doit au contraire échouer par un `fail` nommé.
+data_files_count() { ( set +u; echo "${#SMOKE_AUTH_DATA_FILES[@]}" ); }
+data_files_first() { ( set +u; echo "${SMOKE_AUTH_DATA_FILES[0]-}" ); }
+rc=0
+smoke_data_file || rc=$?
+data_file="${SMOKE_DATA_FILE-}"
+if [ "$rc" -eq 0 ] && [ -n "$data_file" ] && [ -f "$data_file" ] && [[ "$data_file" == "$TMPDIR"/* ]] \
+   && [ "$(data_files_count)" -eq 1 ] && [ "$(data_files_first)" = "$data_file" ]; then
+  pass "smoke_data_file : crée un fichier sous TMPDIR, pose SMOKE_DATA_FILE et le retient dans SMOKE_AUTH_DATA_FILES"
+else
+  fail "smoke_data_file" "rc=$rc ; fichier : ${data_file:-aucun} ; retenus : $(data_files_count)"
+fi
+# refuse_file_args <rang de la valeur> <élément…> : smoke_fetch avec `-X POST` puis ces éléments ; la valeur refusée est celle du
+# rang, jamais citée (une valeur vide ne se cherche pas : tout texte la contient).
+refuse_file_args() {
+  local rank="$1" refused
+  shift
+  refused="${*:$((rank - 2)):1}"
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
+  run_case check_args_file_refused \
+    "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
+  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "smoke_fetch : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+refuse_file_args 4 -H @/etc/hostname
+refuse_file_args 4 -H @-
+refuse_file_args 4 -H @
+refuse_file_args 4 -d @f
+refuse_file_args 4 -d @-
+refuse_file_args 4 --data-binary "@$SMOKE_AUTH_CONFIG"
+refuse_file_args 4 --data-binary @/tmp/autre
+refuse_file_args 4 --data-binary "@$TMP/hors-smoke-data-file"
+refuse_file_args 4 --data-binary @-
+refuse_file_args 4 --data-binary @
+# La correspondance est celle du chemin entier : ni un suffixe, ni un détour par `..`, ni un autre fichier du même dossier.
+refuse_file_args 4 --data-binary "@${data_file}x"
+refuse_file_args 4 --data-binary "@$TMPDIR/../${TMPDIR##*/}/${data_file##*/}"
+refuse_file_args 4 -b cookies.txt
+refuse_file_args 4 -b ''
+refuse_file_args 4 -b /tmp/cookies
+refuse_file_args 4 -b -
+# Le rang suit la position de la valeur.
+refuse_file_args 6 -H 'A: b' -d @f
+refuse_file_args 6 -H 'A: b' -b cookies.txt
+refuse_file_args 8 -H 'A: b' -d '{"k":"v"}' --data-binary @/tmp/autre
+# Voisins permis : le chemin exact de smoke_data_file, un corps ou un en-tête qui n'a pas le `@` en tête, un cookie « nom=valeur ».
+accept_args "--data-binary @<fichier de smoke_data_file>" "--data-binary @$data_file" --data-binary "@$data_file"
+accept_args "--data-binary d'un corps sans @" "--data-binary abc" --data-binary abc
+accept_args "-d d'un corps JSON" '-d {"a":1}' -d '{"a":1}'
+accept_args "-d vide" "-d " -d ''
+accept_args "-H d'un en-tête dont le @ n'est pas en tête" "-H X: @y" -H 'X: @y'
+accept_args "-H 'X: y'" "-H X: y" -H 'X: y'
+accept_args "-b 'BEARER=x'" "-b BEARER=x" -b 'BEARER=x'
+accept_args "-b d'un cookie dont la valeur porte un =" "-b a=b=c" -b 'a=b=c'
+# Le même jugement pour SMOKE_CURL_OPTS, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> : … ».
+refuse_curl_opts_file() {
+  local rank="$1" refused
+  shift
+  refused="${*:$rank:1}"
+  SMOKE_CURL_OPTS=("$@")
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
+  run_case check_curl_opts_file_refused \
+    "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
+  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "SMOKE_CURL_OPTS : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+refuse_curl_opts_file 3 -sS -H @f
+refuse_curl_opts_file 3 -sS -b cookies.txt
+refuse_curl_opts_file 3 -sS --data-binary @/tmp/autre
+# La Basic Auth portée, l'appel part avec `--noproxy '*'` derrière `--proto-redir =https` (curl 8.5.0 : `CURLOPT_NOPROXY, "*"`,
+# que `--libcurl -` imprime), et un proxy exporté **après** `smoke_use_auth_config` ne change rien à l'appel : l'option le couvre,
+# la bibliothèque ne retire les variables qu'une fois. L'appel sans Basic Auth ne la porte pas (plus bas).
+saved_https_proxy="${HTTPS_PROXY-}"
+export HTTPS_PROXY="http://127.0.0.1:9"
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /proxy" https://example.invalid/x || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF -- ' --proto-redir =https --noproxy * -w ' "$FAKE_ARGS" && [ "$HTTPS_PROXY" = "http://127.0.0.1:9" ]; then
+  pass "smoke_fetch : un proxy exporté après la Basic Auth ne compte pas, l'appel porte --noproxy * derrière --proto-redir =https"
+else
+  fail "--noproxy avec la Basic Auth" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
+fi
+if [ -n "$saved_https_proxy" ]; then export HTTPS_PROXY="$saved_https_proxy"; else unset HTTPS_PROXY; fi
+unset saved_https_proxy
 # `-q` est le premier argument de chaque appel, avec la Basic Auth (au-dessus) comme sans (plus bas) : `.curlrc` (`CURL_HOME`,
 # `XDG_CONFIG_HOME`, `HOME`) n'est lu que si `-q` n'est pas le premier argument (curl 8.5.0, mesuré le 2026-11-01 : un `.curlrc`
 # portant `location-trusted` donne `CURLOPT_UNRESTRICTED_AUTH` sans `-q`, rien avec `-q` en premier, et le redonne en second).
@@ -752,6 +854,16 @@ if [ "$rc" -eq 0 ] && [ -s "$FAKE_ARGS" ] && ! grep -q -e ' -K ' -e '--proto' "$
   pass "smoke_fetch : sans Basic Auth, un -L dans SMOKE_CURL_OPTS n'est pas jugé"
 else
   fail "SMOKE_CURL_OPTS sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
+fi
+# Sans Basic Auth, une valeur `@f` n'est pas jugée (rien à protéger), le `-b` sans « = » non plus, et l'appel ne porte pas `--noproxy`.
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /local" https://example.invalid/x -H @f -d @g -b cookies.txt --data-binary @h || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF -- ' -H @f -d @g -b cookies.txt --data-binary @h ' "$FAKE_ARGS" \
+   && ! grep -qF -- '--noproxy' "$FAKE_ARGS"; then
+  pass "smoke_fetch : sans Basic Auth, -H @f, -d @g, -b sans = et --data-binary @h partent, sans --noproxy"
+else
+  fail "valeurs @ sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
 fi
 
 # --- R169 (Q8) : une fois la Basic Auth posée, les variables d'environnement que curl lit (un proxy qui inspecte le TLS, un journal
@@ -794,6 +906,97 @@ fi
 smoke_cleanup
 for variable in "${curl_variables[@]}"; do unset "$variable"; done
 unset curl_variables variable still_set missing
+
+# --- R183 (Q4) : le cycle de vie de smoke_data_file. `smoke_cleanup` retire les fichiers et vide SMOKE_AUTH_DATA_FILES et
+# SMOKE_DATA_FILE : un chemin d'un premier appel, même recréé ensuite, n'est plus admis. Un second `smoke_use_auth_config` remplace
+# le premier : il retire aussi ses fichiers. À la source, les deux variables sont vides, quoi que l'environnement ait contenu.
+lifecycle_auth="$(generated_basic_auth)"
+UNE_AUTH="$lifecycle_auth"
+smoke_use_auth_config UNE_AUTH
+rc=0
+smoke_data_file || rc=$?
+first_data="${SMOKE_DATA_FILE-}"
+smoke_data_file || rc=$?
+second_data="${SMOKE_DATA_FILE-}"
+if [ "$rc" -eq 0 ] && [ -f "$first_data" ] && [ -f "$second_data" ] && [ "$first_data" != "$second_data" ] \
+   && [ "$(data_files_count)" -eq 2 ]; then
+  pass "smoke_data_file : deux appels, deux fichiers distincts, les deux retenus"
+else
+  fail "deux smoke_data_file" "rc=$rc ; $first_data | $second_data ; retenus : $(data_files_count)"
+fi
+for kept in "$first_data" "$second_data"; do
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /data" https://example.invalid/x --data-binary "@$kept" || rc=$?
+  if [ "$rc" -eq 0 ] && [ -n "$kept" ] && grep -qF -- "--data-binary @$kept " "$FAKE_ARGS"; then
+    pass "smoke_fetch : chacun des deux fichiers de smoke_data_file est admis"
+  else
+    fail "fichier de smoke_data_file admis" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
+  fi
+done
+smoke_cleanup
+if [ -n "$first_data" ] && [ -n "$second_data" ] && [ ! -e "$first_data" ] && [ ! -e "$second_data" ] \
+   && [ "$(data_files_count)" -eq 0 ] && [ -z "${SMOKE_DATA_FILE-}" ]; then
+  pass "smoke_cleanup retire les fichiers de smoke_data_file et vide SMOKE_AUTH_DATA_FILES et SMOKE_DATA_FILE"
+else
+  fail "smoke_cleanup et les fichiers de données" \
+    "restent : $(ls "$first_data" "$second_data" 2>/dev/null) ; retenus : $(data_files_count)" \
+    "; SMOKE_DATA_FILE : ${SMOKE_DATA_FILE-absente}"
+fi
+# Le chemin d'un premier appel n'est plus admis après un nouveau `smoke_use_auth_config`, même si le fichier est recréé.
+UNE_AUTH="$lifecycle_auth"
+smoke_use_auth_config UNE_AUTH
+if [ -n "$first_data" ]; then : > "$first_data"; fi
+args_auth="$lifecycle_auth"
+refuse_file_args 4 --data-binary "@$first_data"
+if [ -n "$first_data" ]; then rm -f -- "$first_data"; fi
+smoke_cleanup
+# Un second smoke_use_auth_config remplace le premier : les fichiers de données du premier ne lui survivent pas.
+UNE_AUTH="$lifecycle_auth"
+smoke_use_auth_config UNE_AUTH
+smoke_data_file || true
+replaced_data="${SMOKE_DATA_FILE-}"
+UNE_AUTH="$lifecycle_auth"
+smoke_use_auth_config UNE_AUTH
+if [ -n "$replaced_data" ] && [ ! -e "$replaced_data" ] && [ "$(data_files_count)" -eq 0 ]; then
+  pass "un second smoke_use_auth_config retire les fichiers de données du premier"
+else
+  fail "second smoke_use_auth_config et les fichiers de données" \
+    "reste : $(ls "$replaced_data" 2>/dev/null) ; retenus : $(data_files_count)"
+fi
+smoke_cleanup
+unset UNE_AUTH
+# Sans Basic Auth, smoke_data_file crée aussi son fichier (le smoke ne sait pas s'il en a une), et le retire de même.
+rc=0
+smoke_data_file || rc=$?
+plain_data="${SMOKE_DATA_FILE-}"
+if [ "$rc" -eq 0 ] && [ -f "$plain_data" ]; then
+  smoke_cleanup
+  if [ ! -e "$plain_data" ]; then
+    pass "smoke_data_file sans Basic Auth : le fichier existe, smoke_cleanup le retire"
+  else
+    fail "fichier sans Basic Auth retiré" "reste : $plain_data"
+  fi
+else
+  fail "smoke_data_file sans Basic Auth" "rc=$rc ; fichier : ${plain_data:-aucun}"
+fi
+# Un mktemp qui échoue (TMPDIR absent) : retour 2, rien de retenu, SMOKE_DATA_FILE vide, le motif sur stderr.
+rc=0
+TMPDIR="$TMP/absent" smoke_data_file > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && [ -z "${SMOKE_DATA_FILE-}" ] && [ "$(data_files_count)" -eq 0 ] && grep -q '^smoke_data_file : ' "$TMP/stderr"; then
+  pass "smoke_data_file : mktemp en échec → retour 2, rien de retenu, le motif sur stderr"
+else
+  fail "smoke_data_file sans dossier" "rc=$rc ; SMOKE_DATA_FILE : ${SMOKE_DATA_FILE-absente} ; stderr : $(cat -A "$TMP/stderr")"
+fi
+# À la source, les deux variables sont vides, quoi que l'environnement ait contenu.
+inherited_data="$(SMOKE_AUTH_DATA_FILES=/herite/fichier SMOKE_DATA_FILE=/herite/fichier \
+  bash -c 'source "$1"; printf "[%s][%s]" "${#SMOKE_AUTH_DATA_FILES[@]}" "${SMOKE_DATA_FILE-absente}"' _ "$LIB")"
+if [ "$inherited_data" = "[0][]" ]; then
+  pass "sourcer vide SMOKE_AUTH_DATA_FILES et SMOKE_DATA_FILE hérités de l'environnement"
+else
+  fail "fichiers de données hérités" "obtenu : $inherited_data"
+fi
+unset lifecycle_auth first_data second_data kept replaced_data plain_data inherited_data
 
 # --- C12-10, D3 de la quatorzième relecture : la valeur lue n'a aucune raison de rester dans l'environnement des processus
 # que l'appelant lance (curl, dig, openssl) : smoke_use_auth_config retire la variable du shell une fois le fichier écrit
