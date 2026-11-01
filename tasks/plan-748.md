@@ -12118,6 +12118,36 @@ lettre, P15-1 en ticket à part). Le plan les suit déjà : aucune tâche ne cha
 
 ---
 
+**Décision de l'auteur (2026-11-01, après R187)** : le cas des réglages de D5 exerce un **changement de langue** de la page
+résolu au même point de contrôle que la réponse, et non un `load()` (après la pose, la page ne relit rien) ; il est vert
+d'emblée et rougit sous la mutation nommée (`await` avant `accept`) : il suffit, aucun cas à base de `load()` n'est ajouté.
+
+### Task R187b : Réglages « À propos » — une proposition parquée part dès que la langue demandée n'est plus sa cible (décision de l'auteur, 2026-11-01)
+
+**Files :** `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue` (et, si la langue demandée vit dans la page,
+`AdminAboutPage.vue`) ; `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts` ; `.claude/rules/frontend-backoffice.md`.
+
+**Le défaut (trouvé par R187, confiance moyenne).** Une proposition FR→EN acceptée est parquée dans `pendingProposal` et la
+page bascule en EN (`switchLocale`). Si la personne revient en FR au même point de contrôle, la langue fait FR → EN → FR avant
+le rendu : le formulaire ne voit jamais `props.locale` changer, la garde de R157 (`watch(props.locale)` qui retire une
+proposition dont la langue n'est pas la cible) ne se déclenche pas, et la proposition reste parquée ; elle se pose quand la
+personne choisit EN plus tard. Rien n'est enregistré ; la course est étroite.
+
+**Décision.** Retirer la proposition parquée dès que la langue **demandée** par la page n'est plus sa cible, sans attendre un
+changement de `props.locale` (p. ex. au geste de langue lui-même, ou en comparant la cible à la langue demandée au moment du
+chargement de la cible : choisir la forme la plus simple qui tienne, la justifier).
+
+- [ ] **Step 1 : test rouge** — dans `AdminAboutPage.spec.ts`, la réponse FR→EN tenue, puis, au même point de contrôle que sa
+  résolution, retour à FR (le `held.then(() => setValue('fr'))` de R187) ; puis, plus tard, choix d'EN : **aucune** proposition
+  posée (pas de `role="status"`, les valeurs EN du serveur). Vu rouge sur le code actuel (la proposition se pose).
+- [ ] **Step 2 : correctif** — la plus petite forme ; le cas Q10 (fin de session : la proposition attend le retour) et les cas
+  de R157/R157b restent verts.
+- [ ] **Step 3 : mutation** — retirer le correctif : le cas du Step 1 rougit seul ; commande et ligne rouge rendues.
+- [ ] **Step 4 : règle** — la phrase « About settings … deferred » dit ce qui retire la proposition parquée ; aucun moignon.
+- [ ] **Step 5 : vérifier et commiter** — `make front-test`, `front-lint`, `front-build`, `tools/check-claude-rules.sh` à 0 ;
+  commit `fix(frontend): …`.
+
+
 ### Task R188 : Traduction assistée — des docblocks qui disent ce que rend `translate`, `translate` en fonctions courtes, la raison typée (St15-1 = Sp15-5 ; St15-2 = Sp15-4 ; St15-8 ; St15-9 ; St15-10 ; refactoring)
 
 **Files :**
