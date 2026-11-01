@@ -530,9 +530,10 @@ for non_https_url in http://example.invalid/x HTTP://example.invalid/x ftp://exa
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /http" "$non_https_url" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$http_auth"
   run_case check_non_https_refused \
     "smoke_fetch : Basic Auth sur $non_https_url → retour 2, « non https:// », curl jamais appelé" "$rc" \
-    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$http_auth"
+    "${CASE_VARS[@]}"
 done
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /http" http://example.invalid/x || true ) > /dev/null 2> "$TMP/trace" || rc=$?
@@ -578,9 +579,10 @@ refuse_args() {
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
   run_case check_args_refused \
     "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
-    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth" CASE_RANK="$rank"
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
   if grep -qF -- "$refused" "$TMP/stderr"; then
     fail "smoke_fetch : l'argument refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
   fi
@@ -694,9 +696,10 @@ refuse_curl_opts() {
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
+  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
   run_case check_curl_opts_refused \
     "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
-    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth" CASE_RANK="$rank"
+    "${CASE_VARS[@]}" CASE_RANK="$rank"
   if grep -qF -- "$refused" "$TMP/stderr"; then
     fail "SMOKE_CURL_OPTS : l'élément refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
   fi
@@ -1355,6 +1358,30 @@ if [ "$rc" -eq 0 ] && [ "$SMOKE_STATUS" = "200" ]; then
 else
   fail "smoke_fetch sans SMOKE_CURL" "rc=$rc ; statut : $SMOKE_STATUS"
 fi
+
+# --- C14-7 : « jamais exportées » vaut aussi quand l'appelant exporte déjà ces noms. Une locale de bash garde l'attribut
+# d'export de la variable globale qu'elle masque : sans `local +x`, un processus lancé par un cas recevrait la valeur
+# que l'appel de `run_case` vient de poser (une Basic Auth générée). L'appelant exporte les dix noms avec sa propre valeur
+# (`exporte`, que bash laisse voir au fils : c'est la sienne) ; chaque valeur donnée à `run_case` porte un repère généré, que
+# le fils lancé par le cas ne doit voir nulle part.
+case_marker="$(generated_basic_auth)"
+check_case_children_inherit_nothing() {
+  local seen
+  seen="$(bash -c 'env | grep -cF -- "$1" || true' _ "$case_marker")"
+  if [ "$seen" = "0" ]; then
+    pass "$CASE_LABEL"
+  else
+    fail "$CASE_LABEL" "un processus lancé par le cas reçoit $seen variable(s) qui portent une valeur posée par run_case"
+  fi
+}
+export CASE_LABEL=exporte CASE_RC=exporte CASE_ERR=exporte CASE_OUT=exporte CASE_CALLS=exporte CASE_TMPDIR=exporte \
+  CASE_VALUE=exporte CASE_RANK=exporte CASE_ENV_FILE=exporte CASE_EXPECTED_RC=exporte
+run_case check_case_children_inherit_nothing \
+  "run_case : un fils du cas ne reçoit aucune valeur posée par run_case, même sous un nom exporté par l'appelant" \
+  "$case_marker-RC" CASE_ERR="$case_marker-ERR" CASE_OUT="$case_marker-OUT" CASE_CALLS="$case_marker-CALLS" \
+  CASE_TMPDIR="$case_marker-TMPDIR" CASE_VALUE="$case_marker-VALUE" CASE_RANK="$case_marker-RANK" \
+  CASE_ENV_FILE="$case_marker-ENV_FILE" CASE_EXPECTED_RC="$case_marker-EXPECTED_RC"
+unset CASE_LABEL CASE_RC CASE_ERR CASE_OUT CASE_CALLS CASE_TMPDIR CASE_VALUE CASE_RANK CASE_ENV_FILE CASE_EXPECTED_RC case_marker
 
 echo
 if [ "$failures" -gt 0 ]; then echo "$failures échec(s)"; exit 1; fi

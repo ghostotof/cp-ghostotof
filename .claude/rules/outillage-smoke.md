@@ -13,8 +13,8 @@ paths:
 > Moved from `.claude/rules/deploiement-nginx.md` (#748, D5 of the thirteenth review), the bullet « Nine nginx rate-limit zones »,
 > which keeps what these scripts check of the zones and the headers. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
-It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
+The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh`, `smoke-mcp.sh` and
+`audit-prod.sh`. It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
 `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
 The writer `_smoke_write_auth_config` is private (R148): `smoke_use_auth_config` is its only production caller (St14-27); tests call it too.
 The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
@@ -103,10 +103,10 @@ A library that is missing or does not parse exits 2 saying « introuvable ou inv
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
 on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
-Every call that carries the `-K` also carries `--proto =https --proto-redir =https` (`CURL_OPTS` here), and none without it carries either.
-Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads each call of the fake curl
-(`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`, `--proto-redir`, `-D`, `-o`, `-L`,
-`-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source (every `curl` command followed by `-q`).
+Every call that carries the `-K` also carries `--proto =https --proto-redir =https` (the audit's `CURL_OPTS`), and none without it
+carries either. Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads each call
+of the fake curl (`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`, `--proto-redir`, `-D`,
+`-o`, `-L`, `-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source (every `curl` command followed by `-q`).
 The anonymous probes aim at `http://` URLs on purpose, so a `--proto =https` on them would refuse the very redirect they check.
 A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
@@ -114,6 +114,8 @@ The hint reads the audit's own flag `audit_carries_basic_auth`, set after `smoke
 an inherited value would set that one with nothing carried (CR14-3).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
 Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
-The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`:
-their variables are locals of `run_case`, never exported (a generated Basic Auth must not reach the processes a case starts),
-and a variable a case needs that the call leaves out is a named `fail`, never an exit of the test.
+The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`: their
+variables are locals of `run_case`, never exported, even when the caller already exports the same names (`local +x`: a local keeps the
+export attribute of the global it hides; a generated Basic Auth must not reach the processes a case starts), and a variable a case needs
+that the call leaves out is a named `fail`, never an exit of the test. `case_vars_set <err> <calls> <out> [<value>]` sets the array
+`CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are written once.

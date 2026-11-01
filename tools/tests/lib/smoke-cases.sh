@@ -12,7 +12,9 @@
 #   run_case <cas> <libellé> <code de sortie> [CASE_ERR=<fichier>] [CASE_OUT=<fichier>] [CASE_CALLS=<fichier>] \
 #     [CASE_TMPDIR=<dossier>] [CASE_VALUE=<valeur>] [CASE_RANK=<rang>] [CASE_ENV_FILE=<fichier>] [CASE_EXPECTED_RC=<code>]
 # `run_case` pose en **locales** les variables que lit le cas (jamais exportées : CASE_VALUE est une Basic Auth
-# générée, qu'aucun processus lancé par le cas n'a à recevoir, St13-42) :
+# générée, qu'aucun processus lancé par le cas n'a à recevoir, St13-42). Elles sont déclarées `local +x` : une locale de bash
+# garde l'attribut d'export de la variable globale qu'elle masque, de sorte qu'un nom déjà exporté par l'appelant porterait
+# la valeur du cas jusqu'aux processus qu'il lance (C14-7) :
 #   CASE_LABEL    le libellé du cas ;      CASE_RC     le code de sortie du script ;
 #   CASE_ERR      le fichier de stderr ;   CASE_OUT    le fichier de stdout ;
 #   CASE_CALLS    le fichier des appels du faux curl ;
@@ -21,7 +23,8 @@
 #   CASE_RANK     (facultatif) le rang de l'argument refusé, que dit le message des deux cas de refus d'argument ;
 #   CASE_ENV_FILE le fichier où les faux outils de write_env_noting ont noté leur environnement, que lit le cas des fils ;
 #   CASE_EXPECTED_RC (facultatif) le code de sortie que le cas des fils exige du script (CASE_RC est celui qu'il a rendu).
-# Exemple :  run_case check_empty_basic_auth "AUDIT_BASIC_AUTH vide" "$rc" CASE_ERR="$TMP/err" CASE_OUT="$TMP/out" CASE_CALLS="$TMP/calls"
+# Exemple :  case_vars_set "$TMP/err" "$TMP/calls" "$TMP/out"
+#            run_case check_empty_basic_auth "AUDIT_BASIC_AUTH vide" "$rc" "${CASE_VARS[@]}"
 # Une variable que le cas exige et que l'appel ne pose pas est un `fail` nommé, jamais une sortie du test (St13-44).
 #
 # Les cas ne reçoivent jamais une valeur de Basic Auth sans que ce soit pour
@@ -54,6 +57,20 @@ write_env_noting() {
   done
 }
 
+# case_vars_set <fichier stderr> <fichier des appels> <fichier stdout> [<valeur de Basic Auth>]
+#
+# Pose le tableau CASE_VARS : les affectations CASE_ERR, CASE_CALLS, CASE_OUT (et CASE_VALUE si la valeur est donnée) que
+# presque chaque appel de `run_case` répétait mot pour mot (St14-34). Un test l'écrit une fois, juste avant l'appel :
+#   case_vars_set "$TMP/err" "$TMP/calls" "$TMP/out" "$basic_auth"
+#   run_case check_non_https_refused "<libellé>" "$rc" "${CASE_VARS[@]}"
+# Ce qu'un appel ajoute en plus (CASE_TMPDIR, CASE_RANK…) reste écrit à l'appel.
+case_vars_set() {
+  CASE_VARS=(CASE_ERR="$1" CASE_CALLS="$2" CASE_OUT="$3")
+  if [ -n "${4:-}" ]; then
+    CASE_VARS+=(CASE_VALUE="$4")
+  fi
+}
+
 # run_case <cas> <libellé> <code de sortie> [CASE_ERR=… CASE_OUT=… CASE_CALLS=… CASE_TMPDIR=… CASE_VALUE=… CASE_RANK=…
 #   CASE_ENV_FILE=… CASE_EXPECTED_RC=…]
 #
@@ -61,8 +78,8 @@ write_env_noting() {
 # puis appelle le cas (`check_*`), qui les lit par la portée dynamique de bash. Une affectation qui ne nomme pas une
 # de ces huit variables est une faute d'appel : un `fail`, le cas n'est pas lancé.
 run_case() {
-  local _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment
-  local CASE_ERR="" CASE_OUT="" CASE_CALLS="" CASE_TMPDIR="" CASE_VALUE="" CASE_RANK="" CASE_ENV_FILE="" CASE_EXPECTED_RC=""
+  local +x _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment
+  local +x CASE_ERR="" CASE_OUT="" CASE_CALLS="" CASE_TMPDIR="" CASE_VALUE="" CASE_RANK="" CASE_ENV_FILE="" CASE_EXPECTED_RC=""
   shift 3
   for _assignment in "$@"; do
     case "$_assignment" in

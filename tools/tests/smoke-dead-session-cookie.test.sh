@@ -329,9 +329,10 @@ fi
 # --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
 # Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
 AUDIT_BASIC_AUTH='' run vide "$witness_ok" "$public_ok" "$me_cleared"
+case_vars_set "$TMP/err" "$TMP/vide.calls" "$TMP/out"
 run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
-  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/vide.calls" CASE_OUT="$TMP/out"
+  "${CASE_VARS[@]}"
 
 # --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
 # `openssl` et `rm` notent leur environnement : le script retire la variable (smoke_use_auth_config) avant de lancer le
@@ -361,9 +362,10 @@ fi
 # sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
 http_auth="$(generated_basic_auth)"
 AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$witness_ok" "$public_ok" "$me_cleared"
+case_vars_set "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
 run_case check_non_https_refused \
   "Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" "$rc" \
-  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/httpbase.calls" CASE_OUT="$TMP/out" CASE_VALUE="$http_auth"
+  "${CASE_VARS[@]}"
 # Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
 TEST_BASE_URL=http://example.invalid run httplocal "$witness_ok" "$public_ok" "$me_cleared"
 if ! grep -q -- ' -K ' "$TMP/httplocal.args" && [ -s "$TMP/httplocal.calls" ] && ! grep -q 'non https://' "$TMP/err"; then
