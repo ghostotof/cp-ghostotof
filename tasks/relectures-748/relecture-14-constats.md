@@ -10,9 +10,18 @@ rien) ; C13-2 à C13-5 fermés, dans la limite « bonne foi » écrite. Rejeux d
 Auth est une **liste d'interdits** qui grandit à chaque relecture (CR14-2).
 
 ## Décisions de l'utilisateur
-_(à prendre — voir les questions ci-dessous)_
+Prises le 2026-11-01 : **les quatre recommandations**.
+- Q1 → **liste d'autorisation** des options que les smokes passent réellement (relevées par `grep` des appels), tout autre
+  argument refusé avec la Basic Auth, une seule URL positionnelle (celle qui est jugée), `-q` en premier argument (dans
+  `smoke_fetch` et chaque `curl` authentifié de l'audit).
+- Q2 → **réordonner** les trois smokes (`trap`, `smoke_use_auth_config` juste après le `source`, puis `mktemp`/`openssl`/
+  `date`) : la limite générale des fils (R167) disparaît, seule reste celle du `rm -rf` de tête.
+- Q3 → **`unset` du nom juste après la lecture** (un drapeau privé garde « défini »), plus les deux corrections ciblées de
+  la garde (`set` après n'importe quel mot, `p`/`n` dans toutes les grappes d'options).
+- Q4 → **renommer le membre** de `useTranslatedForm` en `translationErrorText` (l'alias disparaît des neuf sites).
+- Tout le reste se corrige (critère « tout jusqu'à zéro ») ; CR14-6 écarté (raison dans « Info »).
 
-Questions à poser :
+Questions posées :
 1. **Liste d'interdits ou liste d'autorisation** (CR14-1, CR14-2, C14-1, C14-2, C14-3, C14-4, C14-10, St14-20, St14-24,
    Sp14-13, Sp14-14, Sp14-15) : reco **une liste d'autorisation** des options que les smokes passent réellement (à mesurer
    par `grep` des appels), tout autre argument refusé avec la Basic Auth, une seule URL positionnelle (celle qui est jugée),
