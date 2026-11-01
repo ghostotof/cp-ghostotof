@@ -131,6 +131,11 @@ Une mutation qui reste verte s'y écrit aussi (« rouge : aucune — <raison> »
 relit par `git log` : une mutation annoncée par le plan et absente du corps est « non attestée ».
 
 ## Interdits
+**Aucun vidage d'environnement non filtré dans ta session**, ni pour mesurer ni pour déboguer : ni `ps e`/`ps eww`, ni
+`env`, `printenv`, `set`, `declare -p`, `export -p`, `cat /proc/*/environ`, ni rien qui liste les variables du shell de ta
+session (incident de R197, 2026-11-01 : un `ps e` sans filtre a imprimé l'environnement du shell parent, jeton de Claude Code
+compris, dans le transcript). Une mesure de ce genre se fait **dans un `bash -c` lancé par `env -i`** avec une seule variable
+factice, et sa sortie ne se lit que par `grep -c` sur la valeur factice.
 **Jamais `git add -N`** (ni `--intent-to-add`), **pas même en tête d'une commande, par réflexe, pour « voir » un fichier
 nouveau dans `git diff`** : quatre agents de la quatorzième série l'ont lancé ainsi. Un fichier nouveau se voit par
 `git status --short` et se lit par `Read` ; il entre dans l'index par `git add <fichier>` au moment du commit (ou juste
