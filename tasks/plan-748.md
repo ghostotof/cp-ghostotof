@@ -13412,6 +13412,20 @@ Constats : Q7, D3 ; St16-6 ; St16-4 pour `proposedCreation.ts:16-17,27` et `useT
   `grep -c 'const proposalSourceLocale' frontend/src/presentation/pages/admin/*.vue` : 0 partout.
 - [ ] **Step 7 : commit** — `refactor(frontend): l'état des huit formulaires écrit une fois, la fin d'un appel nomme son invariant (#748)`.
 
+**Ajouts après R202 et R203 (décisions de l'auteur, 2026-11-01) :**
+- **Écart de R202 accepté** : `AdminQualityEntrySection.vue` type son formulaire `reactive<EntryForm<string>>` (avec `F`, `vue-tsc -b`
+  épuise la mémoire, même à 6 Go) ; `requireEveryField` vérifie les noms à l'exécution, `EntryForm<F>` reste le type exporté. R204 ne
+  revient pas dessus.
+- **Les cinq `as Locale` voisins se valident dans R204** (réponse de l'auteur) : `form.locale = <entité>.locale as Locale` dans
+  `AdminContributionsPage.vue`, `AdminAnonymousCvPage.vue`, `AdminCaseStudiesPage.vue`, `AdminIncidentsPage.vue`, et `locale.value as
+  Locale` dans `ui/admin/AccessRefusedNotice.vue`. `isSupportedLocale` à la lecture (forme de R201), sans changer le contrat des entités
+  (`locale: string`) ; une langue non prise en charge n'est pas posée, avec un cas rouge par forme (cinq) et une mutation de la garde.
+  Plus aucun ` as Locale` dans `frontend/src/presentation` (`grep -rn ' as Locale'`, cité au commit).
+- **`UI_FILES`** (R203, `noLoadInOnMounted.spec.ts`) passe de 11 à 12 avec `entryFormState.ts` : la garde rougit d'abord, son message
+  nomme la constante ; ce changement est dans le commit.
+- **R203 a gardé trois planchers qui ne sont pas des comptes de fichiers** (`reads >= 2` par site, `deferredCallsOf(...).length >= 1`,
+  les `> 100` de la glob de `src/`) : lecture de Q12 (A) par le fil principal, laissée au jugement de la 17e relecture.
+
 ---
 
 ### Task R205 : Des specs de traduction sans doublon, des libellés lus du catalogue
