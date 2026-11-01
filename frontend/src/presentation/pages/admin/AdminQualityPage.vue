@@ -12,23 +12,36 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * son formulaire. La page garde ce que les deux partagent : le verrou d'ordre et
  * la garde de sortie. Le découpage suit celui d'« À propos » (`AdminAboutPage`).
  *
+ * **Les tableaux affichent toutes les langues** (spec 0004, D8), une ligne par
+ * groupe de traduction : l'ordre est celui du groupe et non celui d'une langue,
+ * le régler en n'en regardant qu'une reviendrait à ignorer la moitié du contenu
+ * déplacé. `list()` n'a donc aucun paramètre de locale.
+ *
  * **La langue est un champ de formulaire, pas un état de page.** Chaque section
- * a son propre sélecteur, comme `AdminIncidentsPage.vue` : le sélecteur unique de
- * page a été supprimé, car partagé par deux formulaires il permettait à un geste
- * fait dans un panneau (« Modifier » sur une entrée anglaise, « Créer la
- * version EN », une traduction) de réécrire la langue de l'entrée en cours
- * d'édition dans *l'autre* panneau, sans avertissement — d'autant plus
- * silencieusement que, selon D8, changer de langue ne recharge aucune liste.
- * Le détail (assistant, « Modifier » sur une autre langue) est dans les sections.
+ * a son propre sélecteur, comme `AdminIncidentsPage.vue` : c'est la langue de
+ * l'entrée en cours d'édition ou de création, et elle ne pilote rien d'autre que
+ * ce formulaire et son assistant. Un sélecteur unique de page, partagé par deux
+ * formulaires, laisserait un geste fait dans un panneau (« Modifier » sur une
+ * entrée anglaise, « Créer la version EN », une traduction) réécrire la langue
+ * de l'entrée en cours d'édition dans *l'autre* panneau, sans avertissement —
+ * d'autant plus silencieusement que, selon D8, changer de langue ne recharge
+ * aucune liste. Le détail (assistant, « Modifier » sur une autre langue) est
+ * dans les sections.
  *
  * **Verrouillage (D6) : global à la page.** Chaque section annonce son brouillon
  * d'ordre par `orderDirtyChange` ; la page en fait la somme, rend l'aide une
  * seule fois et la redistribue par `isLocked`/`lockedHintId`. Un seul brouillon
  * modifié, où qu'il soit, désactive toutes les mutations des deux panneaux. Un
  * verrou par tableau serait plus fin — une création de trait ne recharge que les
- * traits — mais afficherait deux états désactivés différents pour un seul geste
- * en cours, alors que les deux panneaux partagent déjà leur sélecteur de langue.
- * Un état, une aide, une règle à retenir.
+ * traits — mais afficherait deux états désactivés et deux aides pour un seul
+ * geste en cours : un état, une aide, une règle à retenir.
+ *
+ * **Une section lit son propre brouillon tout de suite, celui de l'autre par
+ * `isLocked`.** La prop n'est à jour qu'après l'`emit` de la section et le rendu
+ * de la page : un « translate » émis entre un déplacement de l'autre section et
+ * ce rendu n'est pas refusé. Limite acceptée (une micro-tâche, qu'aucun geste de
+ * l'utilisateur ne traverse), la même que celle d'« À propos », qui ne lit que la
+ * prop.
  *
  * La page ne possède aucune logique d'ordre : elle ne connaît que deux booléens.
  */

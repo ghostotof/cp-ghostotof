@@ -40,7 +40,8 @@ import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/A
  * Mêmes règles que les principes : la langue est un champ du formulaire
  * (`traitForm.locale`), l'assistant bascule **ce** formulaire vers la locale
  * cible en gardant le groupe de la source (D9), et le verrou d'ordre (D6) est
- * global à la page : `isLocked` reçu, `orderDirtyChange` annoncé.
+ * global à la page : `isLocked` reçu, `orderDirtyChange` annoncé, et le refus de traduire lit
+ * son propre brouillon (`isTraitOrderDirty`) tout de suite.
  */
 
 const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
@@ -107,7 +108,8 @@ const {
   hintIdPrefix: 'admin-quality-trait',
   form: traitForm,
   proseFields: QUALITY_TRAIT_PROSE_FIELDS,
-  isRefused: () => isSubmittingTrait.value || props.isLocked || traitLock.isProposalLocked,
+  // Le brouillon d'ordre de cette section est lu tout de suite : voir `AdminQualityPrinciplesSection`.
+  isRefused: () => isSubmittingTrait.value || isTraitOrderDirty.value || props.isLocked || traitLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({

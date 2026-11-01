@@ -216,8 +216,10 @@ and what to do with the proposal.
 - The refusal is written once. `useAdminTranslation` refuses the call itself, not only the disabled button, whenever that
   button is disabled and while a call is in flight. The page gives it the `isRefused` option, one term per condition: a save
   in flight, a dirty order draft or the page's order lock, the form's proposal lock (for the About settings, a proposal
-  shown, R127, R127b); the composable adds the absence of prose (`hasProse`). The button's `:disabled` reads the `isRefused`
-  the composable exposes (R137), never a copy of the predicate.
+  shown, R127, R127b); each Quality section reads its own order draft at once and the other's through `isLocked`, up to date
+  only after the section's `emit` and the page's render — a one-micro-task limit no gesture crosses, as in About (R173); the
+  composable adds the absence of prose (`hasProse`). The button's `:disabled` reads the `isRefused` the composable exposes
+  (R137), never a copy of the predicate.
 - A response is expired when its form changed. The form's identity is `FormIdentity` (`application/admin/translation/`, an
   interface state the domain does not carry, R154): the entry, the locale, the source group and the form's generation,
   compared field by field by `sameFormIdentity`, never the prose. A response whose form no longer has the identity read at

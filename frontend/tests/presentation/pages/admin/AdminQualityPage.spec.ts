@@ -3,6 +3,7 @@ import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/tes
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AdminQualityPage from '../../../../src/presentation/pages/admin/AdminQualityPage.vue'
+import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { ADMIN_QUALITY_PRINCIPLE_REPOSITORY } from '../../../../src/application/admin/quality/useAdminQualityPrinciples'
 import { ADMIN_QUALITY_TRAIT_REPOSITORY } from '../../../../src/application/admin/quality/useAdminQualityTraits'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
@@ -194,6 +195,17 @@ const LOCALE_SELECT = ['#admin-quality-principle-locale', '#admin-quality-trait-
 
 function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
+}
+
+/**
+ * Déplace la première ligne d'un tableau puis émet « translate » depuis le bouton du même panneau, **sans rien attendre**
+ * entre les deux : le brouillon d'ordre de la section est modifié, la page n'a pas encore reçu `orderDirtyChange` ni rendu
+ * `isLocked` (#748, R173). Les promesses ne sont réglées qu'à la fin.
+ */
+async function emitTranslateRightAfterMove(wrapper: VueWrapper, which: number): Promise<void> {
+  void tableOf(wrapper, which).findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
+  wrapper.findAllComponents(TranslateEntryButton)[which].vm.$emit('translate', 'en')
+  await flushPromises()
 }
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
@@ -421,6 +433,30 @@ describe('AdminQualityPage', () => {
       ).toBeUndefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeUndefined()
       expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
+    })
+
+    // Chaque section lit son propre brouillon d'ordre tout de suite, celui de l'autre par la prop : un « translate » émis
+    // entre un `move` et le rendu du parent est refusé (Q11). Sans cette lecture, `props.isLocked` est encore faux.
+    it("Qualité : un ordre des principes modifié refuse la traduction des principes sans attendre le rendu (#748, R173)", async () => {
+      const translation = createTranslationRepository()
+      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+
+      await emitTranslateRightAfterMove(wrapper, PRINCIPLES)
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(formOf(wrapper, PRINCIPLES).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it("Qualité : un ordre des traits modifié refuse la traduction des traits sans attendre le rendu (#748, R173)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_TRAIT)
+      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
+      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+
+      await emitTranslateRightAfterMove(wrapper, TRAITS)
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(formOf(wrapper, TRAITS).find('[role="status"]').exists()).toBe(false)
     })
   })
 

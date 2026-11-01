@@ -43,12 +43,17 @@ import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entiti
  * formulaire (sans cela, l'enregistrement réécrirait l'entrée anglaise en
  * français) ; l'assistant bascule **ce** formulaire vers la locale cible et y
  * rattache la proposition au groupe de l'entrée source (D9), si bien que
- * l'enregistrer lie la traduction sans geste supplémentaire.
+ * l'enregistrer lie la traduction sans geste supplémentaire. Rien n'est rechargé
+ * derrière (le tableau affiche déjà toutes les langues, D8), donc rien ne vient
+ * écraser la proposition.
  *
  * **Le verrou d'ordre (D6) est global à la page** : la section reçoit
  * `isLocked` (un brouillon d'ordre modifié, ici ou dans l'autre section) et
  * annonce le sien par `orderDirtyChange`, la page faisant la somme et rendant
- * l'aide une seule fois (`lockedHintId`).
+ * l'aide une seule fois (`lockedHintId`). Le refus de traduire lit **son**
+ * brouillon (`isPrincipleOrderDirty`) tout de suite et celui de l'autre section
+ * par `isLocked`, à jour après le rendu de la page : voir la limite dans
+ * `AdminQualityPage`.
  */
 
 const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
@@ -136,7 +141,10 @@ const {
   hintIdPrefix: 'admin-quality-principle',
   form: principleForm,
   proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
-  isRefused: () => isSubmittingPrinciple.value || props.isLocked || principleLock.isProposalLocked,
+  // Le brouillon d'ordre de cette section est lu tout de suite ; `props.isLocked` ne dit celui de l'autre section qu'après l'`emit`
+  // et le rendu du parent (limite : une micro-tâche, qu'aucun geste ne traverse).
+  isRefused: () =>
+    isSubmittingPrinciple.value || isPrincipleOrderDirty.value || props.isLocked || principleLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
@@ -239,8 +247,7 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
 
 /**
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
- * dans la langue manquante — que le sélecteur de la page adopte, puisqu'il est
- * la langue des formulaires. Les champs non-prose sont recopiés de l'entrée
+ * dans la langue manquante, celle du sélecteur de ce formulaire. Les champs non-prose sont recopiés de l'entrée
  * existante (cf. QUALITY_PRINCIPLE_PROSE_FIELDS par complément) et la prose reste vide :
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
