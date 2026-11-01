@@ -9,19 +9,25 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R152 et suivantes**, la section
-  « Corrections de la treizième relecture (2026-10-31) » en entier jusqu'à la première tâche (ce que la série précédente
-  a réellement fait, décisions D1 à D8, vérification des constats, ordre, choix tranchés, questions Q1 à Q14, Review
-  Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R137–R151, R141b, R148b : « … douzième
-  relecture » ; R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 :
-  « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la
-  septième relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 :
-  « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 :
-  « Corrections de relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-13-constats.md`
-  (R137–R151 : `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les sections passées
-  sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
-  Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
-  son intention et note l'écart, ou rends la question.
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R168 et suivantes**, la section
+  « Corrections de la quatorzième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série
+  précédente a réellement fait, décisions D1 à D4, vérification des constats, ordre, choix tranchés, questions Q1 à Q14,
+  Review Focus, contraintes d'exécution, table des fichiers), puis **ta tâche**. (R152–R167, R157b : « … treizième
+  relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ; R121–R136 : « … onzième relecture » ; R112–R120 et
+  R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième
+  relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 :
+  « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 :
+  « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
+  `tasks/relectures-748/relecture-14-constats.md` (R152–R167 : `relecture-13-constats.md` ; R137–R151 :
+  `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les sections passées sont l'archive de leur
+  moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si elle est fausse sur le
+  code réel (les tâches R précédentes ont pu le changer), adapte au plus près de son intention et note l'écart, ou rends
+  la question.
+- **Une décision de l'auteur listée au plan ou ici ne se contourne pas par une interprétation** : R166 a coupé des `echo`
+  que l'auteur avait décidé de garder d'un seul tenant. Si une décision te semble contredire ta tâche, arrête-toi et rends
+  la question.
+- **Un balayage ne réécrit pas un docblock qu'une tâche précédente de la série a rétabli** (Sp14-17 : celui de
+  `CompiledNestedReading.php`, rétabli par R161, réécrit par R167) : un écart s'y signale au rendu, il ne se corrige pas.
 - Règles : avec l'outil **Read** (jamais cat/sed/grep, qui ne chargent pas les règles path-scoped), celles que ta
   tâche cite ou modifie, plus, pour le frontend, `.claude/rules/frontend.md` et `.claude/rules/frontend-a11y.md`, et au
   moins un fichier de chaque zone touchée (`frontend/src`, `backend/src`, `backend/tests`, `tools/`) avant d'y écrire.
@@ -37,7 +43,10 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   touchée.
 - **Une règle se coupe ou se recolle sans moignon ni mot changé** : un balayage de moignons recolle sans en créer ;
   après chaque coupe ou recollage, relis `awk 'length<=45 && NF' <règle>` et `grep -nE '^[[:space:]]*[,;:.)»]' <règle>`
-  (une ligne courte ou qui commence par une ponctuation est un moignon, sauf fin de paragraphe ou élément de liste), et
+  (une ligne courte ou qui commence par une ponctuation est un moignon, sauf fin de paragraphe ou élément de liste), puis
+  ce que la ponctuation de tête ne voit pas — un code en ligne coupé (`perl -ne 'print "$.\n" if (() = /\x60/g) % 2'
+  <règle>` : dans une règle, un code en ligne ne se coupe jamais) et un guillemet orphelin
+  (`grep -nE '«[[:space:]]*$|^[[:space:]]*»' <règle>`) —, et
   compare la suite de mots avant et après (`tr -s '[:space:]' '\n'`). Une continuation de puce garde l'indentation du
   fichier.
 - **Une affirmation sur un outil** (une version, une option, un comportement de curl, bash, npm, Vue) se vérifie sur la
@@ -90,18 +99,23 @@ déplacé), message en français au préfixe que donne la tâche, terminé par l
 Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
 
 ## Interdits
+**Jamais `git add -N`** (ni `--intent-to-add`), **pas même en tête d'une commande, par réflexe, pour « voir » un fichier
+nouveau dans `git diff`** : quatre agents de la quatorzième série l'ont lancé ainsi. Un fichier nouveau se voit par
+`git status --short` et se lit par `Read` ; il entre dans l'index par `git add <fichier>` au moment du commit (ou juste
+avant `tools/check-claude-rules.sh`, voir plus haut), jamais autrement.
 Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets (exclus-les de tout grep -r).
 Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git commit` modifient l'index ou l'arbre**
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R167 écrit la sous-section « Ce que la treizième
-série a réellement fait » du plan, Q14) ; ne coche rien — **aucune case `- [ ]` de `tasks/plan-748.md`**,
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R181 écrit la sous-section « Ce que la quatorzième
+série a réellement fait » du plan, avec les commandes et les nombres de son balayage) ; ne coche rien —
+**aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
 comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur : arrête-toi et rends la question.
 
 ## Rendu
 Fichiers touchés, SHA du commit, preuve : commande et extrait du test rouge (raison de l'échec, ou mutation), lignes de
 résumé et codes de sortie des cibles make, des tests hors ligne et de check-claude-rules, taille des règles touchées,
-**écarts au plan, chacun nommé** (ce que la tâche disait, ce que le code fait, pourquoi : R167 les reporte au plan —
+**écarts au plan, chacun nommé** (ce que la tâche disait, ce que le code fait, pourquoi : R181 les reporte au plan —
 la treizième relecture a reproché au plan de les avoir perdus), questions ouvertes.
