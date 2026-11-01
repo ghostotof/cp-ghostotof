@@ -1788,7 +1788,8 @@ else
 fi
 
 # --- C13-5 : la variable perd son export dès sa lecture, avant le premier processus fils (`mktemp -d`) :
-# un faux `mktemp` qui écrit son environnement dans un fichier ne doit pas la voir ; une valeur refusée non plus.
+# un faux `mktemp` qui écrit son environnement dans un fichier ne doit pas la voir. Une valeur refusée n'est plus exportée non
+# plus : le genre `refusee` du bloc R168 (`UNE_AUTH="sansdeuxpoints"` exportée) le vérifie, avec davantage d'assertions.
 real_mktemp="$(command -v mktemp)"
 mkdir "$TMP/fake-mktemp-bin"
 printf '%s\n' '#!/bin/sh' 'env > "$MKTEMP_ENV_OUT"' "exec $real_mktemp \"\$@\"" > "$TMP/fake-mktemp-bin/mktemp"
@@ -1803,17 +1804,6 @@ if [ "$rc" -eq 0 ] && [ -s "$TMP/mktemp-env.txt" ] && ! grep -q '^UNE_AUTH=' "$T
   pass "smoke_use_auth_config : le mktemp lancé pendant l'écriture ne reçoit pas la variable"
 else
   fail "export retiré trop tard" "rc=$rc ; mktemp la voit : $(grep -c '^UNE_AUTH=' "$TMP/mktemp-env.txt" || true)"
-fi
-smoke_cleanup
-unset UNE_AUTH
-UNE_AUTH="sansdeuxpoints"
-export UNE_AUTH
-rc=0
-smoke_use_auth_config UNE_AUTH 2>/dev/null || rc=$?
-if [ "$rc" -eq 2 ] && ! bash -c '[[ -v UNE_AUTH ]]'; then
-  pass "smoke_use_auth_config : une valeur refusée n'est plus exportée non plus"
-else
-  fail "valeur refusée encore exportée" "rc=$rc ; fils : $(bash -c '[[ -v UNE_AUTH ]] && echo la_voit || echo ne_la_voit_pas')"
 fi
 smoke_cleanup
 unset UNE_AUTH exported_auth real_mktemp
