@@ -9,7 +9,7 @@ namespace App\Tests\Support;
  * opération, en un seul parcours : les constats et le nombre de liens compilés vus (#748, R131).
  *
  * Un objet plutôt que deux parcours de `uriVariables` (l'un pour les constats, l'autre pour le décompte), qui
- * testaient chacun `instanceof Link` : ce que l'on compte et ce que l'on juge ne peuvent plus diverger.
+ * testent chacun `instanceof Link` : ce que l'on compte et ce que l'on juge ne peuvent plus diverger.
  */
 final readonly class CompiledNestedReading
 {

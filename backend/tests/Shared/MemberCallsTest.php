@@ -73,13 +73,20 @@ final class MemberCallsTest extends TestCase
         yield 'commentaire et chaîne' => ["<?php\n// \$a->run()\n\$s = '\$a->run()';\n", [], [], []];
     }
 
-    /** Un index hors du tableau — avant le premier jeton et après le dernier — ne désigne aucun appel, sans erreur. */
+    /**
+     * Un index hors du tableau — avant le premier jeton et après le dernier — ne désigne aucun appel, sans erreur.
+     * Le premier jeton (index 0, aucun jeton avant lui) non plus, quand c'est un nom suivi de `(` : la balise
+     * ouvrante occupe l'index 0 d'un code, on la retire pour que le premier jeton soit `run`, seul cas qui atteint la
+     * lecture du jeton qui précède.
+     */
     public function testAnIndexOutsideTheTokensIsNoCall(): void
     {
         $tokens = PhpSources::significantTokens("<?php\n\$a->run();\n");
+        $startingWithAName = \array_slice(PhpSources::significantTokens("<?php\nrun();\n"), 1);
 
         foreach ([MemberCalls::isCallAt(...), MemberCalls::isInstanceCallAt(...), MemberCalls::isStaticCallAt(...)] as $predicate) {
             self::assertFalse($predicate($tokens, -1));
+            self::assertFalse($predicate($startingWithAName, 0));
             self::assertFalse($predicate($tokens, \count($tokens)));
         }
     }

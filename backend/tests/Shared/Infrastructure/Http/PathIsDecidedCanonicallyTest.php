@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  * Refusés dans `src/` (par jetons, commentaires et chaînes exclus) : un appel `getPathInfo(` ou `isPathUnder(`,
  * sans égard à la casse (PHP n'en fait pas pour un nom de méthode), écrit `->`, `?->` ou `::`, y compris en appelable
  * de première classe (`->getPathInfo(...)`), hors de `CanonicalPath.php`. Aucun appel légitime n'existe aujourd'hui,
- * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lisent tous les recenseurs par jetons.
+ * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lisent aussi les recenseurs qui jugent un appel de membre.
  * Le compteur de lectures canoniques ne compte qu'un nom qui résout vers `CanonicalPath` (alias compris), jamais un
  * homonyme d'un autre espace de noms.
  *

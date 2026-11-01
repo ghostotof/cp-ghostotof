@@ -39,8 +39,8 @@ use PhpToken;
  *
  * Non vus, limite assumée : un appel dynamique (`$cookie->$method()`,
  * `call_user_func()`), l'en-tête composé (`'Set-'.'Cookie'`, `sprintf()`) ou
- * écrit par un échappement `\u{…}` ou un `use function` — refusés dans `src/`
- * par {@see UnsortedImports} —, et ce que fait le code
+ * écrit par un échappement `\u{…}`, un `use function` (refusé dans `src/` par
+ * {@see UnsortedImports}), et ce que fait le code
  * du vendor ou la configuration : le cookie du login de Lexik, que
  * {@see \App\Tests\Security\Authentication\AuthCookieAttributesTest} lit sur
  * la réponse, et ce que voit la garde à l'exécution de

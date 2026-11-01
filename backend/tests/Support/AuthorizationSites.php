@@ -25,11 +25,11 @@ use PhpToken;
  * `[$security, 'isGranted']` (C7-2), un appel dynamique (`$security->{$method}()`),
  * une sous-classe des trois exceptions, une réponse 403 écrite à la main, une
  * exception métier rendue en 401 ou 403 (`exception_to_status`), une chaîne
- * `is_granted(` construite par concaténation, ou qu'une interpolation coupe (`"is_granted{$space}('X')"` : un jeton de
- * chaîne se lit seul, St14-33), un `isGranted()` d'un autre objet
- * que la sécurité (homonyme : le renommer), le vendor et la configuration (la
- * configuration compilée d'API Platform est lue par
- * `ApiPlatformOperationsCarryNoSecurityTest`).
+ * `is_granted(` construite par concaténation, ou qu'une interpolation coupe
+ * (`"is_granted{$space}('X')"` : un jeton de chaîne se lit seul, St14-33), un
+ * `isGranted()` d'un autre objet que la sécurité (homonyme : le renommer), le
+ * vendor et la configuration (la configuration compilée d'API Platform est lue
+ * par `ApiPlatformOperationsCarryNoSecurityTest`).
  *
  * Sur une route hors de `PUBLIC_PATHS`, l'invariant n° 9 d'`ApiRouteExposureTest`
  * voit toutes ces formes à l'exécution (une route sans règle y rougit) ; sur une
@@ -77,12 +77,9 @@ final class AuthorizationSites
      */
     private static function kindAt(array $tokens, int $index): ?AuthorizationSiteKind
     {
-        // Lu une fois : le jeton qui précède décide de l'attribut, du refus levé et de l'appel, jamais autrement.
-        $previous = $tokens[$index - 1] ?? null;
-
         return self::ofStringLiteral($tokens, $index)
-            ?? self::ofName($tokens, $index, $previous)
-            ?? self::ofCall($tokens, $index, $previous);
+            ?? self::ofName($tokens, $index)
+            ?? self::ofCall($tokens, $index);
     }
 
     /**
@@ -104,14 +101,15 @@ final class AuthorizationSites
      * Un nom de classe, court, importé ou de nom complet : l'attribut, un refus levé, le gestionnaire de décision.
      *
      * @param list<PhpToken> $tokens
-     * @param ?PhpToken      $previous le jeton qui précède celui de $index, lu par {@see self::kindAt()}
      */
-    private static function ofName(array $tokens, int $index, ?PhpToken $previous): ?AuthorizationSiteKind
+    private static function ofName(array $tokens, int $index): ?AuthorizationSiteKind
     {
         $token = $tokens[$index];
         if (!$token->is(self::NAMES)) {
             return null;
         }
+
+        $previous = $tokens[$index - 1] ?? null;
 
         // Le dernier segment du nom : `IsGranted` écrit court, importé ou de nom complet.
         $short = strtolower(basename(str_replace('\\', '/', $token->text)));
@@ -135,15 +133,15 @@ final class AuthorizationSites
      * La forme d'un appel de membre (`->`, `?->`, `::`, puis `(`) est celle de {@see MemberCalls}.
      *
      * @param list<PhpToken> $tokens
-     * @param ?PhpToken      $previous le jeton qui précède celui de $index, lu par {@see self::kindAt()}
      */
-    private static function ofCall(array $tokens, int $index, ?PhpToken $previous): ?AuthorizationSiteKind
+    private static function ofCall(array $tokens, int $index): ?AuthorizationSiteKind
     {
         $token = $tokens[$index];
         if (!$token->is(\T_STRING)) {
             return null;
         }
 
+        $previous = $tokens[$index - 1] ?? null;
         $next = $tokens[$index + 1] ?? null;
         $name = strtolower($token->text);
 

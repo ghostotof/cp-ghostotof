@@ -72,7 +72,7 @@ final class ClassNameResolver
                 return self::groupedImports($tokens, $index + 3, strtolower(ltrim($name->text, '\\')).'\\');
             }
 
-            [$alias, $class, $index] = self::importedAt($tokens, $index, '');
+            ['alias' => $alias, 'class' => $class, 'next' => $index] = self::importedAt($tokens, $index, '');
             $imports[$alias] = $class;
 
             $separator = $tokens[$index] ?? null;
@@ -91,7 +91,7 @@ final class ClassNameResolver
      * @param list<PhpToken> $tokens
      * @param string         $prefix `a\b\` pour le membre d'un `use A\B\{…}`, vide sinon
      *
-     * @return array{string, string, int} l'alias, la classe importée, l'index du jeton qui suit
+     * @return array{alias: string, class: string, next: int} l'alias, la classe importée, l'index du jeton qui suit
      */
     private static function importedAt(array $tokens, int $index, string $prefix): array
     {
@@ -99,13 +99,17 @@ final class ClassNameResolver
         $as = $tokens[$index + 1] ?? null;
         $explicitAlias = $tokens[$index + 2] ?? null;
         if (null !== $as && $as->is(\T_AS) && null !== $explicitAlias && $explicitAlias->is(\T_STRING)) {
-            return [strtolower($explicitAlias->text), $class, $index + 3];
+            return ['alias' => strtolower($explicitAlias->text), 'class' => $class, 'next' => $index + 3];
         }
 
         // Sans `as`, l'alias est le dernier segment du nom importé.
         $lastSeparator = strrpos($class, '\\');
 
-        return [false === $lastSeparator ? $class : substr($class, $lastSeparator + 1), $class, $index + 1];
+        return [
+            'alias' => false === $lastSeparator ? $class : substr($class, $lastSeparator + 1),
+            'class' => $class,
+            'next' => $index + 1,
+        ];
     }
 
     /**
@@ -135,7 +139,7 @@ final class ClassNameResolver
         $imports = [];
         while (null !== ($token = $tokens[$index] ?? null) && !PhpSources::closesBrace($token)) {
             if ($token->is(self::IMPORTED_NAMES)) {
-                [$alias, $class, $index] = self::importedAt($tokens, $index, $prefix);
+                ['alias' => $alias, 'class' => $class, 'next' => $index] = self::importedAt($tokens, $index, $prefix);
                 $imports[$alias] = $class;
             } elseif ($token->is([\T_FUNCTION, \T_CONST])) {
                 while (null !== ($token = $tokens[$index] ?? null) && !$token->is(',') && !PhpSources::closesBrace($token)) {
