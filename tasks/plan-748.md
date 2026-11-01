@@ -14060,8 +14060,9 @@ Le plan suit la recommandation de chaque question ; une autre réponse ne change
    `frontend/src/infrastructure/admin/shared/supportedLocale.ts`, est appelée par le `toEntity` de **neuf** dépôts : les cinq
    que nomme D2 et les quatre dont l'entité passe à `Locale` (`HttpAdminIncidentRepository`, `HttpAdminContributionRepository`,
    `HttpAdminCaseStudyRepository`, `HttpAdminAnonymousCvSectionRepository`) : sans elle, leur `toEntity` devrait un `as Locale`
-   de plus. Ce que fait le dépôt devant une langue inconnue : **question Q1, réponse attendue** ; les Steps de R214 sont écrits
-   pour la recommandation (A). Les `…Input` des quatre contextes passent aussi à `locale: Locale` (le formulaire en envoie une).
+   de plus. Ce que fait le dépôt devant une langue inconnue : **(A), réponse de l'auteur à Q1** ; les Steps de R214 sont écrits
+   pour elle. Les neuf dépôts : **lecture confirmée par l'auteur** (2026-11-01). Les `…Input` des quatre contextes passent
+   aussi à `locale: Locale` (le formulaire en envoie une).
 4. **R211 (C17-4), `-D` vers le dossier lui-même et `..`.** Refusés, plutôt qu'une limite écrite : `[[ "$1" -ef
    "$SMOKE_AUTH_DIR" ]]`, et une valeur dont un composant est `..` (`[[ "/$1/" == */../* ]]`), puisque `-ef` ne suit `..` qu'à
    travers des composants existants. Aucun smoke n'en passe (ils écrivent dans `headers_file`) ; `-D a..b` reste admis.
@@ -14086,8 +14087,8 @@ Le plan suit la recommandation de chaque question ; une autre réponse ne change
    `QUALITY_TRAIT_FIELD_OPTIONS`), où `QualityFieldOptions = { readonly control: 'text' | 'textarea'; readonly copiedToNewVersion?:
    true; readonly column?: true }` : seul ce qui diffère du défaut s'écrit (St17-6). La liste se dérive
    (`entryFieldsOf(options, proseFields)`, ordre des clés du record) ; la prop de la section reçoit le record. Le formulaire et le
-   corps d'écriture se construisent des clés du record : **question Q2, réponse attendue** (une assertion unique) ; les Steps
-   sont écrits pour (A).
+   corps d'écriture se construisent des clés du record : **(A), réponse de l'auteur à Q2** (une assertion unique) ; les Steps
+   sont écrits pour elle.
 10. **R216 (St17-12).** `export type EntryFormPlacement = { locale: Locale; translationGroup: string }` dans
     `presentation/ui/admin/proposedCreation.ts`, lu par `switchToProposedCreation` et par `EntryForm<F>` de `qualityEntrySection.ts`.
 11. **R209 (C17-9).** Avant `git add`, chaque fichier muté que la tâche ne modifie pas rend `git diff --exit-code -- <fichier>` à 0 ;
@@ -14095,6 +14096,10 @@ Le plan suit la recommandation de chaque question ; une autre réponse ne change
     **avant** la mutation. Le résultat va dans le bloc « Mutations » (une ligne `restauré :`).
 
 ### Questions à l'auteur
+
+**Réponses de l'auteur (2026-11-01) : les quatre recommandations** — Q1 (A) erreur métier, raison `'unknown'` ; Q2 (A)
+`fieldRecord` porte la seule assertion ; Q3 (A) les quatre cas de R204 remplacés par les cas de la frontière ; choix 3 confirmé
+(neuf dépôts, les `…Input` des quatre contextes en `Locale`).
 
 Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
 
@@ -14394,8 +14399,8 @@ Constats : D2 (seconde moitié), Q1, Q3 ; St17-8 ≈ CR17-4 ; St17-7 = Sp17-7 = 
 - [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
 - [ ] **Step 2 : tests, rouges** (Review Focus 2) — `supportedLocale.spec.ts` : `'fr'` → `'fr'`, `'en'` → `'en'`, `'de'` et `''`
   → lève l'erreur que rend `unsupported` ; un cas par dépôt (neuf) : `list()` répondu avec une entrée `locale: 'de'` → rejette
-  avec l'erreur de son contexte, raison `'unknown'` (**question Q1, réponse attendue** ; (B) : raison `unsupported-locale` ;
-  (C) : l'entrée écartée de la liste), et `create()` répondu avec la même entrée → rejette de même. Expected : FAIL (module
+  avec l'erreur de son contexte, raison `'unknown'` (**(A), réponse de l'auteur à Q1**), et `create()` répondu avec la même
+  entrée → rejette de même. Expected : FAIL (module
   absent ; la liste rendue avec `'de'`).
 - [ ] **Step 3 : implémenter** ; `docker compose restart frontend` (fichier créé, fichier supprimé) ; les erreurs de `vue-tsc -b`
   qui suivent le changement de type (fixtures de specs comprises) se corrigent par le type, jamais par `as`.
