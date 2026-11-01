@@ -13,7 +13,25 @@ Avant les relectures, le fil principal a rejoué sur conteneurs redémarrés les
 C16-3 (limite écrite), C16-4, C16-6, C16-7 ; C16-5 reste à #753 (D4).
 
 ## Décisions de l'utilisateur
-*(à remplir après les questions)*
+Prises le 2026-11-01 : **les quatre recommandations**.
+- Q1 (St17-1) → les champs de Qualité déclarés `{…} satisfies Record<F, EntryFieldOptions>`, la liste dérivée : le compilateur
+  vérifie l'exhaustivité ; `requireEveryField`, `fieldsFrom` et `MissingEntryFieldError` disparaissent (CR17-2 avec eux).
+- Q2 (St17-8, St17-9) → un accesseur unique `useCurrentLocale(): ComputedRef<Locale>` remplace les copies de
+  `locale.value as Locale` et sert aux trois formes voisines (`OAuthConsentPage.vue:104, 110`, `SignInAgainLink.vue:35`) ; les
+  cinq dépôts HTTP d'admin valident la langue à la frontière et les entités d'admin passent à `locale: Locale` (revient sur
+  « sans changer le contrat des entités ») ; les quatre gardes copiées dans les pages disparaissent.
+- Q3 (St17-15, St17-16, Sp17-15) → tous les libellés de boutons des specs lus du catalogue (~83 sites, interpolation pour
+  « Créer la version XX »), constantes écrites une fois dans `tests/support/`, une mutation de `fr.json` par clé.
+- Q4 (Sp17-16) → le plancher `reads >= 2` gardé, sa raison écrite dans le docblock.
+- C17-7 : rotation du jeton à la charge de l'auteur (« Je gère », 2026-11-01), hors session.
+- Tout le reste se corrige (critère « tout jusqu'à zéro »).
+
+Questions posées :
+1. **St17-1** : garde circulaire. Reco : `satisfies Record<F, …>`. Option : retirer la garde seulement.
+2. **St17-9 / St17-8** : 30 ` as Locale`. Reco : accesseur + validation dans les dépôts. Options : accesseur seulement ; les
+   trois voisines seulement.
+3. **St17-15 / Sp17-15** : ~83 libellés en dur. Reco : tout lire du catalogue. Option : restreindre le docblock.
+4. **Sp17-16** : `reads >= 2`. Reco : garder, raison écrite. Option : table exacte par site.
 
 ## Moyens
 
