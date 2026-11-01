@@ -2,7 +2,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSettings } from '../../../application/admin/about/useAdminAboutSettings'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFieldCopy'
+import { applyTranslationProposal } from '../../../application/admin/translation/proseFieldCopy'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
@@ -69,7 +69,7 @@ const {
   isExpiredCallPending,
   isRefused: isTranslationRefused,
   errorText: translationErrorText,
-  translate,
+  requestProposal,
   proseReadonlyHintId,
   translationHintId,
   proseFieldAttrs,
@@ -169,13 +169,11 @@ function applyPendingProposal(loadedLocale: Locale): void {
 }
 
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const translated = await translate(props.locale, targetLocale, collectProseFields(form, ABOUT_SETTINGS_PROSE_FIELDS))
-  if (!translated) {
-    return
-  }
-
-  pendingProposal.value = translated
-  emit('switchLocale', targetLocale)
+  // Posée sous le jugement « la réponse est courante » (R172) : une réponse périmée ne parque rien et ne change pas de langue.
+  await requestProposal(targetLocale, (proposal) => {
+    pendingProposal.value = proposal
+    emit('switchLocale', targetLocale)
+  })
 }
 
 /**

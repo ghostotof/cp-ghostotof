@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, reactive, ref } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
@@ -61,6 +61,14 @@ function mountTranslatedForm(
   return { form: captured, fields, repository, release: (proposal: TranslationProposal) => release(proposal) }
 }
 
+/** Demande une proposition vers `en` par `requestProposal` : celle que la page a reçue, ou `null` si `accept` n'a pas été appelée. */
+async function proposalOf(form: UseTranslatedFormResult): Promise<TranslationProposal | null> {
+  let received: TranslationProposal | null = null
+  await form.requestProposal('en', (proposal) => { received = proposal })
+
+  return received
+}
+
 describe('useTranslatedForm', () => {
   it('nomme les deux textes du formulaire d’après son préfixe (#748, R138)', () => {
     const { form } = mountTranslatedForm({ hintIdPrefix: 'admin-about-settings' })
@@ -78,7 +86,7 @@ describe('useTranslatedForm', () => {
   it('proseFieldAttrs : pendant la traduction, lecture seule et texte d’aide, retirés à la réponse (#748, R138)', async () => {
     const { form, release } = mountTranslatedForm()
 
-    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    const pending = proposalOf(form)
 
     expect(form.proseFieldAttrs()).toEqual({ readonly: true, 'aria-describedby': HINT })
 
@@ -93,7 +101,7 @@ describe('useTranslatedForm', () => {
 
     expect(form.proseFieldAttrs('aide')['aria-describedby']).toBe('aide')
 
-    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    const pending = proposalOf(form)
     expect(form.proseFieldAttrs('aide')['aria-describedby']).toBe(`aide ${HINT}`)
 
     release(PROPOSAL)
@@ -105,7 +113,7 @@ describe('useTranslatedForm', () => {
     const { form, repository } = mountTranslatedForm({ isRefused: () => refused.value })
 
     expect(form.isRefused.value).toBe(true)
-    expect(await form.translate('fr', 'en', { title: 'Panne' })).toBeNull()
+    expect(await proposalOf(form)).toBeNull()
     expect(repository.translate).not.toHaveBeenCalled()
     expect(form.isTranslating.value).toBe(false)
 
@@ -117,7 +125,7 @@ describe('useTranslatedForm', () => {
     const locale = ref<Locale>('fr')
     const { form, release } = mountTranslatedForm({ identity: () => ({ entry: null, locale: locale.value, group: null }) })
 
-    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    const pending = proposalOf(form)
     expect(form.isTranslating.value).toBe(true)
 
     locale.value = 'en'
@@ -130,7 +138,7 @@ describe('useTranslatedForm', () => {
   it("renewForm() périme la traduction en vol, même si l'entrée, la langue et le groupe sont inchangés (#748, R139)", async () => {
     const { form, release } = mountTranslatedForm()
 
-    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    const pending = proposalOf(form)
     expect(form.isTranslating.value).toBe(true)
 
     form.renewForm()
@@ -145,7 +153,7 @@ describe('useTranslatedForm', () => {
     const group = ref<string | null>('groupe-source')
     const { form, release } = mountTranslatedForm({ identity: () => ({ entry: null, locale: 'fr', group: group.value }) })
 
-    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    const pending = proposalOf(form)
     expect(form.isTranslating.value).toBe(true)
 
     group.value = 'autre-groupe'
@@ -161,7 +169,7 @@ describe('useTranslatedForm', () => {
     }
     const { form } = mountTranslatedForm({}, repository)
 
-    await form.translate('fr', 'en', { title: 'Panne' })
+    await proposalOf(form)
     expect(form.errorReason.value).toBe('unavailable')
 
     form.renewForm()
@@ -180,7 +188,7 @@ describe('useTranslatedForm', () => {
       deleted: { id: string; translationGroup: string | null },
     ): Promise<{ form: UseTranslatedFormResult; answer: TranslationProposal | null }> {
       const { form, release } = mountTranslatedForm({ identity: () => ({ ...identity, locale: 'fr' }) })
-      const pending = form.translate('fr', 'en', { title: 'Panne' })
+      const pending = proposalOf(form)
 
       form.expireIfDeleted(deleted)
 
@@ -259,11 +267,41 @@ describe('useTranslatedForm', () => {
       const { form } = mountTranslatedForm({}, repository)
       expect(form.errorText.value).toBeNull()
 
-      await form.translate('fr', 'en', { title: 'Panne' })
+      await proposalOf(form)
       expect(form.errorText.value).toBe(TRANSLATION_UNAVAILABLE_FR)
 
       form.renewForm()
       expect(form.errorText.value).toBeNull()
+    })
+  })
+
+  describe('requestProposal', () => {
+    it("la prose collectée part, accept reçoit la proposition et la langue source de l'identité (#748, R172)", async () => {
+      const { form, fields, repository, release } = mountTranslatedForm()
+      fields.note = 'hors liste'
+      const accept = vi.fn()
+
+      const pending = form.requestProposal('en', accept)
+      release(PROPOSAL)
+
+      expect(await pending).toBe(true)
+      expect(repository.translate).toHaveBeenCalledWith('fr', 'en', { title: 'Panne' })
+      expect(accept).toHaveBeenCalledOnce()
+      expect(accept).toHaveBeenCalledWith(PROPOSAL, 'fr')
+    })
+
+    it("rend faux sans appeler accept sur un refus, et sur une réponse périmée (#748, R172)", async () => {
+      const refused = mountTranslatedForm({ isRefused: () => true })
+      const accept = vi.fn()
+      expect(await refused.form.requestProposal('en', accept)).toBe(false)
+
+      const { form, release } = mountTranslatedForm()
+      const stale = form.requestProposal('en', accept)
+      form.renewForm()
+      release(PROPOSAL)
+
+      expect(await stale).toBe(false)
+      expect(accept).not.toHaveBeenCalled()
     })
   })
 
@@ -322,6 +360,54 @@ describe('useTranslatedForm', () => {
       expect(repository.translate).not.toHaveBeenCalled()
       expect(switchForm).not.toHaveBeenCalled()
     })
+
+    // R172 (C14-8) : un geste de la page résolu au même point de contrôle de micro-tâches que la réponse du dépôt passe entre le
+    // jugement « la réponse est courante » et la pose ; la pose est faite sous le jugement, jamais une micro-tâche plus tard.
+    describe('un geste résolu au même point de contrôle que la réponse (#748, R172)', () => {
+      /** Un dépôt dont la réponse est une promesse que le test tient : il y accroche un rappel après l'appel. */
+      function mountWithHeldAnswer(identity?: UseTranslatedFormOptions<Field>['identity']): {
+        form: UseTranslatedFormResult
+        answered: Promise<TranslationProposal>
+        answer: () => void
+      } {
+        let resolve!: (proposal: TranslationProposal) => void
+        const answered = new Promise<TranslationProposal>((r) => { resolve = r })
+        const { form } = mountTranslatedForm(identity ? { identity } : {}, { translate: vi.fn(() => answered) })
+
+        return { form, answered, answer: () => resolve(PROPOSAL) }
+      }
+
+      it("une remise à zéro : switchForm n'est pas appelée après elle (#748, R172)", async () => {
+        const { form, answered, answer } = mountWithHeldAnswer()
+        const events: string[] = []
+
+        const pending = form.proposeFrom('en', () => { events.push('switch') })
+        void answered.then(() => { events.push('renew'); form.renewForm() })
+        answer()
+        await pending
+        await flushPromises()
+
+        expect(events).toContain('renew')
+        expect(events.slice(events.indexOf('renew'))).not.toContain('switch')
+      })
+
+      it("la suppression de l'entrée éditée : switchForm n'est pas appelée après elle (#748, R172)", async () => {
+        const { form, answered, answer } = mountWithHeldAnswer(() => ({ entry: 'a', locale: 'fr', group: 'groupe-source' }))
+        const events: string[] = []
+
+        const pending = form.proposeFrom('en', () => { events.push('switch') })
+        void answered.then(() => {
+          events.push('remove')
+          void form.removeEntry({ id: 'a', translationGroup: 'groupe-source' }, async () => true)
+        })
+        answer()
+        await pending
+        await flushPromises()
+
+        expect(events).toContain('remove')
+        expect(events.slice(events.indexOf('remove'))).not.toContain('switch')
+      })
+    })
   })
 
   // Une suppression refusée périme quand même la traduction (limite acceptée, D7) : la périmer après le succès laisserait une
@@ -331,7 +417,7 @@ describe('useTranslatedForm', () => {
 
     it("périme la traduction de l'entrée éditée puis appelle remove une fois (#748, R153)", async () => {
       const { form, release } = mountTranslatedForm({ identity: () => ({ entry: 'a', locale: 'fr', group: 'groupe-source' }) })
-      const pending = form.translate('fr', 'en', { title: 'Panne' })
+      const pending = proposalOf(form)
       const remove = vi.fn(async () => true)
 
       await form.removeEntry(EDITED, remove)
@@ -344,7 +430,7 @@ describe('useTranslatedForm', () => {
 
     it("périme la traduction même quand remove rejette, et laisse l'erreur remonter (#748, R153)", async () => {
       const { form, release } = mountTranslatedForm({ identity: () => ({ entry: 'a', locale: 'fr', group: 'groupe-source' }) })
-      const pending = form.translate('fr', 'en', { title: 'Panne' })
+      const pending = proposalOf(form)
       const remove = vi.fn(async () => { throw new Error('suppression refusée') })
 
       await expect(form.removeEntry(EDITED, remove)).rejects.toThrow('suppression refusée')
@@ -356,7 +442,7 @@ describe('useTranslatedForm', () => {
 
     it("ne périme pas la traduction d'une autre entrée, mais supprime (#748, R153)", async () => {
       const { form, release } = mountTranslatedForm({ identity: () => ({ entry: 'b', locale: 'fr', group: 'autre-groupe' }) })
-      const pending = form.translate('fr', 'en', { title: 'Panne' })
+      const pending = proposalOf(form)
       const remove = vi.fn(async () => true)
 
       await form.removeEntry(EDITED, remove)

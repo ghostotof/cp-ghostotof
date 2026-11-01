@@ -31,7 +31,19 @@ export interface UseAdminTranslationResult {
    * suivante, jamais rendue par un retour à l'identité de l'échec : « Modifier » A (échec), B, puis A n'affiche rien.
    */
   errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>
-  translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
+  /**
+   * Demande une proposition et la remet à `accept`, **appelée de façon synchrone dans le point de contrôle même qui juge la
+   * réponse courante** : aucune micro-tâche ne sépare le jugement de la pose, si bien qu'un geste de la page résolu au même
+   * point de contrôle que la réponse (une remise à zéro, une suppression) ne passe jamais entre les deux (R172). Rend vrai si
+   * la proposition a été acceptée ; faux sur un refus, un échec (la raison est exposée) ou une réponse périmée, `accept` n'étant
+   * alors pas appelée. Une exception de `accept` remonte à l'appelant : ce n'est pas un échec de la traduction.
+   */
+  translate: (
+    sourceLocale: Locale,
+    targetLocale: Locale,
+    fields: TranslationFields,
+    accept: (proposal: TranslationProposal) => void,
+  ) => Promise<boolean>
   /**
    * Périme la traduction en vol : sa réponse rend `null` et ne pose ni état ni raison. Pour ce que `formIdentity` ne
    * voit pas — la suppression de l'entrée éditée ou de la source d'une création rattachée, qui ne change rien au
@@ -68,7 +80,7 @@ function isSameIdentity(a: FormIdentity | null, b: FormIdentity | null): boolean
 
 /**
  * Partagé par tous les formulaires admin qui offrent la traduction assistée : l'appelant fournit les champs de prose,
- * reçoit la proposition (ou `null` en cas d'échec, la raison étant exposée) et décide seul quoi en faire — ce
+ * reçoit la proposition par son rappel `accept` (rien en cas d'échec, la raison étant exposée) et décide seul quoi en faire — ce
  * composable ne touche jamais au formulaire ni à la persistance (ADR 0004, D4).
  * Pas de dépendance à useI18n() : l'appelant traduit `errorReason`.
  *
@@ -137,9 +149,10 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     sourceLocale: Locale,
     targetLocale: Locale,
     fields: TranslationFields,
-  ): Promise<TranslationProposal | null> => {
+    accept: (proposal: TranslationProposal) => void,
+  ): Promise<boolean> => {
     if (isAnyCallRunning.value || isRefused.value) {
-      return null
+      return false
     }
 
     const token = requests.begin()
@@ -148,20 +161,22 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     failure.value = null
     watchIdentity()
 
+    // La proposition retenue : jugée courante dans le point de contrôle qui suit la réponse, posée dans ce même point.
+    let retained: TranslationProposal | null = null
     try {
       const proposal = await repository.translate(sourceLocale, targetLocale, fields)
 
-      return requests.isCurrent(token) ? proposal : null
+      retained = requests.isCurrent(token) ? proposal : null
     } catch (error) {
       if (!requests.isCurrent(token)) {
-        return null
+        return false
       }
 
       // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
       const reason =
         visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
       failure.value = reason
-      return null
+      return false
     } finally {
       isAnyCallRunning.value = false
       // Une traduction périmée ne touche plus l'état : `expire()` l'a déjà rendu.
@@ -169,6 +184,16 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
         isAwaitingCurrent.value = false
       }
     }
+
+    if (null === retained) {
+      return false
+    }
+
+    // Hors du `try` : une exception de `accept` n'est pas un échec de la traduction, elle ne pose aucune raison. Aucun `await`
+    // entre le jugement et ici (le `finally` est synchrone) : la pose est sous le jugement.
+    accept(retained)
+
+    return true
   }
 
   function expire(): void {

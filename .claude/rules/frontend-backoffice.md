@@ -179,7 +179,8 @@ status announcement) that a fork would silently lose:
 The translation assistant (ADR 0004 phase 1, spec 0002) is one more admin slice, `domain/admin/translation`
 (`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`) →
 `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`) →
-`application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and exposes
+`application/admin/translation/useAdminTranslation.ts` (`translate(…, accept)` hands the proposal to `accept`, called
+synchronously in the very checkpoint that judges the response current, and returns whether it was accepted; it exposes
 `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
 `application/admin/translation/proseFieldCopy.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
 `applyTranslationProposal` leaves a field absent from the proposal untouched) →
@@ -189,15 +190,18 @@ what the nine forms share. Each page alone decides which of its fields are prose
 and what to do with the proposal.
 
 - `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` returns `hasProse`, `errorText`
-  (`admin.translation.errors.<reason>`), `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`,
-  `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar `expire` (R153, D4 of the thirteenth
-  review). The page keeps its form and its gestures (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a
-  delete and the template block — `TranslateEntryButton`, `TranslationReadonlyHint`, the error alert —, which each page
-  writes because each of its bindings carries a value of the page (the form's locale, the lock's help, its `describedBy`). A
-  form new to the assistant writes its list of prose fields (`proseFields.ts`), its `identity`, its `isRefused` terms, its
-  `switchForm`, its template block and its `EntryFormLockCase` (`tests/support/entryFormLock.ts`); the About settings, whose
-  proposal is deferred, read `hasProse` and `errorText` and call `translate` themselves.
-- `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it. Since spec 0004 every
+  (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`, `proposeFrom(target, switchForm)`,
+  `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what `useAdminTranslation` exposes bar
+  `expire` and `translate` (R153, D4 of the thirteenth review). The page keeps its form and its gestures (`startEdit`,
+  `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
+  `TranslationReadonlyHint`, the error alert —, which each page writes because each of its bindings carries a value of the
+  page (the form's locale, the lock's help, its `describedBy`). A form new to the assistant writes its list of prose fields
+  (`proseFields.ts`), its `identity`, its `isRefused` terms, its `switchForm`, its template block and its `EntryFormLockCase`
+  (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred,
+  read `hasProse` and `errorText` and call `requestProposal` themselves.
+- `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
+  inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
+  checkpoint as the response cannot slip between the judgment and the application. Since spec 0004 every
   per-entry form (Incidents, Contributions, CV sans identité, Quality principles/traits, About site/me cards) behaves the
   same way: the form switches to *creation* in the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…)
   are kept, **the source entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's

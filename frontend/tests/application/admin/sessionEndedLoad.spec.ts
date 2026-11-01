@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, type InjectionKey, type Ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ADMIN_TRANSLATION_REPOSITORY, useAdminTranslation } from '../../../src/application/admin/translation/useAdminTranslation'
@@ -288,9 +288,11 @@ describe('mutation refusée : session finie', () => {
       },
     )
 
-    const proposal = await captured?.translate('fr', 'en', {})
+    const accept = vi.fn()
+    const accepted = await captured?.translate('fr', 'en', {}, accept)
 
-    expect(proposal).toBeNull()
+    expect(accepted).toBe(false)
+    expect(accept).not.toHaveBeenCalled()
     expect(captured?.errorReason.value).toBeNull()
   })
 
@@ -306,7 +308,7 @@ describe('mutation refusée : session finie', () => {
       { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate: async () => Promise.reject(new Error('boom')) } } } },
     )
 
-    await captured?.translate('fr', 'en', {})
+    await captured?.translate('fr', 'en', {}, vi.fn())
 
     expect(captured?.errorReason.value).toBe('unknown')
   })

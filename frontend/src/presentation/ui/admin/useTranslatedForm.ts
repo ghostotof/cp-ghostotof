@@ -7,6 +7,7 @@ import {
 } from '../../../application/admin/translation/useAdminTranslation'
 import type { FormIdentity } from '../../../application/admin/translation/FormIdentity'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 import { describedBy } from './describedBy'
 
 /** Ce que `expireIfDeleted` et `removeEntry` lisent d'une entrée qu'on supprime : sa clé et son groupe de traduction. */
@@ -44,7 +45,7 @@ export interface ProseFieldAttrs {
   readonly 'aria-describedby': string | undefined
 }
 
-export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult, 'expire'> {
+export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult, 'expire' | 'translate'> {
   /**
    * Fait avancer la génération du formulaire : à appeler en premier par **chaque** geste qui remplit ou vide le formulaire —
    * remise à zéro (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…), « Modifier » (`startEdit`…), « Créer la version
@@ -69,12 +70,24 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
   /** Le texte, traduit, de l'échec de la dernière traduction (`admin.translation.errors.<raison>`), `null` sans échec. */
   readonly errorText: Readonly<Ref<string | null>>
   /**
-   * Demande une proposition dans `targetLocale`, puis bascule le formulaire en **création** avec elle : la prose est remplacée,
-   * le reste gardé. Rien n'est enregistré (ADR 0004, D4). La langue source est celle de l'identité du formulaire ; la prose
-   * envoyée, celle de `proseFields` (les champs blancs omis). Sur un refus, un échec ou une réponse périmée, il ne se passe
-   * rien : le formulaire reste intact et `errorText` dit l'échec. Sinon, `switchForm(sourceLocale)` est appelée **avant** que la
-   * prose soit remplacée : la page y pose ce qu'elle seule sait (l'entrée éditée vidée, la langue cible, le groupe source,
-   * l'avis de proposition).
+   * Demande une proposition dans `targetLocale` et la remet à `accept(proposal, sourceLocale)`, que `useAdminTranslation` appelle
+   * dans le point de contrôle même qui juge la réponse courante (R172) : la page y pose ce qu'elle seule sait faire de la
+   * proposition. La langue source est celle de l'identité du formulaire, lue à l'envoi ; la prose envoyée, celle de `proseFields`
+   * (les champs blancs omis). Rend vrai si la proposition a été acceptée ; faux sur un refus, un échec (`errorText`
+   * le dit) ou une réponse périmée, `accept` n'étant alors pas appelée. `proposeFrom` en est l'usage des formulaires par entrée ;
+   * les réglages « À propos », dont la proposition est différée, l'appellent eux-mêmes.
+   */
+  readonly requestProposal: (
+    targetLocale: Locale,
+    accept: (proposal: TranslationProposal, sourceLocale: Locale) => void,
+  ) => Promise<boolean>
+  /**
+   * Demande une proposition dans `targetLocale` (`requestProposal`), puis bascule le formulaire en **création** avec elle : la
+   * prose est remplacée, le reste gardé. Rien n'est enregistré (ADR 0004, D4). Sur un refus, un échec ou une réponse périmée, il
+   * ne se passe rien : le formulaire reste intact et `errorText` dit l'échec. Sinon, `switchForm(sourceLocale)` est appelée
+   * **avant** que la prose soit remplacée : la page y pose ce qu'elle seule sait (l'entrée éditée vidée, la langue cible, le
+   * groupe source, l'avis de proposition). Les deux gestes se font dans le point de contrôle qui juge la réponse courante : la
+   * proposition est posée sous ce jugement, jamais une micro-tâche plus tard (R172).
    */
   readonly proposeFrom: (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void) => Promise<void>
   /**
@@ -101,20 +114,20 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
  * de l'échec, et ce que la prose en tire — lecture seule pendant la traduction, décrite par un texte d'aide, jamais
  * d'identifiant pendant. Écrit une fois pour les neuf formulaires.
  *
- * Il appelle `useAdminTranslation` et en rend ce qu'une page lit, sans `expire` : un geste de page périme par son identité
- * (`renewForm`) ou par `removeEntry`. La page garde ce qui lui est propre : le formulaire et ses gestes (`startEdit`,
- * `startCreateVersion`, l'enregistrement), ses champs de prose (`proseFields.ts`), le `window.confirm` de la suppression, et le
- * bloc de gabarit — `TranslateEntryButton`, `TranslationReadonlyHint`, l'alerte d'erreur —, que chaque page écrit : chacune de
- * ses liaisons porte une valeur de la page (la langue du formulaire, l'aide du verrou, son `describedBy`), et un composant qui
- * les recevrait toutes ne ferait que déplacer la recopie. Les réglages « À propos » (proposition différée) lisent `hasProse`
- * et `errorText` mais gardent leur `translate` direct, sans `proposeFrom`.
+ * Il appelle `useAdminTranslation` et en rend ce qu'une page lit, sans `expire` ni `translate` (`requestProposal` en est la
+ * porte) : un geste de page périme par son identité (`renewForm`) ou par `removeEntry`. La page garde ce qui lui est propre : le
+ * formulaire et ses gestes (`startEdit`, `startCreateVersion`, l'enregistrement), ses champs de prose (`proseFields.ts`), le
+ * `window.confirm` de la suppression, et le bloc de gabarit — `TranslateEntryButton`, `TranslationReadonlyHint`, l'alerte
+ * d'erreur —, que chaque page écrit : chacune de ses liaisons porte une valeur de la page (la langue du formulaire, l'aide du
+ * verrou, son `describedBy`), et un composant qui les recevrait toutes ne ferait que déplacer la recopie. Les réglages
+ * « À propos » (proposition différée) lisent `hasProse` et `errorText` et appellent `requestProposal`, sans `proposeFrom`.
  */
 export function useTranslatedForm<F extends string>(options: UseTranslatedFormOptions<F>): UseTranslatedFormResult {
   const { t } = useI18n()
   // Le numéro du formulaire : un geste qui le remplit ou le vide le fait avancer, et rien d'autre (voir `renewForm`).
   const generation = ref(0)
   const hasProse = computed(() => options.proseFields.some((field) => '' !== options.form[field].trim()))
-  const { expire, ...translation } = useAdminTranslation({
+  const { expire, translate, ...translation } = useAdminTranslation({
     isRefused: () => !hasProse.value || options.isRefused(),
     formIdentity: () => ({ ...options.identity(), generation: generation.value }),
   })
@@ -136,15 +149,21 @@ export function useTranslatedForm<F extends string>(options: UseTranslatedFormOp
 
     await remove()
   }
-  const proposeFrom = async (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void): Promise<void> => {
+  const requestProposal = (
+    targetLocale: Locale,
+    accept: (proposal: TranslationProposal, sourceLocale: Locale) => void,
+  ): Promise<boolean> => {
     const sourceLocale = options.identity().locale
-    const proposal = await translation.translate(sourceLocale, targetLocale, collectProseFields(options.form, options.proseFields))
-    if (null === proposal) {
-      return
-    }
 
-    switchForm(sourceLocale)
-    applyTranslationProposal(options.form, options.proseFields, proposal)
+    return translate(sourceLocale, targetLocale, collectProseFields(options.form, options.proseFields), (proposal) =>
+      accept(proposal, sourceLocale),
+    )
+  }
+  const proposeFrom = async (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void): Promise<void> => {
+    await requestProposal(targetLocale, (proposal, sourceLocale) => {
+      switchForm(sourceLocale)
+      applyTranslationProposal(options.form, options.proseFields, proposal)
+    })
   }
   const errorText = computed(() => {
     const reason = translation.errorReason.value
@@ -166,6 +185,7 @@ export function useTranslatedForm<F extends string>(options: UseTranslatedFormOp
     expireIfDeleted,
     hasProse,
     errorText,
+    requestProposal,
     proposeFrom,
     removeEntry,
     proseReadonlyHintId,
