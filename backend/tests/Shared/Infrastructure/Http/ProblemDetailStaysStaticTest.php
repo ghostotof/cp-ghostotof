@@ -176,15 +176,18 @@ final class ProblemDetailStaysStaticTest extends TestCase
     /** Le message de {@see \Exception::__construct()} : son premier paramètre, `$message`. */
     private const array NATIVE_MESSAGE = [[0, 'message']];
 
-    /** Ce qui, écrit après une variable, la réaffecte. */
-    private const array VARIABLE_ASSIGNMENTS = ['=', \T_PLUS_EQUAL, \T_MINUS_EQUAL, \T_MUL_EQUAL, \T_DIV_EQUAL, \T_CONCAT_EQUAL, \T_MOD_EQUAL,
+    /** Ce qui, écrit après une variable, la réaffecte, hors `=` ({@see self::assignsAt()}). */
+    private const array COMPOUND_ASSIGNMENTS = [\T_PLUS_EQUAL, \T_MINUS_EQUAL, \T_MUL_EQUAL, \T_DIV_EQUAL, \T_CONCAT_EQUAL, \T_MOD_EQUAL,
         \T_AND_EQUAL, \T_OR_EQUAL, \T_XOR_EQUAL, \T_SL_EQUAL, \T_SR_EQUAL, \T_POW_EQUAL, \T_COALESCE_EQUAL];
+
+    /** Le `&` : depuis PHP 8.1 son identifiant dépend de ce qui le suit, jamais celui d'un caractère ({@see PhpSources::isChar()}). */
+    private const array AMPERSANDS = [\T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG, \T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG];
 
     /** @var array<string, array{declarations: array<string, Declaration>, constructions: list<Construction>}>|null */
     private static ?array $sourceModel = null;
 
-    /** Ce qui, écrit après `$this->message`, lui affecte une valeur. */
-    private const array ASSIGNMENTS = ['=', \T_CONCAT_EQUAL, \T_COALESCE_EQUAL];
+    /** Ce qui, écrit après `$this->message`, lui affecte une valeur, hors `=` ({@see self::assignsAt()}). */
+    private const array MESSAGE_ASSIGNMENTS = [\T_CONCAT_EQUAL, \T_COALESCE_EQUAL];
     private const array LITERAL_HEREDOC_TOKENS = [\T_START_HEREDOC, \T_ENCAPSED_AND_WHITESPACE, \T_END_HEREDOC];
 
     /** Le corps de `getDetail()` qui rend le message, jetons en minuscules après l'accolade ouvrante. */
@@ -502,6 +505,62 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'site, self:: hors de toute classe' => [$header.'throw new Problem(self::M);', 1];
         yield 'constructeur, constante composée' => [$namespace."final class Problem extends \\DomainException {\n    private const string M = 'x'.\\PHP_EOL;\n"
             ."    public function __construct() { parent::__construct(self::M); }\n}\n", 1];
+
+        // Le texte d'un fragment de chaîne interpolée est aussi celui d'une parenthèse, d'un crochet, d'une virgule ou d'un
+        // dollar du code (D4, #748) : `bodyOf`, `arguments()`, `constantsAt` et `reassignedIn` lisent chaque délimiteur par
+        // l'identifiant du jeton, jamais par son texte. Un fragment seul, `)`, `,` ou `$`, n'a ce texte qu'entre deux jetons.
+        yield 'un crochet de propriété dont la chaîne porte une parenthèse' => [
+            $namespace."final class Problem extends \\DomainException {\n"
+                ."    public function __construct(public string \$a { get => \"\$a)\"; }, string \$m) {\n"
+                ."        parent::__construct('x'.\$m);\n    }\n}\n",
+            1,
+        ];
+        yield 'un crochet de propriété dont la chaîne porte une parenthèse ouvrante' => [
+            $namespace."final class Problem extends \\DomainException {\n"
+                ."    public function __construct(public string \$a { get => \"\$a(\"; }, string \$m) {\n"
+                ."        parent::__construct('x'.\$m);\n    }\n}\n",
+            1,
+        ];
+        $thirdParameter = $forwarding('parent::__construct($m);', 'string $a, string $b, string $m');
+        foreach (InterpolatedStrings::COMMAS as $label => $string) {
+            yield 'une virgule dans une chaîne interpolée en argument : '.$label => [
+                $thirdParameter.$thrower($string.", 'L', \"x\$c\""),
+                1,
+            ];
+            yield 'le même argument, sans la virgule : le témoin' => [$thirdParameter.$thrower('"$x", \'L\', "x$c"'), 1];
+        }
+        foreach (InterpolatedStrings::DOLLARS as $label => $string) {
+            yield 'un dollar final dans une chaîne ne réaffecte rien : '.$label => [
+                $forwarding('$s = '.$string.'; parent::__construct($m);').$thrower("'Vide.'"),
+                0,
+            ];
+        }
+        // `"$x]"` : le crochet fermant d'une chaîne, dans la valeur d'une constante puis dans un argument. La valeur n'est pas
+        // un code que PHP accepte (une constante n'interpole pas) : le modèle lit des jetons, il ne l'exécute pas.
+        yield 'site, constante dont la valeur porte un crochet fermant interpolé' => [
+            $namespace.$siteIn('    const A = ['.InterpolatedStrings::CLOSING_BRACKET."], M = 'Vide.';\n", 'self::M'),
+            0,
+        ];
+        yield 'site composé dont le premier argument porte un crochet fermant interpolé' => [
+            $own.$thrower('new \\RuntimeException('.InterpolatedStrings::CLOSING_BRACKET."), 'x'.\$c"),
+            1,
+        ];
+        // Un heredoc et un nowdoc (Sp16-19) : le verdict est celui du témoin écrit avec un littéral ordinaire, au site, dans la
+        // valeur d'une constante et dans le corps d'un constructeur qui transmet son paramètre.
+        foreach (InterpolatedStrings::HEREDOCS as $label => $heredoc) {
+            yield 'site composé, le message en troisième position après '.$label => [
+                $thirdParameter.$thrower($heredoc.", 'L', 'x'.\$c"),
+                1,
+            ];
+            yield 'site, constante qui suit '.$label => [
+                $namespace.$siteIn('    const A = '.$heredoc.", M = 'Vide.';\n", 'self::M'),
+                0,
+            ];
+            yield 'paramètre transmis après '.$label.' dans le corps' => [
+                $forwarding('$s = '.$heredoc.'; parent::__construct($m);').$thrower("'Vide.'"),
+                0,
+            ];
+        }
     }
 
     /** Un trait déclaré dans un autre fichier que la classe qui l'utilise compte aussi (issue #507). */
@@ -973,7 +1032,10 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 }
                 // Transmis tel quel : une seule variable, entre parenthèses au besoin.
                 $composed = $composedAbove || 1 !== \count($variables)
-                    || !array_all($argument, static fn (PhpToken $token): bool => $token->is([\T_VARIABLE, '(', ')']));
+                    || !array_all(
+                        $argument,
+                        static fn (PhpToken $token): bool => $token->is(\T_VARIABLE) || PhpSources::isAnyChar($token, '(', ')'),
+                    );
                 foreach ($variables as $variable) {
                     $dependencies[$variable] = ($dependencies[$variable] ?? false) || $composed;
                 }
@@ -1003,7 +1065,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
                     return null;
                 }
                 $variables[] = $variable;
-            } elseif (!$token->is([\T_CONSTANT_ENCAPSED_STRING, '.', '(', ')', ...self::LITERAL_HEREDOC_TOKENS])) {
+            } elseif (!$token->is([\T_CONSTANT_ENCAPSED_STRING, ...self::LITERAL_HEREDOC_TOKENS])
+                && !PhpSources::isAnyChar($token, '.', '(', ')')) {
                 return null;
             }
         }
@@ -1099,7 +1162,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             } elseif ($token->is(\T_USE) && null !== $current && $depth === $bodyDepth) {
                 [$used, $next] = $this->usedTraits($tokens, $index + 1, $namespace, $imports);
                 $traits[$current] = [...$traits[$current] ?? [], ...$used];
-                if ($this->tokenAt($tokens, $next, '{')) {
+                if ($this->charAt($tokens, $next, '{')) {
                     $adaptations[$current][] = $this->adaptations($tokens, $next, $namespace, $imports);
                 }
             } elseif ($this->declaresAt($tokens, $index)) {
@@ -1115,7 +1178,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
             } elseif ($token->is(\T_CONST) && null !== $current && $depth === $bodyDepth && !$this->tokenAt($tokens, $index - 1, \T_DOUBLE_COLON)) {
                 // `Foo::CONST` est lexé T_CONST : une constante nommée CONST, pas une déclaration.
                 $constants[$current] = [...$constants[$current] ?? [], ...$this->constantsAt($tokens, $index)];
-            } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS) && $this->tokenAt($tokens, $index + 2, '(')) {
+            } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS)
+                && $this->charAt($tokens, $index + 2, '(')) {
                 [$kind, $class] = $this->instantiated($tokens[$index + 1], $namespace, $imports);
                 $constructions[] = [$kind, $class, $this->arguments($tokens, $index + 2, $namespace, $imports), $token->line, $current];
             } elseif (null !== $current && $this->assignsTheMessageAt($tokens, $index)) {
@@ -1198,7 +1262,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $aliases = [];
         $statement = [];
         for ($index = $open + 1, $count = \count($tokens); $index < $count && !PhpSources::closesBrace($tokens[$index]); ++$index) {
-            if (!$tokens[$index]->is(';')) {
+            if (!PhpSources::isChar($tokens[$index], ';')) {
                 $statement[] = $tokens[$index];
 
                 continue;
@@ -1221,27 +1285,37 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Le jeton ouvre-t-il un niveau d'imbrication : `(`, `[` ou une accolade ({@see PhpSources::opensBrace()}) ?
-     * Lu par l'identifiant : le fragment `(` d'une chaîne interpolée n'en ouvre aucun.
+     * Le jeton en $index est-il de ce genre (un identifiant de jeton) ? Un caractère du code se lit par
+     * {@see self::charAt()}, jamais ici : `is()` compare le texte d'un genre donné en chaîne.
+     *
+     * @param list<PhpToken> $tokens
+     * @param int|list<int>  $kind
      */
-    private function opensALevel(PhpToken $token): bool
+    private function tokenAt(array $tokens, int $index, int|array $kind): bool
     {
-        return PhpSources::isChar($token, '(') || PhpSources::isChar($token, '[') || PhpSources::opensBrace($token);
-    }
-
-    /** Le jeton ferme-t-il un niveau ouvert par {@see self::opensALevel()} : `)`, `]` ou `}` du code ? */
-    private function closesALevel(PhpToken $token): bool
-    {
-        return PhpSources::isChar($token, ')') || PhpSources::isChar($token, ']') || PhpSources::closesBrace($token);
+        return isset($tokens[$index]) && $tokens[$index]->is($kind);
     }
 
     /**
-     * @param list<PhpToken>              $tokens
-     * @param int|string|list<int|string> $kind
+     * Le jeton en $index est-il l'un de ces caractères du code ({@see PhpSources::isAnyChar()}) ?
+     *
+     * @param list<PhpToken>   $tokens
+     * @param non-empty-string ...$chars
      */
-    private function tokenAt(array $tokens, int $index, int|string|array $kind): bool
+    private function charAt(array $tokens, int $index, string ...$chars): bool
     {
-        return isset($tokens[$index]) && $tokens[$index]->is($kind);
+        return isset($tokens[$index]) && PhpSources::isAnyChar($tokens[$index], ...$chars);
+    }
+
+    /**
+     * Ce qui est écrit en $index affecte-t-il une valeur : `=`, ou l'un de ces opérateurs ?
+     *
+     * @param list<PhpToken> $tokens
+     * @param list<int>      $operators
+     */
+    private function assignsAt(array $tokens, int $index, array $operators): bool
+    {
+        return $this->charAt($tokens, $index, '=') || $this->tokenAt($tokens, $index, $operators);
     }
 
     /**
@@ -1254,7 +1328,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function functionName(array $tokens, int $function): string
     {
         $name = $tokens[$function + 1] ?? null;
-        if (null !== $name && '&' === $name->text) {
+        if (null !== $name && $name->is(self::AMPERSANDS)) {
             $name = $tokens[$function + 2] ?? null;
         }
 
@@ -1274,7 +1348,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         return $tokens[$index]->is(\T_VARIABLE) && '$this' === $tokens[$index]->text
             && $this->tokenAt($tokens, $index + 1, \T_OBJECT_OPERATOR)
             && $this->tokenAt($tokens, $index + 2, \T_STRING) && 'message' === $tokens[$index + 2]->text
-            && $this->tokenAt($tokens, $index + 3, self::ASSIGNMENTS);
+            && $this->assignsAt($tokens, $index + 3, self::MESSAGE_ASSIGNMENTS);
     }
 
     /**
@@ -1309,7 +1383,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         while ($this->tokenAt($tokens, $index, ClassNameResolver::NAMES)) {
             $traits[] = ClassNameResolver::resolve($tokens[$index], $namespace, $imports);
             ++$index;
-            if (!$this->tokenAt($tokens, $index, ',')) {
+            if (!$this->charAt($tokens, $index, ',')) {
                 break;
             }
             ++$index;
@@ -1358,14 +1432,14 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $open + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($this->opensALevel($token)) {
+            if (PhpSources::opensALevel($token)) {
                 ++$level;
-            } elseif ($this->closesALevel($token)) {
+            } elseif (PhpSources::closesALevel($token)) {
                 if (0 === $level) {
                     break;
                 }
                 --$level;
-            } elseif ($token->is(',') && 0 === $level) {
+            } elseif (PhpSources::isChar($token, ',') && 0 === $level) {
                 $arguments[] = [];
 
                 continue;
@@ -1411,7 +1485,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function boundArgument(array $arguments, int $position, string $name): ?array
     {
         foreach ($arguments as $index => $argument) {
-            $named = $this->tokenAt($argument, 1, ':') && $argument[0]->is(\T_STRING);
+            $named = $this->charAt($argument, 1, ':') && $argument[0]->is(\T_STRING);
             if ($named && $name === $argument[0]->text) {
                 return \array_slice($argument, 2);
             }
@@ -1562,25 +1636,25 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $const + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if (0 === $level && $token->is([',', ';'])) {
+            if (0 === $level && PhpSources::isAnyChar($token, ',', ';')) {
                 if (null !== $name) {
                     $constants[$name] = ['literal' => $this->isStringLiteral($value), 'private' => $private];
                 }
-                if ($token->is(';')) {
+                if (PhpSources::isChar($token, ';')) {
                     break;
                 }
                 [$name, $value] = [null, []];
 
                 continue;
             }
-            if ($token->is(['(', '['])) {
+            if (PhpSources::opensALevel($token)) {
                 ++$level;
-            } elseif ($token->is([')', ']'])) {
+            } elseif (PhpSources::closesALevel($token)) {
                 --$level;
             }
             if (null !== $name) {
                 $value[] = $token;
-            } elseif ($token->is('=')) {
+            } elseif (PhpSources::isChar($token, '=')) {
                 // Le nom précède `=`, après le type éventuel (`const string M = …`).
                 $name = $tokens[$index - 1]->text;
             }
@@ -1602,12 +1676,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $parentheses = 0;
         for ($index = $function + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is('(')) {
+            if (PhpSources::isChar($token, '(')) {
                 ++$parentheses;
-            } elseif ($token->is(')')) {
+            } elseif (PhpSources::isChar($token, ')')) {
                 --$parentheses;
-            } elseif (0 === $parentheses && $token->is([';', '{'])) {
-                return $token->is('{') ? $index : null;
+            } elseif (0 === $parentheses && PhpSources::isAnyChar($token, ';', '{')) {
+                return PhpSources::isChar($token, '{') ? $index : null;
             }
         }
 
@@ -1688,13 +1762,15 @@ final class ProblemDetailStaysStaticTest extends TestCase
             if ($token->is([\T_AS, \T_CATCH])) {
                 // Jusqu'à la parenthèse qui ferme l'en-tête du foreach ou du catch.
                 $reassigned = [...$reassigned, ...$this->variablesUntilClosingParenthesis($tokens, $index + 1)];
-            } elseif ($token->is('=') && $this->tokenAt($tokens, $index - 1, [']', ')'])) {
+            } elseif (PhpSources::isChar($token, '=') && $this->charAt($tokens, $index - 1, ']', ')')) {
                 $reassigned = [...$reassigned, ...$this->destructuredBefore($tokens, $index - 1)];
-            } elseif ($token->is('$') || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES)
-                || ($token->is(\T_STRING) && \in_array(strtolower($token->text), ['extract', 'parse_str'], true) && $this->tokenAt($tokens, $index + 1, '('))) {
+            } elseif (PhpSources::isChar($token, '$') || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES)
+                || ($token->is(\T_STRING) && \in_array(strtolower($token->text), ['extract', 'parse_str'], true)
+                    && $this->charAt($tokens, $index + 1, '('))) {
                 return $parameters;
             } elseif ($token->is(\T_VARIABLE)
-                && ($this->tokenAt($tokens, $index + 1, self::VARIABLE_ASSIGNMENTS) || $this->tokenAt($tokens, $index - 1, ['&', \T_GLOBAL, \T_STATIC]))) {
+                && ($this->assignsAt($tokens, $index + 1, self::COMPOUND_ASSIGNMENTS)
+                    || $this->tokenAt($tokens, $index - 1, [...self::AMPERSANDS, \T_GLOBAL, \T_STATIC]))) {
                 $reassigned[] = substr($token->text, 1);
             }
         }
@@ -1746,7 +1822,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
             if (PhpSources::isChar($token, $closer)) {
                 ++$level;
             } elseif (PhpSources::isChar($token, $opener) && 0 === --$level) {
-                $isDestructuring = '[' === $opener ? !$this->tokenAt($tokens, $index - 1, [\T_VARIABLE, ']', ')', \T_STRING]) : $this->tokenAt($tokens, $index - 1, \T_LIST);
+                $isDestructuring = '[' === $opener
+                    ? !$this->tokenAt($tokens, $index - 1, [\T_VARIABLE, \T_STRING]) && !$this->charAt($tokens, $index - 1, ']', ')')
+                    : $this->tokenAt($tokens, $index - 1, \T_LIST);
 
                 return $isDestructuring ? $variables : [];
             } elseif ($token->is(\T_VARIABLE)) {
@@ -1773,9 +1851,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $function + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($this->opensALevel($token) || $token->is(\T_ATTRIBUTE)) {
+            if (PhpSources::opensALevel($token) || $token->is(\T_ATTRIBUTE)) {
                 ++$level;
-            } elseif ($this->closesALevel($token) && 0 === --$level) {
+            } elseif (PhpSources::closesALevel($token) && 0 === --$level) {
                 break;
             } elseif (1 === $level && $token->is(\T_VARIABLE)) {
                 $parameters[] = substr($token->text, 1);

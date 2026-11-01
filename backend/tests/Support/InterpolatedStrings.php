@@ -6,12 +6,14 @@ namespace App\Tests\Support;
 
 /**
  * Les chaînes interpolées dont un fragment a le texte d'une accolade, d'une
- * parenthèse ou d'un crochet, écrites une fois pour les recenseurs par jetons
- * qui comptent des niveaux ({@see ClassNameResolver::scopes()},
- * {@see UnsortedImports}, {@see AnonymousClassesAndFreeFunctions} et le modèle
- * de `ProblemDetailStaysStaticTest`). Le texte d'un T_ENCAPSED_AND_WHITESPACE
+ * parenthèse, d'un crochet, d'une virgule ou d'un dollar, écrites une fois pour
+ * les recenseurs par jetons qui comptent des niveaux ou découpent sur un
+ * délimiteur ({@see ClassNameResolver::scopes()}, {@see UnsortedImports},
+ * {@see AnonymousClassesAndFreeFunctions} et le modèle de
+ * `ProblemDetailStaysStaticTest`). Le texte d'un T_ENCAPSED_AND_WHITESPACE
  * `}` est celui d'une accolade du code, son identifiant n'en est pas un : un
- * recenseur qui compte par le texte décale son niveau (issue #748, C15-2).
+ * recenseur qui lit par le texte décale son niveau, coupe un argument ou
+ * réaffecte à tort (issue #748, C15-2, D4).
  *
  * Chaque valeur est du code PHP, sans point-virgule : le cas l'écrit dans son
  * extrait. Les deux dernières de {@see self::BRACES} sont de vraies
@@ -39,4 +41,36 @@ final class InterpolatedStrings
 
     /** Un crochet fermant après une variable : `"$x["` ouvrirait un indice. */
     public const string CLOSING_BRACKET = '"$x]"';
+
+    /** @var array<string, string> libellé => chaîne dont un fragment est une virgule */
+    public const array COMMAS = [
+        'une virgule après une variable' => '"$x,"',
+    ];
+
+    /** @var array<string, string> libellé => chaîne dont un fragment est un dollar : `"$x$"` n'ouvre aucune variable */
+    public const array DOLLARS = [
+        'un dollar après une variable' => '"$x$"',
+    ];
+
+    /**
+     * Un heredoc dont un fragment, entre deux variables, a exactement le texte
+     * d'un caractère du code, et un nowdoc dont le corps est ce caractère.
+     * Le fragment d'un nowdoc, ou celui qui finit un heredoc, porte aussi le
+     * saut de ligne qui précède le marqueur : son texte n'est jamais celui d'un
+     * seul caractère, et la lecture par le texte ne s'y trompe pas.
+     *
+     * @var array<string, string> libellé => heredoc ou nowdoc, marqueur de fin compris
+     */
+    public const array HEREDOCS = [
+        'un heredoc dont un fragment est une parenthèse fermante' => "<<<TXT\n\$c)\$c\nTXT",
+        'un heredoc dont un fragment est un crochet fermant' => "<<<TXT\n\$c]\$c\nTXT",
+        'un heredoc dont un fragment est une virgule' => "<<<TXT\n\$c,\$c\nTXT",
+        'un heredoc dont un fragment est un point-virgule' => "<<<TXT\n\$c;\$c\nTXT",
+        'un heredoc dont un fragment est un dollar' => "<<<TXT\n\$c\$\$c\nTXT",
+        'un nowdoc dont le corps est une parenthèse fermante' => "<<<'TXT'\n)\nTXT",
+        'un nowdoc dont le corps est un crochet fermant' => "<<<'TXT'\n]\nTXT",
+        'un nowdoc dont le corps est une virgule' => "<<<'TXT'\n,\nTXT",
+        'un nowdoc dont le corps est un point-virgule' => "<<<'TXT'\n;\nTXT",
+        'un nowdoc dont le corps est un dollar' => "<<<'TXT'\n\$\nTXT",
+    ];
 }

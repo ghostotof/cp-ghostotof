@@ -86,7 +86,7 @@ final class PhpSources
      */
     public static function opensBrace(PhpToken $token): bool
     {
-        return \ord('{') === $token->id || \T_CURLY_OPEN === $token->id || \T_DOLLAR_OPEN_CURLY_BRACES === $token->id;
+        return self::isChar($token, '{') || \T_CURLY_OPEN === $token->id || \T_DOLLAR_OPEN_CURLY_BRACES === $token->id;
     }
 
     /**
@@ -96,19 +96,48 @@ final class PhpSources
      */
     public static function closesBrace(PhpToken $token): bool
     {
-        return \ord('}') === $token->id;
+        return self::isChar($token, '}');
     }
 
     /**
-     * Le jeton est-il ce caractère du code (`(`, `)`, `[`, `]`…) ? Lu par
-     * l'identifiant, que seul le jeton d'un caractère du code porte :
+     * Le jeton ouvre-t-il un niveau d'imbrication : `(`, `[` ou une accolade
+     * ({@see self::opensBrace()}) ? Lu par l'identifiant : le fragment `(` d'une
+     * chaîne interpolée n'en ouvre aucun.
+     */
+    public static function opensALevel(PhpToken $token): bool
+    {
+        return self::isAnyChar($token, '(', '[') || self::opensBrace($token);
+    }
+
+    /** Le jeton ferme-t-il un niveau ouvert par {@see self::opensALevel()} : `)`, `]` ou `}` du code ? */
+    public static function closesALevel(PhpToken $token): bool
+    {
+        return self::isAnyChar($token, ')', ']') || self::closesBrace($token);
+    }
+
+    /**
+     * Le jeton est-il ce caractère du code (`(`, `)`, `[`, `]`, `,`, `;`, `$`…) ?
+     * Lu par l'identifiant, que seul le jeton d'un caractère du code porte :
      * `PhpToken::is('(')` compare le texte, que le fragment `(` d'une chaîne
-     * interpolée (`"$x("`) a aussi.
+     * interpolée (`"$x("`) a aussi. Pas pour `&` : depuis PHP 8.1 il a deux
+     * identifiants propres (`T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG` et
+     * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG`), jamais le sien.
      *
-     * @param string $char un seul caractère
+     * @param non-empty-string $char un seul caractère
      */
     public static function isChar(PhpToken $token, string $char): bool
     {
         return \ord($char[0]) === $token->id;
+    }
+
+    /**
+     * Le jeton est-il l'un de ces caractères du code ? Lu par l'identifiant,
+     * comme {@see self::isChar()}.
+     *
+     * @param non-empty-string ...$chars un seul caractère chacun
+     */
+    public static function isAnyChar(PhpToken $token, string ...$chars): bool
+    {
+        return array_any($chars, static fn (string $char): bool => self::isChar($token, $char));
     }
 }
