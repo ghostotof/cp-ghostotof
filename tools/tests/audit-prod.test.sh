@@ -163,6 +163,25 @@ run_case check_no_child_sees_basic_auth \
   "audit : aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
   CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=1
 
+# --- R182 (Q2, CR15-3) : la limite du nom invalide. Un nom que la bibliothèque refuse rend 2 avant la lecture : la variable n'est
+# pas retirée du shell, et c'est le seul chemin où elle reste exportée. Aucun script du dépôt ne l'atteint (la première garde de
+# smoke-http.test.sh impose l'appel littéral), et ce cas prouve ce qui en fait une limite et non un trou : sur ce chemin le `trap`
+# de l'audit ne lance aucun processus (`smoke_cleanup` n'a rien à retirer, donc pas de `rm`), si bien qu'aucun fils ne voit la
+# variable. Une copie de l'audit dont l'appel porte un nom invalide, lancée avec le témoin commun : sortie 2, aucune ligne `== rm`.
+write_env_noting "$TMP/badname-bin" dirname mktemp date openssl rm
+: > "$TMP/badname-env.txt"
+copy_tools badname reelle
+sed -i 's/smoke_use_auth_config AUDIT_BASIC_AUTH ||/smoke_use_auth_config AUDIT-BASIC ||/' "$TMP/badname/tools/audit-prod.sh"
+FAKE_TOOL_ENV="$TMP/badname-env.txt" PATH="$TMP/badname-bin:$PATH" AUDIT_BASIC_AUTH='u:p' run_audit badname
+if [ "$(grep -c 'smoke_use_auth_config AUDIT-BASIC ||' "$TMP/badname/tools/audit-prod.sh")" -eq 1 ] && [ "$rc" -eq 2 ] \
+   && grep -q '^_smoke_write_auth_config : nom de variable invalide' "$TMP/badname.err" && [ ! -s "$TMP/badname.calls" ] \
+   && ! grep -q '^== ' "$TMP/badname-env.txt"; then
+  pass "audit : un nom invalide rend 2 et le trap ne lance aucun processus (aucun faux outil noté, rm compris)"
+else
+  fail "audit : nom invalide" \
+    "rc=$rc ; err : $(cat -A "$TMP/badname.err") ; outils lancés : $(grep '^== ' "$TMP/badname-env.txt" | tr '\n' ' ')"
+fi
+
 # --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
 # (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait : sortie 2).
 copy_tools cdpath reelle

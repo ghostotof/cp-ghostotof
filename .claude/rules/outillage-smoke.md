@@ -22,6 +22,10 @@ The value is read under `set +x` and written in a private directory; every `trap
 As soon as the value is read, before any validation and before the `mktemp`, the variable is unset (D3 of the fourteenth review):
 no `set`, `declare -p` nor child process (`mktemp`, curl, dig, openssl) started afterwards sees it, whatever the value, a refused one
 included; a private flag, `_smoke_auth_defined`, keeps “defined” for the empty-secret check.
+If the variable is still defined afterwards (read-only, or a global a caller's local was hiding), the call exits 2 before anything is
+written, naming the variable and never its value (R182). An invalid name exits 2 before the reading, so the variable stays
+exported: a limit, since the first guard below forces the literal call, and the `trap` of the four scripts starts no process then
+(`audit-prod.test.sh` proves it for the audit).
 The flag is set before the reading, read by `_smoke_require_auth_config` alone, and reset to 0 by `smoke_cleanup` and at the source.
 The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the reading, still receives the second name if it is exported:
 the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;

@@ -848,6 +848,53 @@ for kind in pleine vide refusee; do
   unset UNE_AUTH
 done
 
+# --- R182 (Q1) : un retrait qui échoue est un refus. Une variable en lecture seule ne se retire pas (le retrait rend 1 et le
+# fichier -K serait écrit quand même), et le retrait d'une locale de l'appelant laisse voir la globale exportée qu'elle masquait :
+# dans les deux cas la variable reste définie, donc visible d'un fils. Retour 2 avant toute validation et tout `mktemp`, le message
+# nomme la variable et jamais la valeur, aucun fichier -K, aucun dossier. Chaque cas court dans un `bash -c` à part : la variable
+# en lecture seule ne se retirerait plus du shell du test. Les valeurs sont générées et passées par l'environnement du `bash -c`,
+# jamais par ses arguments.
+shadow_global="$(generated_basic_auth)"
+shadow_local="$(generated_basic_auth)"
+for kind in lecture-seule locale-masquante; do
+  mkdir "$TMP/unset-tmpdir"
+  rc=0
+  case "$kind" in
+    lecture-seule)
+      GLOBAL_VALUE="$shadow_global" TMPDIR="$TMP/unset-tmpdir" bash -c '
+        source "$1"
+        export UNE_AUTH="$GLOBAL_VALUE"
+        readonly UNE_AUTH
+        rc=0
+        _smoke_write_auth_config UNE_AUTH || rc=$?
+        printf "rc=%s config=[%s]" "$rc" "$SMOKE_AUTH_CONFIG"' _ "$LIB" > "$TMP/unset.out" 2> "$TMP/unset.err" || rc=$?
+      ;;
+    locale-masquante)
+      GLOBAL_VALUE="$shadow_global" LOCAL_VALUE="$shadow_local" TMPDIR="$TMP/unset-tmpdir" bash -c '
+        source "$1"
+        export UNE_AUTH="$GLOBAL_VALUE"
+        caller() {
+          local UNE_AUTH="$LOCAL_VALUE"
+          rc=0
+          _smoke_write_auth_config UNE_AUTH || rc=$?
+          printf "rc=%s config=[%s]" "$rc" "$SMOKE_AUTH_CONFIG"
+        }
+        caller' _ "$LIB" > "$TMP/unset.out" 2> "$TMP/unset.err" || rc=$?
+      ;;
+  esac
+  if [ "$(cat "$TMP/unset.out")" = "rc=2 config=[]" ] \
+     && grep -q '^UNE_AUTH : la variable ne peut pas être retirée du shell' "$TMP/unset.err" \
+     && ! grep -qF -e "$shadow_global" -e "$shadow_local" "$TMP/unset.out" "$TMP/unset.err" && [ -z "$(ls -A "$TMP/unset-tmpdir")" ]; then
+    pass "_smoke_write_auth_config : variable $kind, retrait impossible → retour 2, rien d'écrit, valeur jamais citée"
+  else
+    detail="sortie : $(cat -A "$TMP/unset.out") ; TMPDIR : $(ls -A "$TMP/unset-tmpdir" | tr '\n' ' ')"
+    detail+=" ; stderr : $( { grep -vF -e "$shadow_global" -e "$shadow_local" "$TMP/unset.err" || true; } | cat -A)"
+    fail "retrait impossible ($kind)" "$detail"
+  fi
+  rm -rf "$TMP/unset-tmpdir"
+done
+unset shadow_global shadow_local kind
+
 # Le drapeau privé `_smoke_auth_defined` garde « définie » pour le contrôle du vide : lu par _smoke_require_auth_config
 # (jamais `[[ -v ]]`, la variable n'existe plus), remis à 0 par smoke_cleanup et à la source.
 SMOKE_AUTH_CONFIG=""

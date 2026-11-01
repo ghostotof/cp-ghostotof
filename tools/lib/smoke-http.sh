@@ -41,7 +41,8 @@
 # Une variable non définie n'envoie aucune Basic Auth (la prod, un smoke lancé à la main). Dès qu'elle est lue,
 # la variable est retirée du shell (`unset`, D3 de la quatorzième relecture) : aucun vidage du shell, aucun test de définition
 # ni aucun processus lancé ensuite (mktemp, curl, dig, openssl) ne la voit. Un drapeau privé, `_smoke_auth_defined`,
-# garde « elle était définie » pour le contrôle du vide. Cela n'efface pas la copie d'environnement que le processus a
+# garde « elle était définie » pour le contrôle du vide. Un retrait qui échoue (variable en lecture seule, ou globale masquée
+# par une locale de l'appelant) est un refus : sortie 2, rien d'écrit. Cela n'efface pas la copie d'environnement que le processus a
 # reçue à son lancement, lisible sous /proc, qui la porte encore. Aucune ligne de l'audit, des smokes ni de cette
 # bibliothèque ne lit cette copie (R148b, garde de tools/tests/smoke-http.test.sh).
 #
@@ -125,7 +126,8 @@ _smoke_is_variable_name() {
 # le mot de passe est vide ou fait seulement de blancs (`:`, `:p`, `u:`, ` :p`, `u: `, C12-9), n'est pas un couple
 # utilisateur:mot_de_passe : curl coupe au premier « : ». Les trois sont refusées avant tout dossier, sans citer la
 # valeur (c'est un secret), en nommant la variable reçue (#748 C6-9), retour 2 — celui d'un défaut d'environnement.
-# Retour 2 aussi pour un nom invalide, un dossier ou un fichier qui ne s'écrit pas (le dossier est alors retiré).
+# Retour 2 aussi pour un nom invalide, un retrait de la variable qui échoue (voir plus bas), un dossier ou un fichier qui ne
+# s'écrit pas (le dossier est alors retiré).
 #
 # Elle appelle smoke_cleanup **en tête**, avant tout, y compris la validation du nom
 # (décision 6 de #748) : un second appel remplace le premier, il ne laisse ni dossier
@@ -143,6 +145,18 @@ _smoke_is_variable_name() {
 # toute valeur lue, refusée comprise : aucun vidage du shell, ni le `mktemp -d` de cette fonction, curl, dig ou openssl ne la
 # voient. Le drapeau privé `_smoke_auth_defined`, posé juste avant la lecture, garde « elle était définie » : c'est lui que lit
 # _smoke_require_auth_config.
+#
+# Le retrait est vérifié (R182, Q1 de la quinzième relecture) : `unset` d'une variable en lecture seule échoue sans arrêter la
+# fonction, et celui d'une locale de l'appelant laisse voir la globale exportée qu'elle masquait. Si la variable est encore
+# définie juste après, le retrait n'a pas eu lieu : la valeur est vidée, xtrace rétabli, et l'appel rend 2 avant toute validation
+# et tout `mktemp`, en nommant la variable (jamais la valeur) : « la variable ne peut pas être retirée du shell ». Aucun fichier
+# n'est écrit ; l'appelant, dont la globale reste exportée, sort sur ce 2.
+#
+# Limite écrite (R182, Q2, CR15-3) : un nom invalide rend 2 avant la lecture, donc avant tout retrait, et la variable reste
+# exportée. Aucun script ne l'atteint (la première garde de tools/tests/smoke-http.test.sh impose l'appel littéral du nom de la
+# Basic Auth), et le `trap` des quatre scripts ne lance aucun processus tant que rien n'est créé : `smoke_cleanup` n'a alors
+# aucun dossier à retirer, donc aucun `rm` (cas de tools/tests/audit-prod.test.sh). Retirer ici une variable nommée en dur
+# donnerait à la bibliothèque le nom de ses appelants, ce que sa règle refuse.
 #
 # Une fois le fichier écrit (une Basic Auth pleine), elle retire aussi du shell les variables que curl lit et qui changeraient
 # où part l'identifiant ou ce qu'on en voit : `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`,
@@ -170,6 +184,14 @@ _smoke_write_auth_config() {
   fi
   _smoke_value="${!_smoke_name:-}"
   unset -v -- "$_smoke_name"
+  if [[ -v $_smoke_name ]]; then
+    _smoke_value=""
+    if [ "$_smoke_traced" -eq 1 ]; then
+      set -x
+    fi
+    echo "$_smoke_name : la variable ne peut pas être retirée du shell (lecture seule, ou une globale masquée par une locale), rien d'écrit" >&2
+    return 2
+  fi
   if [[ "$_smoke_value" == *$'\n'* || "$_smoke_value" == *$'\r'* ]]; then
     echo "$_smoke_name contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
     _smoke_rc=2
@@ -233,8 +255,8 @@ _smoke_require_auth_config() {
 # La seule fonction qu'un appelant écrit pour la Basic Auth : elle pose (_smoke_write_auth_config) puis
 # exige (_smoke_require_auth_config), dans cet ordre, sans que l'appelant ait à s'en souvenir (St11-4).
 # Retour 0 : variable non définie (aucune Basic Auth), ou pleine et écrite (SMOKE_AUTH_CONFIG posé).
-# Retour 2, la cause dite sur stderr : nom invalide, valeur refusée, dossier impossible, ou variable
-# définie mais vide. Aucune fonction ne fait sortir l'appelant : `smoke_use_auth_config NOM || exit 2`.
+# Retour 2, la cause dite sur stderr : nom invalide, valeur refusée, retrait de la variable impossible, dossier impossible, ou
+# variable définie mais vide. Aucune fonction ne fait sortir l'appelant : `smoke_use_auth_config NOM || exit 2`.
 smoke_use_auth_config() {
   _smoke_write_auth_config "${1:-}" || return "$?"
   _smoke_require_auth_config "${1:-}"
