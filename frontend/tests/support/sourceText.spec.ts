@@ -348,6 +348,49 @@ describe('deferredCallsOf', () => {
   it("deferredCallsOf lit aussi un hook posé dans la fonction d'un autre hook (#748, R144)", () => {
     expect(deferredCallsOf('onMounted(() => { nextTick(load) })')).toEqual(['nextTick', 'load'])
   })
+
+  it('deferredCallsOf lit les hooks de démontage, de désactivation et de navigation, en fonction ou en référence (#748, R178)', () => {
+    expect(deferredCallsOf('onBeforeUnmount(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('onUnmounted(load)')).toEqual(['load'])
+    expect(deferredCallsOf('onDeactivated(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('onBeforeRouteUpdate(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('onBeforeRouteLeave(load)')).toEqual(['load'])
+    expect(deferredCallsOf("import { onUnmounted as whenGone } from 'vue'\nwhenGone(page.load)")).toEqual(['page.load'])
+  })
+
+  it('deferredCallsOf lit setInterval, nu ou sur window, comme setTimeout (#748, R178)', () => {
+    expect(deferredCallsOf('setInterval(load, 1)')).toEqual(['load'])
+    expect(deferredCallsOf('setInterval(() => load(), 1)')).toEqual(['load'])
+    expect(deferredCallsOf('window.setInterval(() => load(), 1)')).toEqual(['load'])
+    expect(deferredCallsOf('globalThis.setInterval(load, 1)')).toEqual(['load'])
+  })
+
+  it('deferredCallsOf lit le rappel de then, catch et finally, quel que soit le receveur (#748, R178)', () => {
+    expect(deferredCallsOf('promise.then(load)')).toEqual(['load'])
+    expect(deferredCallsOf('promise.then(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('promise.catch(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('promise.finally(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('repository.list().then(() => load())')).toEqual(['load'])
+    expect(deferredCallsOf('maybe?.then(load)')).toEqual(['load'])
+  })
+
+  it('deferredCallsOf lit aussi le second rappel de then, celui du refus (#748, R178)', () => {
+    expect(deferredCallsOf('promise.then(ok, () => load())')).toEqual(['ok', 'load'])
+    expect(deferredCallsOf('promise.then(undefined, load)')).toEqual(['load'])
+  })
+
+  it("deferredCallsOf lit chaque maillon d'une chaîne de promesses, le receveur comme le dernier rappel (#748, R178)", () => {
+    expect(deferredCallsOf('fetchIt().then(() => first()).then(second)')).toEqual(['first', 'second'])
+    expect(deferredCallsOf('a.then(() => load()).catch(() => report()).finally(done)')).toEqual(['load', 'report', 'done'])
+  })
+
+  it("deferredCallsOf ne lit pas ce qui court dans le setup : un appel en tête, un then sans rappel (#748, R178)", () => {
+    expect(deferredCallsOf('load()')).toEqual([])
+    expect(deferredCallsOf('void load()\nconst { value } = useX()')).toEqual([])
+    expect(deferredCallsOf('promise.then()')).toEqual([])
+    expect(deferredCallsOf('load().then()')).toEqual([])
+    expect(deferredCallsOf('other.thenable(load)')).toEqual([])
+  })
 })
 
 describe('destructuredAliasesOf', () => {

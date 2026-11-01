@@ -294,10 +294,12 @@ function syntaxTreeOf(source: string): ts.SourceFile {
  * Quand un hook différé s'exécute après le rendu (`when`) : absent, toujours ; `posted`, seulement posté (`{ flush: 'post' }` :
  * un `watchEffect` sans lui s'exécute dans le `setup`) ; `unlessImmediate`, sauf si ses options portent `immediate: true`
  * (un `watch` dont le rappel court dans le `setup`, quel que soit `flush` : `job(true)` de `watch`, `@vue/reactivity`).
- * Où il range la fonction qu'il rappellera : `callback`, l'index de l'argument ; ses options : `options`.
+ * Où il range la fonction qu'il rappellera : `callback`, l'index de l'argument (`alsoCallback`, celui d'un second rappel : le refus
+ * de `then`) ; ses options : `options`.
  */
 interface DeferredHook {
   readonly callback: number
+  readonly alsoCallback?: number
   readonly options?: number
   readonly when?: 'posted' | 'unlessImmediate'
 }
@@ -308,17 +310,28 @@ const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
   ['onUpdated', { callback: 0 }],
   ['onBeforeUpdate', { callback: 0 }],
   ['onActivated', { callback: 0 }],
+  ['onBeforeUnmount', { callback: 0 }],
+  ['onUnmounted', { callback: 0 }],
+  ['onDeactivated', { callback: 0 }],
+  ['onBeforeRouteUpdate', { callback: 0 }],
+  ['onBeforeRouteLeave', { callback: 0 }],
   ['nextTick', { callback: 0 }],
   ['watchPostEffect', { callback: 0 }],
   ['watch', { callback: 1, options: 2, when: 'unlessImmediate' }],
   ['watchEffect', { callback: 0, options: 1, when: 'posted' }],
   ['setTimeout', { callback: 0 }],
+  ['setInterval', { callback: 0 }],
   ['queueMicrotask', { callback: 0 }],
   ['requestAnimationFrame', { callback: 0 }],
+  ['then', { callback: 0, alsoCallback: 1 }],
+  ['catch', { callback: 0 }],
+  ['finally', { callback: 0 }],
 ])
 
 /** Les appels globaux, qui s'écrivent aussi `window.setTimeout(…)`. */
-const GLOBAL_DEFERRALS: ReadonlySet<string> = new Set(['setTimeout', 'queueMicrotask', 'requestAnimationFrame'])
+const GLOBAL_DEFERRALS: ReadonlySet<string> = new Set(['setTimeout', 'setInterval', 'queueMicrotask', 'requestAnimationFrame'])
+/** Les méthodes d'une promesse : le receveur n'est pas lu (`repository.list().then(…)`, `maybe?.then(…)`), le nom suffit. */
+const PROMISE_METHODS: ReadonlySet<string> = new Set(['then', 'catch', 'finally'])
 const GLOBAL_OBJECTS: ReadonlySet<string> = new Set(['window', 'globalThis', 'self'])
 
 /** Le nom importé de chaque nom local d'une importation nommée de `vue` (`onMounted as whenMounted` : `whenMounted` donne `onMounted`). */
@@ -380,12 +393,15 @@ function runsAfterRender(hook: DeferredHook, call: ts.CallExpression): boolean {
 
 /**
  * Le nom sous lequel `call` appelle un hook de `vue` ou un appel global (lu par l'importation, puis `window.` ou
- * `globalThis.` des minuteurs), ou `null`.
+ * `globalThis.` des minuteurs), ou une méthode de promesse (`then`, `catch`, `finally`, sur tout receveur), ou `null`.
  */
 function calledNameOf(call: ts.CallExpression, imported: ReadonlyMap<string, string>): string | null {
   const callee = call.expression
   if (ts.isIdentifier(callee)) {
-    return imported.get(callee.text) ?? callee.text
+    const name = imported.get(callee.text) ?? callee.text
+
+    // `then`, `catch` et `finally` ne différent un rappel que comme méthode d'une promesse, jamais appelés nus.
+    return PROMISE_METHODS.has(name) ? null : name
   }
   if (
     ts.isPropertyAccessExpression(callee) &&
@@ -395,23 +411,33 @@ function calledNameOf(call: ts.CallExpression, imported: ReadonlyMap<string, str
   ) {
     return callee.name.text
   }
+  if (ts.isPropertyAccessExpression(callee) && PROMISE_METHODS.has(callee.name.text)) {
+    return callee.name.text
+  }
 
   return null
 }
 
 /**
- * Le rappel qu'un hook différé reçoit de `call` : l'argument de rang `hook.callback`, ou `undefined` s'il manque ou si `call`
- * n'est pas un hook différé qui s'exécute après le rendu. Ce n'est qu'une position : que ce soit une fonction ou une référence
- * se juge ensuite (`isFunctionLike`, `isReference`).
+ * Les rappels qu'un hook différé reçoit de `call` : l'argument de rang `hook.callback`, puis celui de rang `hook.alsoCallback`
+ * (le refus de `then`), les rangs absents omis ; `[]` si `call` n'est pas un hook différé qui s'exécute après le rendu. Ce n'est
+ * qu'une position : que ce soit une fonction ou une référence se juge ensuite (`isFunctionLike`, `isReference`).
  */
-function callbackOf(call: ts.CallExpression, imported: ReadonlyMap<string, string>): ts.Expression | undefined {
+function callbacksOf(call: ts.CallExpression, imported: ReadonlyMap<string, string>): ts.Expression[] {
   const name = calledNameOf(call, imported)
   const hook = null === name ? undefined : DEFERRED_HOOKS.get(name)
+  if (undefined === hook || !runsAfterRender(hook, call)) {
+    return []
+  }
 
-  return undefined !== hook && runsAfterRender(hook, call) ? call.arguments[hook.callback] : undefined
+  return [hook.callback, hook.alsoCallback]
+    .filter((rank): rank is number => undefined !== rank)
+    .flatMap((rank) => (undefined === call.arguments[rank] ? [] : [call.arguments[rank]]))
 }
 
-const isReference = (node: ts.Expression): boolean => ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)
+// `undefined` est un identifiant : `promise.then(undefined, load)` ne passe pas de fonction nommée `undefined`.
+const isReference = (node: ts.Expression): boolean =>
+  (ts.isIdentifier(node) && 'undefined' !== node.text) || ts.isPropertyAccessExpression(node)
 const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionExpression =>
   ts.isArrowFunction(node) || ts.isFunctionExpression(node)
 
@@ -421,47 +447,74 @@ const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionEx
  * - les appels écrits dans une fonction passée à un hook différé, fonctions imbriquées comprises
  *   (`onMounted(() => { a(); x.y() })` donne `['a', 'x.y']`) ;
  * - le nom passé **par référence** à un tel hook (`onMounted(load)` donne `['load']`, `onMounted(page.load)` donne `['page.load']`),
- *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`).
+ *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`) ;
+ * - ce qui précède un hook dans une chaîne (`prepare().then(() => a()).then(b)` donne `['a', 'b']`).
  *
- * Les hooks différés sont `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `nextTick`, `watchPostEffect`, un `watch`
- * **sauf** si ses options portent `immediate: true` (son rappel court alors dans le `setup`, posté ou non), un `watchEffect`
- * quand ses options portent `flush: 'post'`, puis `setTimeout`, `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`,
- * `globalThis`, `self`). Les hooks de `vue` se lisent sous le nom que leur importation leur donne (`import { onMounted as
- * whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est lu tel qu'il est écrit, pour
- * qu'une source sans importation (un fichier de test) se lise de même. Seul l'argument qui est le rappel est lu : le délai
- * d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
+ * Les hooks différés sont `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`,
+ * `onDeactivated`, `onBeforeRouteUpdate`, `onBeforeRouteLeave`, `nextTick`, `watchPostEffect`, un `watch` **sauf** si ses options
+ * portent `immediate: true`, un `watchEffect` quand ses options portent `flush: 'post'`, puis `setTimeout`, `setInterval`,
+ * `queueMicrotask` et `requestAnimationFrame` (nus ou sur `window`, `globalThis`, `self`), et `then` (ses deux rappels), `catch`
+ * et `finally`, appelés comme méthode de n'importe quel receveur. Les hooks de `vue` se lisent sous le nom que leur importation
+ * leur donne (`import { onMounted as whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un nom que `vue` ne lie pas est
+ * lu tel qu'il est écrit, pour qu'une source sans importation (un fichier de test) se lise de même. Seuls les arguments qui sont
+ * des rappels sont lus : le délai d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
  *
- * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`), un
- * module importé en espace de noms (`Vue.onMounted(…)`), une fonction déclarée dans le fichier et passée par référence (vue
- * par son nom seul, non par ce qu'elle appelle). Des options passées par une variable : un `watch` les lit différées (il
- * rougit peut-être à tort), un `watchEffect` les lit immédiates.
+ * **Le critère est la première exécution du rappel.** Un `watch` `immediate` n'est pas lu : sa première exécution court dans le
+ * `setup`, posté ou non (`job(true)`, `@vue/reactivity`) ; ses suivantes répondent à un changement, ce que la garde admet. Tout
+ * autre hook ci-dessus ne court jamais dans le `setup`, quel que soit le nombre de ses exécutions.
+ *
+ * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`) ; un
+ * module importé en espace de noms (`Vue.onMounted(…)`) ; un hook de `vue-router` importé sous un alias (`onBeforeRouteUpdate as
+ * leaving`), non résolu ; `then` écrit en `promise['then'](…)` ; une fonction déclarée dans le fichier et passée par référence (vue
+ * par son nom seul, non par ce qu'elle appelle) ; un `await` (la suite d'un `await` court après le rendu, sans hook). Des options
+ * passées par une variable : un `watch` les lit différées (il rougit peut-être à tort), un `watchEffect` les lit immédiates.
  */
 export function deferredCallsOf(source: string): string[] {
   const file = syntaxTreeOf(source)
   const imported = vueImportsOf(file)
   const callees: string[] = []
 
+  // Un rappel : sa fonction se lit (ses appels, ceux d'un hook qu'elle pose à son tour), une référence se nomme.
+  const readCallback = (callback: ts.Expression, whenOther: (node: ts.Node) => void): void => {
+    if (isFunctionLike(callback)) {
+      collect(callback.body)
+    } else if (isReference(callback)) {
+      callees.push(callback.getText(file))
+    } else {
+      whenOther(callback)
+    }
+  }
+
   // Tout appel écrit dans la fonction d'un hook, y compris ceux d'un hook qu'elle pose à son tour (dont la référence compte).
   const collect = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       callees.push(node.expression.getText(file))
-      const callback = callbackOf(node, imported)
-      if (undefined !== callback && isReference(callback)) {
-        callees.push(callback.getText(file))
+      for (const callback of callbacksOf(node, imported)) {
+        if (isReference(callback)) {
+          callees.push(callback.getText(file))
+        }
       }
     }
     ts.forEachChild(node, collect)
   }
 
-  const visit = (node: ts.Node): void => {
-    const callback = ts.isCallExpression(node) ? callbackOf(node, imported) : undefined
-    if (undefined !== callback && isFunctionLike(callback)) {
-      collect(callback.body)
-
-      return
+  // Un appel à rappels : le receveur d'abord (la chaîne `a.then(…).then(…)` se lit de son premier maillon), puis les arguments dans
+  // l'ordre, un rappel lu comme tel, tout autre argument parcouru.
+  const visitHook = (call: ts.CallExpression, callbacks: readonly ts.Expression[]): void => {
+    visit(call.expression)
+    for (const argument of call.arguments) {
+      if (callbacks.includes(argument)) {
+        readCallback(argument, visit)
+      } else {
+        visit(argument)
+      }
     }
-    if (undefined !== callback && isReference(callback)) {
-      callees.push(callback.getText(file))
+  }
+
+  const visit = (node: ts.Node): void => {
+    const callbacks = ts.isCallExpression(node) ? callbacksOf(node, imported) : []
+    if (ts.isCallExpression(node) && callbacks.length > 0) {
+      visitHook(node, callbacks)
 
       return
     }

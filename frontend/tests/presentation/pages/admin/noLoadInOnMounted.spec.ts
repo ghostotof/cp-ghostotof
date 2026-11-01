@@ -9,22 +9,25 @@ import { deferredCallsOf, destructuredAliasesOf } from '../../../support/sourceT
  * un hook qui s'exécute après le montage partirait sous la nouvelle époque (`.claude/rules/frontend-session-refus.md`,
  * « A real refusal »).
  *
- * Lu : `presentation/pages/admin/` et `presentation/ui/admin/`. Refusé dans ce que `deferredCallsOf` rend (la fonction
- * passée à `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `nextTick`, `watchPostEffect`, à un `watch` **sans
- * `immediate: true`** (son rappel court à un changement de sa source, donc après le montage, quel que soit `flush`), à un
- * `watchEffect` en `flush: 'post'`, à `setTimeout`, `queueMicrotask`, `requestAnimationFrame`, ou le nom passé par référence
- * à l'un d'eux, `onMounted` lu sous l'alias de son import de `vue`) : un appel dont le dernier segment est `reload`,
- * commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou porte un nom local lié à la clé `load`
- * ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch` `immediate` n'est pas lu, posté ou non :
- * sa première exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`).
+ * Lu : `presentation/pages/admin/` et `presentation/ui/admin/`. **Le critère est la première exécution du rappel** : refusé, ce
+ * qui ne court jamais dans le `setup`. Dans ce que `deferredCallsOf` rend (la fonction, ou le nom passé par référence, de
+ * `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`, `onDeactivated`,
+ * `onBeforeRouteUpdate`, `onBeforeRouteLeave`, `nextTick`, `watchPostEffect`, `setTimeout`, `setInterval`, `queueMicrotask`,
+ * `requestAnimationFrame`, `then` (ses deux rappels), `catch`, `finally`, d'un `watch` **sans `immediate: true`**, d'un
+ * `watchEffect` en `flush: 'post'` ; les hooks de `vue` se lisent sous l'alias de leur import), un appel dont le dernier segment est
+ * `reload`, commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou porte un nom local lié à la clé
+ * `load` ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch` `immediate` n'est pas lu, posté ou non :
+ * sa **première** exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`) ; ses suivantes répondent à un
+ * changement de sa source, ce que la garde admet.
  *
  * Non vu, tenu par la relecture : une lecture envoyée après un `await` (la suite d'un `await nextTick()` s'exécute après le
  * rendu, et n'est pas lue) ; un sous-composant rendu plus tard et situé hors de ces deux dossiers ; une fonction d'un autre
  * module qui charge sous un nom que le filtre ne reconnaît pas ; une fonction déclarée dans le fichier et passée par
  * référence (lue par son nom seul, non par ce qu'elle appelle) ; un hook passé par une variable (`const hook = onMounted`) ou
- * importé en espace de noms (`Vue.onMounted`) ; un alias posé par une affectation (`const refresh = load`). Des options de
- * `watch` passées par une variable sont lues comme différées (la garde peut rougir à tort) ; celles d'un `watchEffect`,
- * comme immédiates.
+ * importé en espace de noms (`Vue.onMounted`) ; un hook de `vue-router` importé sous un alias ; `then` écrit en `promise['then']` ;
+ * un alias posé par une affectation (`const refresh = load`) ; un rappel passé à une fonction tierce (`debounce(load)`,
+ * `emitter.on('x', load)`, `addEventListener`). Des options de `watch` passées par une variable sont lues comme différées (la garde
+ * peut rougir à tort) ; celles d'un `watchEffect`, comme immédiates.
  */
 const GUARDED_DIRS = ['presentation/pages/admin/', 'presentation/ui/admin/']
 const REPOSITORY_CALLS = new Set(['list', 'get', 'fetch', 'translate'])
@@ -130,6 +133,32 @@ describe('aucun chargement après le montage dans le backoffice', () => {
       expect(offendingIn({ [PAGE]: 'onUpdated(() => { void load() })' })).toEqual([`${PAGE} : load`])
       expect(offendingIn({ [PAGE]: 'onBeforeUpdate(load)' })).toEqual([`${PAGE} : load`])
       expect(offendingIn({ [PAGE]: 'onActivated(() => repository.list())' })).toEqual([`${PAGE} : repository.list`])
+    })
+
+    it('un chargement dans un hook de démontage, de désactivation ou de navigation (#748, R178)', () => {
+      expect(offendingIn({ [PAGE]: 'onBeforeUnmount(() => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onUnmounted(load)' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onDeactivated(() => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onBeforeRouteUpdate(() => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'onBeforeRouteLeave(() => repository.list())' })).toEqual([`${PAGE} : repository.list`])
+    })
+
+    it('un chargement lancé par un minuteur répété (#748, R178)', () => {
+      expect(offendingIn({ [PAGE]: 'setInterval(load, 1)' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'window.setInterval(() => void load(), 1)' })).toEqual([`${PAGE} : load`])
+    })
+
+    it('un chargement lancé par le rappel d\'une promesse, then, catch ou finally, ou par une chaîne (#748, R178)', () => {
+      expect(offendingIn({ [PAGE]: 'promise.then(load)' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'promise.catch(() => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'promise.finally(() => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'promise.then(ok, () => load())' })).toEqual([`${PAGE} : load`])
+      expect(offendingIn({ [PAGE]: 'prepare().then(() => load()).then(done)' })).toEqual([`${PAGE} : load`])
+    })
+
+    it('un chargement en tête du setup, ou un then qui ne charge pas, passe (#748, R178)', () => {
+      expect(offendingIn({ [PAGE]: 'void load()\nconst { value } = useX()' })).toEqual([])
+      expect(offendingIn({ [PAGE]: 'prepare().then(() => focusTitle())' })).toEqual([])
     })
 
     it('un composant de presentation/ui/admin (#748, R144)', () => {

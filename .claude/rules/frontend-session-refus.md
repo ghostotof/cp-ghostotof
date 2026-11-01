@@ -94,13 +94,19 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     section rendered later by a `v-if`, a watcher, a replay (R143, CR12-4). **A backoffice page starts its load in `setup`**
     (or an `immediate` watcher), both stamped before the alert's `onMounted`: a read sent from the page's own `onMounted`
     would carry the new epoch and say `common.accessRefused` for the earlier save. `noLoadInOnMounted.spec.ts` refuses a
-    load or a repository call that runs after the mount, in `presentation/pages/admin` and `presentation/ui/admin` (R121, R144):
-    the function or the name passed to `onMounted`, `onUpdated`, `onBeforeUpdate` or `onActivated` (each under its import alias
-    too), `nextTick`, `setTimeout`, `queueMicrotask`, `requestAnimationFrame`, `watchPostEffect`, a `watchEffect` with
-    `flush: 'post'`, or a `watch` **without a literal `immediate: true`** (its callback runs on a change of its source, after the
-    mount, whatever its `flush`; an `immediate` one runs synchronously in `setup`, posted or not, and passes). What it cannot
-    see (an `await`, a hook held in a variable, a function declared in the file and passed by reference, which it reads by its
-    name alone: seen if the name starts with `load` or matches its filter, never by what the function calls) is in its docblock.
+    load or a repository call that runs after the mount, in `presentation/pages/admin` and `presentation/ui/admin` (R121, R144,
+    R178). **Its criterion is the first execution of the callback**: it reads what never runs in `setup`. The function or the name
+    passed to `onMounted`, `onUpdated`, `onBeforeUpdate`, `onActivated`, `onBeforeUnmount`, `onUnmounted`, `onDeactivated`,
+    `onBeforeRouteUpdate` or `onBeforeRouteLeave` (the `vue` ones under their import alias too), `nextTick`, `setTimeout`,
+    `setInterval`, `queueMicrotask`, `requestAnimationFrame`, `watchPostEffect`, the two callbacks of `then`, `catch` and `finally`
+    (any receiver, a whole chain), a `watchEffect` with `flush: 'post'`, or a `watch` **without a literal `immediate: true`**. An
+    `immediate` `watch` passes, posted or not: its **first** run is synchronous in `setup`, and the later ones answer a change of
+    its source, which the guard accepts. **Not seen, in full** (the review holds it): a read sent after an `await`; a sub-component
+    rendered later and outside the two folders; a function of another module that loads under a name the filter does not know; a
+    function declared in the file and passed by reference (read by its name alone, never by what it calls: seen if the name starts
+    with `load` or matches the filter); a hook held in a variable (`const hook = onMounted`) or imported as a namespace
+    (`Vue.onMounted`); a `vue-router` hook under an import alias; `promise['then']`; an alias set by an assignment
+    (`const refresh = load`); a callback handed to a third-party function (`debounce(load)`, `emitter.on('x', load)`).
     Any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the
     letter of decision 1 of the ninth: no load window, no counter).
   - **Accepted limits** (Q3 (a) of the twelfth review, R143): the module cannot tell a read the person relaunched from one
@@ -168,6 +174,6 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
   read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text
   in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer »
   disabled) and `LoginPage.spec.ts` (the neutral announcement).
-- `noLoadInOnMounted.spec.ts` (R121, R144: no load or repository call after the mount of a backoffice page or component, which
+- `noLoadInOnMounted.spec.ts` (R121, R144, R178: no load or repository call after the mount of a backoffice page or component, which
   would carry the mounted alert's epoch; one fake file per form it sees, in `tests/support/sourceText.spec.ts` for the reader).
 - The reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.
