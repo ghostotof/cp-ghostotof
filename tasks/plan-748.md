@@ -11847,6 +11847,11 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
   avec « testaient ». (A) recommandé : R194, une tâche et non un balayage, met ce seul verbe au présent, rien d'autre ; (B) le
   docblock gardé tel quel (St15-33 consigné).
 
+**Réponses de l'auteur (2026-11-01)** : Q1 à Q14 → **les quatorze recommandations** (Q4 (B) : le chemin exact d'un
+fichier créé par `smoke_data_file` ; Q8 (A) : `form` redevient un objet `Record<F, string>`, l'auteur revient sur Q12 de la
+quatorzième série ; Q10 (A) : un SFC générique `AdminQualityEntrySection.vue` paramétré par ses champs ; Q13 (A) : D1 à la
+lettre, P15-1 en ticket à part). Le plan les suit déjà : aucune tâche ne change.
+
 ### Review Focus (quinzième relecture)
 
 1. **Un smoke lancé avec la Basic Auth et `-H @/etc/hostname`, `-d @f`, `--data-binary @<fichier -K>`,
