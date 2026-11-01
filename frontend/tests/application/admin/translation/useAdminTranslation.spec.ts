@@ -87,7 +87,9 @@ describe('useAdminTranslation', () => {
       expect(accept).not.toHaveBeenCalled()
     })
 
-    it("n'est pas appelée sur un échec, et translate rend faux avec la raison exposée (#748, R172)", async () => {
+    // Fusionné avec l'ancien cas « un échec du repository » (St16-11), qui jugeait la même chose par `proposalOf` et ajoutait
+    // seulement que `isTranslating` retombe : cette assertion est reprise ici.
+    it("n'est pas appelée sur un échec, et translate rend faux avec la raison exposée, sans plus rien en vol (#748, R172)", async () => {
       const accept = vi.fn()
       const translate = vi.fn<AdminTranslationRepository['translate']>()
         .mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
@@ -96,6 +98,7 @@ describe('useAdminTranslation', () => {
       expect(await composable.translate('fr', 'en', FIELDS, accept)).toBe(false)
 
       expect(composable.errorReason.value).toBe('unavailable')
+      expect(composable.isTranslating.value).toBe(false)
       expect(accept).not.toHaveBeenCalled()
     })
 
@@ -125,19 +128,6 @@ describe('useAdminTranslation', () => {
       expect(composable.isTranslating.value).toBe(false)
       expect(composable.isExpiredCallPending.value).toBe(false)
     })
-  })
-
-  it("un échec du repository : translate rend faux sans lever, accept n'est pas appelée et la raison est exposée", async () => {
-    const repository: AdminTranslationRepository = {
-      translate: vi.fn(async () => { throw new AdminTranslationError('rate-limited', 'Quota atteint.') }),
-    }
-    const composable = mountWithComposable(repository)
-
-    const proposal = await proposalOf(composable)
-
-    expect(proposal).toBeNull()
-    expect(composable.errorReason.value).toBe('rate-limited')
-    expect(composable.isTranslating.value).toBe(false)
   })
 
   it('classe une erreur inattendue en « unknown »', async () => {

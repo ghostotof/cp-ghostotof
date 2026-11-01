@@ -20,6 +20,8 @@ import { setBackofficeSessionReaction } from '../../../../src/infrastructure/adm
 import { createBackofficeSessionReaction } from '../../../../src/presentation/router/backofficeSessionExpiry'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const VULNERABILITY: AdminVulnerability = {
   id: 'GHSA-h7vf-5wrv-9fhv',
@@ -122,11 +124,12 @@ function rowContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
   return row
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
+// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
+// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
+const DELETE_FR: string = fr.admin.watch.deleteAction
+// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
+const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+const EDIT_FR: string = fr.admin.watch.editAction
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -231,15 +234,15 @@ describe('AdminWatchPage', () => {
     const hint = wrapper.get('#admin-order-locked-hint')
     expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-    const edit = buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier')
+    const edit = buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
-    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Supprimer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), DELETE_FR).attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
 
-    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).attributes('disabled')).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(rows(wrapper)[0].text()).toContain('postgresql')
@@ -274,7 +277,7 @@ describe('AdminWatchPage', () => {
 
     expect(wrapper.find('#admin-watch-slug').exists()).toBe(true)
 
-    await buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier').trigger('click')
+    await buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).trigger('click')
 
     expect(wrapper.find('#admin-watch-slug').exists()).toBe(false)
     expect(wrapper.get('h2').text()).toBe('Modifier le produit surveillé')
@@ -336,7 +339,7 @@ describe('AdminWatchPage', () => {
     const row = rowContaining(wrapper, 'nginx')
     expect(row.text()).toContain('Version déployée, relevée au build')
 
-    await buttonLabelled(row, 'Modifier').trigger('click')
+    await buttonLabelled(row, EDIT_FR).trigger('click')
 
     expect((wrapper.get('#admin-watch-version-source').element as HTMLSelectElement).value).toBe('deployed')
     expect(wrapper.find('#admin-watch-version').exists()).toBe(false)
@@ -356,7 +359,7 @@ describe('AdminWatchPage', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const { wrapper } = await mountPage(repository)
 
-    await buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Supprimer').trigger('click')
+    await buttonLabelled(rowContaining(wrapper, 'postgresql'), DELETE_FR).trigger('click')
     await flushPromises()
 
     expect(confirmSpy).toHaveBeenCalled()

@@ -82,8 +82,7 @@ export function translateEntryButton(wrapper: VueWrapper, form: number): DOMWrap
 
 /**
  * Descend la première ligne d'un tableau de la page (le `table`-ième, 0 par défaut) d'un cran par la flèche « ↓ » de sa
- * poignée, l'alternative clavier au glisser-déposer : le brouillon d'ordre devient sale sans geste de souris. Écrite une
- * fois pour les huit formulaires.
+ * poignée, l'alternative clavier au glisser-déposer : le brouillon d'ordre devient sale sans geste de souris.
  */
 export async function moveFirstRowDown(wrapper: VueWrapper, table = 0): Promise<void> {
   await wrapper.findAll('table')[table].findAll('tbody tr')[0].get('button').trigger('keydown', { key: 'ArrowDown' })
@@ -92,8 +91,8 @@ export async function moveFirstRowDown(wrapper: VueWrapper, table = 0): Promise<
 /**
  * Déplace la première ligne du tableau `table` puis émet « translate » depuis le bouton du `form`-ième formulaire de la page,
  * **sans rien attendre** entre les deux : le brouillon d'ordre de la section est modifié, mais la page n'a pas encore reçu
- * `orderDirtyChange` ni rendu `isLocked` (#748, R173). Les promesses ne sont réglées qu'à la fin. Écrite une fois pour « À propos »
- * et « Qualité » ; `moveFirstRowDown` n'est pas attendue (`void`) : son premier geste, le `keydown`, part de façon synchrone.
+ * `orderDirtyChange` ni rendu `isLocked` (#748, R173). Les promesses ne sont réglées qu'à la fin. `moveFirstRowDown` n'est pas
+ * attendue (`void`) : son premier geste, le `keydown`, part de façon synchrone.
  */
 export async function emitTranslateRightAfterMove(wrapper: VueWrapper, table: number, form: number): Promise<void> {
   void moveFirstRowDown(wrapper, table)
@@ -331,8 +330,8 @@ function lockToolkit(lockCase: EntryFormLockCase): LockToolkit {
  *   un formulaire vierge enregistré pendant une traduction n'en reçoit pas la réponse (la génération du formulaire) ;
  * - la prose — en lecture seule pendant une traduction ;
  * - l'échec — son erreur survit à la frappe, et ne reparaît pas au retour à l'entrée où elle est née.
- * Le support crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
- * formulaires : un cas de plus s'y ajoute une fois.
+ * Le support crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour tous les
+ * formulaires par entrée : un cas de plus s'y ajoute une fois.
  */
 export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   const kit = lockToolkit(lockCase)

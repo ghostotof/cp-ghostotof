@@ -11,6 +11,7 @@ import type { AuthRepository } from '../../../../src/domain/auth/repositories/Au
 import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/AuthenticatedUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 import { sessionFor } from '../../../support/authSession'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const SUPER_ID = '019968a0-0000-7000-8000-000000000001'
 const JANE_ID = '019968a0-0000-7000-8000-000000000002'
@@ -248,7 +249,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage()
 
     await openRowMenu(wrapper, 'super')
-    expect(rowButton(wrapper, 'super', 'Supprimer')?.attributes('disabled')).toBeDefined()
+    expect(rowButton(wrapper, 'super', fr.admin.users.delete)?.attributes('disabled')).toBeDefined()
   })
 
   it('supprime un autre utilisateur après confirmation', async () => {
@@ -258,7 +259,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage(repository)
 
     await openRowMenu(wrapper, 'jane')
-    await rowButton(wrapper, 'jane', 'Supprimer')?.trigger('click')
+    await rowButton(wrapper, 'jane', fr.admin.users.delete)?.trigger('click')
     await flushPromises()
 
     expect(repository.remove).toHaveBeenCalledWith(JANE_ID)

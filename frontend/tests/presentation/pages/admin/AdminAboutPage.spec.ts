@@ -56,6 +56,7 @@ import {
   PROSE_READONLY_FR,
   TRANSLATION_UNAVAILABLE_FR,
 } from '../../../support/adminTranslationTexts'
+import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
 
 const SETTINGS: AdminAboutSettings = {
   locale: 'fr',
@@ -303,12 +304,6 @@ function actionsForLine(wrapper: VueWrapper, which: number, text: string): DOMWr
   return tableOf(wrapper, which).findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
-
 function panelOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('.surface-panel')[which]
 }
@@ -335,11 +330,16 @@ function optionsOf(wrapper: VueWrapper, id: string): string[] {
  * Le bouton « Modifier » de la ligne de `text` du tableau `which` : son libellé est lu du catalogue (une clé par tableau, « site »
  * ou « moi »), jamais écrit ici, pour qu'une retouche du libellé ne fasse pas rougir la moitié du fichier.
  */
-function editButton(wrapper: VueWrapper, which: number, text: string): DOMWrapper<HTMLButtonElement> {
-  const label = SITE === which ? fr.admin.about.siteCard.editAction : fr.admin.about.meCard.editAction
+const editButton = editButtonFor(actionsForLine, (which) =>
+  SITE === which ? fr.admin.about.siteCard.editAction : fr.admin.about.meCard.editAction,
+)
 
-  return buttonLabelled(actionsForLine(wrapper, which, text), label)
-}
+// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
+// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
+const DELETE_FR: string = fr.admin.about.delete
+const CANCEL_FR: string = fr.admin.about.cancel
+// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
+const ORDER_CANCEL_FR: string = fr.admin.order.cancel
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, which: number, from: number, to: number): Promise<void> {
@@ -611,7 +611,7 @@ describe('AdminAboutPage', () => {
         expect(edit.attributes('disabled')).toBeDefined()
         expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
         expect(
-          buttonLabelled(actionsForLine(wrapper, which, lonelyTitle), 'Supprimer').attributes('disabled'),
+          buttonLabelled(actionsForLine(wrapper, which, lonelyTitle), DELETE_FR).attributes('disabled'),
         ).toBeDefined()
         // Par tableau et non par index de ligne : le glisser-déposer vient de
         // déplacer le groupe sans traduction.
@@ -627,7 +627,7 @@ describe('AdminAboutPage', () => {
           expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
         }
 
-        await buttonLabelled(orderScopeOf(wrapper, which), 'Annuler').trigger('click')
+        await buttonLabelled(orderScopeOf(wrapper, which), ORDER_CANCEL_FR).trigger('click')
 
         expect(
           editButton(wrapper, which, editableTitle).attributes('disabled'),
@@ -837,7 +837,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage()
 
       await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
-      await buttonLabelled(formOf(wrapper, ME_FORM), 'Annuler').trigger('click')
+      await buttonLabelled(formOf(wrapper, ME_FORM), CANCEL_FR).trigger('click')
 
       const category = wrapper.get('#admin-about-me-card-category')
       expect(category.attributes('disabled')).toBeUndefined()
@@ -963,7 +963,7 @@ describe('AdminAboutPage', () => {
       const meCardRepository = createMeCardRepository()
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.personal, 'Curious'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.personal, 'Curious'), DELETE_FR).trigger('click')
       await flushPromises()
 
       expect(meCardRepository.remove).toHaveBeenCalledWith(ME_FIXTURES.personal.cards[1].id)
@@ -1101,14 +1101,14 @@ describe('AdminAboutPage', () => {
         await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), DELETE_FR).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, SITE, 'Architecture').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), DELETE_FR).trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
       orderTable: SITE,
@@ -1142,14 +1142,14 @@ describe('AdminAboutPage', () => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]).trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), DELETE_FR).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), DELETE_FR).trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
       orderTable: ME_TABLE.technical,

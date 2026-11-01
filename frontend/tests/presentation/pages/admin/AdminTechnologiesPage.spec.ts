@@ -6,6 +6,8 @@ import { createAppI18n } from '../../../../src/presentation/i18n'
 import type { AdminExperienceTechnologyRepository } from '../../../../src/domain/admin/technologies/repositories/AdminExperienceTechnologyRepository'
 import type { AdminExperienceTechnology } from '../../../../src/domain/admin/technologies/entities/AdminExperienceTechnology'
 import { AdminExperienceTechnologyError } from '../../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const PHP_ID = '019968a0-0000-7000-8000-000000000001'
 const PHP: AdminExperienceTechnology = { id: PHP_ID, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false }
@@ -75,7 +77,7 @@ describe('AdminTechnologiesPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const editButtons = wrapper.findAll('button').filter((button) => 'Modifier' === button.text())
+    const editButtons = wrapper.findAll('button').filter((button) => fr.admin.technologies.editAction === button.text())
     await editButtons[0]?.trigger('click')
 
     expect((wrapper.get('#admin-tech-name').element as HTMLInputElement).value).toBe('PHP')
@@ -92,8 +94,7 @@ describe('AdminTechnologiesPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const deleteButton = wrapper.findAll('button').find((button) => 'Supprimer' === button.text())
-    await deleteButton?.trigger('click')
+    await buttonLabelled(wrapper, fr.admin.technologies.delete).trigger('click')
     await flushPromises()
 
     expect(repository.remove).toHaveBeenCalledWith(PHP_ID)
@@ -104,8 +105,7 @@ describe('AdminTechnologiesPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const deleteButton = wrapper.findAll('button').find((button) => 'Supprimer' === button.text())
-    await deleteButton?.trigger('click')
+    await buttonLabelled(wrapper, fr.admin.technologies.delete).trigger('click')
     await flushPromises()
 
     expect(repository.remove).not.toHaveBeenCalled()

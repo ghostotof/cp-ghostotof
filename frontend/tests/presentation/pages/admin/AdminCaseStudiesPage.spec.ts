@@ -20,6 +20,8 @@ import { startEditThroughSetup } from '../../../support/startEditThroughSetup'
 import { describeEntryFormLock, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
 import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -146,11 +148,12 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
+// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
+// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
+const DELETE_FR: string = fr.admin.caseStudies.deleteAction
+// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
+const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+const EDIT_FR: string = fr.admin.caseStudies.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -237,11 +240,11 @@ describe('AdminCaseStudiesPage', () => {
     const hint = wrapper.get('#admin-order-locked-hint')
     expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-    const edit = buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Supprimer').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), DELETE_FR).attributes('disabled'),
     ).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
@@ -249,10 +252,10 @@ describe('AdminCaseStudiesPage', () => {
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
 
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).attributes('disabled'),
     ).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -263,7 +266,7 @@ describe('AdminCaseStudiesPage', () => {
   it("un ordre modifié et une proposition affichée : le bouton de traduction est décrit par les deux textes", async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
     await dragRow(wrapper, 0, 2)
@@ -389,7 +392,7 @@ describe('AdminCaseStudiesPage', () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -409,7 +412,7 @@ describe('AdminCaseStudiesPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -440,7 +443,7 @@ describe('AdminCaseStudiesPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
@@ -457,7 +460,7 @@ describe('AdminCaseStudiesPage', () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
 
     await translateEntryButton(wrapper, 0).trigger('click')
@@ -498,17 +501,17 @@ describe('AdminCaseStudiesPage', () => {
     proseFields: CASE_STUDY_PROSE_FIELDS,
     heading: 'Ajouter une étude de cas',
     startEdit: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), DELETE_FR).trigger('click')
     },
     startEditOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).trigger('click')
     },
     // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
     deleteSiblingOfOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'An asynchronous pricing engine'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'An asynchronous pricing engine'), DELETE_FR).trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     propose: async (wrapper) => {
@@ -524,7 +527,7 @@ describe('AdminCaseStudiesPage', () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
@@ -545,7 +548,7 @@ describe('AdminCaseStudiesPage', () => {
     })
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 

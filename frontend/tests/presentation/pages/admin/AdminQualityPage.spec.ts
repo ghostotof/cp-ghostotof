@@ -20,6 +20,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, emitTranslateRightAfterMove, translateEntryButton } from '../../../support/entryFormLock'
 import { QUALITY_LOCALE_HELP_FR } from '../../../support/entryFormLockTexts'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
+import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -179,12 +180,6 @@ function actionsForLine(wrapper: VueWrapper, which: number, text: string): DOMWr
   return tableOf(wrapper, which).findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
-
 /** Le panneau (formulaire + tableau) d'un des deux contenus : principes puis traits. */
 function panelOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('.surface-panel')[which]
@@ -201,11 +196,15 @@ function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
  * Le bouton « Modifier » de la ligne de `text` du tableau `which` : son libellé est lu du catalogue (une clé par tableau,
  * principes ou traits), jamais écrit ici, pour qu'une retouche du libellé ne fasse pas rougir la moitié du fichier.
  */
-function editButton(wrapper: VueWrapper, which: number, text: string): DOMWrapper<HTMLButtonElement> {
-  const label = PRINCIPLES === which ? fr.admin.quality.principle.editAction : fr.admin.quality.trait.editAction
+const editButton = editButtonFor(actionsForLine, (which) =>
+  PRINCIPLES === which ? fr.admin.quality.principle.editAction : fr.admin.quality.trait.editAction,
+)
 
-  return buttonLabelled(actionsForLine(wrapper, which, text), label)
-}
+// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
+// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
+const DELETE_FR: string = fr.admin.quality.delete
+// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
+const ORDER_CANCEL_FR: string = fr.admin.order.cancel
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, which: number, from: number, to: number): Promise<void> {
@@ -408,7 +407,7 @@ describe('AdminQualityPage', () => {
       expect(edit.attributes('disabled')).toBeDefined()
       expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
       expect(
-        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').attributes('disabled'),
+        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), DELETE_FR).attributes('disabled'),
       ).toBeDefined()
       // Par tableau et non par index de ligne : le glisser-déposer vient de
       // déplacer le groupe sans traduction.
@@ -425,7 +424,7 @@ describe('AdminQualityPage', () => {
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeDefined()
       expect(translateEntryButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
 
-      await buttonLabelled(panelOf(wrapper, PRINCIPLES), 'Annuler').trigger('click')
+      await buttonLabelled(panelOf(wrapper, PRINCIPLES), ORDER_CANCEL_FR).trigger('click')
 
       expect(
         editButton(wrapper, PRINCIPLES, 'DDD in English').attributes('disabled'),
@@ -599,7 +598,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), DELETE_FR).trigger('click')
       await flushPromises()
 
       expect(principleRepository.remove).toHaveBeenCalledWith(PRINCIPLE_EN_ONE.id)
@@ -726,14 +725,14 @@ describe('AdminQualityPage', () => {
         await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), DELETE_FR).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, PRINCIPLES, 'Revue systématique').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), DELETE_FR).trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
       orderTable: PRINCIPLES,
@@ -767,14 +766,14 @@ describe('AdminQualityPage', () => {
         await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), DELETE_FR).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, TRAITS, 'Observable').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), 'Supprimer').trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), DELETE_FR).trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
       orderTable: TRAITS,

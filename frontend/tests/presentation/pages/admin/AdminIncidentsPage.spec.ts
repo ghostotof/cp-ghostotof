@@ -16,6 +16,8 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { startEditThroughSetup } from '../../../support/startEditThroughSetup'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { INCIDENT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -142,11 +144,13 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
+// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
+// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
+const DELETE_FR: string = fr.admin.incidents.deleteAction
+const CANCEL_FR: string = fr.admin.incidents.cancel
+// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
+const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+const EDIT_FR: string = fr.admin.incidents.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -225,19 +229,19 @@ describe('AdminIncidentsPage', () => {
     const hint = wrapper.get('#admin-order-locked-hint')
     expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-    const edit = buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
-    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Supprimer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), DELETE_FR).attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
 
-    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR).attributes('disabled')).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
@@ -261,7 +265,9 @@ describe('AdminIncidentsPage', () => {
 
     // Issue #170 F4 : l'ordre est à jour, mais l'alerte doit pouvoir être
     // effacée — Annuler reste actif tant qu'elle est posée.
-    const cancel = wrapper.findAll('button').find((button) => 'Annuler' === button.text() && undefined === button.attributes('disabled'))
+    const cancel = wrapper
+      .findAll('button')
+      .find((button) => ORDER_CANCEL_FR === button.text() && undefined === button.attributes('disabled'))
     expect(cancel).toBeDefined()
     await cancel?.trigger('click')
     expect(wrapper.findAll('[role="alert"]').some((alert) => alert.text().includes('La liste a changé entre-temps'))).toBe(false)
@@ -275,10 +281,10 @@ describe('AdminIncidentsPage', () => {
   it('désactive le sélecteur de langue en édition, et le libère en création', async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR).trigger('click')
     expect(wrapper.get('#admin-incident-locale').attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, CANCEL_FR).trigger('click')
     expect(wrapper.get('#admin-incident-locale').attributes('disabled')).toBeUndefined()
   })
 
@@ -301,7 +307,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -321,7 +327,7 @@ describe('AdminIncidentsPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -352,7 +358,7 @@ describe('AdminIncidentsPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createIncidentRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
@@ -369,7 +375,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     expect(wrapper.get('h2').text()).toBe("Modifier l'incident")
 
     await translateEntryButton(wrapper, 0).trigger('click')
@@ -410,17 +416,17 @@ describe('AdminIncidentsPage', () => {
     proseFields: INCIDENT_PROSE_FIELDS,
     heading: 'Ajouter un incident',
     startEdit: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), DELETE_FR).trigger('click')
     },
     startEditOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR).trigger('click')
     },
     // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
     deleteSiblingOfOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'RabbitMQ broker outage'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'RabbitMQ broker outage'), DELETE_FR).trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     propose: async (wrapper) => {
@@ -436,7 +442,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
@@ -463,7 +469,7 @@ describe('AdminIncidentsPage', () => {
     })
     const { wrapper } = await mountPage(createIncidentRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
