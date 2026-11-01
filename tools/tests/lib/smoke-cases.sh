@@ -10,14 +10,15 @@
 # Un test lance le script (`run`), garde le code de sortie, le stderr, le stdout
 # et la liste des appels du faux `curl`, puis les passe au cas par `run_case`, **un appel** :
 #   run_case <cas> <libellé> <code de sortie> [CASE_ERR=<fichier>] [CASE_OUT=<fichier>] [CASE_CALLS=<fichier>] \
-#     [CASE_TMPDIR=<dossier>] [CASE_VALUE=<valeur>]
+#     [CASE_TMPDIR=<dossier>] [CASE_VALUE=<valeur>] [CASE_RANK=<rang>]
 # `run_case` pose en **locales** les variables que lit le cas (jamais exportées : CASE_VALUE est une Basic Auth
 # générée, qu'aucun processus lancé par le cas n'a à recevoir, St13-42) :
 #   CASE_LABEL    le libellé du cas ;      CASE_RC     le code de sortie du script ;
 #   CASE_ERR      le fichier de stderr ;   CASE_OUT    le fichier de stdout ;
 #   CASE_CALLS    le fichier des appels du faux curl ;
 #   CASE_TMPDIR   (facultatif) le dossier TMPDIR du script, qui doit rester vide ;
-#   CASE_VALUE    la valeur de Basic Auth, qui ne doit apparaître nulle part.
+#   CASE_VALUE    la valeur de Basic Auth, qui ne doit apparaître nulle part ;
+#   CASE_RANK     (facultatif) le rang de l'argument refusé, que dit le message des deux cas de refus d'argument.
 # Exemple :  run_case check_empty_basic_auth "AUDIT_BASIC_AUTH vide" "$rc" CASE_ERR="$TMP/err" CASE_OUT="$TMP/out" CASE_CALLS="$TMP/calls"
 # Une variable que le cas exige et que l'appel ne pose pas est un `fail` nommé, jamais une sortie du test (St13-44).
 #
@@ -47,23 +48,24 @@ write_env_noting_dirname() {
   chmod +x "$dir/dirname"
 }
 
-# run_case <cas> <libellé> <code de sortie> [CASE_ERR=… CASE_OUT=… CASE_CALLS=… CASE_TMPDIR=… CASE_VALUE=…]
+# run_case <cas> <libellé> <code de sortie> [CASE_ERR=… CASE_OUT=… CASE_CALLS=… CASE_TMPDIR=… CASE_VALUE=… CASE_RANK=…]
 #
-# Pose CASE_LABEL, CASE_RC et les cinq autres variables en locales (celles que l'appel ne donne pas restent vides),
+# Pose CASE_LABEL, CASE_RC et les six autres variables en locales (celles que l'appel ne donne pas restent vides),
 # puis appelle le cas (`check_*`), qui les lit par la portée dynamique de bash. Une affectation qui ne nomme pas une
-# de ces cinq variables est une faute d'appel : un `fail`, le cas n'est pas lancé.
+# de ces six variables est une faute d'appel : un `fail`, le cas n'est pas lancé.
 run_case() {
   local _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment
-  local CASE_ERR="" CASE_OUT="" CASE_CALLS="" CASE_TMPDIR="" CASE_VALUE=""
+  local CASE_ERR="" CASE_OUT="" CASE_CALLS="" CASE_TMPDIR="" CASE_VALUE="" CASE_RANK=""
   shift 3
   for _assignment in "$@"; do
     case "$_assignment" in
-      CASE_ERR=* | CASE_OUT=* | CASE_CALLS=* | CASE_TMPDIR=* | CASE_VALUE=*)
+      CASE_ERR=* | CASE_OUT=* | CASE_CALLS=* | CASE_TMPDIR=* | CASE_VALUE=* | CASE_RANK=*)
         printf -v "${_assignment%%=*}" '%s' "${_assignment#*=}"
         ;;
       *)
         fail "$CASE_LABEL" \
-          "run_case : « ${_assignment%%=*} » n'est pas une variable de cas (CASE_ERR, CASE_OUT, CASE_CALLS, CASE_TMPDIR, CASE_VALUE)"
+          "run_case : « ${_assignment%%=*} » n'est pas une variable de cas" \
+          "(CASE_ERR, CASE_OUT, CASE_CALLS, CASE_TMPDIR, CASE_VALUE, CASE_RANK)"
         return 0
         ;;
     esac
@@ -127,21 +129,22 @@ check_non_https_refused() {
   _check_value_refused ' : Basic Auth refusée sur une URL non https:// — rien de vérifié$'
 }
 
-# check_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
+# check_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Une Basic Auth et, dans les arguments de smoke_fetch, une option ou une URL que la bibliothèque refuse
-# (redirection, URL, configuration, protocole ou hôte) : sortie 2 avant tout appel de curl, « option ou URL
-# refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié » en queue
-# du message, la valeur nulle part.
+# Une Basic Auth et, dans les arguments de smoke_fetch, un argument hors de la liste d'autorisation : sortie 2 avant tout
+# appel de curl, « argument n° <rang> hors des options admises avec la Basic Auth — rien de vérifié » en queue du message
+# (le rang, jamais le texte de l'argument), la valeur nulle part.
 check_args_refused() {
-  _check_value_refused ' : option ou URL refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié$'
+  _case_incomplete CASE_RANK && return 0
+  _check_value_refused " : argument n° $CASE_RANK hors des options admises avec la Basic Auth — rien de vérifié\$"
 }
 
-# check_curl_opts_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
+# check_curl_opts_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Une Basic Auth et, dans SMOKE_CURL_OPTS, une option que la bibliothèque refuse : sortie 2 avant tout appel de
-# curl, « SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié » en queue du message,
+# Une Basic Auth et, dans SMOKE_CURL_OPTS, un élément hors de la liste d'autorisation : sortie 2 avant tout appel de curl,
+# « SMOKE_CURL_OPTS, élément n° <rang> hors des options admises avec la Basic Auth — rien de vérifié » en queue du message,
 # la valeur nulle part.
 check_curl_opts_refused() {
-  _check_value_refused ' : SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié$'
+  _case_incomplete CASE_RANK && return 0
+  _check_value_refused " : SMOKE_CURL_OPTS, élément n° $CASE_RANK hors des options admises avec la Basic Auth — rien de vérifié\$"
 }

@@ -144,6 +144,11 @@ _smoke_is_variable_name() {
 # `_smoke_auth_defined`, posé juste avant la lecture, garde « elle était définie » : c'est lui que lit
 # _smoke_require_auth_config.
 #
+# Une fois le fichier écrit (une Basic Auth pleine), elle retire aussi du shell les variables que curl lit et qui changeraient
+# où part l'identifiant ou ce qu'on en voit : `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`,
+# `no_proxy`, `CURL_CA_BUNDLE`, `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (R169, Q8). `CURL_HOME` et `XDG_CONFIG_HOME` ne
+# servent qu'au `.curlrc`, que `-q` en tête de chaque appel ne lit plus. Sans Basic Auth, rien n'est retiré.
+#
 # Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
 # leur `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup' EXIT`) puis écrivent
 # `smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2`. Un arrêt entre la
@@ -182,6 +187,12 @@ _smoke_write_auth_config() {
       _smoke_value="${_smoke_value//\\/\\\\}"
       _smoke_value="${_smoke_value//\"/\\\"}"
       printf 'user = "%s"\n' "$_smoke_value" > "$SMOKE_AUTH_CONFIG" || { smoke_cleanup; _smoke_rc=2; }
+      if [ "$_smoke_rc" -eq 0 ]; then
+        # Le fichier est écrit : la Basic Auth est portée. Les variables que curl lit (un proxy qui inspecte le TLS, un journal
+        # de clés TLS, un lot d'autorités) ne restent pas dans le shell, donc dans aucun appel suivant (Q8, CR14-1).
+        unset -v http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy \
+          CURL_CA_BUNDLE SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE
+      fi
     fi
     umask "$_smoke_umask"
   fi
@@ -256,60 +267,64 @@ smoke_excerpt() {
   printf '%s' "$1" | tr '\000-\037\177' '[ *]' | cut -c1-160
 }
 
-# Les noms d'options longues que smoke_fetch refuse avec la Basic Auth : ce qui suit une redirection (`location`,
-# `location-trusted`), donne une URL ou un fichier de configuration de plus (`url`, `config`, `next`, `variable`),
-# change les protocoles admis (`proto`, `proto-redir`), ou fait partir la requête ailleurs que vers l'hôte jugé
-# (`resolve`, `connect-to`, `insecure`). Les options `--expand-…` s'y ajoutent dans _smoke_is_refused_arg.
-_SMOKE_REFUSED_LONG=(location location-trusted url proto proto-redir config next variable insecure resolve connect-to)
-
-# _smoke_is_refused_arg <argument de curl>
+# _smoke_option_arity <argument de curl>
 #
-# Vrai (0) pour un argument qui, avec la Basic Auth, ferait partir l'identifiant ailleurs que vers l'URL jugée par
-# smoke_fetch ou en clair ; faux (1) sinon. Ni smoke_fetch ni cette fonction ne citent l'argument. Refusés :
-#   - `--`, seul : la fin des options, ce qui suit est une URL ;
-#   - une option longue `--<nom>[=valeur]` dont le nom, mis en minuscules, est **un préfixe** d'un nom de
-#     _SMOKE_REFUSED_LONG, ou commence par `expand-` ou en est un préfixe. C'est la règle de curl 8.5.0, celui du
-#     runner : un préfixe non ambigu vaut le nom (`--proto-r`, `--locat`) et la casse ne compte pas (`--LOCATION-T`),
-#     mesuré. Un préfixe ambigu, que curl refuserait lui-même, est refusé aussi : la règle est prudente. Passent
-#     `--progress-bar`, `--proto-default`, `--connect-timeout`, `--expect100-timeout`, `--max-time`, `--data`… ;
-#   - une grappe d'options courtes (`-[!-]*`) qui porte `L` (redirection), `K` (fichier de configuration), `k`
-#     (`--insecure`) ou `:` (`--next`) : `-L`, `-sL`, `-0L`, `-4L`, `-#L`, `-K`, `-sK`, `-k`, `-:`. Limite écrite : une valeur
-#     collée à une option courte (`-HAccept-Language: fr`) qui contient une de ces lettres est refusée à tort, aucun
-#     appelant n'en colle une ;
-#   - une valeur qui **commence** par un schéma autre que `https://` (`http://`, `ftp://`, `HTTP://`). Une valeur qui
-#     contient `://` plus loin (`-H 'Origin: https://…'`, un corps JSON) n'est pas une URL et passe.
-# Un argument sans schéma (`hôte/chemin`) n'est pas jugé ici : l'appel porte `--proto =https`, que curl applique à toute URL.
-_smoke_is_refused_arg() {
-  local _smoke_arg="${1:-}" _smoke_name _smoke_long
-  local _smoke_scheme='^[A-Za-z][A-Za-z0-9+.-]*://'
-  if [ "$_smoke_arg" = "--" ]; then
-    return 0
-  fi
-  case "$_smoke_arg" in
-    --*)
-      _smoke_name="${_smoke_arg#--}"
-      _smoke_name="${_smoke_name%%=*}"
-      _smoke_name="${_smoke_name,,}"
-      for _smoke_long in "${_SMOKE_REFUSED_LONG[@]}" expand-; do
-        case "$_smoke_long" in "$_smoke_name"*) return 0 ;; esac
-      done
-      case "$_smoke_name" in expand-*) return 0 ;; esac
-      return 1
-      ;;
-    -[!-]*)
-      case "${_smoke_arg:1}" in *[LKk:]*) return 0 ;; esac
-      return 1
-      ;;
+# La liste d'autorisation des arguments que smoke_fetch admet **avec la Basic Auth** (D1 de la quatorzième relecture), faite
+# d'un `case` : aucune variable que l'appelant puisse modifier, et une seconde `source` de la bibliothèque la laisse intacte.
+# Rend 0 et pose `_smoke_arity` (le nombre de valeurs que l'option prend) pour un argument de la liste, 1 pour tout autre :
+#   - `-sS`                                                        0 valeur ;
+#   - `--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`,
+#     `--data-binary`, `-b`                                        1 valeur.
+# Ce sont les options que les trois smokes passent réellement (`SMOKE_CURL_OPTS` : `-sS`, deux délais, `-D` ; `"$@"` : `-X`,
+# `-H`, `-d`, `--data-binary`, `-b`), relevées par `grep` des appels. La correspondance est **exacte** : ni préfixe (curl 8.5.0
+# prend `--proto-r` pour `--proto-redir`), ni casse ignorée, ni `--option=valeur`, ni grappe autre que `-sS` (`-s`, `-sSv`),
+# ni valeur collée (`-HAccept: x`). Une liste d'autorisation refuse d'emblée ce qu'une liste de refus n'a pas prévu : `-v`,
+# `--verbose`, `--trace`, `--trace-ascii`, `--libcurl` (qui imprime l'identifiant, mesuré), une seconde URL, `-x`, `--proxy`,
+# `--cacert`, `--proto-default`, une option future.
+# Pour ajouter une option : une ligne du `case` avec son arité, un cas « admise » dans tools/tests/smoke-http.test.sh (l'appel
+# part, l'option et sa valeur dans l'appel du faux curl), une ligne de .claude/rules/outillage-smoke.md qui la nomme. Rien d'autre.
+_smoke_arity=0
+_smoke_option_arity() {
+  case "${1-}" in
+    -sS) _smoke_arity=0 ;;
+    --connect-timeout | --max-time | -D | -X | -H | -d | --data-binary | -b) _smoke_arity=1 ;;
+    *) return 1 ;;
   esac
-  if [[ "$_smoke_arg" =~ $_smoke_scheme && "$_smoke_arg" != https://* ]]; then
-    return 0
+}
+
+# _smoke_judge_args <élément…>
+#
+# Juge une liste d'arguments de curl par _smoke_option_arity. Une option admise à une valeur consomme l'élément suivant **sans
+# le juger** (un en-tête, un corps, un cookie, un nom de fichier : `-H -v` envoie l'en-tête « -v ») ; une option à une valeur
+# sans élément suivant est refusée (sinon elle prendrait le `-w` de smoke_fetch pour valeur) ; tout autre élément — une seconde
+# URL, `--`, `-v`, une option inconnue — est refusé. Rend 0 si tout est admis ; sinon 1, et `_smoke_refused_rank` reçoit le rang
+# (de 1 à n) du premier élément refusé. Jamais le texte de l'élément : un argument collé à une option courte porterait un secret.
+_smoke_refused_rank=0
+_smoke_judge_args() {
+  local _smoke_rank=0 _smoke_pending=0 _smoke_item
+  _smoke_refused_rank=0
+  for _smoke_item in "$@"; do
+    _smoke_rank=$((_smoke_rank + 1))
+    if [ "$_smoke_pending" -eq 1 ]; then
+      _smoke_pending=0
+      continue
+    fi
+    if ! _smoke_option_arity "$_smoke_item"; then
+      _smoke_refused_rank="$_smoke_rank"
+      return 1
+    fi
+    _smoke_pending="$_smoke_arity"
+  done
+  if [ "$_smoke_pending" -eq 1 ]; then
+    _smoke_refused_rank="$_smoke_rank"
+    return 1
   fi
-  return 1
+  return 0
 }
 
 # smoke_fetch <libellé> <url> [arguments curl…]
 #
-# Lance `"$SMOKE_CURL" "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG" --proto =https --proto-redir =https] "$@"
+# Lance `"$SMOKE_CURL" -q "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG" --proto =https --proto-redir =https] "$@"
 # -w '\n%{http_code}' "$url"` et pose :
 #   SMOKE_STATUS   le code HTTP (la dernière ligne de la sortie) ;
 #   SMOKE_BODY     le corps (le reste).
@@ -317,6 +332,10 @@ _smoke_is_refused_arg() {
 # vaut `curl` s'il est vide. La Basic Auth n'y figure jamais : smoke_fetch lit
 # SMOKE_AUTH_CONFIG à chaque appel (St8-12), donc aucun `-K` périmé après un second
 # smoke_use_auth_config.
+#
+# `-q` est le **premier** argument de chaque appel, avec ou sans Basic Auth : curl ne lit alors aucun `.curlrc` (sous
+# `CURL_HOME`, `XDG_CONFIG_HOME` ou `HOME`), qui pourrait porter `location-trusted` ou un proxy. Il ne vaut qu'en tête : curl 8.5.0
+# (celui du runner) lit le fichier quand `-q` est en second argument (mesuré le 2026-11-01).
 #
 # Rend 1 (aucune réponse) ou 2 (un refus avant l'appel, ou le fichier de la Basic Auth absent), après l'avoir
 # dit sur stderr, sans jamais faire sortir l'appelant. Dans tous les refus, curl n'est pas appelé et la valeur
@@ -328,47 +347,41 @@ _smoke_is_refused_arg() {
 #     Auth refusée sur une URL non https:// — rien de vérifié ». curl envoie `Authorization:
 #     Basic` dès la première requête, quel que soit le schéma : l'identifiant partirait en clair
 #     (C11-1) ;
-#   - SMOKE_AUTH_CONFIG posé et un argument de `"$@"` que _smoke_is_refused_arg refuse (redirection, URL de
-#     plus, fichier de configuration, variable, protocole, hôte : voir ses refus) : « <libellé> : option ou URL
-#     refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié »
-#     (C12-13, D2 de la treizième relecture) ;
-#   - SMOKE_AUTH_CONFIG posé et un élément de SMOKE_CURL_OPTS que la même fonction refuse : « <libellé> :
-#     SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié » (St13-40). Il part avec
-#     le `-K` comme `"$@"` : `--location-trusted` l'emporterait vers tout hôte https ;
+#   - SMOKE_AUTH_CONFIG posé et un argument de `"$@"` hors de la liste d'autorisation (_smoke_option_arity ; une seconde URL
+#     en fait partie : la seule URL est celle que cette fonction juge) : « <libellé> : argument n° <rang> hors des options
+#     admises avec la Basic Auth — rien de vérifié » (le rang dans `"$@"`, de 1 à n, jamais le texte) ;
+#   - SMOKE_AUTH_CONFIG posé et un élément de SMOKE_CURL_OPTS hors de la même liste : « <libellé> : SMOKE_CURL_OPTS, élément
+#     n° <rang> hors des options admises avec la Basic Auth — rien de vérifié ». Il part avec le `-K` comme `"$@"` ;
 #   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
 #     Basic Auth absent — rien de vérifié » (sans `-K`, curl lirait le 401 de la préprod comme un résultat).
-# L'appel qui part porte `--proto =https` et `--proto-redir =https` après le `-K` : `--proto` borne aussi la première
-# requête, donc une URL sans schéma (`hôte/chemin`, que curl devine en `http://`), une URL d'un autre `-K` ou d'un
-# `--url` que le jugement des arguments aurait manqué sont refusées par curl lui-même ; `--proto-redir` borne les
-# redirections. Ceux de l'appelant sont refusés (voir plus haut) : curl garde la dernière valeur donnée.
+# Sans Basic Auth, rien de tout cela n'est jugé (la prod garde sa liberté : sans identifiant, rien ne fuit).
+# L'appel qui part avec la Basic Auth porte `--proto =https` et `--proto-redir =https` après le `-K` : `--proto` borne aussi la
+# première requête, donc une URL sans schéma (`hôte/chemin`, que curl devine en `http://`) est refusée par curl lui-même ;
+# `--proto-redir` borne les redirections. Aucune option de l'appelant ne peut les redonner : la liste ne les admet pas.
 # L'appelant : `smoke_fetch … || exit "$?"`.
 smoke_fetch() {
-  local label="$1" url="$2" response rc _smoke_auth=() _smoke_arg
+  local label="$1" url="$2" response rc _smoke_auth=()
   shift 2
   if [ -n "$SMOKE_AUTH_CONFIG" ]; then
     if [[ "$url" != https://* ]]; then
       echo "$label : Basic Auth refusée sur une URL non https:// — rien de vérifié" >&2
       return 2
     fi
-    for _smoke_arg in "${SMOKE_CURL_OPTS[@]}"; do
-      if _smoke_is_refused_arg "$_smoke_arg"; then
-        echo "$label : SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié" >&2
-        return 2
-      fi
-    done
-    for _smoke_arg in "$@"; do
-      if _smoke_is_refused_arg "$_smoke_arg"; then
-        echo "$label : option ou URL refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié" >&2
-        return 2
-      fi
-    done
+    if ! _smoke_judge_args "${SMOKE_CURL_OPTS[@]}"; then
+      echo "$label : SMOKE_CURL_OPTS, élément n° $_smoke_refused_rank hors des options admises avec la Basic Auth — rien de vérifié" >&2
+      return 2
+    fi
+    if ! _smoke_judge_args "$@"; then
+      echo "$label : argument n° $_smoke_refused_rank hors des options admises avec la Basic Auth — rien de vérifié" >&2
+      return 2
+    fi
     if [ ! -f "$SMOKE_AUTH_CONFIG" ]; then
       echo "$label : fichier de la Basic Auth absent — rien de vérifié" >&2
       return 2
     fi
     _smoke_auth=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
   fi
-  response="$("${SMOKE_CURL:-curl}" "${SMOKE_CURL_OPTS[@]}" "${_smoke_auth[@]}" "$@" -w '\n%{http_code}' "$url")" || {
+  response="$("${SMOKE_CURL:-curl}" -q "${SMOKE_CURL_OPTS[@]}" "${_smoke_auth[@]}" "$@" -w '\n%{http_code}' "$url")" || {
     rc=$?
     echo "$label : curl a échoué (code $rc : réseau, DNS ou délai) — rien de vérifié" >&2
     return 1

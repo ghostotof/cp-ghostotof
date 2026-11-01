@@ -36,31 +36,36 @@ A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like a
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
 An undefined one sends no Basic Auth.
 `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
+`-q` is the **first** argument of every call, with or without the Basic Auth: curl then reads no `.curlrc` (under `CURL_HOME`,
+`XDG_CONFIG_HOME` or `HOME`), which could carry `location-trusted` or a proxy. It only holds in first position.
+Measured on 2026-11-01 on `curlimages/curl@sha256:08e466006f0860e54fc299378de998935333e0e130a15f6f98482e9f8dab3058` (curl 8.5.0,
+the runner's, `ubuntu-latest`): `--network none`, a dummy `-K -` read from stdin, a `.curlrc` with `location-trusted` written inside
+the container, `--libcurl -` printing the options. `CURLOPT_UNRESTRICTED_AUTH` shows once without `-q`, not at all with `-q` first,
+and once again with `-q` second. `--libcurl -` also prints `CURLOPT_USERPWD`, which is why it cannot be admitted.
 It adds `--proto =https --proto-redir =https` after the `-K`: curl then takes only `https://` URLs and redirects only to `https://`.
-`--proto` binds the first request too: a URL without a scheme (`host/path`, which curl guesses as `http://`)
-is refused by curl, and so is the `url` of a second `-K`.
+`--proto` binds the first request too: a URL without a scheme (`host/path`, which curl guesses as `http://`) is refused by curl.
+Measured on 2026-10-31, same image: `-K … --proto =https` on `http://127.0.0.1:9/` exits 1 « Protocol "http" not supported or disabled ».
 It refuses a `-K` on a URL that is not `https://` (exit 2, « non https:// »): curl sends `Authorization: Basic` on the first request.
-With a `-K`, it also refuses an argument of `"$@"` (exit 2, « option ou URL refusée », curl not called, the argument never quoted) that is:
-- `--`, alone (what follows is a URL);
-- a long option, with or without `=value`, whose lower-cased name is a prefix of `location`, `location-trusted`, `url`, `proto`,
-  `proto-redir`, `config`, `next`, `variable`, `insecure`, `resolve`, `connect-to` or `expand-`, or starts with `expand-`;
-- a short-option cluster carrying `L`, `K`, `k` or `:` (`-L`, `-0L`, `-4L`, `-#L`, `-sK`, `-k`, `-:`);
-- a value that **starts** with a scheme other than `https://`; `-H 'Origin: https://…'` and a JSON body quoting `http://` pass.
-Why a prefix: curl 8.5.0, the runner's (`ubuntu-latest`, Ubuntu 24.04), takes an unambiguous abbreviation and ignores the case.
-`--proto-r` and `--LOCATION-T` ran; a prefix curl finds ambiguous is refused too. `--progress-bar` and `--proto-default` pass.
-`--connect-timeout` and `--expect100-timeout` pass too.
-Accepted limit: a value glued to a short option (`-HAccept-Language: fr`) holding `L`, `K`, `k` or `:` is refused wrongly.
-No caller glues a value to a short option.
-Each element of `SMOKE_CURL_OPTS` is judged the same way, with its own message (exit 2, « SMOKE_CURL_OPTS porte une option refusée »).
-Why: a `--location-trusted` there would carry the `-K` to any `https` host. Not judged without a `-K`.
-`--proto` and `--proto-redir` are refused in `"$@"`: curl keeps the last value given, so a caller's would win over the pair set before it.
+With a `-K`, `"$@"` and each element of `SMOKE_CURL_OPTS` are judged by an **allow-list** (D1 of the fourteenth review):
+`_smoke_option_arity`, a `case`, so that no variable can be changed by a caller and a second `source` leaves it intact.
+It admits nine options, the ones the three smokes really pass (found by `grep` of their calls): `-sS` (no value) and
+`--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`, `--data-binary`, `-b` (one value each).
+The match is exact: no prefix (curl 8.5.0 takes `--proto-r` for `--proto-redir`), no case folding, no `--option=value`,
+no cluster but `-sS` (`-s`, `-sSv`), no glued value (`-HAccept: x`). A value is never judged: `-H -v` sends the header « -v ».
+Anything else exits 2, curl not called: `-v`, `--verbose`, `--trace*`, `--libcurl`, a second URL (the only URL is the one judged),
+`--`, `-x`, `--proxy`, `--doh-url`, `--cacert`, `--unix-socket`, `--proto-default`, a redirection, a configuration file,
+an option with no value after it, and an option no table knows yet.
+The message gives the **rank** of the argument, never its text (a glued value could be a secret):
+« argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other.
+Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
+To admit a new option: a line of the `case` with its arity, an « accepted » case in `smoke-http.test.sh` (the call leaves, the option
+and its value in the fake curl's call), a line of this rule naming it. Nothing else.
+Once the Basic Auth is written, the library unsets the variables curl reads that would move or expose the identifier: `http_proxy`,
+`HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `SSL_CERT_DIR`, `SSL_CERT_FILE`,
+`SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log left by a debugging session). Not without a Basic Auth. `CURL_HOME` and
+`XDG_CONFIG_HOME` only serve the `.curlrc`, which `-q` no longer reads. The list is curl 8.5.0's `ENVIRONMENT` section (`curl --manual`).
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
-Measured on 2026-10-31, on `curlimages/curl@sha256:08e466006f0860e54fc299378de998935333e0e130a15f6f98482e9f8dab3058` (curl 8.5.0):
-`--network none`, a dummy `-K -` read from stdin, no secret.
-`--proto-r =all --version` exits 0 (the abbreviation is taken, the threat is real).
-With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 « Protocol "http" not supported or disabled in libcurl ».
-`--proto =https` holds whatever the abbreviation: it is what closes the scheme, the refusals above close the rest.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
 so the value is never expanded outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
@@ -95,9 +100,14 @@ A library that is missing or does not parse exits 2 saying « introuvable ou inv
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
 on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
 Every call that carries the `-K` also carries `--proto =https --proto-redir =https` (`CURL_OPTS` here), and none without it carries either.
+Every `curl` of the audit, the anonymous probes included, starts with `-q` (R169): `audit-prod.test.sh` reads each call of the fake curl
+(`-q` first, only the audit's options `-sS`, `--connect-timeout`, `--max-time`, `-K`, `--proto`, `--proto-redir`, `-D`, `-o`, `-L`,
+`-w`, `-H`, one URL last, `https://` when the call carries a `-K`) and the source (every `curl` command followed by `-q`).
 The anonymous probes aim at `http://` URLs on purpose, so a `--proto =https` on them would refuse the very redirect they check.
 A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
+The hint reads the audit's own flag `audit_carries_basic_auth`, set after `smoke_use_auth_config` succeeds, never `SMOKE_AUTH_CONFIG`:
+an inherited value would set that one with nothing carried (CR14-3).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
 Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
 The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`:

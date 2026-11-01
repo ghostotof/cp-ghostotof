@@ -463,8 +463,8 @@ else
   fail "smoke_fetch nominal" "rc=$rc ; statut : $SMOKE_STATUS ; corps : $SMOKE_BODY"
 fi
 # `-w` reçoit les deux caractères `\n` : c'est curl qui les interprète.
-if [ "$(cat "$FAKE_ARGS")" = '-sS --max-time 15 -b BEARER=abc -w \n%{http_code} https://example.invalid/x' ]; then
-  pass "smoke_fetch : options, arguments de l'appelant, -w, puis l'URL"
+if [ "$(cat "$FAKE_ARGS")" = '-q -sS --max-time 15 -b BEARER=abc -w \n%{http_code} https://example.invalid/x' ]; then
+  pass "smoke_fetch : -q, options, arguments de l'appelant, -w, puis l'URL"
 else
   fail "smoke_fetch arguments" "$(cat -A "$FAKE_ARGS")"
 fi
@@ -499,9 +499,9 @@ _smoke_write_auth_config UNE_AUTH
 first_conf="$SMOKE_AUTH_CONFIG"
 : > "$FAKE_ARGS"
 FAKE_STATUS=200 smoke_fetch "GET /b" https://example.invalid/b
-expected_args="-sS --max-time 15 -K $first_conf --proto =https --proto-redir =https -w \\n%{http_code} https://example.invalid/b"
+expected_args="-q -sS --max-time 15 -K $first_conf --proto =https --proto-redir =https -w \\n%{http_code} https://example.invalid/b"
 if [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
-  pass "smoke_fetch : Basic Auth posée → -K <fichier> --proto =https --proto-redir =https après les options de l'appelant"
+  pass "smoke_fetch : Basic Auth posée → -q, les options de l'appelant, puis -K <fichier> --proto =https --proto-redir =https"
 else
   fail "smoke_fetch avec auth" "$(cat -A "$FAKE_ARGS")"
 fi
@@ -561,111 +561,182 @@ else
   fail "smoke_fetch http:// sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
 fi
 
-# --- C12-13 puis D2 de la treizième relecture : `"$@"` part avec le `-K`. Une option qui suit une redirection
-# ou donne une URL, un `-K` de l'appelant, un autre fichier de configuration, une variable, une option qui ouvre
-# une connexion ailleurs ou change le protocole y rendrait à la Basic Auth ce que le contrôle de l'URL principale
-# lui refuse : retour 2 avant tout appel, la valeur jamais citée. Les options longues se jugent par préfixe et sans
-# tenir compte de la casse (curl 8.5.0, celui du runner, accepte `--proto-r` et `--LOCATION-T`, mesuré), les
-# grappes d'options courtes par leurs lettres. L'appel qui part porte `--proto =https --proto-redir =https` après
-# le `-K`. Sans Basic Auth, rien de tout cela.
+# --- R169 (D1 de la quatorzième relecture) : avec la Basic Auth, `"$@"` et SMOKE_CURL_OPTS ne portent que des options de la
+# liste d'autorisation (_smoke_option_arity : `-sS`, `--connect-timeout`, `--max-time`, `-D`, `-X`, `-H`, `-d`, `--data-binary`,
+# `-b`), correspondance exacte, et une seule URL, celle que smoke_fetch juge. Tout autre argument est refusé avant l'appel,
+# sortie 2, le **rang** de l'argument dans le message et jamais son texte : la valeur d'une option admise (un en-tête, un corps,
+# un cookie, un fichier) n'est pas jugée. Le jugement n'a lieu qu'avec la Basic Auth. Voir `-v`, `--libcurl -`, `-x`, une seconde URL.
 args_auth="$(generated_basic_auth)"
 UNE_AUTH="$args_auth"
 smoke_use_auth_config UNE_AUTH
-refused_args=(
-  "-L" "--location" "--location-trusted" "--url" "--url=https://example.invalid/y" "-sL" "-sSL" "-Lo"
-  "--locat" "--location-t" "--LOCATION-T" "--ur" "--u" "-0L" "-4L" "-6L" "-#L" "-K" "-sK" "-k" "-:"
-  "--config" "--conf" "--next" "--variable" "--var" "--expand-url" "--expand-" "--exp" "--ex"
-  "--insecure" "--ins" "--resolve" "--res" "--connect-to" "--connect-t" "--conn"
-  "--proto" "--proto=https" "--proto-redir" "--proto-redir=all" "--proto-redir=http,https" "--proto-r" "--Proto-R" "--pro" "--p"
-  "--"
-  "http://example.invalid/y" "HTTP://example.invalid/y" "ftp://example.invalid/y" "gopher://example.invalid/y"
-)
-for refused in "${refused_args[@]}"; do
+# refuse_args <rang attendu> <élément…> : smoke_fetch avec `-X POST` puis ces éléments ; le cas vérifie la sortie 2, le message
+# « argument n° <rang> », curl jamais appelé, la valeur absente ; l'élément refusé (celui du rang) n'est jamais cité.
+refuse_args() {
+  local rank="$1" refused
+  shift
+  refused="${*:$((rank - 2)):1}"
   : > "$FAKE_ARGS"
   rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$refused" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   run_case check_args_refused \
-    "smoke_fetch : « $refused » dans les arguments avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
-    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
-done
-# La forme à deux arguments (`--proto-redir`, puis sa valeur) est refusée dès le premier.
-: > "$FAKE_ARGS"
-rc=0
-FAKE_STATUS=200 smoke_fetch "GET /proto" https://example.invalid/x --proto-redir '=all' > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-run_case check_args_refused \
-  "smoke_fetch : « --proto-redir =all » en deux arguments avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
-  CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
-# Voisins permis : des arguments ordinaires, une URL https:// en argument, des options qui commencent comme une
-# option refusée sans l'être (`--progress-bar`, `--proto-default`, `--connect-timeout`, `--expect100-timeout`), un
-# en-tête dont la valeur cite une URL en `https://` et un corps JSON qui cite `http://` (ce sont des valeurs, pas
-# des URL).
-: > "$FAKE_ARGS"
-rc=0
-FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST -H 'Content-Type: application/json' \
-  -d '{"k":"v"}' -b 'BEARER=abc' https://example.invalid/other || rc=$?
-expected_args="-sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https -X POST -H Content-Type: application/json"
-expected_args+=" -d {\"k\":\"v\"} -b BEARER=abc https://example.invalid/other -w \\n%{http_code} https://example.invalid/x"
-if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
-  pass "smoke_fetch : des arguments ordinaires et une URL https:// passent, l'appel porte -K <fichier> --proto =https --proto-redir =https"
-else
-  fail "smoke_fetch arguments ordinaires" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
-fi
-: > "$FAKE_ARGS"
-rc=0
-FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x --progress-bar --proto-default https --connect-timeout 5 \
-  --expect100-timeout 1 --compressed -sS -H 'Origin: https://example.invalid' --data '{"url":"http://example.invalid/y"}' || rc=$?
-expected_args="-sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https --progress-bar --proto-default https"
-expected_args+=" --connect-timeout 5 --expect100-timeout 1 --compressed -sS -H Origin: https://example.invalid"
-expected_args+=" --data {\"url\":\"http://example.invalid/y\"} -w \\n%{http_code} https://example.invalid/x"
-if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
-  pass "smoke_fetch : --progress-bar, --proto-default, un -H 'Origin: https://…' et un corps JSON citant http:// ne sont pas refusés"
-else
-  fail "voisins des options refusées" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
-fi
-# Un argument sans schéma (`hôte/chemin`) n'est pas jugé par sa forme : curl le lirait en `http://`, mais l'appel
-# porte `--proto =https`, qui le refuse dans curl lui-même (mesuré sur 8.5.0 : « Protocol "http" not supported »).
-: > "$FAKE_ARGS"
-rc=0
-FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x example.invalid/other || rc=$?
-expected_args="-sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https example.invalid/other"
-expected_args+=" -w \\n%{http_code} https://example.invalid/x"
-if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
-  pass "smoke_fetch : un argument sans schéma part, derrière --proto =https que curl applique à toute URL"
-else
-  fail "argument sans schéma" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
-fi
+    "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
+    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth" CASE_RANK="$rank"
+  if grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "smoke_fetch : l'argument refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+# Les contournements nommés par la quatorzième relecture : la sortie de curl qui montre l'identifiant (`-v`, `--verbose`, `--trace`,
+# `--trace-ascii`, `--libcurl`, mesuré : `--libcurl -` imprime CURLOPT_USERPWD), une grappe qui porte `v`, une seconde URL
+# `https://`, `--`, le proxy, le résolveur, l'autorité de certification, le socket Unix, le protocole par défaut, une redirection,
+# un fichier de configuration, une valeur collée, une forme longue ou une option future qu'aucune table ne connaît.
+refuse_args 3 -v
+refuse_args 3 --verbose
+refuse_args 3 --trace -
+refuse_args 3 --trace-ascii -
+refuse_args 3 --trace-time
+refuse_args 3 --libcurl -
+refuse_args 3 -svS
+refuse_args 3 -sSv
+refuse_args 3 -vsS
+refuse_args 3 -s
+refuse_args 3 -S
+refuse_args 3 https://autre.example/
+refuse_args 3 --
+refuse_args 3 -x http://p
+refuse_args 3 --proxy http://p
+refuse_args 3 --preproxy http://p
+refuse_args 3 --doh-url https://d
+refuse_args 3 --cacert x
+refuse_args 3 --capath x
+refuse_args 3 --unix-socket /tmp/s
+refuse_args 3 --proto-default https
+refuse_args 3 --proto =all
+refuse_args 3 --proto-redir =all
+refuse_args 3 --resolve example.invalid:443:127.0.0.1
+refuse_args 3 --connect-to a:1:b:2
+refuse_args 3 --insecure
+refuse_args 3 -k
+refuse_args 3 -L
+refuse_args 3 --location
+refuse_args 3 --location-trusted
+refuse_args 3 -K x
+refuse_args 3 --config x
+refuse_args 3 --url https://autre.example/
+refuse_args 3 --next
+refuse_args 3 --variable v=1
+refuse_args 3 --expand-url x
+refuse_args 3 'hôte/chemin'
+refuse_args 3 'http://example.invalid/y'
+refuse_args 3 '-HAccept: x'
+refuse_args 3 '-XPOST'
+refuse_args 3 '--max-time=15'
+refuse_args 3 '--MAX-TIME' 15
+refuse_args 3 '--max-t' 15
+refuse_args 3 '--header' x
+refuse_args 3 '--request' GET
+refuse_args 3 --compressed
+refuse_args 3 --progress-bar
+refuse_args 3 --future-option-unknown-to-the-table
+# Le rang suit la position : l'option refusée est la cinquième, la septième, la dernière.
+refuse_args 5 -H 'A: b' -v
+refuse_args 7 -H 'A: b' -d '{"k":"v"}' -x http://p
+# Une option à une valeur sans élément suivant est refusée (sinon elle prendrait le `-w` de smoke_fetch pour valeur).
+refuse_args 3 -H
+refuse_args 3 -b
+refuse_args 5 -H 'A: b' -d
+# La valeur d'une option admise n'est pas jugée : une valeur qui ressemble à une option ou à une URL passe, et l'option
+# suivante, elle, l'est.
+refuse_args 5 -H -v -v
+refuse_args 5 -d https://autre.example/ -L
+# Voisins permis : chaque option de la table et sa valeur, dans l'appel noté, après `-q` et le `-K`.
+accept_args() {
+  local label="$1" expected="$2"
+  shift 2
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  expected="-q -sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https ${expected:+$expected }"
+  expected+="-w \\n%{http_code} https://example.invalid/x"
+  if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected" ]; then
+    pass "smoke_fetch : $label passe avec la Basic Auth, l'appel porte l'option et sa valeur"
+  else
+    fail "smoke_fetch : $label" "rc=$rc ; $(cat -A "$FAKE_ARGS") ; stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+accept_args "-X POST" "-X POST" -X POST
+accept_args "-H 'Origin: https://…'" "-H Origin: https://x" -H 'Origin: https://x'
+accept_args "-d d'un corps JSON qui cite http://" '-d {"url":"http://x"}' -d '{"url":"http://x"}'
+accept_args "--data-binary @fichier" "--data-binary @f" --data-binary @f
+accept_args "-b 'BEARER=…'" "-b BEARER=x" -b 'BEARER=x'
+accept_args "-H -v (une valeur qui ressemble à une option est une valeur)" "-H -v" -H -v
+accept_args "-sS, --connect-timeout et --max-time dans « \$@ »" "-sS --connect-timeout 5 --max-time 9" -sS --connect-timeout 5 --max-time 9
+accept_args "-D fichier" "-D /tmp/h" -D /tmp/h
+accept_args "toute la liste, dans cet ordre" '-sS -X POST -H A: b -d {"k":"v"} -b C=d --data-binary @f' \
+  -sS -X POST -H 'A: b' -d '{"k":"v"}' -b 'C=d' --data-binary @f
+accept_args "aucun argument" ""
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -L || true ) > /dev/null 2> "$TMP/trace" || rc=$?
-if [ "$rc" -eq 0 ] && grep -q 'option ou URL refusée avec la Basic Auth' "$TMP/trace" \
+if [ "$rc" -eq 0 ] && grep -q 'argument n° 1 hors des options admises avec la Basic Auth' "$TMP/trace" \
    && ! grep -qF -e "${args_auth%%:*}" -e "${args_auth#*:}" "$TMP/trace"; then
   pass "smoke_fetch : le refus d'un argument ne laisse pas la valeur dans la trace set -x"
 else
   fail "refus d'un argument tracé" "rc=$rc ; $(grep -F "${args_auth%%:*}" "$TMP/trace" | head -3)"
 fi
-# SMOKE_CURL_OPTS est jugé comme `"$@"`, avec son propre message : `--location-trusted` y emporterait le `-K` vers
-# tout hôte https. L'argument n'est jamais cité.
+# SMOKE_CURL_OPTS est jugé par la même table, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> ». L'élément refusé
+# n'est jamais cité.
 saved_curl_opts=("${SMOKE_CURL_OPTS[@]}")
-for refused in "--location-trusted" "--locat" "-4L" "-sK" "--config" "--proto-r" "--next" "--variable" "http://example.invalid/y" "--"; do
-  SMOKE_CURL_OPTS=(-sS --max-time 15 "$refused")
+refuse_curl_opts() {
+  local rank="$1" refused
+  shift
+  refused="${*:$rank:1}"
+  SMOKE_CURL_OPTS=("$@")
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
   run_case check_curl_opts_refused \
-    "smoke_fetch : « $refused » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
-    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
+    "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
+    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth" CASE_RANK="$rank"
   if grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "SMOKE_CURL_OPTS : l'argument n'est pas cité" "« $refused » est dans le stderr : $(cat -A "$TMP/stderr")"
+    fail "SMOKE_CURL_OPTS : l'élément refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
   fi
-done
-SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
-smoke_cleanup
-unset UNE_AUTH
-# Sans Basic Auth, `-L` et une URL http:// partent comme avant, dans `"$@"` comme dans SMOKE_CURL_OPTS, sans `-K` ni `--proto`.
+}
+refuse_curl_opts 2 -sS --verbose
+refuse_curl_opts 4 -sS --max-time 15 --location-trusted
+refuse_curl_opts 4 -sS --max-time 15 -L
+refuse_curl_opts 4 -sS --max-time 15 -v
+refuse_curl_opts 4 -sS --max-time 15 --libcurl
+refuse_curl_opts 4 -sS --max-time 15 https://autre.example/
+refuse_curl_opts 4 -sS --max-time 15 --proxy
+refuse_curl_opts 4 -sS --max-time 15 --future-option-unknown-to-the-table
+refuse_curl_opts 1 -s
+refuse_curl_opts 2 -sS --max-time
+# Voisin permis : les trois smokes passent `-sS`, deux délais et `-D <fichier>`.
+SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$TMP/headers")
 : > "$FAKE_ARGS"
 rc=0
-FAKE_STATUS=200 smoke_fetch "GET /local" https://example.invalid/x -L http://example.invalid/y || rc=$?
-if [ "$rc" -eq 0 ] && [ -s "$FAKE_ARGS" ] && ! grep -q -e ' -K ' -e '--proto' "$FAKE_ARGS"; then
-  pass "smoke_fetch : sans Basic Auth, -L et une URL http:// partent sans -K ni --proto"
+FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x || rc=$?
+SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
+expected_args="-q -sS --connect-timeout 5 --max-time 15 -D $TMP/headers -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https"
+expected_args+=" -w \\n%{http_code} https://example.invalid/x"
+if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
+  pass "smoke_fetch : SMOKE_CURL_OPTS des trois smokes (-sS, deux délais, -D <fichier>) passe avec la Basic Auth"
+else
+  fail "SMOKE_CURL_OPTS des smokes" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
+fi
+# `-q` est le premier argument de chaque appel, avec la Basic Auth (au-dessus) comme sans (plus bas) : `.curlrc` (`CURL_HOME`,
+# `XDG_CONFIG_HOME`, `HOME`) n'est lu que si `-q` n'est pas le premier argument (curl 8.5.0, mesuré le 2026-11-01 : un `.curlrc`
+# portant `location-trusted` donne `CURLOPT_UNRESTRICTED_AUTH` sans `-q`, rien avec `-q` en premier, et le redonne en second).
+smoke_cleanup
+unset UNE_AUTH
+# Sans Basic Auth, `-L` et une URL http:// partent comme avant, dans `"$@"` comme dans SMOKE_CURL_OPTS, sans `-K` ni `--proto`,
+# et `-q` reste le premier argument.
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /local" https://example.invalid/x -L http://example.invalid/y -v || rc=$?
+if [ "$rc" -eq 0 ] && [ -s "$FAKE_ARGS" ] && ! grep -q -e ' -K ' -e '--proto' "$FAKE_ARGS" \
+   && [[ "$(cat "$FAKE_ARGS")" == '-q -sS '* ]]; then
+  pass "smoke_fetch : sans Basic Auth, -L, -v et une URL http:// partent sans -K ni --proto, derrière -q"
 else
   fail "smoke_fetch sans Basic Auth avec -L" "rc=$rc ; $(cat "$FAKE_ARGS")"
 fi
@@ -679,6 +750,47 @@ if [ "$rc" -eq 0 ] && [ -s "$FAKE_ARGS" ] && ! grep -q -e ' -K ' -e '--proto' "$
 else
   fail "SMOKE_CURL_OPTS sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
 fi
+
+# --- R169 (Q8) : une fois la Basic Auth posée, les variables d'environnement que curl lit (un proxy qui inspecte le TLS, un journal
+# de clés TLS, un lot d'autorités) ne sont plus dans le shell : aucun appel de curl ne les reçoit. Sans Basic Auth, elles restent.
+curl_variables=(http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+  CURL_CA_BUNDLE SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE)
+for variable in "${curl_variables[@]}"; do
+  printf -v "$variable" '%s' "valeur-de-test-$variable"
+  export "${variable?}"
+done
+UNE_AUTH="$(generated_basic_auth)"
+rc=0
+smoke_use_auth_config UNE_AUTH || rc=$?
+still_set=""
+for variable in "${curl_variables[@]}"; do
+  if [[ -v $variable ]] || bash -c '[[ -v $1 ]]' _ "$variable"; then still_set+="$variable "; fi
+done
+if [ "$rc" -eq 0 ] && [ -z "$still_set" ]; then
+  pass "smoke_use_auth_config avec la Basic Auth retire du shell les ${#curl_variables[@]} variables d'environnement de curl"
+else
+  fail "variables de curl encore posées" "rc=$rc ; encore posées : ${still_set:-aucune}"
+fi
+smoke_cleanup
+unset UNE_AUTH
+for variable in "${curl_variables[@]}"; do
+  printf -v "$variable" '%s' "valeur-de-test-$variable"
+  export "${variable?}"
+done
+rc=0
+smoke_use_auth_config UNE_AUTH || rc=$?
+missing=""
+for variable in "${curl_variables[@]}"; do
+  if ! bash -c '[[ -v $1 ]]' _ "$variable"; then missing+="$variable "; fi
+done
+if [ "$rc" -eq 0 ] && [ -z "$missing" ]; then
+  pass "smoke_use_auth_config sans Basic Auth laisse les variables d'environnement de curl"
+else
+  fail "variables de curl retirées sans Basic Auth" "rc=$rc ; retirées : ${missing:-aucune}"
+fi
+smoke_cleanup
+for variable in "${curl_variables[@]}"; do unset "$variable"; done
+unset curl_variables variable still_set missing
 
 # --- C12-10, D3 de la quatorzième relecture : la valeur lue n'a aucune raison de rester dans l'environnement des processus
 # que l'appelant lance (curl, dig, openssl) : smoke_use_auth_config retire la variable du shell une fois le fichier écrit

@@ -44,6 +44,9 @@ done
 cat > "$TMP/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s %s\n' curl "$*" >> "$FAKE_CALLS"
+# Les mêmes arguments, un par champ (séparés par U+001F, un argument peut porter des blancs), pour juger chaque élément.
+printf '%s\x1f' "$@" >> "$FAKE_CALLS.argv"
+printf '\n' >> "$FAKE_CALLS.argv"
 if [ -n "${FAKE_CURL_HTTP_CODE_FOR_WWW:-}" ] && [[ "$*" == *'%{http_code}'* ]] && [[ "${!#}" == https://www.* ]]; then
   printf '%s' "$FAKE_CURL_HTTP_CODE_FOR_WWW"
   exit 0
@@ -74,6 +77,7 @@ run_audit() {
   local name="$1"
   shift
   : > "$TMP/$name.calls"
+  : > "$TMP/$name.calls.argv"
   mkdir -p "$TMP/$name.tmpdir"
   set +e
   LC_ALL=C FAKE_CALLS="$TMP/$name.calls" TMPDIR="$TMP/$name.tmpdir" PATH="$TMP/bin:$PATH" \
@@ -294,6 +298,82 @@ else
   pass "aucun appel sans -K ne porte --proto =https (avec et sans Basic Auth)"
 fi
 
+# --- R169 (D1 de la quatorzième relecture, Q6) : chaque appel de curl de l'audit commence par `-q`, sondes anonymes comprises :
+# un `.curlrc` (sous `CURL_HOME`, `XDG_CONFIG_HOME` ou `HOME`) n'est lu que si `-q` n'est pas le premier argument, et un `.curlrc`
+# qui porte `location-trusted` ferait suivre à l'identifiant une redirection vers n'importe quel hôte (curl 8.5.0, mesuré le
+# 2026-11-01 : `CURLOPT_UNRESTRICTED_AUTH` sans `-q`, rien avec `-q` en premier, de retour avec `-q` en second). Lu sur le run
+# `nominal`, un appel par ligne de `nominal.calls.argv` : `-q` d'abord, ensuite seulement des options de la liste de l'audit
+# (une seule URL, en dernier) ; un appel qui porte `-K` n'a que des URL en `https://`.
+# audit_call_problems <nom> : une ligne par appel qui s'écarte de cette forme, vide sinon.
+audit_call_problems() {
+  local line index word skip rank url_count
+  local -a words
+  while IFS= read -r line; do
+    IFS=$'\x1f' read -r -a words <<< "$line"
+    if [ "${words[0]:-}" != "-q" ]; then
+      printf 'sans -q en premier : %s\n' "${line//$'\x1f'/ }"
+      continue
+    fi
+    skip=0
+    url_count=0
+    for index in "${!words[@]}"; do
+      [ "$index" -eq 0 ] && continue
+      word="${words[$index]}"
+      rank=$((index + 1))
+      if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+      case "$word" in
+        -sS | -L) ;;
+        --connect-timeout | --max-time | -K | --proto | --proto-redir | -D | -o | -w | -H) skip=1 ;;
+        -*) printf 'option hors de la liste, argument n° %s : %s\n' "$rank" "${line//$'\x1f'/ }" ;;
+        *)
+          url_count=$((url_count + 1))
+          if [ "$index" -ne $((${#words[@]} - 1)) ]; then printf 'URL qui n'"'"'est pas la dernière : %s\n' "${line//$'\x1f'/ }"; fi
+          if [[ "$line" == *$'\x1f-K\x1f'* && "$word" != https://* ]]; then
+            printf 'URL non https:// avec -K : %s\n' "${line//$'\x1f'/ }"
+          fi
+          ;;
+      esac
+    done
+    if [ "$url_count" -ne 1 ]; then printf '%s URL : %s\n' "$url_count" "${line//$'\x1f'/ }"; fi
+  done < "$TMP/$1.calls.argv"
+}
+nominal_problems="$(audit_call_problems nominal)"
+if [ ! -s "$TMP/nominal.calls.argv" ]; then
+  fail "chaque appel de curl de l'audit : -q en premier, options de la liste, une URL" "aucun appel noté : le cas ne prouverait rien"
+elif [ -n "$nominal_problems" ]; then
+  fail "chaque appel de curl de l'audit : -q en premier, options de la liste, une URL" "$(head -3 <<< "$nominal_problems")"
+else
+  calls_count="$(wc -l < "$TMP/nominal.calls.argv")"
+  pass "chaque appel de curl de l'audit, sondes anonymes comprises : -q d'abord, options de la liste, une URL ($calls_count appels)"
+fi
+sansauth_problems="$(audit_call_problems sansauth)"
+if [ ! -s "$TMP/sansauth.calls.argv" ] || [ -n "$sansauth_problems" ]; then
+  fail "sans Basic Auth, chaque appel de curl commence aussi par -q" "${sansauth_problems:-aucun appel noté}"
+else
+  pass "sans Basic Auth, chaque appel de curl commence aussi par -q"
+fi
+# Le même jugement lu sur le source : chaque commande `curl` du script est suivie de `-q` (les commentaires sont écartés).
+uncovered=""
+witness=0
+while IFS= read -r numbered; do
+  code="${numbered#*:}"
+  code="${code#"${code%%[![:space:]]*}"}"
+  case "$code" in '#'*) continue ;; esac
+  rest="$code"
+  while [[ "$rest" =~ (^|[^[:alnum:]_./-])curl[[:space:]]+([^[:space:]]*) ]]; do
+    witness=$((witness + 1))
+    if [ "${BASH_REMATCH[2]}" != "-q" ]; then uncovered+="${numbered%%:*} : ${BASH_REMATCH[0]} | "; fi
+    rest="${rest#*"${BASH_REMATCH[0]}"}"
+  done
+done < <(grep -n 'curl ' "$TOOLS/audit-prod.sh" || true)
+if [ "$witness" -eq 0 ]; then
+  fail "chaque commande curl de audit-prod.sh est suivie de -q (lu sur le source)" "aucune commande trouvée : le cas ne prouverait rien"
+elif [ -n "$uncovered" ]; then
+  fail "chaque commande curl de audit-prod.sh est suivie de -q (lu sur le source)" "sans -q : $uncovered"
+else
+  pass "chaque commande curl de audit-prod.sh est suivie de -q (lu sur le source, $witness appels)"
+fi
+
 # --- CR11-9 : une sonde de redirection qui reçoit 401 dit que l'hôte demande la Basic Auth (la sonde part sans
 # elle exprès) au lieu de passer pour une redirection cassée. Un autre code ne porte pas ce message. La valeur
 # de la Basic Auth (générée) n'apparaît nulle part.
@@ -349,6 +429,17 @@ if [[ "$probe_line" == *' 401'* && "$probe_line" != *'Basic Auth'* && "$probe_li
   pass "sans Basic Auth, un 401 de sonde s'imprime sans l'indice"
 else
   fail "sans Basic Auth, un 401 de sonde s'imprime sans l'indice" "ligne de la sonde : ${probe_line:-absente}"
+fi
+
+# --- CR14-3 : l'indice du 401 lit un drapeau de l'audit (la Basic Auth est portée), jamais SMOKE_AUTH_CONFIG : une valeur héritée
+# de l'environnement, sans AUDIT_BASIC_AUTH, n'ajoute pas l'indice (l'audit ne porte alors aucune Basic Auth).
+copy_tools sonde401herite reelle
+FAKE_CURL_HTTP_CODE_FOR_WWW=401 SMOKE_AUTH_CONFIG=/herite/fichier run_audit sonde401herite
+probe_line="$(grep -F 'https://www.example.invalid' "$TMP/sonde401herite.out" | head -1 || true)"
+if [[ "$probe_line" == *' 401'* && "$probe_line" != *'Basic Auth'* && "$probe_line" != *'#750'* ]]; then
+  pass "un SMOKE_AUTH_CONFIG hérité, sans Basic Auth portée, n'ajoute pas l'indice au 401 d'une sonde"
+else
+  fail "SMOKE_AUTH_CONFIG hérité et indice du 401" "ligne de la sonde : ${probe_line:-absente}"
 fi
 
 # --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans

@@ -17,9 +17,17 @@ set -uo pipefail   # -u : variable non définie = erreur / -o pipefail : remonte
                    # (pas de -e : on veut continuer même si un test échoue)
 
 FAILURES=0   # compteur global, à déclarer en haut du script
+# Vrai (1) quand l'audit porte la Basic Auth (préprod) : posé plus bas, après smoke_use_auth_config. Ce que dit l'indice du 401
+# d'une sonde (section 3) lit ce drapeau, jamais SMOKE_AUTH_CONFIG, qu'une valeur héritée de l'environnement peut poser sans
+# que l'audit porte quoi que ce soit (CR14-3).
+audit_carries_basic_auth=0
 DOMAIN="${1:-cp-ghostotof.com}"
 BASE="https://${DOMAIN}"
 
+# Chaque appel de curl commence par `-q` (R169, Q6) : curl ne lit alors aucun `.curlrc` (sous `CURL_HOME`, `XDG_CONFIG_HOME` ou
+# `HOME`), qui pourrait porter `location-trusted` et faire suivre l'identifiant par une redirection. Il ne vaut qu'en premier
+# argument (curl 8.5.0, mesuré) ; tools/tests/audit-prod.test.sh le lit sur chaque appel et sur le source, sondes anonymes comprises.
+#
 # Timeout court sur chaque requête : un domaine qui ne répond pas ne doit pas
 # faire tourner le job en boucle jusqu'au timeout du runner CI.
 CURL_OPTS=(--connect-timeout 5 --max-time 15)
@@ -81,6 +89,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
   CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
+  audit_carries_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
@@ -105,7 +114,7 @@ dig "${DIG_TIMEOUT[@]}" +short "$DOMAIN" TXT | head -5 # SPF / vérifications di
 #    -o /dev/null jette le body, -L suit les redirections.
 # ---------------------------------------------------------------------------
 section "En-têtes HTTP (avec redirections)"
-HEADERS_RAW="$(curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L "$BASE")"
+HEADERS_RAW="$(curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L "$BASE")"
 echo "$HEADERS_RAW"
 
 # ---------------------------------------------------------------------------
@@ -123,11 +132,11 @@ for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
   # Un seul appel par sonde : le code de la 1re réponse (%{http_code}) et la cible de son
   # Location (%{redirect_url}) viennent de la même réponse, jamais de deux requêtes
   # qui pourraient différer. La réponse est assignée, puis lue en deux champs.
-  probe="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' "$url")"
+  probe="$(curl -q -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' "$url")"
   read -r code target <<< "$probe"
   hint=""
-  # SMOKE_AUTH_CONFIG n'est posé que si l'audit porte la Basic Auth (préprod) : l'indice du 401 en dépend.
-  if [ "$code" = "401" ] && [ -n "${SMOKE_AUTH_CONFIG:-}" ]; then
+  # `audit_carries_basic_auth` vaut 1 seulement si l'audit porte la Basic Auth (préprod) : l'indice du 401 en dépend.
+  if [ "$code" = "401" ] && [ "$audit_carries_basic_auth" -eq 1 ]; then
     hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
   fi
   printf '%-32s -> %s %s%s\n' "$url" "$code" "$target" "$hint"
@@ -165,7 +174,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" ||
 # Le préfixe `x-audit-` ne peut entrer en collision avec aucun en-tête
 # vérifié : les tests ci-dessous ancrent leurs grep sur `^<nom>:`.
 fetch_headers() {
-  curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L -w 'x-audit-http-code: %{http_code}\n' "$1"
+  curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L -w 'x-audit-http-code: %{http_code}\n' "$1"
 }
 
 section "En-têtes de sécurité"
@@ -184,7 +193,7 @@ check_security_headers "/healthz" "$(fetch_headers "${BASE}/healthz")"
 # place un hash de contenu dans chaque nom de fichier, un chemin figé ici
 # cesserait de correspondre à quoi que ce soit dès le déploiement suivant et
 # vérifierait alors les en-têtes d'un 404 en croyant vérifier ceux d'un asset.
-ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$(curl -sS "${CURL_OPTS[@]}" -L "$BASE")" | head -1)"
+ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$(curl -q -sS "${CURL_OPTS[@]}" -L "$BASE")" | head -1)"
 if [ -n "$ASSET_PATH" ]; then
   check_security_headers "$ASSET_PATH" "$(fetch_headers "${BASE}${ASSET_PATH}")"
 else
@@ -222,7 +231,7 @@ check_tls_certificate "$DOMAIN" 14 "$CERT"
 # ---------------------------------------------------------------------------
 section "Fichiers publics"
 for path in /robots.txt /sitemap.xml /favicon.ico /humans.txt; do
-  printf '%-16s %s\n' "$path" "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
+  printf '%-16s %s\n' "$path" "$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
 done
 
 # ---------------------------------------------------------------------------
@@ -268,7 +277,7 @@ case "$SECURITY_TXT_TYPE" in
     FAILURES=$((FAILURES + 1)) ;;
 esac
 
-SECURITY_TXT_BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
+SECURITY_TXT_BODY="$(curl -q -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
 
 # Champs obligatoires de la RFC 9116. Les noms de champs y sont
 # insensibles à la casse, d'où le grep -i, ancré en début de ligne pour ne pas
@@ -339,7 +348,7 @@ section "Métadonnées OAuth de la connexion MCP (RFC 9728, RFC 8414)"
 check_oauth_metadata() {
   local path="$1" field="$2" expected="$3" response meta body code content_type value
   # Code et type à la suite du corps, sur une dernière ligne à part.
-  response="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
+  response="$(curl -q -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
   meta="${response##*$'\n'}"
   body="${response%$'\n'*}"
   read -r code content_type <<< "$meta"
@@ -385,7 +394,7 @@ check_oauth_metadata() {
 check_oauth_metadata /.well-known/oauth-protected-resource/api/mcp resource "${BASE}/api/mcp"
 check_oauth_metadata /.well-known/oauth-authorization-server/api/oauth issuer "${BASE}/api/oauth"
 
-OIDC_CODE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
+OIDC_CODE="$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
 if [ "$OIDC_CODE" = "404" ]; then
   printf '  \033[32mOK\033[0m      HTTP 404 sur /.well-known/openid-configuration (aucun document OIDC)\n'
 else
@@ -408,10 +417,10 @@ fi
 #    priorité (ex. vrai fichier .env, page phpinfo()...).
 # ---------------------------------------------------------------------------
 section "Chemins sensibles (attendu : 404, ou le même fallback SPA que /)"
-BASE_SIZE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{size_download}' -L "$BASE")"
+BASE_SIZE="$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{size_download}' -L "$BASE")"
 for path in /.env /.env.local /.git/config /_profiler /app_dev.php /index.php/_profiler \
             /composer.json /composer.lock /vendor/ /docker-compose.yml /phpinfo.php; do
-  read -r code size <<< "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code} %{size_download}' "${BASE}${path}")"
+  read -r code size <<< "$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code} %{size_download}' "${BASE}${path}")"
   if [ "$code" = "404" ] || [ "$code" = "403" ]; then
     printf '  \033[32m%s\033[0m  %s\n' "$code" "$path"
   elif [ "$code" = "200" ] && [ "$size" = "$BASE_SIZE" ]; then
@@ -427,7 +436,7 @@ done
 #    Pour une SPA Vue non SSR, on trouve souvent une div vide -> impact SEO.
 # ---------------------------------------------------------------------------
 section "Contenu HTML brut (avant JS)"
-BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$BASE")"
+BODY="$(curl -q -sS "${CURL_OPTS[@]}" -L "$BASE")"
 echo "Taille du HTML : $(wc -c <<< "$BODY") octets"
 echo "Balises <script> : $(grep -o '<script' <<< "$BODY" | wc -l)"
 echo "Texte visible approximatif :"
@@ -437,7 +446,7 @@ sed -e 's/<[^>]*>//g' <<< "$BODY" | tr -s '[:space:]' ' ' | cut -c1-300
 # 9. Compression et cache des assets : perf.
 # ---------------------------------------------------------------------------
 section "Compression / cache"
-curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -H 'Accept-Encoding: gzip, br' -L "$BASE" \
+curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -H 'Accept-Encoding: gzip, br' -L "$BASE" \
   | grep -iE '^(content-encoding|cache-control|etag|last-modified|vary)' || echo "  aucun en-tête de cache/compression"
 
 echo -e "\nTerminé."
