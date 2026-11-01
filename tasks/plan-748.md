@@ -12214,6 +12214,32 @@ suite verte avant/après. Le corps de `useAdminTranslation()` (> 130 lignes) **r
 
 ---
 
+### Task R189b : Une garde de source — ce que lit le refus de traduction est déclaré avant `useTranslatedForm` (décision de l'auteur, 2026-11-01)
+
+**Files :** une spec de garde sous `frontend/tests/presentation/pages/admin/` (sur le modèle de `noLoadInOnMounted.spec.ts`,
+lecture du source par `tests/support/sourceText.ts`) ; `.claude/rules/frontend-backoffice.md`.
+
+**Décision.** R189 a remis `form` en objet (Q8) et supprimé le test « lit le formulaire à l'usage : déclaré après l'appel »
+(R174) : la déclaration tardive de `form` est refusée à la compilation (vue-tsc TS2448, mesuré par R189) — **suppression
+acceptée**. Mais les autres sources que lit `isRefused` (le brouillon d'ordre `useOrderDraft` et ses dérivés, `isProposalShown`
+des réglages…) ne sont gardées par rien : les déplacer après l'appel ne fait rien rougir, la règle appelle cet ordre une
+convention. **Une garde de source en fait un contrôle** : dans chaque fichier de `presentation/pages/admin` qui appelle
+`useTranslatedForm`, chaque identifiant lu par la fonction passée en `isRefused` (et en `identity`) et déclaré dans le même
+`<script setup>` l'est **avant** l'appel de `useTranslatedForm`.
+
+- [ ] **Step 1 : la garde** — lire l'arbre syntaxique du `<script setup>` (outils de `sourceText.ts`), relever les
+  identifiants lus par les options `isRefused` et `identity` de l'appel de `useTranslatedForm`, et comparer leur position de
+  déclaration à celle de l'appel ; message qui nomme le fichier et l'identifiant. Plancher du nombre de fichiers vus (les neuf
+  sites, ou leur nombre après R190, justifié).
+- [ ] **Step 2 : rouge** — cas sur fichier factice (une `const` lue par `isRefused` déclarée après l'appel) vu rouge, voisin
+  (déclarée avant) vert ; puis mutation sur un vrai site (déplacer `useOrderDraft` après l'appel) vue rouge, commande et ligne
+  rouge rendues ; fichier restauré (`cmp`).
+- [ ] **Step 3 : règle** — la phrase de R189 « so that order is a convention » devient « an order a source guard checks
+  (R189b) » ; aucun moignon.
+- [ ] **Step 4 : vérifier et commiter** — `make front-test`, `front-lint`, `front-build`, `tools/check-claude-rules.sh` à 0 ;
+  commit `test(frontend): …`.
+
+
 ### Task R190 : Qualité — une section générique paramétrée par ses champs (D4, Q10 à Q12 : St15-13 ; Sp15-6 ; refactoring)
 
 **Files :**
