@@ -13425,6 +13425,11 @@ Constats : Q7, D3 ; St16-6 ; St16-4 pour `proposedCreation.ts:16-17,27` et `useT
   nomme la constante ; ce changement est dans le commit.
 - **R203 a gardé trois planchers qui ne sont pas des comptes de fichiers** (`reads >= 2` par site, `deferredCallsOf(...).length >= 1`,
   les `> 100` de la glob de `src/`) : lecture de Q12 (A) par le fil principal, laissée au jugement de la 17e relecture.
+- **Rectification après R204 (fil principal)** : la phrase « plus aucun ` as Locale` dans `frontend/src/presentation` » dépassait la
+  décision de l'auteur, qui visait les cinq formes nommées. R204 (b2128166) les a remplacées ; restent 14 ` as Locale` hors de
+  `pages/admin` et `ui/admin` (la `locale` de vue-i18n ou un paramètre de route), plus ceux d'`application/` et d'`infrastructure/admin`,
+  laissés au jugement de la 17e relecture, comme le repli d'une entrée en langue non prise en charge (`form.locale` garde sa valeur
+  précédente ; état inatteignable par l'interface, `groupByTranslationGroup` ne garde que `SUPPORTED_LOCALES`).
 
 ---
 
