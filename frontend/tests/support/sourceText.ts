@@ -305,10 +305,11 @@ interface DeferredHook {
 }
 
 /**
- * La liste des hooks différés, **écrite ici et nulle part ailleurs** (#748, St15-5) : les hooks de `vue` et de `vue-router` dont le rappel
- * s'exécute après le montage, les appels globaux qui différent une fonction, et les méthodes d'une promesse. Le docblock de
- * `deferredCallsOf`, celui de `noLoadInOnMounted.spec.ts` et la règle `frontend-session-refus.md` y renvoient par son nom : ajouter
- * ou retirer un hook se fait ici seulement, et `sourceText.spec.ts` a un cas par hook de la liste.
+ * Les hooks différés : ceux de `vue` et de `vue-router` dont le rappel s'exécute après le montage, les appels globaux qui diffèrent
+ * une fonction, et les méthodes d'une promesse. Trois listes, chacune écrite une fois, ici : `DEFERRED_HOOKS` (chaque hook, la
+ * position de ses rappels, quand il court après le rendu), `GLOBAL_DEFERRALS` (parmi eux, ceux qui s'écrivent aussi sur `window`)
+ * et `PROMISE_METHODS` (ceux qui se jugent sur le nom seul, quel que soit le receveur). Un minuteur s'ajoute à `DEFERRED_HOOKS` et à
+ * `GLOBAL_DEFERRALS`, une méthode de promesse à `DEFERRED_HOOKS` et à `PROMISE_METHODS`, tout autre hook à `DEFERRED_HOOKS` seule.
  */
 const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
   ['onMounted', { callback: 0 }],
@@ -455,22 +456,27 @@ const isFunctionLike = (node: ts.Node): node is ts.ArrowFunction | ts.FunctionEx
  *   et de même pour un hook posé dans la fonction d'un autre (`onMounted(() => { nextTick(load) })` donne `['nextTick', 'load']`) ;
  * - ce qui précède un hook dans une chaîne (`prepare().then(() => a()).then(b)` donne `['a', 'b']`).
  *
- * Les hooks différés sont ceux de `DEFERRED_HOOKS` (la liste n'est écrite que là) ; un `watch` n'en est un que **sauf** si ses
- * options portent `immediate: true`, un `watchEffect` que quand elles portent `flush: 'post'`, les minuteurs et `requestAnimationFrame`
- * se lisent nus ou sur `window`, `globalThis`, `self`, et `then` (ses deux rappels), `catch` et `finally` comme méthode de n'importe
- * quel receveur (le nom seul les juge : un objet qui n'est pas une promesse mais a un `then` est lu aussi). Les hooks de `vue` se lisent
- * sous le nom que leur importation leur donne (`import { onMounted as whenMounted } from 'vue'`), lu dans l'`ImportDeclaration` ; un
- * nom que `vue` ne lie pas est lu tel qu'il est écrit, pour qu'une source sans importation (un fichier de test) se lise de même. Seuls
- * les arguments qui sont des rappels sont lus : le délai d'un `setTimeout` et la source d'un `watch` ne sont pas des appels différés.
+ * Les hooks différés sont ceux de `DEFERRED_HOOKS` (avec `GLOBAL_DEFERRALS` et `PROMISE_METHODS`, voir leur docblock) ; un `watch` n'en
+ * est un que **sauf** si ses options portent `immediate: true`, un `watchEffect` que quand elles portent `flush: 'post'`, les minuteurs
+ * et `requestAnimationFrame` se lisent nus ou sur `window`, `globalThis`, `self`, et `then` (ses deux rappels), `catch` et `finally`
+ * comme méthode de n'importe quel receveur (le nom seul les juge : un objet qui n'est pas une promesse mais a un `then` est lu aussi).
+ * Les hooks de `vue` se lisent sous le nom que leur importation leur donne (`import { onMounted as whenMounted } from 'vue'`), lu dans
+ * l'`ImportDeclaration` ; un nom que `vue` ne lie pas est lu tel qu'il est écrit, pour qu'une source sans importation (un fichier de
+ * test) se lise de même. Seuls les arguments qui sont des rappels sont lus : le délai d'un `setTimeout` et la source d'un `watch` ne
+ * sont pas des appels différés.
  *
  * **Le critère est la première exécution du rappel.** Un `watch` `immediate` n'est pas lu : sa première exécution court dans le
  * `setup`, posté ou non (`job(true)`, `@vue/reactivity`) ; ses suivantes répondent à un changement, ce que la garde admet. Tout
  * autre hook ci-dessus ne court jamais dans le `setup`, quel que soit le nombre de ses exécutions.
  *
- * Invisible, et la limite est celle de la garde qui s'en sert : un hook passé par une variable (`const hook = onMounted`) ; un
- * module importé en espace de noms (`Vue.onMounted(…)`) ; un hook de `vue-router` importé sous un alias (`onBeforeRouteUpdate as
- * leaving`), non résolu ; `then` écrit en `promise['then'](…)` ; une fonction déclarée dans le fichier et passée par référence (vue
- * par son nom seul, non par ce qu'elle appelle) ; un `await` (la suite d'un `await` court après le rendu, sans hook). Des options
+ * Invisible, et la limite est celle de la garde qui s'en sert (`noLoadInOnMounted.spec.ts`), écrite ici, une fois, avec le filtre de cette
+ * garde : un hook passé par une variable (`const hook = onMounted`) ; un module importé en espace de noms (`Vue.onMounted(…)`) ; un
+ * hook de `vue-router` importé sous un alias (`onBeforeRouteUpdate as leaving`), non résolu ; `then` écrit en `promise['then'](…)` ;
+ * une fonction déclarée dans le fichier et passée par référence (vue par son nom seul, non par ce qu'elle appelle) ; un `await` (la
+ * suite d'un `await` court après le rendu, sans hook) ; un alias posé par une affectation (`const refresh = load`) ; un rappel passé
+ * à une fonction tierce (`debounce(load)`, `emitter.on('x', load)`, `addEventListener`) ; un sous-composant rendu plus tard et
+ * situé hors des deux dossiers de la garde ; une fonction d'un autre module qui charge sous un nom que son filtre ne reconnaît pas ;
+ * `then`, `catch` et `finally` jugés sur le nom seul (un objet qui n'est pas une promesse les porte aussi : lu à tort). Des options
  * passées par une variable : un `watch` les lit différées (il rougit peut-être à tort), un `watchEffect` les lit immédiates.
  */
 export function deferredCallsOf(source: string): string[] {

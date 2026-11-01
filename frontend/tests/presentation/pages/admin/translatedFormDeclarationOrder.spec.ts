@@ -20,14 +20,18 @@ import { SRC_SCRIPTS } from '../../../support/srcSources'
  *
  * Non lu, par choix : une déclaration de fonction (`function f() {}`, remontée : lisible à tout endroit) ; l'initialiseur d'une
  * constante qui est elle-même une fonction (`const f = () => …`) : son corps ne court qu'à son appel, que la garde ne suit pas ; un
- * nom lié localement dans la lecture (paramètre, variable d'une fermeture : il masque une déclaration du `setup`) ; un nom de
- * propriété (`x.later`) ; un type. Non vu, tenu par la relecture : un `setup` qui appelle `useTranslatedForm` hors du premier
- * argument en littéral objet (`useTranslatedForm(options)`) ; une lecture par un alias posé par une affectation à une variable
- * déclarée avant mais remplie après ; un `<script>` qui déclare l'appel dans une fonction.
+ * nom lié localement (paramètre, variable d'un bloc, d'une boucle ou d'un `catch`, fonction ou classe d'un bloc), **dans la seule
+ * portée qui le lie** : il masque une déclaration du `setup` pour les lectures de cette fermeture ou de ce bloc, et pour elles
+ * seules (`readsOf`, CR16-6, #748, R203) — un `var` déclaré dans un bloc est lu comme une variable de ce bloc, non de la fonction ;
+ * un nom de propriété (`x.later`) ; un type. Non vu, tenu par la relecture : un `setup` qui appelle `useTranslatedForm` hors du
+ * premier argument en littéral objet (`useTranslatedForm(options)`) ; une lecture par un alias posé par une affectation à une
+ * variable déclarée avant mais remplie après ; un `<script>` qui déclare l'appel dans une fonction.
  */
 const GUARDED_DIR = 'presentation/pages/admin/'
 const COMPOSABLE = 'useTranslatedForm'
 const CHECKED_OPTIONS: ReadonlySet<string> = new Set(['isRefused', 'identity'])
+/** Les fichiers de `GUARDED_DIR` qui appellent `COMPOSABLE`, un appel chacun : l'égalité que la garde de couverture exige (R203). */
+const CALLING_FILES = 8
 
 /** Une déclaration du niveau du `setup` : où elle finit et ce qu'elle initialise. */
 interface Declaration {
@@ -92,27 +96,76 @@ function isRead(node: ts.Identifier): boolean {
   )
 }
 
-/** Les identifiants lus par `node`, moins ceux que `node` lie lui-même (paramètres et variables de ses fermetures). */
+/** Les noms que lie une instruction placée directement dans un bloc : variables, fonctions (remontées) et classes. */
+function declaredBy(statement: ts.Statement): string[] {
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.flatMap((declaration) => bindingNames(declaration.name))
+  }
+  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && undefined !== statement.name) {
+    return [statement.name.text]
+  }
+
+  return []
+}
+
+/** Les noms que lie la variable d'une boucle `for` (`for (const x of …)`), seule portée de cette variable. */
+function loopVariableOf(node: ts.Node): string[] {
+  if (!(ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node))) {
+    return []
+  }
+  if (undefined === node.initializer || !ts.isVariableDeclarationList(node.initializer)) {
+    return []
+  }
+
+  return node.initializer.declarations.flatMap((declaration) => bindingNames(declaration.name))
+}
+
+/**
+ * Les noms que lie la portée ouverte par `node`, et eux seuls : les paramètres (et le nom propre d'une fonction nommée) d'une
+ * fonction, ce qu'un bloc ou un `case` déclare directement, la variable d'une boucle `for`, celle d'un `catch`. Un nom lié par une
+ * portée ne masque que les lectures écrites dans cette portée (CR16-6) : `rows.some((isOrderDirty) => …)` ne cache pas un
+ * `isOrderDirty` lu à côté, dans une autre fermeture ou hors du bloc qui le déclare.
+ */
+function scopeBindingsOf(node: ts.Node): string[] {
+  const names: string[] = []
+  if (ts.isFunctionLike(node)) {
+    names.push(...node.parameters.flatMap((parameter) => bindingNames(parameter.name)))
+  }
+  if (ts.isFunctionExpression(node) && undefined !== node.name) {
+    names.push(node.name.text)
+  }
+  if (ts.isBlock(node)) {
+    names.push(...node.statements.flatMap(declaredBy))
+  }
+  if (ts.isCaseBlock(node)) {
+    names.push(...node.clauses.flatMap((clause) => clause.statements.flatMap(declaredBy)))
+  }
+  if (ts.isCatchClause(node) && undefined !== node.variableDeclaration) {
+    names.push(...bindingNames(node.variableDeclaration.name))
+  }
+
+  return [...names, ...loopVariableOf(node)]
+}
+
+/** Les identifiants lus par `node` que ne lie aucune portée de `node` autour de leur lecture. */
 function readsOf(node: ts.Node): Set<string> {
   const reads = new Set<string>()
-  const locals = new Set<string>()
 
-  const visit = (current: ts.Node): void => {
+  const visit = (current: ts.Node, bound: ReadonlySet<string>): void => {
     // Un type ne lit rien : `defineProps<{ locale: Locale }>()` ne lit ni `locale` ni `Locale`.
     if (ts.isTypeNode(current)) {
       return
     }
-    if (ts.isParameter(current) || ts.isVariableDeclaration(current)) {
-      bindingNames(current.name).forEach((name) => locals.add(name))
-    }
-    if (ts.isIdentifier(current) && isRead(current)) {
+    const opened = scopeBindingsOf(current)
+    const inner = opened.length > 0 ? new Set([...bound, ...opened]) : bound
+    if (ts.isIdentifier(current) && isRead(current) && !inner.has(current.text)) {
       reads.add(current.text)
     }
-    ts.forEachChild(current, visit)
+    ts.forEachChild(current, (child) => visit(child, inner))
   }
-  visit(node)
+  visit(node, new Set())
 
-  return new Set([...reads].filter((name) => !locals.has(name)))
+  return reads
 }
 
 const isFunctionLike = (node: ts.Expression | undefined): boolean =>
@@ -151,37 +204,51 @@ function callsOf(file: ts.SourceFile): ts.CallExpression[] {
   return calls
 }
 
+/**
+ * Les déclarations du `setup` qu'une option lit, de proche en proche (une fois chacune), et celles qui sont déclarées après
+ * `callStart` : le nombre atteint et les lectures tardives (`line` rend le numéro de ligne d'une position).
+ */
+function reachedFrom(
+  option: string,
+  direct: ReadonlySet<string>,
+  declarations: ReadonlyMap<string, Declaration>,
+  callStart: number,
+  line: (position: number) => number,
+): { reads: number; late: LateRead[] } {
+  const late: LateRead[] = []
+  const seen = new Set<string>()
+  const queue = [...direct]
+  for (let name = queue.shift(); undefined !== name; name = queue.shift()) {
+    const declaration = declarations.get(name)
+    if (seen.has(name) || undefined === declaration || declaration.hoisted) {
+      continue
+    }
+    seen.add(name)
+    if (declaration.end > callStart) {
+      late.push({ name, option, declaredLine: line(declaration.end), callLine: line(callStart) })
+    } else if (undefined !== declaration.initializer && !isFunctionLike(declaration.initializer)) {
+      queue.push(...readsOf(declaration.initializer))
+    }
+  }
+
+  return { reads: seen.size, late }
+}
+
 /** Ce que la garde voit dans un `<script>` : les appels, les déclarations atteintes, et celles qui sont déclarées trop tard. */
 function inspect(source: string): Inspection {
   const file = ts.createSourceFile('script.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const declarations = declarationsOf(file)
-  const lineOf = (position: number): number => file.getLineAndCharacterOfPosition(position).line + 1
+  const line = (position: number): number => file.getLineAndCharacterOfPosition(position).line + 1
   const calls = callsOf(file)
-  const late: LateRead[] = []
-  let reads = 0
+  const reached = calls.flatMap((call) =>
+    checkedOptionsOf(call).map(([option, direct]) => reachedFrom(option, direct, declarations, call.getStart(file), line)),
+  )
 
-  for (const call of calls) {
-    const callStart = call.getStart(file)
-    for (const [option, direct] of checkedOptionsOf(call)) {
-      const seen = new Set<string>()
-      const queue = [...direct]
-      for (let name = queue.shift(); undefined !== name; name = queue.shift()) {
-        const declaration = declarations.get(name)
-        if (seen.has(name) || undefined === declaration || declaration.hoisted) {
-          continue
-        }
-        seen.add(name)
-        reads++
-        if (declaration.end > callStart) {
-          late.push({ name, option, declaredLine: lineOf(declaration.end), callLine: lineOf(callStart) })
-        } else if (undefined !== declaration.initializer && !isFunctionLike(declaration.initializer)) {
-          queue.push(...readsOf(declaration.initializer))
-        }
-      }
-    }
+  return {
+    calls: calls.length,
+    reads: reached.reduce((total, one) => total + one.reads, 0),
+    late: reached.flatMap((one) => one.late),
   }
-
-  return { calls: calls.length, reads, late }
 }
 
 function isGuarded(path: string): boolean {
@@ -212,12 +279,17 @@ describe("ce que lit le refus de traduction est déclaré avant l'appel de useTr
   })
 
   it("la garde lit les formulaires à traduction assistée et ce que leurs options lisent (#748, R189b)", () => {
-    // Plancher : huit fichiers appellent le composable (sept pages ou sections par entrée, dont la section générique de Qualité,
-    // montée deux fois, R190, et les réglages « À propos »). Sans cette borne, une garde qui ne lit plus rien resterait verte.
-    expect(sites.length).toBeGreaterThanOrEqual(8)
-    expect(sites.reduce((total, site) => total + site.inspection.calls, 0)).toBeGreaterThanOrEqual(8)
+    // Une égalité, non un plancher (#748, R203, Q12 (A)) : huit fichiers appellent le composable, chacun une fois (sept pages ou
+    // sections par entrée, dont la section générique de Qualité, montée deux fois, R190, et les réglages « À propos »). Un fichier
+    // qui sort de la garde (un appel renommé, un dossier déplacé) rougit au lieu de sortir en silence, et un fichier qui entre
+    // aussi : il se lit alors, et le message dit le nombre à changer.
+    const found = sites.map((site) => site.path)
+    const callCount = sites.reduce((total, site) => total + site.inspection.calls, 0)
+    const filesMessage = `fichiers lus : ${found.join(', ')}. Changer CALLING_FILES, en tête de ce fichier, si l'un est entré ou sorti`
+    expect(found.length, filesMessage).toBe(CALLING_FILES)
+    expect(callCount,`${callCount} appels de ${COMPOSABLE} pour ${CALLING_FILES} fichiers : un appel par fichier`).toBe(CALLING_FILES)
     // Chaque appel lit au moins `isSubmitting` ou `isAnySaving`, `props` ou `lock`… : un site qui n'atteint plus aucune déclaration
-    // n'est plus lu.
+    // n'est plus lu. Un plancher par site, à dessein : le nombre exact de lectures bouge avec chaque option qu'une page lit en plus.
     for (const { path, inspection } of sites) {
       expect({ path, enough: inspection.reads >= 2 }).toEqual({ path, enough: true })
     }
@@ -314,6 +386,42 @@ describe("ce que lit le refus de traduction est déclaré avant l'appel de useTr
 
       // `rows` est lu par `isSubmitting` et déclaré après l'appel : le seul rouge. `later` (paramètre, propriété, type) n'en est pas un.
       expect(offendingIn({ [PAGE]: source })).toEqual([lateLine('rows', 'isRefused', 5, 3)])
+    })
+
+    // Un nom lié par une fermeture ne masque que les lectures de cette fermeture (#748, R203, CR16-6) : la portée est lexicale.
+    const optionsReading = (isRefused: string, declaredAfter: string): string =>
+      [
+        'const editingId = ref(null)',
+        'const rows = ref([])',
+        'useTranslatedForm({',
+        `  isRefused: ${isRefused},`,
+        '  identity: () => ({ entry: editingId.value }),',
+        '})',
+        declaredAfter,
+      ].join('\n')
+
+    it("un paramètre homonyme d'une autre fermeture ne masque pas une lecture directe (#748, R203)", () => {
+      const source = optionsReading(
+        '() => isOrderDirty.value || rows.value.some((isOrderDirty) => isOrderDirty.flag)',
+        'const isOrderDirty = ref(false)',
+      )
+
+      expect(offendingIn({ [PAGE]: source })).toEqual([lateLine('isOrderDirty', 'isRefused', 7, 3)])
+    })
+
+    it("un paramètre homonyme lu dans sa seule fermeture n'est pas une lecture de la déclaration tardive (#748, R203)", () => {
+      const source = optionsReading('() => rows.value.some((isOrderDirty) => isOrderDirty.flag)', 'const isOrderDirty = ref(false)')
+
+      expect(offendingIn({ [PAGE]: source })).toEqual([])
+    })
+
+    it("un nom lié dans un bloc ne masque pas la lecture du même nom hors du bloc (#748, R203)", () => {
+      const source = optionsReading(
+        '() => { { const isOrderDirty = 1; void isOrderDirty } return isOrderDirty.value }',
+        'const isOrderDirty = ref(false)',
+      )
+
+      expect(offendingIn({ [PAGE]: source })).toEqual([lateLine('isOrderDirty', 'isRefused', 7, 3)])
     })
 
     it('un identifiant déclaré hors du setup (importé, global) n\'est pas lu ; deux appels sont lus chacun (#748, R189b)', () => {

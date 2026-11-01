@@ -20,11 +20,18 @@ import { join, resolve } from 'node:path'
 const PAGES_DIRECTORY = resolve(import.meta.dirname, '../../../../src/presentation/pages/admin')
 const EMPTY_STATE = /t\('admin\.[A-Za-z.]+\.empty'\)|\{\{\s*texts\.empty\s*\}\}/g
 const IS_LOADED = /\bisLoaded\b|\bis[A-Z][A-Za-z]*Loaded\b/g
+/**
+ * Les fichiers de `PAGES_DIRECTORY` qui composent un état vide, tous lus par la garde (#748, R203, Q12 (A)) : dix des treize `.vue`
+ * du dossier (les deux sections de Qualité n'en font qu'une, R190 ; `AdminAboutPage`, `AdminAboutSettingsForm` et `AdminQualityPage`
+ * n'en composent aucun dans leur gabarit). Une égalité, non un plancher : un fichier qui perd son état vide, ou que l'expression
+ * ne reconnaît plus, rougit au lieu de sortir en silence, et un fichier qui en gagne un aussi, lu alors par la garde.
+ */
+const FILES_WITH_EMPTY_STATE = 10
 
 describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
   it('chaque fichier qui compose un état vide lit isLoaded au moins autant de fois', () => {
     const offenders: string[] = []
-    let withEmptyState = 0
+    const withEmptyState: string[] = []
 
     for (const file of readdirSync(PAGES_DIRECTORY).filter((name) => name.endsWith('.vue'))) {
       const source = readFileSync(join(PAGES_DIRECTORY, file), 'utf8')
@@ -33,15 +40,17 @@ describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
       const template = source.slice(source.indexOf('<template>'))
       const emptyStates = template.match(EMPTY_STATE)?.length ?? 0
       if (0 === emptyStates) continue
-      withEmptyState++
+      withEmptyState.push(file)
       const guards = template.match(IS_LOADED)?.length ?? 0
       if (guards < emptyStates) offenders.push(`${file} : ${emptyStates} état(s) vide(s), ${guards} garde(s) isLoaded`)
     }
 
-    // Le garde-fou de la garde : une expression régulière qui ne trouverait plus rien la ferait passer à vide. Dix fichiers
-    // composent un état vide (les deux sections de Qualité n'en font qu'une, R190) : le plancher est 9, un de moins que le
-    // compte.
-    expect(withEmptyState).toBeGreaterThanOrEqual(9)
+    // Le garde-fou de la garde : une expression régulière qui ne trouverait plus rien la ferait passer à vide, et un fichier qui sort
+    // du relevé n'est plus gardé. Le message dit la constante à changer.
+    expect(
+      withEmptyState.length,
+      `fichiers qui composent un état vide : ${withEmptyState.join(', ')}. Changer FILES_WITH_EMPTY_STATE, en tête de ce fichier`,
+    ).toBe(FILES_WITH_EMPTY_STATE)
     expect(offenders, `états vides sans isLoaded :\n${offenders.join('\n')}`).toEqual([])
   })
 })

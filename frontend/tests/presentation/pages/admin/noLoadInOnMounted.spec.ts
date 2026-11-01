@@ -11,25 +11,26 @@ import { deferredCallsOf, destructuredAliasesOf } from '../../../support/sourceT
  *
  * Lu : `presentation/pages/admin/` et `presentation/ui/admin/`. **Le critère est la première exécution du rappel** : refusé, ce
  * qui ne court jamais dans le `setup`. Dans ce que `deferredCallsOf` rend (la fonction, ou le nom passé par référence, de chaque
- * hook différé de `DEFERRED_HOOKS`, dans `tests/support/sourceText.ts`, où la liste est écrite une fois ; les hooks de `vue` se
+ * hook différé de `DEFERRED_HOOKS`, dans `tests/support/sourceText.ts`, avec ses deux listes voisines ; les hooks de `vue` se
  * lisent sous l'alias de leur import ; un `watch` n'en est un que **sans `immediate: true`**, un `watchEffect` qu'en `flush: 'post'`),
  * un appel dont le dernier segment est `reload`, commence par `load`, finit par `Load`, est `list`, `get`, `fetch` ou `translate`, ou
  * porte un nom local lié à la clé `load` ou `reload` d'une déstructuration (`const { load: refresh } = useX()`). Un `watch`
  * `immediate` n'est pas lu, posté ou non : sa **première** exécution est synchrone dans le `setup` (`job(true)`, `@vue/reactivity`) ;
  * ses suivantes répondent à un changement de sa source, ce que la garde admet.
  *
- * Non vu, tenu par la relecture : une lecture envoyée après un `await` (la suite d'un `await nextTick()` s'exécute après le
- * rendu, et n'est pas lue) ; un sous-composant rendu plus tard et situé hors de ces deux dossiers ; une fonction d'un autre
- * module qui charge sous un nom que le filtre ne reconnaît pas ; une fonction déclarée dans le fichier et passée par
- * référence (lue par son nom seul, non par ce qu'elle appelle) ; un hook passé par une variable (`const hook = onMounted`) ou
- * importé en espace de noms (`Vue.onMounted`) ; un hook de `vue-router` importé sous un alias ; `then` écrit en `promise['then']` ;
- * `then`, `catch` et `finally` jugés sur le nom seul, quel que soit le receveur (un objet qui n'est pas une promesse les porte
- * aussi) ; un alias posé par une affectation (`const refresh = load`) ; un rappel passé à une fonction tierce (`debounce(load)`,
- * `emitter.on('x', load)`, `addEventListener`). Des options de `watch` passées par une variable sont lues comme différées (la garde
- * peut rougir à tort) ; celles d'un `watchEffect`, comme immédiates.
+ * Non vu, tenu par la relecture : ce que ni le lecteur ni le filtre ne reconnaissent. La liste en est écrite une fois, dans le
+ * dernier paragraphe du docblock de `deferredCallsOf` (`tests/support/sourceText.ts`), filtre de cette garde compris.
  */
 const GUARDED_DIRS = ['presentation/pages/admin/', 'presentation/ui/admin/']
 const REPOSITORY_CALLS = new Set(['list', 'get', 'fetch', 'translate'])
+/**
+ * Les fichiers que la garde lit, par dossier (#748, R203, Q12 (A)), les `.ts` comme les `.vue` (`proseFields.ts`…) : quinze dans
+ * `presentation/pages/admin/` (treize `.vue`, deux `.ts`), onze dans `presentation/ui/admin/`. Une égalité, non un plancher :
+ * un fichier qui sort d'un dossier (déplacé, renommé) sort de la garde, un fichier qui entre y entre, et dans les deux cas la
+ * garde rougit au lieu de changer de périmètre en silence ; le message dit la constante à changer.
+ */
+const PAGES_FILES = 15
+const UI_FILES = 11
 
 function isGuarded(path: string): boolean {
   return GUARDED_DIRS.some((dir) => path.startsWith(dir))
@@ -75,8 +76,13 @@ describe('aucun chargement après le montage dans le backoffice', () => {
 
   it('la garde lit les pages et les composants du backoffice et trouve au moins un hook différé (#748, R121, R144, décision 1)', () => {
     // Sans ces bornes, une garde qui ne lit plus rien resterait verte.
-    expect(guarded.filter(([path]) => path.startsWith('presentation/pages/admin/')).length).toBeGreaterThanOrEqual(12)
-    expect(guarded.filter(([path]) => path.startsWith('presentation/ui/admin/')).length).toBeGreaterThanOrEqual(5)
+    const read = (dir: string): string[] => guarded.map(([path]) => path).filter((path) => path.startsWith(dir))
+    const pages = read('presentation/pages/admin/')
+    const ui = read('presentation/ui/admin/')
+    expect(pages.length, `fichiers de pages/admin lus : ${pages.join(', ')}. Changer PAGES_FILES, en tête de ce fichier`).toBe(PAGES_FILES)
+    expect(ui.length, `fichiers de ui/admin lus : ${ui.join(', ')}. Changer UI_FILES, en tête de ce fichier`).toBe(UI_FILES)
+    // Un plancher, à dessein : « un hook différé au moins » dit que le lecteur lit encore ; le nombre exact de rappels bouge avec
+    // chaque `onMounted` qu'une page ajoute, et n'est pas un périmètre.
     expect(guarded.flatMap(([, source]) => deferredCallsOf(source)).length).toBeGreaterThanOrEqual(1)
   })
 
