@@ -754,7 +754,7 @@ fi
 # --- R169 (Q8) : une fois la Basic Auth posée, les variables d'environnement que curl lit (un proxy qui inspecte le TLS, un journal
 # de clés TLS, un lot d'autorités) ne sont plus dans le shell : aucun appel de curl ne les reçoit. Sans Basic Auth, elles restent.
 curl_variables=(http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
-  CURL_CA_BUNDLE SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE)
+  CURL_CA_BUNDLE CURL_SSL_BACKEND QLOGDIR SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE)
 for variable in "${curl_variables[@]}"; do
   printf -v "$variable" '%s' "valeur-de-test-$variable"
   export "${variable?}"

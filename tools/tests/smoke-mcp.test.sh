@@ -19,7 +19,8 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# run_case (check_empty_basic_auth, check_non_https_refused), generated_basic_auth, write_env_noting_dirname : communs aux smokes.
+# run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth), generated_basic_auth,
+# write_env_noting : communs aux smokes.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -67,7 +68,7 @@ run() {
   : > "$TMP/$name.args"; : > "$TMP/$name.calls"
   set +e
   FAKE_RESPONSES="$TMP/$name.responses" FAKE_ARGS="$TMP/$name.args" FAKE_CALLS="$TMP/$name.calls" \
-    SMOKE_CURL="$TMP/curl" "$SCRIPT" "${TEST_BASE_URL:-https://example.invalid}" >"$TMP/out" 2>"$TMP/err"
+    SMOKE_CURL="$TMP/curl" "${RUN_SCRIPT:-$SCRIPT}" "${TEST_BASE_URL:-https://example.invalid}" >"$TMP/out" 2>"$TMP/err"
   rc=$?
   set -e
 }
@@ -311,17 +312,29 @@ run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
   CASE_ERR="$TMP/err" CASE_CALLS="$TMP/vide.calls" CASE_OUT="$TMP/out"
 
-# --- C13-5 : la variable est encore exportée tant que la bibliothèque n'a pas lu la valeur ; un `dirname` lancé avant
-# le `source` la recevrait. Un faux `dirname` note son environnement : le dossier de la bibliothèque se calcule
-# sans processus, donc le fichier ne porte jamais la variable.
-write_env_noting_dirname "$TMP/dirname-bin"
-: > "$TMP/dirname-env.txt"
-AUDIT_BASIC_AUTH='u:p' FAKE_DIRNAME_ENV="$TMP/dirname-env.txt" PATH="$TMP/dirname-bin:$PATH" \
-  run dirname "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
-if ! grep -q '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt"; then
-  pass "aucun dirname ne reçoit la Basic Auth (le dossier de la bibliothèque se calcule sans processus)"
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
+# `openssl` et `rm` notent leur environnement : le script retire la variable (smoke_use_auth_config) avant de lancer le
+# premier ; le témoin commun lit le fichier, qui ne doit pas être vide.
+write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
+: > "$TMP/witness-env.txt"
+AUDIT_BASIC_AUTH='u:p' FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
+  run witness "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
+run_case check_no_child_sees_basic_auth \
+  "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
+  CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
+
+# --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
+# (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait).
+mkdir -p "$TMP/cdpath-decoy/tools"
+here="$PWD"
+cd "$(dirname "$SCRIPT")/.."
+CDPATH="$TMP/cdpath-decoy" RUN_SCRIPT=tools/smoke-mcp.sh \
+  run cdpath "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
+cd "$here"
+if [ "$rc" -eq 0 ] && ! grep -q 'introuvable ou invalide' "$TMP/err"; then
+  pass "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque"
 else
-  fail "dirname avant la bibliothèque" "$(grep -c '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt") environnement(s) la portent"
+  fail "CDPATH et chemin relatif" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
 # --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :

@@ -23,7 +23,7 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# run_case (check_empty_basic_auth), write_env_noting_dirname : le cas et le faux communs aux smokes et à l'audit.
+# run_case (check_no_child_sees_basic_auth), write_env_noting : le cas et les faux communs aux smokes et à l'audit.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -151,20 +151,33 @@ else
   fail "fichier -K laissé" "$(ls -A "$TMP/nominal.tmpdir")"
 fi
 
-# --- C13-5 : aucun processus n'est lancé avant que la bibliothèque retire l'export de la variable. Un faux
-# `dirname` note son environnement : les appels qui suivent la bibliothèque (ses `source` voisins) y figurent, sans la
-# variable ; un `dirname` lancé avant le `source` la porterait.
-write_env_noting_dirname "$TMP/bin"
-: > "$TMP/dirname-env.txt"
-copy_tools dirname reelle
-FAKE_DIRNAME_ENV="$TMP/dirname-env.txt" AUDIT_BASIC_AUTH='u:p' run_audit dirname
-rm -f "$TMP/bin/dirname"
-if [ -s "$TMP/dirname-env.txt" ] && ! grep -q '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt"; then
-  pass "audit : aucun dirname ne reçoit la Basic Auth (le dossier de la bibliothèque se calcule sans processus)"
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
+# `openssl` et `rm` notent leur environnement (le faux `openssl` du dossier $TMP/bin passe avant eux : l'audit n'en lance
+# pas d'autre). L'audit retire la variable (smoke_use_auth_config) avant d'en lancer un ; le témoin commun lit le fichier,
+# qui ne doit pas être vide.
+write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
+: > "$TMP/witness-env.txt"
+copy_tools witness reelle
+FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" AUDIT_BASIC_AUTH='u:p' run_audit witness
+run_case check_no_child_sees_basic_auth \
+  "audit : aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
+  CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=1
+
+# --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
+# (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait : sortie 2).
+copy_tools cdpath reelle
+mkdir -p "$TMP/cdpath-decoy/tools" "$TMP/cdpath.tmpdir"
+: > "$TMP/cdpath.calls"
+: > "$TMP/cdpath.calls.argv"
+set +e
+(cd "$TMP/cdpath" && CDPATH="$TMP/cdpath-decoy" AUDIT_BASIC_AUTH='u:p' LC_ALL=C FAKE_CALLS="$TMP/cdpath.calls" \
+  TMPDIR="$TMP/cdpath.tmpdir" PATH="$TMP/bin:$PATH" bash tools/audit-prod.sh example.invalid >"$TMP/cdpath.out" 2>"$TMP/cdpath.err")
+rc=$?
+set -e
+if [ "$rc" -eq 1 ] && ! grep -q 'introuvable ou invalide' "$TMP/cdpath.err" && [ -s "$TMP/cdpath.calls" ]; then
+  pass "audit : CDPATH posé et chemin relatif, l'audit trouve ses bibliothèques (sortie 1 par ses propres échecs)"
 else
-  fail "dirname avant la bibliothèque" \
-    "$(grep -c '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt" || true) environnement(s) la portent ; \
-fichier vide : $([ -s "$TMP/dirname-env.txt" ] && echo non || echo oui)"
+  fail "audit : CDPATH et chemin relatif" "rc=$rc ; err : $(cat "$TMP/cdpath.err")"
 fi
 
 # --- C7-8 : le fichier -K naît dans un dossier privé propre à la bibliothèque, sous

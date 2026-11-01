@@ -146,7 +146,8 @@ _smoke_is_variable_name() {
 #
 # Une fois le fichier écrit (une Basic Auth pleine), elle retire aussi du shell les variables que curl lit et qui changeraient
 # où part l'identifiant ou ce qu'on en voit : `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`,
-# `no_proxy`, `CURL_CA_BUNDLE`, `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (R169, Q8). `CURL_HOME` et `XDG_CONFIG_HOME` ne
+# `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`, `SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (R169, Q8 ; les deux
+# autres, décision de l'auteur du 2026-11-01 : le choix du moteur TLS et le journal QUIC). `CURL_HOME` et `XDG_CONFIG_HOME` ne
 # servent qu'au `.curlrc`, que `-q` en tête de chaque appel ne lit plus. Sans Basic Auth, rien n'est retiré.
 #
 # Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
@@ -189,9 +190,10 @@ _smoke_write_auth_config() {
       printf 'user = "%s"\n' "$_smoke_value" > "$SMOKE_AUTH_CONFIG" || { smoke_cleanup; _smoke_rc=2; }
       if [ "$_smoke_rc" -eq 0 ]; then
         # Le fichier est écrit : la Basic Auth est portée. Les variables que curl lit (un proxy qui inspecte le TLS, un journal
-        # de clés TLS, un lot d'autorités) ne restent pas dans le shell, donc dans aucun appel suivant (Q8, CR14-1).
+        # de clés TLS ou QUIC, un lot d'autorités, le choix du moteur TLS) ne restent pas dans le shell, donc dans aucun appel
+        # suivant (Q8, CR14-1).
         unset -v http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy \
-          CURL_CA_BUNDLE SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE
+          CURL_CA_BUNDLE CURL_SSL_BACKEND QLOGDIR SSL_CERT_DIR SSL_CERT_FILE SSLKEYLOGFILE
       fi
     fi
     umask "$_smoke_umask"

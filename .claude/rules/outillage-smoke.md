@@ -27,10 +27,9 @@ The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the rea
 the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;
 reordering would complicate the failure path of the name for no risk).
 `unset` does not wipe the copy of the environment the process received at its launch, which `/proc/<pid>/environ` still shows (R148b).
-General limit of the children: a process started **before** `smoke_use_auth_config` receives the variable of the Basic Auth, today the
-`mktemp` of the `headers_file` (and of the `body_file` of `smoke-mcp.sh`), the `date +%s` of `smoke-login-throttling.sh` and the
-`openssl rand` of `smoke-dead-session-cookie.sh`. `unset` only spares the children started afterwards from logging their environment,
-and none of today's children logs anything: the same good-faith spirit as the limit of the guards below (D3 of the thirteenth review).
+The three smokes and the audit start no process before `smoke_use_auth_config`: the `trap` first (it removes only a file already
+created, the `headers_file` and the `body_file` being empty until then), then the call, then `mktemp`, `openssl` and `date`
+(D2 of the fourteenth review). The only child left before the reading is that head `rm -rf` of a second call, above.
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
@@ -61,17 +60,22 @@ Without a `-K` nothing is judged: no identifier, nothing to leak, and production
 To admit a new option: a line of the `case` with its arity, an « accepted » case in `smoke-http.test.sh` (the call leaves, the option
 and its value in the fake curl's call), a line of this rule naming it. Nothing else.
 Once the Basic Auth is written, the library unsets the variables curl reads that would move or expose the identifier: `http_proxy`,
-`HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `SSL_CERT_DIR`, `SSL_CERT_FILE`,
-`SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log left by a debugging session). Not without a Basic Auth. `CURL_HOME` and
-`XDG_CONFIG_HOME` only serve the `.curlrc`, which `-q` no longer reads. The list is curl 8.5.0's `ENVIRONMENT` section (`curl --manual`).
+`HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, `CURL_CA_BUNDLE`, `CURL_SSL_BACKEND`, `QLOGDIR`,
+`SSL_CERT_DIR`, `SSL_CERT_FILE`, `SSLKEYLOGFILE` (a TLS-inspecting proxy, a key log of TLS or QUIC left by a debugging session, the
+choice of the TLS backend; the author added `CURL_SSL_BACKEND` and `QLOGDIR` on 2026-11-01). Not without a Basic Auth. `CURL_HOME` and
+`XDG_CONFIG_HOME` only serve the `.curlrc`, which `-q` no longer reads.
+The names come from curl 8.5.0's `ENVIRONMENT` section (`curl --manual`).
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
 so the value is never expanded outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
-still exported there, and no process may start before the library unsets it.
+still exported there, and no process may start before the library unsets it. The call is `CDPATH='' cd --` (an inherited `CDPATH` would
+make `cd` print the directory it found and break the `source`), and a script at the root, whose directory is empty, reads `/` (C14-11).
 The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31).
-Each offline test, the audit's included, records the environment of a fake `dirname` (`write_env_noting_dirname`).
+Each offline test but `smoke-http.test.sh` runs its script behind fake `dirname`, `mktemp`, `date`, `openssl` and `rm` that record their
+environment (`write_env_noting`). The shared case `check_no_child_sees_basic_auth` requires that the record is not empty, that the script
+returned the expected code and that no line carries the variable; a failure names the tools that received it.
 Of the audit, the smokes and the library, the library's header is the only file that describes the variable
 and lists every refused value. This rule names it too; the `Env :` headers of the audit and the three smokes point to it.
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.

@@ -53,12 +53,14 @@ fi
 base="${base%/}"
 
 # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
-# Le dossier se calcule sans `dirname` : la variable de la Basic Auth est encore exportée ici (la bibliothèque la retire dès
-# qu'elle la lit), aucun processus ne doit être lancé avant (C13-5). `cd` et `pwd` sont des commandes internes de bash.
+# Le dossier se calcule sans `dirname` (la variable de la Basic Auth est encore exportée ici, un fils la recevrait) : `cd` et
+# `pwd` sont des commandes internes de bash. `CDPATH=''` et `--` : ni un CDPATH hérité ni un dossier qui commence par `-` ne
+# changent le dossier trouvé ; un script à la racine (`script_dir` vide) vaut `/` (C14-11).
 script_dir="${BASH_SOURCE[0]}"
 case "$script_dir" in */*) script_dir="${script_dir%/*}" ;; *) script_dir=. ;; esac
+[ -n "$script_dir" ] || script_dir=/
 # shellcheck source=tools/lib/smoke-http.sh
-source "$(cd "$script_dir" && pwd)/lib/smoke-http.sh" || {
+source "$(CDPATH='' cd -- "$script_dir" && pwd)/lib/smoke-http.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
   exit 2
 }
@@ -66,18 +68,22 @@ source "$(cd "$script_dir" && pwd)/lib/smoke-http.sh" || {
 public_path="/api/contributions/fr"
 protected_path="/api/me"
 
+# Ordre (D2 de la quatorzième relecture) : le `trap` (qui ne retire que le fichier déjà créé), puis la Basic Auth, puis
+# seulement `openssl` et `mktemp` : la bibliothèque retire la variable du shell en la lisant, donc aucun fils ne la reçoit.
+headers_file=""
+trap '[ -z "$headers_file" ] || rm -f -- "$headers_file"; smoke_cleanup' EXIT
+
+# Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux ; `smoke_fetch` le lit
+# et refuse, avec lui, une URL non https:// ou un argument hors de la liste d'options admises (tools/lib/smoke-http.sh).
+smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
+
 # Une valeur différente à chaque exécution : jamais un motif connu, jamais la
 # session d'un compte (32 hexadécimaux ne se signent pas).
 dead_cookie="BEARER=$(openssl rand -hex 16)"
 
 # Les en-têtes de chaque réponse, pour y lire les Set-Cookie.
 headers_file="$(mktemp)"
-trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
-
-# Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux,
-# `smoke_fetch` le lit et le refuse sur une URL non https:// (tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse (la lecture
 # des en-têtes multiples est celle de la bibliothèque).

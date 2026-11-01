@@ -11005,6 +11005,11 @@ textes). Le plan les suit déjà : aucune tâche ne change.
   doit' tools .claude` : vide.
 - [ ] **Step 6 : commit** — `fix(tools): les trois smokes lancent leurs processus après la lecture de la Basic Auth, un témoin commun des fils (#748)`.
 
+**Ajout décidé par l'auteur (2026-11-01).** `QLOGDIR` (journal QUIC) et `CURL_SSL_BACKEND` (choix du moteur TLS) rejoignent la liste des
+variables de curl que `_smoke_write_auth_config` retire du shell une fois la Basic Auth écrite (manuel de curl 8.5.0, section ENVIRONMENT) :
+un cas qui rougit tant que la variable est présente (`smoke-http.test.sh`, la liste `curl_variables`), la ligne de la règle mise à jour.
+Fait dans le commit de R170, sans nouvelle case.
+
 ---
 
 ### Task R171 : Outillage — les cas partagés sans export hérité, le quadruplet écrit une fois, les moignons des deux règles (C14-7 ; St14-34 ; St14-22 ; St14-36 ; refactoring)

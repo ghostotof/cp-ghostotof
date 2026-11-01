@@ -77,12 +77,14 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # `trap` (#748, C7-8).
 if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
-  # Le dossier se calcule sans `dirname` : la variable est encore exportée ici (la bibliothèque la retire dès qu'elle la
-  # lit), aucun processus ne doit être lancé avant (C13-5). `cd` et `pwd` sont des commandes internes de bash.
+  # Le dossier se calcule sans `dirname` (la variable est encore exportée ici, un fils la recevrait) : `cd` et `pwd` sont des
+  # commandes internes de bash. `CDPATH=''` et `--` : ni un CDPATH hérité ni un dossier qui commence par `-` ne changent le
+  # dossier trouvé ; un script à la racine (`_audit_dir` vide) vaut `/` (C14-11).
   _audit_dir="${BASH_SOURCE[0]}"
   case "$_audit_dir" in */*) _audit_dir="${_audit_dir%/*}" ;; *) _audit_dir=. ;; esac
+  [ -n "$_audit_dir" ] || _audit_dir=/
   # shellcheck source=tools/lib/smoke-http.sh
-  source "$(cd "$_audit_dir" && pwd)/lib/smoke-http.sh" || {
+  source "$(CDPATH='' cd -- "$_audit_dir" && pwd)/lib/smoke-http.sh" || {
     echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
     exit 2
   }
@@ -156,7 +158,7 @@ done
 
 # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
 # shellcheck source=tools/lib/security-headers.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" || {
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/security-headers.sh" >&2
   exit 2
 }
@@ -165,7 +167,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" |
 # compterait rien, et l'audit lancé hors du dépôt (sans tools/lib/) passerait au
 # vert sans avoir rien vérifié.
 # shellcheck source=tools/lib/tls-certificate.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh" >&2
   exit 2
 }
