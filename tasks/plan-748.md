@@ -13498,6 +13498,11 @@ Constats : Q8 ; St16-24 ; St16-40 (`ClassNameResolverTest.php:145`, `CompiledNes
 
 ### Task R208 : Balayage documentaire de la seizième relecture — commandes et nombres dans le plan
 
+**Ajout décidé par l'auteur (2026-11-01, après R199)** : dans `tools/tests/smoke-http.test.sh`, le cas « valeur refusée n'est
+plus exportée non plus » du bloc C13-5 (`UNE_AUTH="sansdeuxpoints"` exportée) double le genre `refusee` du bloc R168 (mêmes
+assertions et davantage, relevé par R199) — **le retirer** (`smoke-http` 494 → 493 `ok`), en prouvant qu'une mutation qui le
+faisait rougir fait encore rougir le cas R168 (mutation écrite dans le corps du commit).
+
 Constats : St16-5 (Q9) ; St16-20 ; St16-21 ; St16-39 ; Sp16-9 (le `--stat`) ; Q10 ; les écarts réels de R196 à R207.
 
 **Exception au brief** : cette tâche écrit dans `tasks/plan-748.md`, et seulement la sous-section « Ce que la dix-septième série a
