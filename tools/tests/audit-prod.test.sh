@@ -108,7 +108,7 @@ fi
 # avant toute requête, en le disant (« introuvable ou invalide ») et avec l'erreur
 # de bash.
 copy_tools avecauth invalide
-AUDIT_BASIC_AUTH='u:p' run_audit avecauth
+AUDIT_BASIC_AUTH="$(generated_basic_auth)" run_audit avecauth
 if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/avecauth.err" \
    && grep -q 'syntax error' "$TMP/avecauth.err" && [ ! -s "$TMP/avecauth.calls" ]; then
   pass "avec AUDIT_BASIC_AUTH, une smoke-http.sh invalide → sortie 2, « introuvable ou invalide », erreur de bash, aucune requête"
@@ -144,8 +144,9 @@ fi
 # --- C6-8 : le fichier -K ne survit pas au script, et la Basic Auth n'apparaît
 # jamais dans les arguments d'un appel.
 copy_tools nominal reelle
-AUDIT_BASIC_AUTH='u:p' run_audit nominal
-if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'u:p' "$TMP/nominal.calls"; then
+nominal_auth="$(generated_basic_auth)"
+AUDIT_BASIC_AUTH="$nominal_auth" run_audit nominal
+if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! values_found_in "$nominal_auth" -- "$TMP/nominal.calls"; then
   pass "Basic Auth : curl reçoit -K <fichier>, jamais la valeur"
 else
   fail "Basic Auth en argument" "$(cat "$TMP/nominal.calls")"
@@ -163,7 +164,7 @@ fi
 write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
 : > "$TMP/witness-env.txt"
 copy_tools witness reelle
-FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" AUDIT_BASIC_AUTH='u:p' run_audit witness
+FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" AUDIT_BASIC_AUTH="$(generated_basic_auth)" run_audit witness
 run_case check_no_child_sees_basic_auth \
   "audit : aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
   CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=1
@@ -184,7 +185,7 @@ write_env_noting "$TMP/badname-bin" dirname mktemp date openssl rm
 : > "$TMP/badname-env.txt"
 copy_tools badname reelle
 sed -i 's/smoke_use_auth_config AUDIT_BASIC_AUTH ||/smoke_use_auth_config AUDIT-BASIC ||/' "$TMP/badname/tools/audit-prod.sh"
-FAKE_TOOL_ENV="$TMP/badname-env.txt" PATH="$TMP/badname-bin:$PATH" AUDIT_BASIC_AUTH='u:p' run_audit badname
+FAKE_TOOL_ENV="$TMP/badname-env.txt" PATH="$TMP/badname-bin:$PATH" AUDIT_BASIC_AUTH="$(generated_basic_auth)" run_audit badname
 if [ "$(grep -c 'smoke_use_auth_config AUDIT-BASIC ||' "$TMP/badname/tools/audit-prod.sh")" -eq 1 ] && [ "$rc" -eq 2 ] \
    && grep -q '^_smoke_write_auth_config : nom de variable invalide' "$TMP/badname.err" && [ ! -s "$TMP/badname.calls" ] \
    && ! grep -q '^== ' "$TMP/badname-env.txt"; then
@@ -194,22 +195,21 @@ else
     "rc=$rc ; err : $(cat -A "$TMP/badname.err") ; outils lancés : $(grep '^== ' "$TMP/badname-env.txt" | tr '\n' ' ')"
 fi
 
-# --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
-# (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait : sortie 2).
+# --- C14-11 : un CDPATH piégé et un chemin relatif (check_finds_library_under_cdpath).
 copy_tools cdpath reelle
 mkdir -p "$TMP/cdpath-decoy/tools" "$TMP/cdpath.tmpdir"
 : > "$TMP/cdpath.calls"
 : > "$TMP/cdpath.calls.argv"
 set +e
-(cd "$TMP/cdpath" && CDPATH="$TMP/cdpath-decoy" AUDIT_BASIC_AUTH='u:p' LC_ALL=C FAKE_CALLS="$TMP/cdpath.calls" \
+(cd "$TMP/cdpath" && CDPATH="$TMP/cdpath-decoy" AUDIT_BASIC_AUTH="$(generated_basic_auth)" LC_ALL=C FAKE_CALLS="$TMP/cdpath.calls" \
   TMPDIR="$TMP/cdpath.tmpdir" PATH="$TMP/bin:$PATH" bash tools/audit-prod.sh example.invalid >"$TMP/cdpath.out" 2>"$TMP/cdpath.err")
 rc=$?
 set -e
 run_case check_finds_library_under_cdpath \
   "audit : CDPATH posé et chemin relatif, l'audit trouve ses bibliothèques (sortie 1 par ses propres échecs)" "$rc" \
   CASE_ERR="$TMP/cdpath.err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=1
-# Sp15-22 : le script à la racine (dossier vide) lit `/` ; aucun test ne le pose à la racine, le cas relit son bloc d'amorçage.
-run_case check_root_script_dir_is_slash "audit : un script à la racine lit « / » comme dossier de sa bibliothèque" 0 \
+# Sp15-22 : un script à la racine (check_root_script_dir_is_slash).
+run_case check_root_script_dir_is_slash "audit : un script à la racine lit « / » comme dossier de sa bibliothèque" - \
   CASE_SCRIPT="$TOOLS/audit-prod.sh"
 
 # --- C7-8 : le fichier -K naît dans un dossier privé propre à la bibliothèque, sous
@@ -451,7 +451,7 @@ probe_auth="$(generated_basic_auth)"
 FAKE_CURL_HTTP_CODE_FOR_WWW=401 AUDIT_BASIC_AUTH="$probe_auth" run_audit sonde401
 probe_line="$(grep -F 'https://www.example.invalid' "$TMP/sonde401.out" | head -1 || true)"
 if [[ "$probe_line" == *' 401 '* && "$probe_line" == *"l'hôte demande la Basic Auth"* ]] \
-   && ! grep -qF -- "$probe_auth" "$TMP/sonde401.out" "$TMP/sonde401.err" "$TMP/sonde401.calls"; then
+   && ! values_found_in "$probe_auth" -- "$TMP/sonde401.out" "$TMP/sonde401.err" "$TMP/sonde401.calls"; then
   pass "une sonde https://www. en 401 dit que l'hôte demande la Basic Auth"
 else
   fail "une sonde https://www. en 401 dit que l'hôte demande la Basic Auth" "ligne de la sonde : ${probe_line:-absente}"
@@ -513,14 +513,15 @@ fi
 
 # --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans
 # la trace (le test de présence ne la développe pas, la bibliothèque la lit sous
-# `set +x`). Valeur fictive, sans le mot « secret ».
+# `set +x`). Valeur générée, l'utilisateur et le mot de passe cherchés chacun.
 copy_tools traced reelle
-AUDIT_BASIC_AUTH='trace-user:trace-pass-value' run_traced traced
+traced_auth="$(generated_basic_auth)"
+AUDIT_BASIC_AUTH="$traced_auth" run_traced traced
 if [ -s "$TMP/traced.err" ] && grep -q 'curl-auth.conf' "$TMP/traced.err" \
-   && ! grep -qF -e 'trace-pass-value' -e 'trace-user' "$TMP/traced.err" "$TMP/traced.out"; then
+   && ! values_found_in "${traced_auth%%:*}" "${traced_auth#*:}" -- "$TMP/traced.err" "$TMP/traced.out"; then
   pass "bash -x : la valeur de AUDIT_BASIC_AUTH n'apparaît ni dans la trace ni dans la sortie"
 else
-  fail "valeur tracée" "$(grep -nF -e 'trace-' "$TMP/traced.err" | head -3)"
+  fail "valeur tracée" "$(lines_with_values "$TMP/traced.err" "${traced_auth%%:*}" "${traced_auth#*:}" | head -3)"
 fi
 
 # --- Décisions 3 de la neuvième série et 4 de la dixième (smoke_use_auth_config) : AUDIT_BASIC_AUTH
@@ -548,13 +549,14 @@ fi
 # Une valeur sans « : » (un identifiant sans mot de passe, ou des blancs) : sortie 2 avant toute
 # requête, « sans « : » », la valeur ni dans la sortie ni dans la trace.
 copy_tools sansdeuxpoints reelle
-AUDIT_BASIC_AUTH='identifiant-seul' run_traced sansdeuxpoints
+colonless_auth="seul$RANDOM$RANDOM"
+AUDIT_BASIC_AUTH="$colonless_auth" run_traced sansdeuxpoints
 if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : Basic Auth sans « : »' "$TMP/sansdeuxpoints.err" \
    && [ ! -s "$TMP/sansdeuxpoints.calls" ] && [ -z "$(ls -A "$TMP/sansdeuxpoints.tmpdir")" ] \
-   && ! grep -qF 'identifiant-seul' "$TMP/sansdeuxpoints.out" "$TMP/sansdeuxpoints.err"; then
+   && ! values_found_in "$colonless_auth" -- "$TMP/sansdeuxpoints.out" "$TMP/sansdeuxpoints.err"; then
   pass "AUDIT_BASIC_AUTH sans « : » : sortie 2, aucun appel, aucun dossier, valeur ni citée ni tracée"
 else
-  fail "AUDIT_BASIC_AUTH sans « : »" "rc=$rc ; err : $(grep -v 'identifiant-seul' "$TMP/sansdeuxpoints.err" | head -3)"
+  fail "AUDIT_BASIC_AUTH sans « : »" "rc=$rc ; err : $(lines_without_values "$TMP/sansdeuxpoints.err" "$colonless_auth" | head -3)"
 fi
 
 # --- C11-8 : un utilisateur vide (`:`, `:p`) ou un mot de passe vide (`u:`) n'est pas une Basic Auth : sortie 2
@@ -566,11 +568,11 @@ for hollow in ':' "${token}:" ":${token}"; do
   AUDIT_BASIC_AUTH="$hollow" run_traced creuse
   if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/creuse.err" \
      && [ ! -s "$TMP/creuse.calls" ] && [ -z "$(ls -A "$TMP/creuse.tmpdir")" ] \
-     && ! grep -qF "$token" "$TMP/creuse.out" "$TMP/creuse.err"; then
+     && ! values_found_in "$token" -- "$TMP/creuse.out" "$TMP/creuse.err"; then
     pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) : sortie 2, aucun appel, aucun dossier, valeur ni citée ni tracée"
   else
     fail "AUDIT_BASIC_AUTH à côté vide" \
-      "rc=$rc ; err : $(grep -vF "$token" "$TMP/creuse.err" | head -3) ; TMPDIR : $(ls -A "$TMP/creuse.tmpdir")"
+      "rc=$rc ; err : $(lines_without_values "$TMP/creuse.err" "$token" | head -3) ; TMPDIR : $(ls -A "$TMP/creuse.tmpdir")"
   fi
 done
 

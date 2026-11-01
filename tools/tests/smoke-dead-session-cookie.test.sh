@@ -117,7 +117,11 @@ fi
 
 # --- Les URL et le cookie : le témoin n'en porte pas, les deux autres appels
 # portent le même BEARER aléatoire (hexadécimal, 32 caractères).
-a1="$(sed -n 1p "$TMP/nominal.args")"; a2="$(sed -n 2p "$TMP/nominal.args")"; a3="$(sed -n 3p "$TMP/nominal.args")"
+# Chaque appel se retrouve par l'URL qu'il porte (call_carrying, R199, St16-34), jamais par son numéro de ligne : le témoin et la lecture
+# publique visent la même URL, dans cet ordre.
+a1="$(call_carrying "$TMP/nominal.args" 1 'https://example.invalid/api/contributions/fr')"
+a2="$(call_carrying "$TMP/nominal.args" 2 'https://example.invalid/api/contributions/fr')"
+a3="$(call_carrying "$TMP/nominal.args" 1 'https://example.invalid/api/me')"
 cookie2="$(printf '%s' "$a2" | grep -oE 'BEARER=[0-9a-f]{32}' || true)"
 cookie3="$(printf '%s' "$a3" | grep -oE 'BEARER=[0-9a-f]{32}' || true)"
 if [[ "$a1" == *'https://example.invalid/api/contributions/fr'* ]] && [[ "$a1" != *' -b '* ]] && [[ "$a1" != *BEARER* ]] \
@@ -131,7 +135,7 @@ fi
 # --- Le cookie change d'une exécution à l'autre (un cookie fixe serait un
 # motif connu de l'attaquant et pourrait tomber sur une session réelle).
 run again "$witness_ok" "$public_ok" "$me_cleared"
-other="$(sed -n 2p "$TMP/again.args" | grep -oE 'BEARER=[0-9a-f]{32}' || true)"
+other="$(call_carrying "$TMP/again.args" 2 'https://example.invalid/api/contributions/fr' | grep -oE 'BEARER=[0-9a-f]{32}' || true)"
 if [ -n "$other" ] && [ "$other" != "$cookie2" ]; then
   pass "le cookie est tiré au hasard à chaque exécution"
 else
@@ -258,10 +262,11 @@ else
 fi
 printf 'témoin\n' > "$TMP/herite-config"
 printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"
-AUDIT_BASIC_AUTH='u:p' SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" \
+inherited_auth="$(generated_basic_auth)"
+AUDIT_BASIC_AUTH="$inherited_auth" SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" \
   run inheritedauth "$witness_ok" "$public_ok" "$me_cleared"
 if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] \
-   && [ "$(cat "$TMP/inheritedauth.kconfig")" = 'user = "u:p"' ]; then
+   && [ "$(cat "$TMP/inheritedauth.kconfig")" = "user = \"$inherited_auth\"" ]; then
   pass "avec AUDIT_BASIC_AUTH, les témoins hérités survivent aussi : le script écrit le sien"
 else
   fail "variables héritées avec Basic Auth" "rc=$rc ; config : $([ -f "$TMP/herite-config" ] && echo présent || echo supprimé)"
@@ -326,27 +331,23 @@ else
   fail "mode du fichier -K" "mode : $(cat "$TMP/kfile.kmode" 2>&1)"
 fi
 
-# --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
-# Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
+# --- Un secret de Basic Auth défini mais vide : check_empty_basic_auth.
 AUDIT_BASIC_AUTH='' run vide "$witness_ok" "$public_ok" "$me_cleared"
 case_vars_set "$TMP/err" "$TMP/vide.calls" "$TMP/out"
 run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
   "${CASE_VARS[@]}"
 
-# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
-# `openssl` et `rm` notent leur environnement : le script retire la variable (smoke_use_auth_config) avant de lancer le
-# premier ; le témoin commun lit le fichier, qui ne doit pas être vide.
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable (check_no_child_sees_basic_auth, write_env_noting).
 write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
 : > "$TMP/witness-env.txt"
-AUDIT_BASIC_AUTH='u:p' FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
+AUDIT_BASIC_AUTH="$(generated_basic_auth)" FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
   run witness "$witness_ok" "$public_ok" "$me_cleared"
 run_case check_no_child_sees_basic_auth \
   "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
   CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
 
-# --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
-# (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait).
+# --- C14-11 : un CDPATH piégé et un chemin relatif (check_finds_library_under_cdpath).
 mkdir -p "$TMP/cdpath-decoy/tools"
 here="$PWD"
 cd "$(dirname "$SCRIPT")/.."
@@ -354,12 +355,11 @@ CDPATH="$TMP/cdpath-decoy" RUN_SCRIPT=tools/smoke-dead-session-cookie.sh run cdp
 cd "$here"
 run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" "$rc" \
   CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
-# Sp15-22 : le script à la racine (dossier vide) lit `/` ; aucun test ne le pose à la racine, le cas relit son bloc d'amorçage.
-run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" 0 \
+# Sp15-22 : un script à la racine (check_root_script_dir_is_slash).
+run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" - \
   CASE_SCRIPT="$SCRIPT"
 
-# --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
-# sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
+# --- C11-1 : une Basic Auth et une base en `http://` (check_non_https_refused).
 http_auth="$(generated_basic_auth)"
 AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$witness_ok" "$public_ok" "$me_cleared"
 case_vars_set "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
@@ -380,10 +380,11 @@ token="g$RANDOM$RANDOM"
 for hollow in ':' "${token}:" ":${token}"; do
   AUDIT_BASIC_AUTH="$hollow" run creuse "$witness_ok" "$public_ok" "$me_cleared"
   if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/err" \
-     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! grep -qF "$token" "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
+     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! values_found_in "$token" -- "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
     pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) → sortie 2, aucun appel, valeur jamais citée"
   else
-    fail "AUDIT_BASIC_AUTH à côté vide" "rc=$rc ; err : $(grep -vF "$token" "$TMP/err" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
+    fail "AUDIT_BASIC_AUTH à côté vide" \
+      "rc=$rc ; err : $(lines_without_values "$TMP/err" "$token" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
   fi
 done
 

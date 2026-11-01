@@ -183,10 +183,15 @@ The hint reads the audit's own flag `audit_carries_basic_auth`, set after `smoke
 an inherited value would set that one with nothing carried (CR14-3).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
 Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
-The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`: their
-variables are locals of `run_case`, declared `local +x`: the values it sets never reach a child (a local keeps the export attribute of the
-global it hides, which `+x` removes; a generated Basic Auth must not reach the processes a case starts), whereas a name the caller
-exported keeps the caller's value there (CR15-1; measured on the host's bash 5.2.37, the runner's 5.2.21 not being available offline,
-where the test `smoke-http.test.sh` runs). The names a call may give are the array `CASE_NAMES`. A variable a case needs that the call
-leaves out is a named `fail`, never an exit of the test. `case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that
-most calls pass as `"${CASE_VARS[@]}"`, so the names are written once.
+The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc|-> CASE_ERR=…`: their
+variables are locals of `run_case`, declared `local +x`. What `+x` guarantees: a value `run_case` sets, a generated Basic Auth included,
+is not exported, so no process a case starts receives it (a local keeps the export attribute of the global it hides, which `+x`
+removes). What it does not guarantee (CR15-1): a name the caller already exported still reaches a child, with the caller's value, never
+the case's. Measured on the host's bash 5.2.37; the runner's, 5.2.21, cannot be run offline, so there only the last case of
+`smoke-http.test.sh` stands for it: it marks every value it gives `run_case` with a generated token and requires that no child sees one.
+The names a call may give are the array `CASE_NAMES`. A variable a case needs that the call leaves out is a named `fail`, never an exit
+of the test; a case that reads no exit code takes `-` for `<rc>` (`CASE_RC` stays empty), never a dummy `0`.
+`case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are
+written once. A generated value is never an argument of a process (`ps` would show it): `values_found_in <value>… -- <file>…` searches it
+through a mode-600 pattern file (`grep -F -f`), and `call_carrying <file> <rank> <fragment>…` finds a fake curl call by what it carries,
+never by its line number.

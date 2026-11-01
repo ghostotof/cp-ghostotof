@@ -249,13 +249,16 @@ else
 fi
 
 # --- Les requêtes : initialize en POST JSON, DELETE de la session, deux corps trop gros, GET en SSE.
-first="$(sed -n 1p "$TMP/nominal.args")"
-second="$(sed -n 2p "$TMP/nominal.args")"
-third="$(sed -n 12p "$TMP/nominal.args")"
-zero="$(sed -n 5p "$TMP/nominal.args")"
-modern_request="$(sed -n 11p "$TMP/nominal.args")"
-large="$(sed -n 3p "$TMP/nominal.args")"
-large_chunked="$(sed -n 4p "$TMP/nominal.args")"
+# Chaque appel se retrouve par ce qu'il porte (call_carrying, R199, St16-34), jamais par son numéro de ligne : un appel ajouté ou retiré
+# de l'étape déplacerait les numéros sans rien dire. Le premier GET est le premier de la saturation ; le POST de corps trop gros est le
+# premier qui porte `--data-binary @`, son pendant en chunked le premier qui porte l'en-tête de transfert.
+first="$(call_carrying "$TMP/nominal.args" 1 '"method":"initialize"')"
+second="$(call_carrying "$TMP/nominal.args" 1 '-X DELETE')"
+third="$(call_carrying "$TMP/nominal.args" 1 '-X GET')"
+zero="$(call_carrying "$TMP/nominal.args" 1 'Mcp-Session-Id: 0 ' '"method":"ping"')"
+modern_request="$(call_carrying "$TMP/nominal.args" 1 'MCP-Protocol-Version: 2026-07-28')"
+large="$(call_carrying "$TMP/nominal.args" 1 '--data-binary @')"
+large_chunked="$(call_carrying "$TMP/nominal.args" 1 'Transfer-Encoding: chunked')"
 if [[ "$first" == *"-X POST"* && "$first" == *"Content-Type: application/json"* && "$first" == *"Accept: application/json, text/event-stream"* \
    && "$first" == *'"method":"initialize"'* && "$first" == *'"protocolVersion":"2025-06-18"'* && "$first" == *"https://example.invalid/api/mcp"* ]]; then
   pass "initialize : POST JSON, Accept des deux formes, révision 2025-06-18"
@@ -303,8 +306,8 @@ mkdir "$TMP/mcp-tmpdir" "$TMP/mcp-tmpdir-plain"
 body_auth="$(generated_basic_auth)"
 TMPDIR="$TMP/mcp-tmpdir" AUDIT_BASIC_AUTH="$body_auth" \
   run bodyfile "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
-body_line_one="$(sed -n 3p "$TMP/bodyfile.args")"
-body_line_two="$(sed -n 4p "$TMP/bodyfile.args")"
+body_line_one="$(call_carrying "$TMP/bodyfile.args" 1 '--data-binary @')"
+body_line_two="$(call_carrying "$TMP/bodyfile.args" 2 '--data-binary @')"
 body_path="${body_line_one#*--data-binary @}"
 body_path="${body_path%% *}"
 if [ "$rc" -eq 0 ] && [[ "$body_path" == "$TMP/mcp-tmpdir/"* ]] && [[ "$body_line_two" == *"--data-binary @$body_path "* ]] \
@@ -321,7 +324,7 @@ if grep -qF 'body_file="$SMOKE_AUTH_DATA_FILE"' "$SCRIPT" && ! grep -qE '\bSMOKE
 else
   fail "nom du fichier de corps du smoke MCP" "$(grep -n 'DATA_FILE' "$SCRIPT")"
 fi
-if ! grep -qF -- "$body_auth" "$TMP/bodyfile.args" "$TMP/out" "$TMP/err" \
+if ! values_found_in "$body_auth" -- "$TMP/bodyfile.args" "$TMP/out" "$TMP/err" \
    && [ "$(grep -cF -- ' --proto-redir =https --noproxy * ' "$TMP/bodyfile.args")" -eq "$(grep -c -- ' -K ' "$TMP/bodyfile.args")" ] \
    && grep -qF -- ' -K ' "$TMP/bodyfile.args"; then
   pass "chaque appel qui porte -K porte --noproxy * derrière --proto-redir =https, la valeur n'est dans aucun argument"
@@ -345,27 +348,23 @@ else
   fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
 fi
 
-# --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
-# Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
+# --- Un secret de Basic Auth défini mais vide : check_empty_basic_auth.
 AUDIT_BASIC_AUTH='' run vide "$init"
 case_vars_set "$TMP/err" "$TMP/vide.calls" "$TMP/out"
 run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
   "${CASE_VARS[@]}"
 
-# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable. Les faux `dirname`, `mktemp`, `date`,
-# `openssl` et `rm` notent leur environnement : le script retire la variable (smoke_use_auth_config) avant de lancer le
-# premier ; le témoin commun lit le fichier, qui ne doit pas être vide.
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable (check_no_child_sees_basic_auth, write_env_noting).
 write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
 : > "$TMP/witness-env.txt"
-AUDIT_BASIC_AUTH='u:p' FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
+AUDIT_BASIC_AUTH="$(generated_basic_auth)" FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
   run witness "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
 run_case check_no_child_sees_basic_auth \
   "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
   CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
 
-# --- C14-11 : le dossier de la bibliothèque se trouve même si CDPATH nomme un dossier qui porte le même nom relatif
-# (`cd tools` imprimerait alors le dossier trouvé par CDPATH, et le `source` échouerait).
+# --- C14-11 : un CDPATH piégé et un chemin relatif (check_finds_library_under_cdpath).
 mkdir -p "$TMP/cdpath-decoy/tools"
 here="$PWD"
 cd "$(dirname "$SCRIPT")/.."
@@ -374,12 +373,11 @@ CDPATH="$TMP/cdpath-decoy" RUN_SCRIPT=tools/smoke-mcp.sh \
 cd "$here"
 run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" "$rc" \
   CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
-# Sp15-22 : le script à la racine (dossier vide) lit `/` ; aucun test ne le pose à la racine, le cas relit son bloc d'amorçage.
-run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" 0 \
+# Sp15-22 : un script à la racine (check_root_script_dir_is_slash).
+run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" - \
   CASE_SCRIPT="$SCRIPT"
 
-# --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
-# sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
+# --- C11-1 : une Basic Auth et une base en `http://` (check_non_https_refused).
 http_auth="$(generated_basic_auth)"
 AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$init"
 case_vars_set "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
@@ -400,10 +398,11 @@ token="g$RANDOM$RANDOM"
 for hollow in ':' "${token}:" ":${token}"; do
   AUDIT_BASIC_AUTH="$hollow" run creuse "$init"
   if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/err" \
-     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! grep -qF "$token" "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
+     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! values_found_in "$token" -- "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
     pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) → sortie 2, aucun appel, valeur jamais citée"
   else
-    fail "AUDIT_BASIC_AUTH à côté vide" "rc=$rc ; err : $(grep -vF "$token" "$TMP/err" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
+    fail "AUDIT_BASIC_AUTH à côté vide" \
+      "rc=$rc ; err : $(lines_without_values "$TMP/err" "$token" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
   fi
 done
 

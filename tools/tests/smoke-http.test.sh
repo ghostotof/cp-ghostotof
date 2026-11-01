@@ -275,10 +275,10 @@ done
 UNE_AUTH="$(generated_basic_auth)"
 rc=0
 ( set -x; smoke_use_auth_config UNE_AUTH; in_rc=$?; smoke_cleanup; exit "$in_rc" ) > /dev/null 2> "$TMP/trace" || rc=$?
-if [ "$rc" -eq 0 ] && [ -s "$TMP/trace" ] && ! grep -qF -e "${UNE_AUTH%%:*}" -e "${UNE_AUTH#*:}" "$TMP/trace"; then
+if [ "$rc" -eq 0 ] && [ -s "$TMP/trace" ] && ! values_found_in "${UNE_AUTH%%:*}" "${UNE_AUTH#*:}" -- "$TMP/trace"; then
   pass "smoke_use_auth_config sous set -x : la valeur n'apparaît pas dans la trace"
 else
-  fail "smoke_use_auth_config tracée" "rc=$rc ; $(grep -F "${UNE_AUTH%%:*}" "$TMP/trace" | head -3)"
+  fail "smoke_use_auth_config tracée" "rc=$rc ; $(lines_with_values "$TMP/trace" "${UNE_AUTH%%:*}" | head -3)"
 fi
 unset UNE_AUTH
 
@@ -317,18 +317,19 @@ for hollow in ':' "${token}:" ":${token}" "::${token}" " :${token}" "${token}: "
     "$entry" UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
     if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/stderr" \
        && [ ! -s "$TMP/stdout" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ -z "$SMOKE_AUTH_CONFIG" ] \
-       && ! grep -qF "$token" "$TMP/stderr"; then
+       && ! values_found_in "$token" -- "$TMP/stderr"; then
       pass "$entry : valeur à côté vide (${#hollow} caractères) → retour 2, aucun dossier, valeur jamais citée"
     else
-      fail "$entry : valeur à côté vide" "rc=$rc ; stderr : $(grep -vF "$token" "$TMP/stderr" | cat -A) ; fichiers : $(ls -A "$TMP/tmpdir")"
+      fail "$entry : valeur à côté vide" \
+        "rc=$rc ; stderr : $(lines_without_values "$TMP/stderr" "$token" | cat -A) ; fichiers : $(ls -A "$TMP/tmpdir")"
     fi
   done
   UNE_AUTH="$hollow"
   ( set -x; smoke_use_auth_config UNE_AUTH || true ) > /dev/null 2> "$TMP/trace"
-  if grep -q 'sans utilisateur ou sans mot de passe' "$TMP/trace" && ! grep -qF "$token" "$TMP/trace"; then
+  if grep -q 'sans utilisateur ou sans mot de passe' "$TMP/trace" && ! values_found_in "$token" -- "$TMP/trace"; then
     pass "le refus d'une valeur à côté vide (${#hollow} caractères) ne laisse pas la valeur dans la trace set -x"
   else
-    fail "valeur à côté vide tracée" "$(grep -F "$token" "$TMP/trace" | head -3)"
+    fail "valeur à côté vide tracée" "$(lines_with_values "$TMP/trace" "$token" | head -3)"
   fi
 done
 unset UNE_AUTH token
@@ -538,11 +539,11 @@ for non_https_url in http://example.invalid/x HTTP://example.invalid/x ftp://exa
 done
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /http" http://example.invalid/x || true ) > /dev/null 2> "$TMP/trace" || rc=$?
-if [ "$rc" -eq 0 ] && grep -q 'non https://' "$TMP/trace" && ! grep -qF -e "${http_auth%%:*}" -e "${http_auth#*:}" "$TMP/trace" \
+if [ "$rc" -eq 0 ] && grep -q 'non https://' "$TMP/trace" && ! values_found_in "${http_auth%%:*}" "${http_auth#*:}" -- "$TMP/trace" \
    && [ ! -s "$FAKE_ARGS" ]; then
   pass "smoke_fetch : le refus d'une URL non https:// ne laisse pas la valeur dans la trace set -x"
 else
-  fail "refus http:// tracé" "rc=$rc ; $(grep -F "${http_auth%%:*}" "$TMP/trace" | head -3)"
+  fail "refus http:// tracé" "rc=$rc ; $(lines_with_values "$TMP/trace" "${http_auth%%:*}" | head -3)"
 fi
 : > "$FAKE_ARGS"
 FAKE_STATUS=200 smoke_fetch "GET /https" https://example.invalid/x
@@ -572,24 +573,39 @@ fi
 args_auth="$(generated_basic_auth)"
 UNE_AUTH="$args_auth"
 smoke_use_auth_config UNE_AUTH
-# refuse_args <rang attendu> <élément…> : smoke_fetch avec le préfixe `-X POST` puis ces éléments ; le rang se compte depuis le
-# premier argument de l'appel, préfixe compris, et l'élément refusé se retrouve par ce même préfixe (St15-37) ; le cas vérifie la
-# sortie 2, le message « argument n° <rang> », curl jamais appelé, la valeur absente ; l'élément refusé n'est jamais cité.
-refuse_args() {
-  local rank="$1" refused rc=0
+# Les six assistants de refus qui suivent (R199, St16-31) tiennent chacun en une ligne : deux corps, l'un pour « $@ » (`_refuse_in_args`),
+# l'autre pour SMOKE_CURL_OPTS (`_refuse_in_curl_opts`), paramétrés par le cas partagé de smoke-cases.sh qui juge le message, et par
+# la nature de l'élément refusé. Une **option** n'est jamais vide, et son texte est cherché dans le stderr ; une **valeur** peut l'être
+# (`-b ''`) : un texte vide se trouve dans tout texte, il n'est pas cherché.
+# _refused_not_quoted <où> <option|valeur> <élément refusé> : le refus ne cite jamais l'élément refusé (un argument collé à une option
+# courte porterait un secret).
+_refused_not_quoted() {
+  local where="$1" nature="$2" refused="$3"
+  if [ "$nature" = valeur ] && [ -z "$refused" ]; then
+    return 0
+  fi
+  if grep -qF -- "$refused" "$TMP/stderr"; then
+    fail "$where : l'élément refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
+  fi
+}
+# _refuse_in_args <cas> <option|valeur> <rang attendu> <élément…> : smoke_fetch avec le préfixe `-X POST` puis ces éléments ; le rang se
+# compte depuis le premier argument de l'appel, préfixe compris, et l'élément refusé se retrouve par ce même préfixe (St15-37) ; le cas
+# vérifie la sortie 2, le message « argument n° <rang> », curl jamais appelé, la valeur de la Basic Auth absente.
+_refuse_in_args() {
+  local check="$1" nature="$2" rank="$3" refused rc=0
   local prefix=(-X POST)
-  shift
+  shift 3
   refused="${*:$((rank - ${#prefix[@]})):1}"
   : > "$FAKE_ARGS"
   FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_args_refused \
+  run_case "$check" \
     "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
     "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "smoke_fetch : l'argument refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
+  _refused_not_quoted smoke_fetch "$nature" "$refused"
 }
+# refuse_args <rang> <élément…> : une option hors de la liste d'autorisation.
+refuse_args() { _refuse_in_args check_args_refused option "$@"; }
 # Les contournements nommés par la quatorzième relecture : la sortie de curl qui montre l'identifiant (`-v`, `--verbose`, `--trace`,
 # `--trace-ascii`, `--libcurl`, mesuré : `--libcurl -` imprime CURLOPT_USERPWD), une grappe qui porte `v`, une seconde URL
 # `https://`, `--`, le proxy, le résolveur, l'autorité de certification, le socket Unix, le protocole par défaut, une redirection,
@@ -655,10 +671,9 @@ refuse_args 5 -H -v -v
 refuse_args 5 -d https://autre.example/ -L
 # Voisins permis : chaque option de la liste d'autorisation et sa valeur, dans l'appel noté, après `-q` et le `-K`.
 accept_args() {
-  local label="$1" expected="$2"
+  local label="$1" expected="$2" rc=0
   shift 2
   : > "$FAKE_ARGS"
-  rc=0
   FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   expected="-q -sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto =https --proto-redir =https --noproxy * ${expected:+$expected }"
   expected+="-w \\n%{http_code} https://example.invalid/x"
@@ -681,31 +696,31 @@ accept_args "aucun argument" ""
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -L || true ) > /dev/null 2> "$TMP/trace" || rc=$?
 if [ "$rc" -eq 0 ] && grep -q 'argument n° 1 hors des options admises avec la Basic Auth' "$TMP/trace" \
-   && ! grep -qF -e "${args_auth%%:*}" -e "${args_auth#*:}" "$TMP/trace"; then
+   && ! values_found_in "${args_auth%%:*}" "${args_auth#*:}" -- "$TMP/trace"; then
   pass "smoke_fetch : le refus d'un argument ne laisse pas la valeur dans la trace set -x"
 else
-  fail "refus d'un argument tracé" "rc=$rc ; $(grep -F "${args_auth%%:*}" "$TMP/trace" | head -3)"
+  fail "refus d'un argument tracé" "rc=$rc ; $(lines_with_values "$TMP/trace" "${args_auth%%:*}" | head -3)"
 fi
 # SMOKE_CURL_OPTS est jugé par la même liste d'autorisation, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> ».
 # L'élément refusé n'est jamais cité.
 saved_curl_opts=("${SMOKE_CURL_OPTS[@]}")
-refuse_curl_opts() {
-  local rank="$1" refused
-  shift
+# _refuse_in_curl_opts <cas> <option|valeur> <rang attendu> <élément…> : smoke_fetch sans argument, ces éléments dans SMOKE_CURL_OPTS
+# (rétabli ensuite) ; le cas vérifie la sortie 2, le message « SMOKE_CURL_OPTS, élément n° <rang> », curl jamais appelé.
+_refuse_in_curl_opts() {
+  local check="$1" nature="$2" rank="$3" refused rc=0
+  shift 3
   refused="${*:$rank:1}"
   SMOKE_CURL_OPTS=("$@")
   : > "$FAKE_ARGS"
-  rc=0
   FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
   case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_curl_opts_refused \
+  run_case "$check" \
     "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
     "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "SMOKE_CURL_OPTS : l'élément refusé n'est pas cité (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
+  _refused_not_quoted SMOKE_CURL_OPTS "$nature" "$refused"
 }
+refuse_curl_opts() { _refuse_in_curl_opts check_curl_opts_refused option "$@"; }
 refuse_curl_opts 2 -sS --verbose
 refuse_curl_opts 4 -sS --max-time 15 --location-trusted
 refuse_curl_opts 4 -sS --max-time 15 -L
@@ -748,23 +763,8 @@ if [ "$rc" -eq 0 ] && [ -n "$data_file" ] && [ -f "$data_file" ] && [[ "$data_fi
 else
   fail "smoke_data_file" "rc=$rc ; fichier : ${data_file:-aucun} ; retenus : $(data_files_count)"
 fi
-# refuse_file_args <rang de la valeur> <élément…> : smoke_fetch avec le préfixe `-X POST` puis ces éléments ; la valeur refusée est celle du
-# rang, jamais citée (une valeur vide ne se cherche pas : tout texte la contient).
-refuse_file_args() {
-  local rank="$1" refused rc=0
-  local prefix=(-X POST)
-  shift
-  refused="${*:$((rank - ${#prefix[@]})):1}"
-  : > "$FAKE_ARGS"
-  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_args_file_refused \
-    "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
-    "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "smoke_fetch : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
-}
+# refuse_file_args <rang de la valeur> <élément…> : la valeur de l'option fait lire un fichier local à curl, jamais citée.
+refuse_file_args() { _refuse_in_args check_args_file_refused valeur "$@"; }
 refuse_file_args 4 -H @/etc/hostname
 refuse_file_args 4 -H @-
 refuse_file_args 4 -H @
@@ -814,23 +814,7 @@ accept_args "-D - (la sortie standard)" "-D -" -D -
 accept_args "-D headers.txt (un nom sans /)" "-D headers.txt" -D headers.txt
 accept_args "-D <fichier du TMPDIR, dossier parent de celui de la Basic Auth>" "-D $TMPDIR/h" -D "$TMPDIR/h"
 # Le même jugement pour SMOKE_CURL_OPTS, avec son propre message : « SMOKE_CURL_OPTS, élément n° <rang> : … ».
-refuse_curl_opts_file() {
-  local rank="$1" refused
-  shift
-  refused="${*:$rank:1}"
-  SMOKE_CURL_OPTS=("$@")
-  : > "$FAKE_ARGS"
-  rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
-  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_curl_opts_file_refused \
-    "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
-    "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "SMOKE_CURL_OPTS : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
-}
+refuse_curl_opts_file() { _refuse_in_curl_opts check_curl_opts_file_refused valeur "$@"; }
 refuse_curl_opts_file 3 -sS -H @f
 refuse_curl_opts_file 3 -sS -b cookies.txt
 refuse_curl_opts_file 3 -sS --data-binary @/tmp/autre
@@ -840,38 +824,8 @@ refuse_curl_opts_file 3 -sS -b '@a=b'
 # prochain appel lirait un `-K` vide, donc sans Basic Auth. Le jugement est un test de bash, `-ef` (même périphérique, même inode),
 # qui suit `..` et les liens sans processus : refus de sortie 2, curl jamais appelé, le rang de la valeur, jamais son texte, et le
 # message propre « une valeur qui écrit dans le dossier de la Basic Auth ».
-refuse_write_args() {
-  local rank="$1" refused rc=0
-  local prefix=(-X POST)
-  shift
-  refused="${*:$((rank - ${#prefix[@]})):1}"
-  : > "$FAKE_ARGS"
-  FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x "${prefix[@]}" "$@" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_args_write_refused \
-    "smoke_fetch : « $* » avec la Basic Auth → retour 2, rang $rank, curl jamais appelé" "$rc" \
-    "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "smoke_fetch : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
-}
-refuse_write_curl_opts() {
-  local rank="$1" refused
-  shift
-  refused="${*:$rank:1}"
-  SMOKE_CURL_OPTS=("$@")
-  : > "$FAKE_ARGS"
-  rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  SMOKE_CURL_OPTS=("${saved_curl_opts[@]}")
-  case_vars_set "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$args_auth"
-  run_case check_curl_opts_write_refused \
-    "smoke_fetch : « $* » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, élément n° $rank, curl jamais appelé" "$rc" \
-    "${CASE_VARS[@]}" CASE_RANK="$rank"
-  if [ -n "$refused" ] && grep -qF -- "$refused" "$TMP/stderr"; then
-    fail "SMOKE_CURL_OPTS : la valeur refusée n'est pas citée (« $refused »)" "stderr : $(cat -A "$TMP/stderr")"
-  fi
-}
+refuse_write_args() { _refuse_in_args check_args_write_refused valeur "$@"; }
+refuse_write_curl_opts() { _refuse_in_curl_opts check_curl_opts_write_refused valeur "$@"; }
 write_dir_name="${SMOKE_AUTH_DIR##*/}"
 ln -s "$SMOKE_AUTH_CONFIG" "$TMP/lien-vers-le-k"
 refuse_write_args 4 -D "$SMOKE_AUTH_CONFIG"
@@ -1036,25 +990,33 @@ else
 fi
 smoke_cleanup
 for variable in "${curl_variables[@]}"; do unset "$variable"; done
-# Sp15-24 : la liste ci-dessus recopie celle de la bibliothèque (son `unset -v`, relu ici). Un nom ajouté d'un seul côté rougit : à la
-# bibliothèque seule, ce cas ; au test seul, le premier cas plus haut (la variable resterait posée) et celui-ci.
-lib_unset_names="$(awk '
-  /^[[:space:]]*unset -v [A-Za-z_]/ { on = 1 }
-  on {
+# Sp15-24, St16-35 : la liste ci-dessus recopie celle de la bibliothèque (son `unset -v`, relu ici). Un nom ajouté d'un seul côté
+# rougit : à la bibliothèque seule, ce cas ; au test seul, le premier cas plus haut (la variable resterait posée) et celui-ci. La
+# lecture est bornée par le corps de `_smoke_write_config_file` (de sa première ligne à son `}`), continuations comprises, et exige
+# **un seul** `unset -v` : un second, plus bas dans le corps, serait une liste que ce cas ne lirait pas.
+lib_unset_report="$(awk '
+  /^_smoke_write_config_file\(\) \{/ { in_body = 1; next }
+  in_body && /^\}/ { in_body = 0 }
+  in_body && /^[[:space:]]*unset -v [A-Za-z_]/ { statements++; on = 1 }
+  in_body && on {
     line = $0
     more = (line ~ /\\$/)
     sub(/^[[:space:]]*unset -v /, "", line)
     sub(/[[:space:]]*\\$/, "", line)
-    printf "%s ", line
-    if (!more) exit
-  }' "$LIB" | tr -s ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')"
+    names = names " " line
+    if (!more) on = 0
+  }
+  END { print statements + 0; print names }' "$LIB")"
+lib_unset_count="${lib_unset_report%%$'\n'*}"
+lib_unset_names="$(printf '%s\n' "${lib_unset_report#*$'\n'}" | tr -s ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')"
 test_unset_names="$(printf '%s\n' "${curl_variables[@]}" | sort | tr '\n' ' ')"
-if [ -n "$lib_unset_names" ] && [ "$lib_unset_names" = "$test_unset_names" ]; then
+if [ "$lib_unset_count" = 1 ] && [ -n "$lib_unset_names" ] && [ "$lib_unset_names" = "$test_unset_names" ]; then
   pass "la liste des variables de curl du test est celle que la bibliothèque retire (${#curl_variables[@]} noms)"
 else
-  fail "liste des variables de curl" "bibliothèque : ${lib_unset_names:-introuvable} ; test : $test_unset_names"
+  fail "liste des variables de curl" \
+    "bibliothèque : ${lib_unset_names:-introuvable} (unset -v dans le corps : $lib_unset_count, un attendu) ; test : $test_unset_names"
 fi
-unset curl_variables variable still_set missing lib_unset_names test_unset_names
+unset curl_variables variable still_set missing lib_unset_report lib_unset_count lib_unset_names test_unset_names
 
 # --- R183 (Q4) : le cycle de vie de smoke_data_file. `smoke_cleanup` retire les fichiers et vide SMOKE_AUTH_DATA_FILES et
 # SMOKE_AUTH_DATA_FILE : un chemin d'un premier appel, même recréé ensuite, n'est plus admis. Un second `smoke_use_auth_config` remplace
@@ -1237,11 +1199,12 @@ for kind in lecture-seule locale-masquante; do
   esac
   if [ "$(cat "$TMP/unset.out")" = "rc=2 config=[]" ] \
      && grep -q '^UNE_AUTH : la variable ne peut pas être retirée du shell' "$TMP/unset.err" \
-     && ! grep -qF -e "$shadow_global" -e "$shadow_local" "$TMP/unset.out" "$TMP/unset.err" && [ -z "$(ls -A "$TMP/unset-tmpdir")" ]; then
+     && ! values_found_in "$shadow_global" "$shadow_local" -- "$TMP/unset.out" "$TMP/unset.err" \
+     && [ -z "$(ls -A "$TMP/unset-tmpdir")" ]; then
     pass "_smoke_write_auth_config : variable $kind, retrait impossible → retour 2, rien d'écrit, valeur jamais citée"
   else
     detail="sortie : $(cat -A "$TMP/unset.out") ; TMPDIR : $(ls -A "$TMP/unset-tmpdir" | tr '\n' ' ')"
-    detail+=" ; stderr : $( { grep -vF -e "$shadow_global" -e "$shadow_local" "$TMP/unset.err" || true; } | cat -A)"
+    detail+=" ; stderr : $(lines_without_values "$TMP/unset.err" "$shadow_global" "$shadow_local" | cat -A)"
     fail "retrait impossible ($kind)" "$detail"
   fi
   rm -rf "$TMP/unset-tmpdir"
@@ -1880,6 +1843,82 @@ else
 fi
 unset absent_tool absent_out
 
+# --- R199 (St16-44, Q11 (A)) : `values_found_in` cherche une valeur générée sans qu'elle passe en argument d'un processus : les
+# valeurs vont dans un fichier en 600 du dossier du test que `grep -F -f` lit (`ps` montrerait un motif en argument). Trois cas : le
+# verdict (trouvée, absente, plusieurs valeurs dont une seule est là), le refus d'une valeur vide (un motif vide correspond à toute
+# ligne : la recherche répondrait « trouvée » à tort), et la preuve par un faux `grep` qui note ses arguments et le mode du fichier de
+# motifs : jamais la valeur en argument, un `-f` en 600.
+pattern_value="$(generated_basic_auth)"
+printf 'rien à voir ici\n' > "$TMP/haystack-clean"
+printf 'la valeur %s est ici\n' "$pattern_value" > "$TMP/haystack-leak"
+rc_leak=0; rc_clean=0; rc_second=0
+values_found_in "$pattern_value" -- "$TMP/haystack-clean" "$TMP/haystack-leak" || rc_leak=$?
+values_found_in "$pattern_value" -- "$TMP/haystack-clean" || rc_clean=$?
+values_found_in "absente-$RANDOM" "$pattern_value" -- "$TMP/haystack-leak" || rc_second=$?
+if [ "$rc_leak" -eq 0 ] && [ "$rc_clean" -eq 1 ] && [ "$rc_second" -eq 0 ] && [ ! -e "$TMP/value-patterns" ]; then
+  pass "values_found_in : trouvée (0), absente (1), plusieurs valeurs dont une seule présente (0), le fichier de motifs retiré"
+else
+  fail "values_found_in : verdicts" \
+    "trouvée : $rc_leak ; absente : $rc_clean ; deux valeurs : $rc_second ; fichier : $(ls "$TMP/value-patterns" 2>&1)"
+fi
+rc=0
+( values_found_in "" -- "$TMP/haystack-leak" ) > /dev/null 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && grep -q 'valeur vide' "$TMP/stderr"; then
+  pass "values_found_in : une valeur vide est refusée (sortie 2), jamais un motif vide qui trouverait toute ligne"
+else
+  fail "values_found_in : valeur vide" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+mkdir "$TMP/grep-bin"
+real_grep="$(command -v grep)"
+cat > "$TMP/grep-bin/grep" <<'FAKE'
+#!/bin/bash
+printf '%s\n' "$@" >> "$FAKE_GREP_ARGS"
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = -f ]; then stat -c %a "$argument" >> "$FAKE_GREP_MODES"; fi
+  previous="$argument"
+done
+exec "$REAL_GREP" "$@"
+FAKE
+chmod +x "$TMP/grep-bin/grep"
+: > "$TMP/grep.args"; : > "$TMP/grep.modes"
+rc=0
+FAKE_GREP_ARGS="$TMP/grep.args" FAKE_GREP_MODES="$TMP/grep.modes" REAL_GREP="$real_grep" PATH="$TMP/grep-bin:$PATH" \
+  values_found_in "$pattern_value" -- "$TMP/haystack-leak" || rc=$?
+grep_seen="$(cat "$TMP/grep.args")"
+if [ "$rc" -eq 0 ] && [[ "$grep_seen" == *$'\n-f\n'* && "$grep_seen" != *"$pattern_value"* ]] && [ "$(cat "$TMP/grep.modes")" = 600 ]; then
+  pass "values_found_in : grep reçoit un fichier de motifs en 600 (-f), jamais la valeur en argument"
+else
+  fail "values_found_in : arguments de grep" "rc=$rc ; modes : $(cat "$TMP/grep.modes") ; arguments : ${grep_seen//$pattern_value/<valeur>}"
+fi
+unset pattern_value real_grep grep_seen rc_leak rc_clean rc_second
+
+# --- R199 (St16-34) : `call_carrying <fichier> <rang> <fragment>…` retrouve un appel du faux curl par ce qu'il porte, plus par son
+# numéro de ligne : le n-ième appel qui porte tous les fragments, rien quand il n'y en a pas assez.
+printf '%s\n' 'a -X POST https://x/un' 'b -X GET https://x/deux' 'c -X GET https://x/trois' > "$TMP/calls-sample"
+if [ "$(call_carrying "$TMP/calls-sample" 1 -X GET)" = 'b -X GET https://x/deux' ] \
+   && [ "$(call_carrying "$TMP/calls-sample" 2 -X GET)" = 'c -X GET https://x/trois' ] \
+   && [ "$(call_carrying "$TMP/calls-sample" 1 -X GET trois)" = 'c -X GET https://x/trois' ] \
+   && [ -z "$(call_carrying "$TMP/calls-sample" 3 -X GET)" ] && [ -z "$(call_carrying "$TMP/calls-sample" 1 -X DELETE)" ]; then
+  pass "call_carrying : le n-ième appel qui porte tous les fragments, rien quand aucun ne les porte"
+else
+  fail "call_carrying" \
+    "premier GET : $(call_carrying "$TMP/calls-sample" 1 -X GET) ; troisième : $(call_carrying "$TMP/calls-sample" 3 -X GET)"
+fi
+
+# --- R199 (St16-33) : un cas qui ne lit aucun code de sortie reçoit `-` à la place du code, jamais un `0` factice : CASE_RC reste
+# vide, et un cas qui exige le code (`check_finds_library_under_cdpath`) le dit par un `fail` nommé au lieu de juger sur un zéro.
+check_probe_rc() { printf '[%s]' "${CASE_RC-absente}"; }
+seen_rc="$(run_case check_probe_rc "sonde" -)"
+refused_out="$(fail() { printf 'FAIL %s | %s\n' "$1" "$2"; }
+  run_case check_finds_library_under_cdpath "sans code" - CASE_ERR=e CASE_CALLS=c CASE_EXPECTED_RC=0 2>&1)"
+if [ "$seen_rc" = "[]" ] && [[ "$refused_out" == *"CASE_RC n'est pas posée"* ]]; then
+  pass "run_case : « - » laisse CASE_RC vide, et un cas qui exige le code refuse (fail nommé), jamais un zéro factice"
+else
+  fail "run_case : pas de code de sortie" "CASE_RC : $seen_rc ; cas qui l'exige : $refused_out"
+fi
+unset seen_rc refused_out
+
 # --- C14-7, CR15-1 : les valeurs que pose `run_case` n'atteignent jamais un fils, même quand l'appelant exporte déjà ces noms.
 # Une locale de bash garde l'attribut d'export de la variable globale qu'elle masque : sans `local +x`, un processus lancé par un
 # cas recevrait la valeur que l'appel de `run_case` vient de poser (une Basic Auth générée). `local +x` ne garantit que cela : le
@@ -1890,7 +1929,10 @@ unset absent_tool absent_out
 case_marker="$(generated_basic_auth)"
 check_case_children_inherit_nothing() {
   local seen
-  seen="$(bash -c 'env | grep -cF -- "$1" || true' _ "$case_marker")"
+  # Le repère va dans un fichier de motifs que le fils lit : jamais en argument du `bash -c` ni de son `grep`.
+  seen="$(write_value_patterns "$case_marker"
+    bash -c 'env | grep -cF -f "$1" || true' _ "$TMP/value-patterns"
+    rm -f -- "$TMP/value-patterns")"
   if [ "$seen" = "0" ]; then
     pass "run_case : un fils du cas ne reçoit aucune valeur posée par run_case, même sous un nom exporté par l'appelant"
   else

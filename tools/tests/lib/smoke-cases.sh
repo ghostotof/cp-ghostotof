@@ -9,7 +9,9 @@
 #
 # Un test lance le script (`run`), garde le code de sortie, le stderr, le stdout
 # et la liste des appels du faux `curl`, puis les passe au cas par `run_case`, **un appel** :
-#   run_case <cas> <libellé> <code de sortie> [<NOM>=<valeur>]…      (<NOM> : un des noms de CASE_NAMES, plus bas)
+#   run_case <cas> <libellé> <code de sortie|-> [<NOM>=<valeur>]…      (<NOM> : un des noms de CASE_NAMES, plus bas)
+# Un cas qui ne lit aucun code de sortie (check_root_script_dir_is_slash) reçoit `-` : CASE_RC reste vide, jamais un `0` factice
+# (St16-33) ; un cas qui exige le code (CASE_RC dans sa liste de `_case_incomplete`) refuse alors par un `fail` nommé.
 # `run_case` pose en **locales** les variables que lit le cas : les valeurs qu'il pose n'atteignent jamais un processus lancé
 # par le cas (CASE_VALUE est une Basic Auth générée, qu'aucun fils n'a à recevoir, St13-42). Elles sont déclarées `local +x` :
 # une locale de bash garde l'attribut d'export de la variable globale qu'elle masque, de sorte qu'un nom déjà exporté par
@@ -31,7 +33,8 @@
 #
 # Les cas ne reçoivent jamais une valeur de Basic Auth sans que ce soit pour
 # vérifier qu'elle n'apparaît nulle part : les valeurs des tests sont générées
-# (generated_basic_auth), jamais écrites en clair.
+# (generated_basic_auth), jamais écrites en clair, et jamais passées en argument d'un processus (values_found_in, plus bas).
+# Les tests qui sourcent ce fichier posent $TMP, leur dossier temporaire, que lisent values_found_in et lines_without_values.
 # ---------------------------------------------------------------------------
 
 # generated_basic_auth
@@ -40,6 +43,98 @@
 # fichier du dépôt ne porte et qu'aucun message ne contient par hasard.
 generated_basic_auth() {
   printf 'u%s%s:p%s%s' "$RANDOM" "$RANDOM" "$RANDOM" "$RANDOM"
+}
+
+# write_value_patterns <valeur>…
+#
+# Écrit les valeurs, une par ligne, dans $TMP/value-patterns, un fichier en 600 que `grep -F -f` lit : une Basic Auth générée, ou un
+# fragment, ne passe jamais en argument d'un processus, où `ps` la montrerait (St16-44, Q11 (A) de la seizième relecture ; `<(printf …)`
+# est écarté, le chemin /dev/fd étant propre à bash). Le fichier naît dans $TMP et non dans TMPDIR, que des tests exigent vide ;
+# l'appelant le retire (`rm -f -- "$TMP/value-patterns"`) quand il l'a lu. Une valeur vide est refusée, la fonction fait sortir le shell
+# qui l'exécute (code 2) : un motif vide correspond à toute ligne, et une recherche « elle n'est nulle part » serait fausse, une
+# recherche « elle y est » vraie, quoi que le fichier contienne. Les trois fonctions qui suivent l'appellent ; un test peut aussi
+# donner le chemin à un processus fils qui doit lire les motifs (le cas des fils de smoke-http.test.sh).
+write_value_patterns() {
+  local value
+  for value in "$@"; do
+    if [ -z "$value" ]; then
+      echo "write_value_patterns : une valeur vide correspondrait à toute ligne, refusée" >&2
+      exit 2
+    fi
+  done
+  rm -f -- "${TMP:?write_value_patterns : TMP absente}/value-patterns"
+  ( umask 077; printf '%s\n' "$@" > "$TMP/value-patterns" )
+}
+
+# values_found_in <valeur>… -- <fichier>…
+#
+# Rend 0 si une des valeurs figure dans un des fichiers, 1 sinon ; un code de grep supérieur à 1 (un fichier absent) ou un appel
+# incomplet fait sortir le test en 2, jamais un « absente » faux : sous `! values_found_in …`, une erreur de grep passerait pour un vert.
+# Les valeurs vont dans un fichier de motifs (write_value_patterns), retiré après la recherche.
+values_found_in() {
+  local values=() found=0
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
+    values+=("$1")
+    shift
+  done
+  if [ "${#values[@]}" -eq 0 ] || [ "$#" -lt 2 ]; then
+    echo "values_found_in : usage : <valeur>… -- <fichier>…" >&2
+    exit 2
+  fi
+  shift
+  write_value_patterns "${values[@]}"
+  grep -qF -f "$TMP/value-patterns" -- "$@" || found=$?
+  rm -f -- "$TMP/value-patterns"
+  if [ "$found" -gt 1 ]; then
+    echo "values_found_in : grep a échoué (code $found) sur : $*" >&2
+    exit 2
+  fi
+  return "$found"
+}
+
+# _grep_value_lines <-F|-vF> <fichier> <valeur>…
+#
+# Les lignes du fichier qui portent (-F) ou ne portent pas (-vF) une des valeurs, par le fichier de motifs de write_value_patterns :
+# jamais une valeur en argument. Sert aux messages d'échec, à lire dans un `$( )` (une valeur vide y fait sortir le sous-shell).
+_grep_value_lines() {
+  local mode="$1" file="$2"
+  shift 2
+  write_value_patterns "$@"
+  grep "$mode" -f "$TMP/value-patterns" -- "$file" || true
+  rm -f -- "$TMP/value-patterns"
+}
+
+# lines_with_values <fichier> <valeur>…  /  lines_without_values <fichier> <valeur>…
+#
+# Les lignes qui portent une des valeurs (la fuite qu'un échec montre) ou qui n'en portent aucune (le stderr d'un échec, montré sans
+# la valeur qu'il ne devrait pas contenir).
+lines_with_values() { _grep_value_lines -F "$@"; }
+lines_without_values() { _grep_value_lines -vF "$@"; }
+
+# call_carrying <fichier des appels> <rang> <fragment>…
+#
+# Imprime le n-ième appel noté (une ligne par appel du faux curl) qui porte tous les fragments (R199, St16-34) : un appel se retrouve
+# par ce qu'il porte, plus par son numéro de ligne, qu'un appel ajouté ou retiré déplace. Rien quand moins de <rang> appels les portent :
+# le verdict du test le dit alors par son détail vide, jamais par une sortie du test (`set -e`). Les fragments se comparent tels quels.
+call_carrying() {
+  local file="$1" rank="$2" seen=0 line fragment carries
+  shift 2
+  while IFS= read -r line || [ -n "$line" ]; do
+    carries=1
+    for fragment in "$@"; do
+      if [[ "$line" != *"$fragment"* ]]; then
+        carries=0
+        break
+      fi
+    done
+    if [ "$carries" -eq 1 ]; then
+      seen=$((seen + 1))
+      if [ "$seen" -eq "$rank" ]; then
+        printf '%s\n' "$line"
+        return 0
+      fi
+    fi
+  done < "$file"
 }
 
 # write_env_noting <dossier> <outil>…
@@ -98,13 +193,17 @@ _case_assign() {
   return 1
 }
 
-# run_case <cas> <libellé> <code de sortie> [<NOM>=<valeur>]…
+# run_case <cas> <libellé> <code de sortie|-> [<NOM>=<valeur>]…
 #
 # Pose CASE_LABEL, CASE_RC et les variables de CASE_NAMES en locales (celles que l'appel ne donne pas restent vides),
 # puis appelle le cas (`check_*`), qui les lit par la portée dynamique de bash. Une affectation qui ne nomme pas une
 # de ces variables est une faute d'appel : un `fail`, le cas n'est pas lancé. Aucune n'est exportée (`local +x`, voir l'en-tête).
+# `-` à la place du code de sortie : le cas n'en lit aucun, CASE_RC reste vide (un cas qui l'exige le dit, `_case_incomplete`).
 run_case() {
   local +x _case="$1" CASE_LABEL="$2" CASE_RC="$3" _assignment _name _names
+  if [ "$CASE_RC" = - ]; then
+    CASE_RC=""
+  fi
   for _name in "${CASE_NAMES[@]}"; do
     local +x "$_name="
   done
@@ -160,10 +259,10 @@ _check_value_refused() {
   _case_incomplete CASE_LABEL CASE_RC CASE_ERR CASE_CALLS CASE_OUT CASE_VALUE && return 0
   if [ "$CASE_RC" -eq 2 ] && grep -q -- "$1" "$CASE_ERR" \
      && [ ! -s "$CASE_CALLS" ] && [ ! -s "$CASE_OUT" ] \
-     && ! grep -qF -- "$CASE_VALUE" "$CASE_ERR" "$CASE_OUT" "$CASE_CALLS"; then
+     && ! values_found_in "$CASE_VALUE" -- "$CASE_ERR" "$CASE_OUT" "$CASE_CALLS"; then
     pass "$CASE_LABEL"
   else
-    fail "$CASE_LABEL" "rc=$CASE_RC ; err : $(grep -vF -- "$CASE_VALUE" "$CASE_ERR" | cat -A) ; appels : $(head -3 "$CASE_CALLS")"
+    fail "$CASE_LABEL" "rc=$CASE_RC ; err : $(lines_without_values "$CASE_ERR" "$CASE_VALUE" | cat -A) ; appels : $(head -3 "$CASE_CALLS")"
   fi
 }
 
@@ -274,7 +373,7 @@ check_finds_library_under_cdpath() {
   fi
 }
 
-# check_root_script_dir_is_slash  (CASE_LABEL, CASE_SCRIPT)
+# check_root_script_dir_is_slash  (CASE_LABEL, CASE_SCRIPT ; le code de sortie est `-` : le cas n'en lit aucun, Sp15-22)
 #
 # Un script placé à la racine (`/script.sh`) a un dossier vide après `${BASH_SOURCE[0]%/*}` : le bloc d'amorçage lit alors `/`
 # (C14-11, Sp15-22). Aucun test ne peut poser un script à la racine : le cas relit le bloc du script tel qu'il est écrit, de la ligne
