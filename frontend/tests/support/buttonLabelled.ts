@@ -2,7 +2,7 @@ import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 /**
  * Le bouton de `scope` dont le texte est `label`, ou une erreur qui le nomme. **Écrite une fois** pour les specs des pages
- * d'admin (elle l'était dans sept) : un test qui cherche un bouton introuvable échoue sur son libellé, jamais sur un
+ * d'admin : un test qui cherche un bouton introuvable échoue sur son libellé, jamais sur un
  * `undefined?.trigger()` muet. Le libellé se lit du catalogue (`fr.json`, une clé par page), jamais d'un littéral français : une
  * retouche du libellé ne doit pas faire rougir la moitié d'un fichier de spec. Un test qui juge le texte lui-même n'est pas
  * ici : il l'écrit en toutes lettres, ce que le catalogue ne dirait pas.

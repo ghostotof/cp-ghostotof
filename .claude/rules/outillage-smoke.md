@@ -156,8 +156,8 @@ carries on the command), or at a quote or a backtick **glued** to the word or to
 `bash -c "export"`, `bash -c 'declare -x'`, `` x=`export` ``, `'declare'`, `\declare`). After a blank, a quote ends it only if a word end
 follows (`bash -c 'declare -x '`): `export -n -- "$n"` opens the name, it passes.
 `export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
-`if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``, `bash -c 'export -n -- NAME'`, `x="${env}"`
-and `environment` pass.
+`if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``,
+`bash -c 'export -n -- NAME'`, `x="${env}"` and `environment` pass.
 The forms of C16-2 that print are **measured** in `smoke-http.test.sh`: run by `bash -c` with an exported dummy variable (a random value),
 each prints the value, and the same list is then refused by the guard.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of

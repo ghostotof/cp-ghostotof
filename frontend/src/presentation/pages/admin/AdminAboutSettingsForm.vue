@@ -41,9 +41,10 @@ const errorText = computed(() => {
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
 // ne s'affiche que sous elle, et il part dès que des réglages arrivent du serveur (le `watch` de `settings`, ci-dessous),
-// la proposition non enregistrée étant alors perdue (décision 4 de la sixième série, R141b).
+// la proposition non enregistrée étant alors perdue (décision 4 de la sixième série, R141b). Règle `frontend-backoffice.md`,
+// « A proposal notice is its target locale's ».
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
-// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10). Chaque lecteur est dans le
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10, même règle). Chaque lecteur est dans le
 // formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
 // refusée ou interrompue laisse les réglages nuls, sans formulaire pour les porter. `translate` n'est émis que par ce bouton.
 const isProposalShown = computed(() => proposal.value?.target === props.locale)
@@ -68,7 +69,7 @@ const isProposalShown = computed(() => proposal.value?.target === props.locale)
  * changement de langue est alors le seul chemin vers un nouveau chargement — ; **abandonnée** par « Abandonner »
  * (`handleDiscardProposal`). Une fin de session la **garde** : la lecture de la cible reprend au retour de la session et la
  * pose alors (Q10). Aucun guetteur de fin de lecture : il ne retirerait rien qu'un changement de langue ne retire déjà
- * (R157b, décision de l'auteur).
+ * (R157b, décision de l'auteur). Règle `frontend-backoffice.md`, « About *settings* is the one singleton per locale ».
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).

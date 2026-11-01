@@ -8,7 +8,7 @@ const messages = { fr, en }
 
 /**
  * Les clés de `admin.translation.errors` présentes dans **les deux** langues (une intersection de clés, non l'union) : un type
- * construit sur elle refuse une clé qui manque à l'une des deux, là où `typeof fr.…` seul ne voyait pas `en.json`. Le type
+ * construit sur elle refuse une clé qui manque à l'une des deux, là où `typeof fr.…` seul ne voit pas `en.json`. Le type
  * vit ici, avec les messages qu'il décrit, pour que `presentation/ui` n'importe rien d'`infrastructure`.
  */
 export type TranslationErrorTextKey = keyof (typeof messages)['fr']['admin']['translation']['errors'] &

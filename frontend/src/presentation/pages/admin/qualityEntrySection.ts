@@ -4,10 +4,10 @@ import type { AdminQualityError } from '../../../domain/admin/quality/errors/Adm
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from './proseFields'
 
 /**
- * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190) : la
- * forme commune de leurs entrées, de leurs écritures, de la lecture que la page lui passe, et la liste des champs qui fait
- * toute la différence entre l'une et l'autre. Le gabarit n'a aucune branche sur le genre d'entrée : chaque différence est une
- * propriété d'un champ.
+ * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190 ; règle
+ * `frontend-backoffice.md`, « Existing resources », `quality`) : la forme commune de leurs entrées, de leurs écritures, de la
+ * lecture que la page lui passe, et la liste des champs qui fait toute la différence entre l'une et l'autre. Le gabarit n'a
+ * aucune branche sur le genre d'entrée : chaque différence est une propriété d'un champ.
  *
  * `F` est l'union des noms de champs d'une instance (`'title' | 'description' | 'iconKey'`, ou `'label'`). Ce que le compilateur
  * vérifie : que l'entrée (`QualityEntry<F>`) et l'écriture (`QualityEntryInput<F>`) portent un champ par nom de `F`, que la page

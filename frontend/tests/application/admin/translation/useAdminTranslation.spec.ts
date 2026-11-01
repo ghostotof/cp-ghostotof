@@ -87,8 +87,8 @@ describe('useAdminTranslation', () => {
       expect(accept).not.toHaveBeenCalled()
     })
 
-    // Fusionné avec l'ancien cas « un échec du repository » (St16-11), qui jugeait la même chose par `proposalOf` et ajoutait
-    // seulement que `isTranslating` retombe : cette assertion est reprise ici.
+    // Un seul cas juge l'échec du repository (St16-11) : `accept` n'est pas appelée, la raison est exposée, et `isTranslating`
+    // retombe.
     it("n'est pas appelée sur un échec, et translate rend faux avec la raison exposée, sans plus rien en vol (#748, R172)", async () => {
       const accept = vi.fn()
       const translate = vi.fn<AdminTranslationRepository['translate']>()
