@@ -14528,6 +14528,19 @@ refactoring.
   docblock qui recopie un compte (chaque ligne restante dite au commit).
 - [ ] **Step 5 : commit** — `test(frontend): des gardes de source qui renvoient à leurs constantes (#748)`.
 
+**Ajout à R217 (décision de l'auteur, 2026-11-02, question rendue par R213).** `noLocaleCast.spec.ts` ne voit que `as Locale` ;
+R213 a trouvé deux adresses construites d'une lecture brute de la langue d'interface, sans `as` (`CookieNotice.vue`,
+`TechnologiesSection.vue`, corrigées par R213). La garde s'étend à la classe : **aucun fichier de `frontend/src` ne prend
+`locale` de `useI18n()` ni ne lit `i18n.global.locale`**, hors `application/shared/useCurrentLocale.ts` (l'accesseur) et
+`presentation/router/index.ts` (qui la **pose**, l. ~344 ; l'exception porte sur l'écriture, à juger par la garde si elle se
+distingue simplement, sinon le fichier entier est admis et la limite écrite dans le docblock). Une liste d'exceptions à égalité,
+comme `REMAINING_LOCALE_CASTS`. Les deux lectures restantes passent à `useCurrentLocale()` : `IncidentsPage.vue` et
+`StackPage.vue` (`Intl.*Format(locale.value)` → `currentLocale.value` ; fr et en inchangés). Test rouge : la garde étendue nomme
+ces deux fichiers avant leur conversion. Mutation : une lecture `const { locale } = useI18n()` remise dans un fichier converti →
+la garde rougit ; dans le corps du commit. La phrase i18n de `frontend.md` (écrite par R213) dit la garde étendue ; formes
+voisines (un `useI18n({ useScope: … })`, un `$i18n.locale` de gabarit) cherchées et nommées. Le préfixe du commit reste celui de la
+tâche, ou `refactor(frontend):` si l'agent le juge plus juste, dit au rendu.
+
 ---
 
 ### Task R218 : Les libellés lus du catalogue (1/2) — les constantes écrites une fois, les quatre specs des pages par entrée
