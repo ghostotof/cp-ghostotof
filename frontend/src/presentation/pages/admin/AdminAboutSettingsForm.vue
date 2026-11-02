@@ -137,8 +137,9 @@ watch(
 )
 
 /**
- * Retire la proposition en attente si la langue demandée n'est pas sa cible (R157, R187b). Exposée (`defineExpose`) : la page
- * l'appelle au geste de la personne sur le sélecteur, et les deux canaux entre elles sont décrits une fois, sur `chooseLocale`.
+ * Retire la proposition en attente si la langue demandée n'est pas sa cible (R157, R187b ; règle `frontend-backoffice.md`,
+ * « About *settings* is the one singleton per locale »). Exposée (`defineExpose`) : un changement de langue que le `watch` de
+ * `props.locale` ne verrait pas (FR → EN → FR joué avant le rendu) doit pouvoir la demander sans passer par une prop.
  */
 function dropPendingProposalNotFor(requested: Locale): void {
   if (pendingProposal.value && requested !== pendingProposal.value.targetLocale) {

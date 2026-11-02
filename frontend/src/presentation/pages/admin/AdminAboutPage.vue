@@ -51,6 +51,8 @@ const settingsForm = useTemplateRef('settingsForm')
  *   sa cible pour la poser : ce n'est pas un geste de la personne, la proposition qu'il vient de parquer doit survivre, elle ne
  *   passe donc pas par ici.
  *
+ * Règle `frontend-backoffice.md`, « About *settings* is the one singleton per locale ».
+ *
  * La valeur reçue est une `string` (le sélecteur n'en émet pas d'autre) : une langue hors de `SUPPORTED_LOCALES` n'est ni
  * montrée, ni lue du serveur, ni cause du retrait d'une proposition — elle est ignorée, la langue montrée reste celle d'avant.
  */

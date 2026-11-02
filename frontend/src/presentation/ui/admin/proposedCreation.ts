@@ -2,6 +2,12 @@ import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { EntryFormState } from './entryFormState'
 
 /**
+ * Ce que tout formulaire par entrée porte pour dire sa langue et son rattachement : la langue de l'entrée, et son groupe de
+ * traduction (`''` sans groupe). Seuls ces deux champs sont lus et écrits par `switchToProposedCreation`.
+ */
+export type EntryFormPlacement = { locale: Locale; translationGroup: string }
+
+/**
  * Le `switchForm` que les formulaires par entrée passent à `proposeFrom` : ce que la page seule pose quand la proposition
  * arrive, avant que sa prose remplace celle du formulaire. Écrit une fois (spec 0004, D9), sur l'état d'un formulaire
  * (`useEntryFormState`) et sur les deux champs de `form` qui disent sa langue et son rattachement :
@@ -16,7 +22,7 @@ import type { EntryFormState } from './entryFormState'
  */
 export function switchToProposedCreation(
   state: EntryFormState,
-  form: { locale: Locale; translationGroup: string },
+  form: EntryFormPlacement,
   targetLocale: Locale,
 ): (sourceLocale: Locale) => void {
   return (sourceLocale) => {

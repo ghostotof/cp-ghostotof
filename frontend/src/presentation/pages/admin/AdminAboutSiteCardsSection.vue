@@ -91,7 +91,6 @@ const form = reactive<SiteCardForm>({
   iconKey: '',
 })
 
-// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
 const formState = useEntryFormState()
 const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 

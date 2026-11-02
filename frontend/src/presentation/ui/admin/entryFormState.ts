@@ -22,8 +22,8 @@ export interface EntryFormState {
 }
 
 /**
- * Un état de formulaire neuf, écrit une fois pour les huit formulaires par entrée : chaque appel rend ses propres `Ref`,
- * jamais partagés entre deux formulaires (la section de Qualité et les pages à plusieurs formulaires en montent plusieurs).
+ * Un état de formulaire neuf, écrit une fois pour les formulaires par entrée : chaque appel rend ses propres `Ref`,
+ * jamais partagés entre deux formulaires (une page qui monte plusieurs formulaires appelle la fonction plusieurs fois).
  * Une page déstructure ce qu'elle lit, **avant** l'appel de `useTranslatedForm` dont les options le lisent
  * (`translatedFormDeclarationOrder.spec.ts`), et passe l'objet entier à `switchToProposedCreation`.
  */

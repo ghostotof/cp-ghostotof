@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
+import type { EntryFormPlacement } from '../../ui/admin/proposedCreation'
 
 /**
  * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190 ; règle
@@ -14,7 +15,8 @@ import type { AdminQualityError } from '../../../domain/admin/quality/errors/Adm
  * d'écriture : il n'y a pas de liste à tenir à jour à côté du type, et pas de garde à l'exécution (R215, D1 de la dix-septième
  * relecture). Ce que le compilateur vérifie : que le record déclare un champ par nom de `F` (`satisfies`, un nom oublié ou en trop
  * est une erreur de compilation), que l'entrée (`QualityEntry<F>`) et l'écriture (`QualityEntryInput<F>`) portent un champ par nom
- * de `F`, et que la page donne un libellé à chacun (`labels: Record<F, string>`). Ce qu'il ne vérifie pas : le formulaire est un
+ * de `F`, que chaque nom de prose est un champ du record (`proseFields: readonly F[]` : un nom fautif ne serait pas ignoré en
+ * silence) et que la page donne un libellé à chacun (`labels: Record<F, string>`). Ce qu'il ne vérifie pas : le formulaire est un
  * `EntryForm<string>` (écart accepté de R202 : `reactive` d'un type indexé par le `F` générique épuise la mémoire de `vue-tsc`),
  * si bien que `form.nimporteQuoi` compile.
  */
@@ -34,11 +36,11 @@ export type QualityEntryInput<F extends string> = {
 } & { [K in F]: string }
 
 /**
- * Le formulaire d'une section : la langue et le groupe de traduction choisis, plus une chaîne par nom de `F` (une saisie, vide
- * tant que rien n'est écrit). `locale` est typée `Locale` et non laissée à l'inférence de `reactive`, qui la réduirait au
- * littéral de sa valeur initiale.
+ * Le formulaire d'une section : la langue et le groupe de traduction choisis (`EntryFormPlacement`), plus une chaîne par nom de
+ * `F` (une saisie, vide tant que rien n'est écrit). `locale` est typée `Locale` et non laissée à l'inférence de `reactive`, qui
+ * la réduirait au littéral de sa valeur initiale.
  */
-export type EntryForm<F extends string> = { locale: Locale; translationGroup: string } & Record<F, string>
+export type EntryForm<F extends string> = EntryFormPlacement & Record<F, string>
 
 /**
  * Un champ par clé de `options`, sa valeur lue par `valueOf` : le formulaire à blanc (`() => ''`), le corps d'écriture
@@ -121,16 +123,16 @@ export interface QualityEntrySource<E, I> {
 }
 
 /** Ce que la fabrique `entryField` lit, hors le nom : la prose est celle de la liste de `proseFields.ts`, jamais redite. */
-export interface EntryFieldOptions {
+export interface EntryFieldOptions<F extends string> {
   readonly control: 'text' | 'textarea'
   /** La liste des champs de prose de l'instance (`proseFields.ts`, la source) : `prose` est « le nom y figure ». */
-  readonly proseFields: readonly string[]
+  readonly proseFields: readonly F[]
   readonly copiedToNewVersion: boolean
   readonly column: boolean
 }
 
 /** Un champ de la liste d'une section (`entryFieldsOf` l'appelle) : sa prose se lit de la liste de `proseFields.ts`, jamais redite. */
-export function entryField<F extends string>(name: F, options: EntryFieldOptions): QualityEntryField<F> {
+export function entryField<F extends string>(name: F, options: EntryFieldOptions<F>): QualityEntryField<F> {
   const { proseFields, ...rest } = options
 
   return { name, ...rest, prose: proseFields.includes(name) }
@@ -150,11 +152,12 @@ export interface QualityFieldOptions {
 
 /**
  * La liste des champs d'une instance, dans l'ordre des clés de son record, chaque défaut posé ici. La prose est celle de
- * `proseFields` (`proseFields.ts`), jamais redite dans le record.
+ * `proseFields` (`proseFields.ts`), jamais redite dans le record. `F` vient du record seul (`NoInfer`) : une liste de prose
+ * qui nomme moins de champs ne le rétrécit pas, et un nom que le record ne déclare pas est une erreur de compilation.
  */
 export function entryFieldsOf<F extends string>(
   options: Readonly<Record<F, QualityFieldOptions>>,
-  proseFields: readonly string[],
+  proseFields: readonly NoInfer<F>[],
 ): readonly QualityEntryField<F>[] {
   const fields: QualityEntryField<F>[] = []
 

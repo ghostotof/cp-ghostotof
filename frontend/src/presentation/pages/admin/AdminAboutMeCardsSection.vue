@@ -115,7 +115,6 @@ const form = reactive<MeCardForm>({
 /** Aide du sélecteur de catégorie en édition (issue #578). */
 const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 
-// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
 const formState = useEntryFormState()
 const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 

@@ -85,8 +85,8 @@ const props = defineProps<{
    * clés sont les noms de `F`.
    */
   fieldOptions: Readonly<Record<F, QualityFieldOptions>>
-  /** Les champs de prose de l'instance (`proseFields.ts`) : ceux que l'assistant envoie et remplace. */
-  proseFields: readonly string[]
+  /** Les champs de prose de l'instance (`proseFields.ts`), chacun un champ du record : ceux que l'assistant envoie et remplace. */
+  proseFields: readonly F[]
   /** Le libellé traduit de chaque champ, un par nom de `F` : un libellé manquant est refusé, un libellé en trop n'est pas vu. */
   labels: Readonly<Record<F, string>>
   /** Le champ qui nomme l'entrée : sa ligne dans le tableau, « Version de », la question de la suppression. */
@@ -134,7 +134,6 @@ const form = reactive<EntryForm<string>>({
   ...fieldRecord(props.fieldOptions, () => ''),
 })
 
-// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
 const formState = useEntryFormState()
 const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 

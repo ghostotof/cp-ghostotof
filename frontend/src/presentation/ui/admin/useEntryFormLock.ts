@@ -29,8 +29,7 @@ export interface EntryFormLock {
 
 /**
  * Le verrou d'un formulaire par entrée (#748, D-a et D-b de l'auteur ; R92) : le prédicat, l'état et
- * les identifiants ARIA sont écrits ici une fois pour les huit formulaires (incidents, contributions,
- * CV sans identité, études de cas, principes, traits, cartes du site, cartes « moi »). Le texte
+ * les identifiants ARIA sont écrits ici une fois pour les formulaires par entrée. Le texte
  * (`EntryFormLockHint`) et les `aria-describedby` lisent le même état : une référence vers un texte
  * absent est impossible par construction.
  *

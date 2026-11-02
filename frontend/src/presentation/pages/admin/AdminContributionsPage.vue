@@ -38,7 +38,6 @@ const { t } = useI18n()
 const { contributions, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminContributions()
 
-// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
 const formState = useEntryFormState()
 const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 

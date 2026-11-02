@@ -24,7 +24,7 @@ export interface UseTranslatedFormOptions<F extends string> {
   /**
    * L'objet réactif du formulaire, passé tel quel : le composable en lit la prose (`hasProse`, la prose envoyée) et la remplace
    * par la proposition (`proposeFrom`). La page le déclare donc **avant** l'appel : `vue-tsc` refuse un usage avant la
-   * déclaration (TS2448).
+   * déclaration (TS2448), ce qu'un getter ne montrerait pas.
    */
   readonly form: Record<F, string>
   /** Les champs de prose du formulaire, ceux que la traduction envoie et remplace (`presentation/pages/admin/proseFields.ts`). */
@@ -79,10 +79,11 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
    * ne se passe rien : le formulaire reste intact et `translationErrorText` dit l'échec. Sinon, `switchForm(sourceLocale)` est appelée
    * **avant** que la prose soit remplacée : la page y pose ce qu'elle seule sait (l'entrée éditée vidée, la langue cible, le
    * groupe source, l'avis de proposition : `switchToProposedCreation`). Les deux gestes se font dans le point de contrôle qui
-   * juge la réponse courante : la proposition est posée sous ce jugement, jamais une micro-tâche plus tard (R172). Une exception
+   * juge la réponse courante : la proposition est posée sous ce jugement, jamais une micro-tâche plus tard (R172 ; règle
+   * `frontend-backoffice.md`, « `proposeFrom` sends the prose »). Une exception
    * de `switchForm` remonte au gestionnaire `@translate` de la page, dont Vue passe le rejet à `app.config.errorHandler` : le
    * formulaire peut rester à moitié basculé, une faute de programmation que le gestionnaire d'erreurs rend visible (limite
-   * acceptée, R187).
+   * acceptée, R187 ; même règle, même puce).
    */
   readonly proposeFrom: (targetLocale: Locale, switchForm: (sourceLocale: Locale) => void) => Promise<void>
   /**
@@ -110,7 +111,7 @@ export interface UseTranslatedFormResult extends Omit<UseAdminTranslationResult,
  * Ce qu'un formulaire à traduction assistée tient à part du formulaire lui-même (ADR 0004 D4) : l'identité qui périme la
  * traduction, le refus de la page, la demande de proposition et la bascule du formulaire, la suppression d'une entrée, le texte
  * de l'échec, et ce que la prose en tire — lecture seule pendant la traduction, décrite par un texte d'aide, jamais
- * d'identifiant pendant. Écrit une fois pour les neuf formulaires.
+ * d'identifiant pendant. Écrit une fois pour les formulaires à traduction assistée.
  *
  * Il appelle `useAdminTranslation` et en rend ce qu'une page lit, sans `expire` ni `translate` (`requestProposal` en est la
  * porte) : un geste de page périme par son identité (`renewForm`) ou par `removeEntry`. La page garde ce qui lui est propre : le

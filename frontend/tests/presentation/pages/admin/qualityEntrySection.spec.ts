@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   entryField,
   entryFieldsOf,
   fieldRecord,
   QUALITY_PRINCIPLE_FIELD_OPTIONS,
   QUALITY_TRAIT_FIELD_OPTIONS,
+  type QualityEntryField,
 } from '../../../../src/presentation/pages/admin/qualityEntrySection'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
@@ -25,6 +26,20 @@ describe('entryFieldsOf', () => {
     const fields = entryFieldsOf({ title: { control: 'text' }, iconKey: { control: 'text' } }, ['title'])
 
     expect(fields.map((field) => [field.name, field.prose])).toEqual([['title', true], ['iconKey', false]])
+  })
+
+  it('refuse à la compilation un nom de prose que le record ne déclare pas', () => {
+    // Le contrôle est celui de `vue-tsc` : la directive est elle-même une erreur (« inutilisée ») si la liste n'est plus typée par `F`.
+    // @ts-expect-error `bogus` n'est pas un champ de ce record
+    const fields = entryFieldsOf({ title: { control: 'text' } }, ['bogus'])
+
+    expect(fields.map((field) => field.prose)).toEqual([false])
+  })
+
+  it('garde les noms du record quand la liste de prose en nomme moins (elle ne rétrécit pas F)', () => {
+    const fields = entryFieldsOf({ title: { control: 'text' }, iconKey: { control: 'text' } }, ['title'] as const)
+
+    expectTypeOf(fields).toEqualTypeOf<readonly QualityEntryField<'title' | 'iconKey'>[]>()
   })
 })
 
@@ -50,8 +65,8 @@ describe('entryField', () => {
   it('lit la prose de la liste de proseFields.ts, le nom n\'étant écrit qu\'une fois', () => {
     const options = { control: 'text', copiedToNewVersion: false, column: false } as const
 
-    expect(entryField('title', { ...options, proseFields: ['title'] }).prose).toBe(true)
-    expect(entryField('iconKey', { ...options, proseFields: ['title'] }).prose).toBe(false)
+    expect(entryField<'title' | 'iconKey'>('title', { ...options, proseFields: ['title'] }).prose).toBe(true)
+    expect(entryField<'title' | 'iconKey'>('iconKey', { ...options, proseFields: ['title'] }).prose).toBe(false)
   })
 })
 

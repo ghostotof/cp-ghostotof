@@ -38,7 +38,6 @@ import type { AdminIncident } from '../../../domain/admin/incidents/entities/Adm
 const { t } = useI18n()
 const { incidents, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminIncidents()
 
-// L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
 const formState = useEntryFormState()
 const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 
