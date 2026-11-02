@@ -14551,6 +14551,34 @@ tâche, ou `refactor(frontend):` si l'agent le juge plus juste, dit au rendu.
 
 ---
 
+### Task R216b : Les formulaires par entrée — les deux commentaires recopiés, le décompte de la règle
+
+Décision de l'auteur, 2026-11-02 (questions rendues par R216, 07a0c66f). Constats : la classe de St17-10 et St17-11 (un
+commentaire recopié dans chaque formulaire, un décompte d'appelants) ; formes voisines que R216 a laissées. Exécutée **après R217**,
+avant R218.
+
+**Files :**
+- Modify : les sept formulaires par entrée qui portent « Ce qui fait l'identité du formulaire… » ou « La suppression ne change
+  rien au formulaire… » (`grep -rn "Ce qui fait l'identité du formulaire\|La suppression ne change rien au formulaire"
+  frontend/src` : 16 lignes à 07a0c66f), et le docblock qu'ils redisent (le nommer)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` l. ~189 (« what the nine forms share »), **à taille égale ou moindre**
+  (39 449 octets à 07a0c66f, plafond de prudence du brief)
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté (2 661 à 07a0c66f).
+- [ ] **Step 2 : retirer la redite** — dans chaque formulaire, le commentaire qui redit le docblock part ; le docblock reste la
+  seule source et dit ce qu'il garantit. Si une page fait **un choix qui lui est propre** (un champ d'identité différent, une
+  suppression qui touche le formulaire), une ligne le dit, sans recopier le reste ; chaque ligne gardée est dite au commit, avec sa
+  raison.
+- [ ] **Step 3 : la règle** — « the nine forms share » remplacé par une formule sans décompte (par exemple « what the per-entry
+  forms share ») ; `grep -nE '\b(seven|eight|nine)\b' .claude/rules/frontend-backoffice.md` relu, chaque décompte d'appelants
+  restant remplacé de même ou dit ; recherches de moignons du brief ; taille avant/après au commit.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build`,
+  `tools/check-claude-rules.sh`, codes lus sans pipe ; le `grep` du Step « Files » rend 0 ligne, ou chaque ligne gardée dite.
+  Refactoring de commentaires : « Mutations : aucune (commentaires seuls) », filet au corps du commit.
+- [ ] **Step 5 : commit** — `refactor(frontend): les formulaires par entrée sans commentaire recopié, la règle sans décompte (#748)`.
+
+---
+
 ### Task R218 : Les libellés lus du catalogue (1/2) — les constantes écrites une fois, les quatre specs des pages par entrée
 
 Constats : D3 ; St17-15 ≈ Sp17-15 (en partie) ; St17-16 ; Sp17-21 (`as DOMWrapper`) ; refactoring.
