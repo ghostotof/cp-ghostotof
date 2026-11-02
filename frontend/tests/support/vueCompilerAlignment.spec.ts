@@ -63,6 +63,12 @@ function shellQuoted(value: string): string {
 /**
  * Ce que le shell lirait **hors** de guillemets simples dans `text` : le texte entre `'…'` est retiré, un `\x` hors guillemets
  * est un caractère littéral (`'\''` : une apostrophe). Un `$(` qui reste ici serait développé par un terminal qui reçoit le message.
+ *
+ * **Limite** : toute apostrophe hors guillemets ouvre un guillemet, et l'apostrophe française de la prose en est une (`l'une`, `d'un`).
+ * Après elle, les guillemets s'apparient à l'envers : un `$(` hors guillemets passe pour entre guillemets et n'est pas vu, et un `$(`
+ * entre guillemets passe pour dehors et rougit à tort. Les cas qui l'appellent jugent donc des messages dont la prose, avant leurs
+ * valeurs, n'en porte aucune ; le message qui en porte une (`retirer l'une`, un compilateur déclaré dans les deux sections) est
+ * jugé sur ses deux commandes par `toContain`, non par cette fonction.
  */
 function outsideSingleQuotes(text: string): string {
   let outside = ''
@@ -347,7 +353,6 @@ describe('@vue/compiler-dom reste la version de vue', () => {
     const problems = alignmentProblems(manifest, lock)
 
     expect(problems).toHaveLength(1)
-    expect(problems[0]).toContain('devDependencies')
     expect(problems[0]).toContain("npm pkg delete 'dependencies.@vue/compiler-dom'")
     expect(problems[0]).toContain("npm pkg delete 'devDependencies.@vue/compiler-dom'")
 

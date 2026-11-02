@@ -65,7 +65,7 @@ function chooseLocale(value: string): void {
 
   // Le formulaire n'est pas monté : aucune proposition parquée, rien à retirer.
   const form = settingsForm.value
-  if (form !== null) {
+  if (null !== form) {
     form.dropPendingProposalNotFor(value)
   }
 }

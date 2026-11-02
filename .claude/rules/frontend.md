@@ -141,8 +141,10 @@ to `fr`.
 **The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
 vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
 carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A route's language is
-`routeLocale(route, interfaceLocale.value)`. `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/`; a test that
-needs such a language sets it with `setUnsupportedLocale()` (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
+`routeLocale(route, interfaceLocale.value)`. `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/` and any other
+read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`, `i18n.global.locale`; the router's write in
+`syncLocale` is not a read); a test that needs such a language sets it with `setUnsupportedLocale()`
+(`tests/support/unsupportedLocale.ts`), not `'de' as never`.
 
 Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
 meaningful (see Lint below):

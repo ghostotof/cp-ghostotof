@@ -2,17 +2,19 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useIncidents } from '../../application/incidents/useIncidents'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { parseIsoDate } from '../format/isoDate'
 import RichText from '../ui/RichText.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 const { incidents, isLoading, hasError } = useIncidents()
 
 /**
  * Le contrat public expose une date ISO ; la mise en forme reste ici, dans la
  * présentation, et suit la langue affichée.
  */
-const dateFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'long', day: 'numeric' }))
+const dateFormatter = computed(() => new Intl.DateTimeFormat(currentLocale.value, { year: 'numeric', month: 'long', day: 'numeric' }))
 
 function formatDate(isoDate: string): string {
   const parsed = parseIsoDate(isoDate)

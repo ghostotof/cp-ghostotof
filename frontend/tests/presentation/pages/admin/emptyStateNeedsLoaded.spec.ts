@@ -21,10 +21,10 @@ const PAGES_DIRECTORY = resolve(import.meta.dirname, '../../../../src/presentati
 const EMPTY_STATE = /t\('admin\.[A-Za-z.]+\.empty'\)|\{\{\s*texts\.empty\s*\}\}/g
 const IS_LOADED = /\bisLoaded\b|\bis[A-Z][A-Za-z]*Loaded\b/g
 /**
- * Les fichiers de `PAGES_DIRECTORY` qui composent un état vide, tous lus par la garde (#748, R203, Q12 (A)) : dix des treize `.vue`
- * du dossier (les deux sections de Qualité n'en font qu'une, R190 ; `AdminAboutPage`, `AdminAboutSettingsForm` et `AdminQualityPage`
- * n'en composent aucun dans leur gabarit). Une égalité, non un plancher : un fichier qui perd son état vide, ou que l'expression
- * ne reconnaît plus, rougit au lieu de sortir en silence, et un fichier qui en gagne un aussi, lu alors par la garde.
+ * Le nombre de fichiers de `PAGES_DIRECTORY` qui composent un état vide, tous lus par la garde (#748, R203, Q12 (A)) : les `.vue`
+ * du dossier qui n'en composent aucun dans leur gabarit n'y comptent pas, et les deux sections de Qualité n'en font qu'une (R190).
+ * Une égalité, non un plancher : un fichier qui perd son état vide, ou que l'expression ne reconnaît plus, rougit au lieu de sortir
+ * en silence, et un fichier qui en gagne un aussi, lu alors par la garde ; le message dit les fichiers lus.
  */
 const FILES_WITH_EMPTY_STATE = 10
 

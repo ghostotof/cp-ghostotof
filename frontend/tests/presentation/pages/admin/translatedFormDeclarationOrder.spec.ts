@@ -10,13 +10,13 @@ import { SRC_SCRIPTS } from '../../../support/srcSources'
  * lecture étant dans une fermeture. `form`, lui, est passé tel quel : `vue-tsc` refuse sa déclaration tardive (TS2448, R189), donc
  * la garde ne le relit pas. L'ordre n'est donc pas une convention écrite dans la règle : c'est un contrôle.
  *
- * Lu : chaque fichier de `presentation/pages/admin/` dont le `<script>` appelle `useTranslatedForm` (huit fichiers : la section
- * générique de Qualité, R190, est lue comme les autres, par son dossier et son appel, sans liste de noms). Pour chaque appel, les
- * options `isRefused` et `identity` ; les identifiants qu'elles lisent, puis, de proche en proche, ceux que lisent les initialiseurs
- * des constantes du `setup` ainsi atteintes (`isAnyOrderDirty` lit `categoryOrders`, `lock` lit `isEditing`…) : chacun déclaré au
- * niveau du `setup` doit l'être, **fin de sa déclaration comprise**, avant le début de l'appel (la déclaration qui contient
- * l'appel, `const { isRefused } = useTranslatedForm(…)`, est donc refusée si une option la lit). Le message dit le fichier,
- * l'identifiant, l'option qui le lit et les deux lignes.
+ * Lu : chaque fichier de `presentation/pages/admin/` dont le `<script>` appelle `useTranslatedForm` (`CALLING_FILES` dit combien ;
+ * la section générique de Qualité, R190, est lue comme les autres, par son dossier et son appel, sans liste de noms). Pour chaque
+ * appel, les options `isRefused` et `identity` ; les identifiants qu'elles lisent, puis, de proche en proche, ceux que lisent les
+ * initialiseurs des constantes du `setup` ainsi atteintes (`isAnyOrderDirty` lit `categoryOrders`, `lock` lit `isEditing`…) :
+ * chacun déclaré au niveau du `setup` doit l'être, **fin de sa déclaration comprise**, avant le début de l'appel (la déclaration
+ * qui contient l'appel, `const { isRefused } = useTranslatedForm(…)`, est donc refusée si une option la lit). Le message dit le
+ * fichier, l'identifiant, l'option qui le lit et les deux lignes.
  *
  * Non lu, par choix : une déclaration de fonction (`function f() {}`, remontée : lisible à tout endroit) ; l'initialiseur d'une
  * constante qui est elle-même une fonction (`const f = () => …`) : son corps ne court qu'à son appel, que la garde ne suit pas ; un
@@ -279,17 +279,20 @@ describe("ce que lit le refus de traduction est déclaré avant l'appel de useTr
   })
 
   it("la garde lit les formulaires à traduction assistée et ce que leurs options lisent (#748, R189b)", () => {
-    // Une égalité, non un plancher (#748, R203, Q12 (A)) : huit fichiers appellent le composable, chacun une fois (sept pages ou
-    // sections par entrée, dont la section générique de Qualité, montée deux fois, R190, et les réglages « À propos »). Un fichier
-    // qui sort de la garde (un appel renommé, un dossier déplacé) rougit au lieu de sortir en silence, et un fichier qui entre
-    // aussi : il se lit alors, et le message dit le nombre à changer.
+    // Une égalité, non un plancher (#748, R203, Q12 (A)) : `CALLING_FILES` fichiers appellent le composable, chacun une fois (la
+    // section générique de Qualité, montée deux fois, n'en fait qu'un, R190). Un fichier qui sort de la garde (un appel renommé, un
+    // dossier déplacé) rougit au lieu de sortir en silence, et un fichier qui entre aussi : il se lit alors, et le message dit la
+    // constante à changer.
     const found = sites.map((site) => site.path)
     const callCount = sites.reduce((total, site) => total + site.inspection.calls, 0)
     const filesMessage = `fichiers lus : ${found.join(', ')}. Changer CALLING_FILES, en tête de ce fichier, si l'un est entré ou sorti`
     expect(found.length, filesMessage).toBe(CALLING_FILES)
-    expect(callCount,`${callCount} appels de ${COMPOSABLE} pour ${CALLING_FILES} fichiers : un appel par fichier`).toBe(CALLING_FILES)
-    // Chaque appel lit au moins `isSubmitting` ou `isAnySaving`, `props` ou `lock`… : un site qui n'atteint plus aucune déclaration
-    // n'est plus lu. Un plancher par site, à dessein : le nombre exact de lectures bouge avec chaque option qu'une page lit en plus.
+    expect(callCount, `${callCount} appels de ${COMPOSABLE} pour ${CALLING_FILES} fichiers : un appel par fichier`).toBe(CALLING_FILES)
+    // Un plancher par site, à dessein (D4, #748, R217), non une table exacte : le nombre de déclarations que lit un appel diffère d'une
+    // page à l'autre et bouge avec chaque constante qu'une option lit en plus, et une table rougirait à chacune. Deux est le
+    // minimum d'un appel dont `isRefused` et `identity` lisent chacune quelque chose du `setup` (l'état d'envoi, l'identité de
+    // l'entrée) ; un site qui n'en atteint plus qu'une a perdu la lecture d'une option, ou la lit par une forme que la garde ne suit
+    // pas, et n'est plus jugé. Ce que le plancher n'attrape pas : un site qui perd une partie de ses lectures et en garde deux.
     for (const { path, inspection } of sites) {
       expect({ path, enough: inspection.reads >= 2 }).toEqual({ path, enough: true })
     }

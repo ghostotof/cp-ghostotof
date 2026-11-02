@@ -307,9 +307,12 @@ interface DeferredHook {
 /**
  * Les hooks différés : ceux de `vue` et de `vue-router` dont le rappel s'exécute après le montage, les appels globaux qui diffèrent
  * une fonction, et les méthodes d'une promesse. Trois listes, chacune écrite une fois, ici : `DEFERRED_HOOKS` (chaque hook, la
- * position de ses rappels, quand il court après le rendu), `GLOBAL_DEFERRALS` (parmi eux, ceux qui s'écrivent aussi sur `window`)
- * et `PROMISE_METHODS` (ceux qui se jugent sur le nom seul, quel que soit le receveur). Un minuteur s'ajoute à `DEFERRED_HOOKS` et à
- * `GLOBAL_DEFERRALS`, une méthode de promesse à `DEFERRED_HOOKS` et à `PROMISE_METHODS`, tout autre hook à `DEFERRED_HOOKS` seule.
+ * position de ses rappels, quand il court après le rendu), `GLOBAL_DEFERRALS` (parmi eux, ceux qui s'écrivent aussi sur `window`,
+ * `globalThis` ou `self`) et `PROMISE_METHODS` (ceux qui se jugent sur le nom seul, quel que soit le receveur).
+ *
+ * Pour ajouter un hook : l'inscrire à la première liste, puis à la deuxième si c'est un minuteur ou un autre appel global, ou à la
+ * troisième si c'est une méthode de promesse, **puis écrire son cas dans `sourceText.spec.ts`** (un cas par hook de la première
+ * liste : celui d'un hook retiré de la liste rougit, c'est ce qui prouve qu'elle est lue).
  */
 const DEFERRED_HOOKS: ReadonlyMap<string, DeferredHook> = new Map([
   ['onMounted', { callback: 0 }],
