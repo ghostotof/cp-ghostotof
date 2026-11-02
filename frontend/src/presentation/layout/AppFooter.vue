@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
+import { routeLocale } from '../router/routeLocale'
 import { getAppVersion } from '../../infrastructure/config/getAppVersion'
 import IconDisc3 from '~icons/lucide/disc-3'
 import IconTag from '~icons/lucide/tag'
@@ -12,7 +13,8 @@ defineProps<{
   siteIdentity: SiteIdentity
 }>()
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const interfaceLocale = useCurrentLocale()
 const route = useRoute()
 const year = new Date().getFullYear()
 
@@ -28,10 +30,7 @@ const versionTitle = computed(() =>
 )
 
 /** Même repli route → i18n que AppHeader.homeLink, pour rester correct sur la page 404. */
-const currentLocale = computed<Locale>(() => {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-})
+const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
 </script>
 
 <template>

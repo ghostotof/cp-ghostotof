@@ -65,7 +65,8 @@ paths:
 - **The sign-in-again link: one builder, one component** (#748, R6). It used to be computed in `AppHeader`,
   `SessionEndedBanner` and `McpConnectionsPage`, the language read from the route in one and from i18n in the others.
   - `routeLocale(route, fallback)` (`presentation/router/routeLocale.ts`): the route's `locale` param when it is a
-    supported locale, else the fallback (the i18n language; the 404 page has no `:locale`). `AppHeader`'s `homeLink` uses it too.
+    supported locale, else the fallback (`useCurrentLocale()`, the interface language, `fr` when the site does not carry it;
+    the 404 page has no `:locale`). `AppHeader`'s `homeLink`, `LocaleSwitcher` and `AppFooter` use it too.
   - `loginLocation(route, fallback, flag)` (`presentation/router/loginLocation.ts`, R16) is the **only** builder of a link
     to the login: `login` in the route's language, the flag (`'session-ended'` → `expired=1`, `'reauthentication'` →
     `reauth=1`, the single value `1`), and `redirect` = the route's `fullPath` (the page the person comes back to)

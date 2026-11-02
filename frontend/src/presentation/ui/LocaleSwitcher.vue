@@ -2,20 +2,31 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES, type Locale } from '../../domain/portfolio/entities/Locale'
+import { routeLocale } from '../router/routeLocale'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-const currentLocale = computed(() => route.params.locale as Locale)
+const interfaceLocale = useCurrentLocale()
+const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
 
-/** Change de langue en restant sur la même page (même chemin, locale remplacée). */
+/**
+ * Change de langue en restant sur la même page (même chemin, locale remplacée).
+ *
+ * Le segment remplacé est le **premier** (`/fr/about` → `/en/about`). La langue courante peut venir de l'interface et non
+ * de la route (la page 404 n'a pas de segment `:locale`) : un `replace` sur tout le chemin changerait alors `/frogs` en
+ * `/engs`. Un chemin qui ne commence pas par la langue reste tel quel.
+ */
 function switchTo(target: Locale): void {
   if (target === currentLocale.value) {
     return
   }
-  router.push({ path: route.path.replace(`/${currentLocale.value}`, `/${target}`), hash: route.hash })
+  const prefix = `/${currentLocale.value}`
+  const startsWithLocale = route.path === prefix || route.path.startsWith(`${prefix}/`)
+  router.push({ path: startsWithLocale ? `/${target}${route.path.slice(prefix.length)}` : route.path, hash: route.hash })
 }
 </script>
 

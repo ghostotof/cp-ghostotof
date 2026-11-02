@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
 import BaseCard from '../ui/BaseCard.vue'
 
@@ -8,7 +9,8 @@ defineProps<{
   additionalTechnologies: readonly Technology[]
 }>()
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 </script>
 
 <template>
@@ -64,7 +66,7 @@ const { t, locale } = useI18n()
            différentes, que le lecteur se pose l'une après l'autre. -->
       <p class="mt-4 mb-0">
         <RouterLink
-          :to="`/${locale}/stack`"
+          :to="`/${currentLocale}/stack`"
           class="link-light"
         >
           {{ t('technologies.seeStack') }}

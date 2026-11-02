@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useOAuthConsent } from '../../application/mcp/useOAuthConsent'
 import { consentParamsFromQuery } from '../../domain/mcp/services/consentParams'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useDeliberateActivation } from '../ui/useDeliberateActivation'
 import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
@@ -40,7 +40,8 @@ import SignInAgainLink from '../ui/SignInAgainLink.vue'
  * la route de connexion honorant `reauth=1` pour une personne déjà connectée.
  */
 
-const { t, locale: i18nLocale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 const route = useRoute()
 const { state, request, failure, load, reload, approve, deny } = useOAuthConsent()
 
@@ -101,13 +102,13 @@ const errorMessage = computed<string | null>(() => {
  * est une étape d'un flux OAuth qui finit par `location.replace` vers le client ; un second onglet laisserait la
  * demande ouverte dans le premier. « Connexion » de l'en-tête suit la même règle.
  */
-const reauthenticateTarget = computed(() => switchAccountLocation(route, i18nLocale.value as Locale))
+const reauthenticateTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /**
  * « Changer de compte » : la connexion rouverte pour une personne déjà
  * connectée (`reauth=1`), avec toute la requête en retour (`fullPath`).
  */
-const switchAccountTarget = computed(() => switchAccountLocation(route, i18nLocale.value as Locale))
+const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /**
  * Le compte connecté a changé depuis l'affichage (un autre onglet s'est

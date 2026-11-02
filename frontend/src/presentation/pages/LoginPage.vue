@@ -6,12 +6,15 @@ import { useAuth } from '../../application/auth/useAuth'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
+import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { routeLocale } from '../router/routeLocale'
 import { isReauthentication } from '../router/reauthentication'
 import { isSessionEnded } from '../router/sessionEnded'
 import { internalRedirectTarget } from '../router/internalRedirect'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const interfaceLocale = useCurrentLocale()
 const route = useRoute()
 const router = useRouter()
 const { login, user, isAuthenticated } = useAuth()
@@ -49,8 +52,7 @@ const isSubmitting = ref(false)
 const errorMessage = ref('')
 
 function currentLocale(): Locale {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
+  return routeLocale(route, interfaceLocale.value)
 }
 
 /**

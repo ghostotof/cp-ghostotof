@@ -138,6 +138,12 @@ falls back to parsing the URL's first path segment so the 404 page itself stays 
 `/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
 to `fr`.
 
+**The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
+vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
+carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A route's language is
+`routeLocale(route, interfaceLocale.value)`. `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/`; a test that
+needs such a language sets it with `setUnsupportedLocale()` (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
+
 Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
 meaningful (see Lint below):
 - `infrastructure/i18n/locales/{fr,en}.json` — short UI-chrome strings only (nav labels, buttons, aria-labels,

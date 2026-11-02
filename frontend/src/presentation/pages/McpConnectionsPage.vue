@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { formatInstant } from '../format/instant'
 import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
@@ -47,11 +47,11 @@ import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
  * elle ne dit rien d'une révocation.
  */
 
-const { t, locale: i18nLocale } = useI18n()
+const { t } = useI18n()
 const { status, connections, terminatedTruncated, revokingId, lastOutcome, refusal, load, revoke } = useMcpConnections()
 const route = useRoute()
 
-const currentLocale = computed(() => i18nLocale.value as Locale)
+const currentLocale = useCurrentLocale()
 
 // Deux refus, deux liens (#748, R7). Une session finie : `SignInAgainLink`, un nouvel onglet qui ramène à cette
 // page. Un refus réel (le compte n'a pas, ou plus, l'accès de confiance ; une signature CSRF périmée) :

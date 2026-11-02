@@ -5,10 +5,11 @@ import CookieNotice from '../../../src/presentation/layout/CookieNotice.vue'
 import { COOKIE_NOTICE_STORAGE_KEY } from '../../../src/application/cookieNotice/useCookieNotice'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 const Stub = { template: '<div />' }
 
-async function mountNotice(locale: 'fr' | 'en' = 'fr') {
+async function mountNotice(locale: 'fr' | 'en' = 'fr', interfaceLanguage?: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -21,6 +22,9 @@ async function mountNotice(locale: 'fr' | 'en' = 'fr') {
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
+  if (undefined !== interfaceLanguage) {
+    setUnsupportedLocale(i18n, interfaceLanguage)
+  }
 
   return mount(CookieNotice, { global: { plugins: [router, i18n] } })
 }
@@ -42,6 +46,12 @@ describe('CookieNotice', () => {
 
     expect(wrapper.get('a').attributes('href')).toBe('/en/privacy-policy')
     expect(wrapper.text()).toContain('nothing to accept or refuse')
+  })
+
+  it('links to the privacy policy in the default language when the interface language is not one of the site (#748, R213)', async () => {
+    const wrapper = await mountNotice('fr', 'de')
+
+    expect(wrapper.get('a').attributes('href')).toBe('/fr/privacy-policy')
   })
 
   it('offers a single action: there is no choice to make, hence no refusal', async () => {

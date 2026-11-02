@@ -12,6 +12,8 @@ async function mountSwitcher(initialPath = '/fr/about') {
     routes: [
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/about', name: 'about', component: StubPage },
+      // Comme la page 404 de l'application : aucun segment `:locale`.
+      { path: '/:pathMatch(.*)*', name: 'not-found', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -41,5 +43,21 @@ describe('LocaleSwitcher', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/en/about')
+  })
+
+  it("page 404 : la langue de l'interface est la langue courante (#748, R213)", async () => {
+    const { wrapper } = await mountSwitcher('/frogs')
+
+    const fr = wrapper.findAll('button').find((button) => button.text() === 'FR')
+    expect(fr?.attributes('aria-current')).toBe('true')
+  })
+
+  it("page 404 : un chemin qui ne commence pas par la langue reste tel quel, `/frogs` ne devient pas `/engs` (#748, R213)", async () => {
+    const { wrapper, router } = await mountSwitcher('/frogs')
+
+    await wrapper.findAll('button').find((button) => button.text() === 'EN')?.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/frogs')
   })
 })

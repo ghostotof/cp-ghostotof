@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { ExperienceTechnology } from '../../domain/experience/entities/ExperienceTechnology'
 import type { ExperienceTechnologyRepository } from '../../domain/experience/repositories/ExperienceTechnologyRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 
 export const EXPERIENCE_TECHNOLOGY_REPOSITORY: InjectionKey<ExperienceTechnologyRepository> = Symbol(
   'ExperienceTechnologyRepository',
@@ -30,7 +29,7 @@ export function useExperienceTechnologies(): UseExperienceTechnologiesResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const technologies = ref<readonly ExperienceTechnology[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -40,7 +39,7 @@ export function useExperienceTechnologies(): UseExperienceTechnologiesResult {
     hasError.value = false
 
     try {
-      technologies.value = await repository.list(locale.value as Locale)
+      technologies.value = await repository.list(currentLocale.value)
     } catch {
       hasError.value = true
     } finally {
@@ -48,7 +47,7 @@ export function useExperienceTechnologies(): UseExperienceTechnologiesResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { technologies, isLoading, hasError }
 }

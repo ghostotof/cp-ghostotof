@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAccountPasswordSetup } from '../../application/account/useAccountPasswordSetup'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
+import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { routeLocale } from '../router/routeLocale'
 import {
   MAX_PASSWORD_BYTES,
   MIN_PASSWORD_LENGTH,
@@ -11,7 +13,8 @@ import {
 } from '../../domain/account/services/passwordLength'
 import BaseTextInput from '../ui/BaseTextInput.vue'
 
-const { t, locale: i18nLocale } = useI18n()
+const { t } = useI18n()
+const interfaceLocale = useCurrentLocale()
 const route = useRoute()
 const router = useRouter()
 const { state, errorReason, validate, submit } = useAccountPasswordSetup()
@@ -67,8 +70,7 @@ async function takeTokenFromUrl(): Promise<string> {
 }
 
 function currentLocale(): Locale {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (i18nLocale.value as Locale)
+  return routeLocale(route, interfaceLocale.value)
 }
 
 const loginPath = computed(() => `/${currentLocale()}/login`)

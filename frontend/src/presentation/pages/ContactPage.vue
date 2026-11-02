@@ -3,17 +3,16 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useContactForm } from '../../application/contact/useContactForm'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
+import { routeLocale } from '../router/routeLocale'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const interfaceLocale = useCurrentLocale()
 const route = useRoute()
 const { name, email, message, honeypot, isSubmitting, isSuccess, errorReason, fieldErrors, submit } = useContactForm()
 
 /** Même repli route → i18n que AppHeader.homeLink, pour construire le lien vers la politique de confidentialité. */
-const currentLocale = computed<Locale>(() => {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-})
+const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
 
 /** Les champs auxquels la page sait rattacher un libellé, sous le champ concerné. */
 const KNOWN_FIELDS = ['name', 'email', 'message'] as const

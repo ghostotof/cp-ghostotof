@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { clientConfiguration, mcpServerUrl } from '../../domain/mcp/services/mcpClientConfiguration'
 import CopyableCode from '../ui/CopyableCode.vue'
 import RichText from '../ui/RichText.vue'
@@ -13,10 +11,9 @@ import RichText from '../ui/RichText.vue'
  * sert jamais. Contenu statique (`infrastructure/portfolio/content`), sauf l'URL
  * du serveur, qui ne se connaît qu'à l'exécution.
  */
-const { locale } = useI18n()
 const { connectAssistantContent: content } = usePortfolioContent()
 
-const currentLocale = computed(() => locale.value as Locale)
+const currentLocale = useCurrentLocale()
 
 /**
  * L'origine de la page, celle que le serveur accepte (`allowed_hosts`) : la même

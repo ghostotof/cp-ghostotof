@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { AnonymousCvSection } from '../../domain/anonymousCv/entities/AnonymousCvSection'
 import type { AnonymousCvRepository } from '../../domain/anonymousCv/repositories/AnonymousCvRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { AnonymousCvAccessNotGrantedError } from '../../domain/anonymousCv/errors/AnonymousCvAccessNotGrantedError'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 import { markBaseAccessExpired } from '../auth/useAuth'
@@ -34,7 +33,7 @@ export function useAnonymousCv(): UseAnonymousCvResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const sections = ref<readonly AnonymousCvSection[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -48,7 +47,7 @@ export function useAnonymousCv(): UseAnonymousCvResult {
     needsAccess.value = false
 
     try {
-      const loaded = await repository.list(locale.value as Locale)
+      const loaded = await repository.list(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       sections.value = loaded
     } catch (error) {
@@ -67,7 +66,7 @@ export function useAnonymousCv(): UseAnonymousCvResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { sections, isLoading, hasError, needsAccess, reload: load }
 }

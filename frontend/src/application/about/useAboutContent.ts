@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { AboutContent } from '../../domain/portfolio/entities/AboutContent'
 import type { AboutContentRepository } from '../../domain/about/repositories/AboutContentRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const ABOUT_CONTENT_REPOSITORY: InjectionKey<AboutContentRepository> = Symbol('AboutContentRepository')
@@ -27,7 +26,7 @@ export function useAboutContent(): UseAboutContentResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const aboutContent = ref<AboutContent | null>(null)
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -39,7 +38,7 @@ export function useAboutContent(): UseAboutContentResult {
     hasError.value = false
 
     try {
-      const content = await repository.get(locale.value as Locale)
+      const content = await repository.get(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       aboutContent.value = content
     } catch {
@@ -49,7 +48,7 @@ export function useAboutContent(): UseAboutContentResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { aboutContent, isLoading, hasError }
 }

@@ -6,7 +6,7 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { NavigationGroup } from '../../domain/portfolio/entities/NavigationGroup'
 import { isNavigationGroup, type NavigationEntry } from '../../domain/portfolio/entities/NavigationEntry'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
@@ -121,7 +121,8 @@ function handleAccountMenuCvDownload(): void {
 }
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const interfaceLocale = useCurrentLocale()
 const { tier, isChecking, isSuperAdmin, logout, hasSessionEnded } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
@@ -186,7 +187,7 @@ const baseAccessErrorMessage = computed(() => {
  * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
  * `/:pathMatch(.*)*` sans segment `:locale`).
  */
-const homeLink = computed(() => `/${routeLocale(route, locale.value as Locale)}`)
+const homeLink = computed(() => `/${routeLocale(route, interfaceLocale.value)}`)
 
 /**
  * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance

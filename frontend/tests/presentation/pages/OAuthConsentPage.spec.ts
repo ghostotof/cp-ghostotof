@@ -23,6 +23,7 @@ import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/en
 import { sessionFor } from '../../support/authSession'
 import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -81,6 +82,11 @@ interface Options {
   describeRequest?: ReturnType<typeof vi.fn>
   decide?: ReturnType<typeof vi.fn>
   /**
+   * Vrai : la demande arrive sur une route sans segment `:locale`, sous une langue d'interface hors du site (`de`) ; les
+   * liens vers la connexion ne peuvent plus lire leur langue que de l'interface (#748, R213).
+   */
+  withoutRouteLocale?: boolean
+  /**
    * Faux : la page n'a pas encore été visible et active le délai voulu, les
    * boutons restent inactifs (protection contre le double-clickjacking). Vrai
    * par défaut : le harnais fait passer le délai, la page a le focus.
@@ -100,21 +106,22 @@ async function mountPage(options: Options = {}): Promise<Harness> {
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
+  if (true === options.withoutRouteLocale) {
+    setUnsupportedLocale(i18n, 'de')
+  }
+  const consentMeta = { ...appRouter.resolve({ name: 'oauth-consent', params: { locale: 'fr' } }).meta }
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       // La `meta` du routeur de l'application : `SignInAgainLink` y lit `signInInSameTab`, `loginLocation` `requiresAuth`.
       // Une route qui perd l'une ou l'autre fait rougir ce fichier.
-      {
-        path: '/:locale(fr|en)/oauth/consent',
-        name: 'oauth-consent',
-        component: StubPage,
-        meta: { ...appRouter.resolve({ name: 'oauth-consent', params: { locale: 'fr' } }).meta },
-      },
+      { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage, meta: consentMeta },
+      { path: '/oauth/consent-sans-langue', name: 'oauth-consent-no-locale', component: StubPage, meta: consentMeta },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })
-  await router.push(`/${locale}/oauth/consent?${options.query ?? QUERY}`)
+  const consentPath = true === options.withoutRouteLocale ? '/oauth/consent-sans-langue' : `/${locale}/oauth/consent`
+  await router.push(`${consentPath}?${options.query ?? QUERY}`)
   await router.isReady()
 
   // jsdom n'a le focus que si un élément l'a reçu : la page, ici, l'a. Les
@@ -271,6 +278,14 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     const back = router.resolve(String(target.query.redirect))
     expect(back.name).toBe('oauth-consent')
     expect(back.query).toEqual(router.currentRoute.value.query)
+  })
+
+  it("langue d'interface hors du site, route sans langue : « Changer de compte » mène à /fr/login (#748, R213)", async () => {
+    const { wrapper } = await mountPage({ withoutRouteLocale: true })
+
+    const href = wrapper.find('[data-testid="consent-switch-account"]').attributes('href') ?? ''
+    expect(href).toMatch(/^\/fr\/login\?/)
+    expect(href).toContain('reauth=1')
   })
 
   it('en anglais : le compte et « Switch account »', async () => {

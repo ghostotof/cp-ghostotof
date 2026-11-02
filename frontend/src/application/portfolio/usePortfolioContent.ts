@@ -1,7 +1,6 @@
 import { computed, inject, type InjectionKey } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { PortfolioContentRepository } from '../../domain/portfolio/repositories/PortfolioContentRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 
 /**
  * Clé d'injection : le composition root (main.ts) fournit l'implémentation
@@ -16,7 +15,7 @@ export const PORTFOLIO_CONTENT_REPOSITORY: InjectionKey<PortfolioContentReposito
  * Use-case applicatif : expose le contenu de la landing page aux composants
  * de présentation, sans qu'aucun d'eux n'ait à connaître la source des données.
  *
- * Chaque propriété est un `computed` dépendant de la locale active (`useI18n`) :
+ * Chaque propriété est un `computed` dépendant de la locale active (`useCurrentLocale`) :
  * le contenu se recalcule automatiquement quand l'utilisateur change de langue,
  * sans que les composants appelants n'aient rien à faire de spécial (le
  * déstructurage préserve la réactivité puisque chaque valeur est déjà une ref).
@@ -31,8 +30,7 @@ export function usePortfolioContent() {
     )
   }
 
-  const { locale } = useI18n()
-  const currentLocale = computed(() => locale.value as Locale)
+  const currentLocale = useCurrentLocale()
 
   return {
     siteIdentity: computed(() => repository.getSiteIdentity()),

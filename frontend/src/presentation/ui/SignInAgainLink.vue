@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { signInAgainLocation } from '../router/sessionEnded'
 import IconExternalLink from '~icons/lucide/external-link'
 
@@ -29,10 +29,11 @@ import IconExternalLink from '~icons/lucide/external-link'
  * Une seule racine, `RouterLink` : les classes passées (le bouton de l'en-tête) s'y posent. L'emplacement par
  * défaut est le libellé visible.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 const route = useRoute()
 
-const to = computed(() => signInAgainLocation(route, locale.value as Locale))
+const to = computed(() => signInAgainLocation(route, currentLocale.value))
 /** La route courante garde l'onglet (le consentement) : le lien n'ouvre rien de nouveau. */
 const inSameTab = computed(() => true === route.meta.signInInSameTab)
 </script>

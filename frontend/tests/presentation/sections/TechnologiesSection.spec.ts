@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import TechnologiesSection from '../../../src/presentation/sections/TechnologiesSection.vue'
 import type { Technology } from '../../../src/domain/portfolio/entities/Technology'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 const featuredTechnologies: readonly Technology[] = [
   { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },
@@ -39,6 +40,17 @@ function mountSection() {
 }
 
 describe('TechnologiesSection', () => {
+  it("renvoie vers /fr/stack quand la langue d'interface n'est pas une langue du site (#748, R213)", () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const wrapper = mount(TechnologiesSection, {
+      props: { featuredTechnologies, additionalTechnologies },
+      global: { plugins: [i18n, createTestRouter()] },
+    })
+
+    expect(wrapper.get('a[href$="/stack"]').attributes('href')).toBe('/fr/stack')
+  })
+
   it('a pour ancre #technologies', () => {
     const wrapper = mountSection()
 

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useCurrentLocale } from '../../../application/shared/useCurrentLocale'
 import { authState, lastAccountName } from '../../../application/auth/useAuth'
 import {
   backofficeAccessRefused,
@@ -9,7 +10,6 @@ import {
   earlierSaveRefused,
   settleBackofficeAccessRefusalsOnMount,
 } from '../../../application/admin/shared/backofficeAccessRefusal'
-import { DEFAULT_LOCALE, isSupportedLocale } from '../../../domain/portfolio/entities/Locale'
 import { usePublishedHeight } from '../../layout/usePublishedHeight'
 import { switchAccountLocation } from '../../router/reauthentication'
 
@@ -59,13 +59,13 @@ import { switchAccountLocation } from '../../router/reauthentication'
  * - Collée sous l'en-tête comme le bandeau de session finie (page longue, « Enregistrer » en bas) ; les deux ne
  *   s'affichent jamais ensemble, elles publient donc la même hauteur (`--admin-notice-height`).
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 
-// La langue de repli du lien, quand la route n'en porte pas : celle de l'interface si le site la prend en charge, sinon la
-// langue par défaut (jamais une `string` quelconque posée en tête de l'adresse de connexion).
-const fallbackLocale = computed(() => (isSupportedLocale(locale.value) ? locale.value : DEFAULT_LOCALE))
-const switchAccountTarget = computed(() => switchAccountLocation(route, fallbackLocale.value))
+// La langue de repli du lien, quand la route n'en porte pas : celle de l'interface (`useCurrentLocale()` la ramène à la
+// langue par défaut si le site ne la porte pas : jamais une `string` quelconque posée en tête de l'adresse de connexion).
+const interfaceLocale = useCurrentLocale()
+const switchAccountTarget = computed(() => switchAccountLocation(route, interfaceLocale.value))
 // Faux au premier rendu : l'alerte est insérée après le montage, donc annoncée même quand un enregistrement refusé
 // pendant l'absence l'attend déjà (R64).
 const isMounted = ref(false)

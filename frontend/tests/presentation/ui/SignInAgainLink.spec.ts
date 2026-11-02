@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import SignInAgainLink from '../../../src/presentation/ui/SignInAgainLink.vue'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 /**
  * Le lien de reconnexion unique (#748, R6, Std3 et Std7) : un nouvel onglet qui ramène à la page courante, dit au
@@ -75,6 +76,25 @@ describe('SignInAgainLink', () => {
 
   it("sur une route publique : pas de redirect, le chemin de la page ne part pas dans l'URL", async () => {
     const wrapper = await mountLink('/fr/contact?x=1', 'fr')
+
+    expect(wrapper.get('a').attributes('href')).toBe('/fr/login?expired=1')
+  })
+
+  it("route sans langue, langue d'interface hors du site : la connexion s'ouvre en français (#748, R213)", async () => {
+    // Le repli du lien est la langue de l'interface : `de` n'est pas une langue du site, jamais `/de/login`.
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/sans-langue', component: { template: '<div />' } },
+        { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/sans-langue')
+    await router.isReady()
+
+    const wrapper = mount(SignInAgainLink, { slots: { default: 'Se reconnecter' }, global: { plugins: [router, i18n] } })
 
     expect(wrapper.get('a').attributes('href')).toBe('/fr/login?expired=1')
   })

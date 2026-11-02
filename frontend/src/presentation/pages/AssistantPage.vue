@@ -5,19 +5,19 @@ import { useI18n } from 'vue-i18n'
 import { useAssistant } from '../../application/assistant/useAssistant'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import { MAX_QUESTION_LENGTH } from '../../domain/assistant/services/conversationWindow'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import BaseTextarea from '../ui/BaseTextarea.vue'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import RichText from '../ui/RichText.vue'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { switchAccountLocation } from '../router/reauthentication'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const { messages, state, error, draft, draftLength, canSend, send, reset } = useAssistant()
 const { downloadCv, isDownloading, hasError: hasCvDownloadError } = useCvDownload()
 
-const currentLocale = computed(() => locale.value as Locale)
+const currentLocale = useCurrentLocale()
 const isStreaming = computed(() => 'streaming' === state.value)
 // Deux liens (#748, R7). Session finie : « Se reconnecter », la route `login` accueillant un anonyme, dans un
 // nouvel onglet (la question tapée est gardée). Refus réel (`forbidden`) : la personne est toujours connectée,

@@ -18,6 +18,7 @@ import { sessionFor } from '../../../support/authSession'
 import { sessionForUser } from '../../../../src/domain/auth/services/sessionForUser'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { setUnsupportedLocale } from '../../../support/unsupportedLocale'
 import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_EN, EARLIER_SAVE_REFUSED_FR } from '../../../support/accessRefusalTexts'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
@@ -142,7 +143,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await router.push('/admin/sans-langue')
     await router.isReady()
     const i18n = createAppI18n()
-    i18n.global.locale.value = 'de' as never
+    setUnsupportedLocale(i18n, 'de')
     const wrapper = mount(AccessRefusedNotice, {
       attachTo: document.body,
       global: { plugins: [i18n, router], provide: { [AUTH_REPOSITORY as symbol]: repository } },
