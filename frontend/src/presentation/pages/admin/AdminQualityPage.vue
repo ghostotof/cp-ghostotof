@@ -5,9 +5,14 @@ import { useAdminQualityPrinciples } from '../../../application/admin/quality/us
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import AdminQualityEntrySection from './AdminQualityEntrySection.vue'
+import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entities/AdminQualityPrinciple'
+import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
+import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from './proseFields'
 import {
-  QUALITY_PRINCIPLE_FIELDS,
-  QUALITY_TRAIT_FIELDS,
+  QUALITY_PRINCIPLE_FIELD_OPTIONS,
+  QUALITY_TRAIT_FIELD_OPTIONS,
+  type QualityEntryInput,
+  type QualityEntrySource,
   type QualityEntryTexts,
 } from './qualityEntrySection'
 
@@ -16,8 +21,8 @@ import {
  * les traits de qualité —, chacun dans une instance de `AdminQualityEntrySection`
  * avec son tableau groupé, son brouillon d'ordre et son formulaire. La page
  * garde ce que les deux partagent : le verrou d'ordre et la garde de sortie, et
- * ce qui les distingue : la lecture de chaque contenu (son composable), la liste de
- * ses champs et ses textes, traduits ici avec des clés littérales.
+ * ce qui les distingue : la lecture de chaque contenu (son composable), ses champs
+ * (un record par contenu) et ses textes, traduits ici avec des clés littérales.
  *
  * **Les tableaux affichent toutes les langues** (spec 0004, D8), une ligne par
  * groupe de traduction : l'ordre est celui du groupe et non celui d'une langue,
@@ -63,19 +68,43 @@ const { t } = useI18n()
 const LOCKED_HINT_ID = 'admin-order-locked-hint'
 
 /**
- * La lecture de chaque contenu : le retour du composable, tel quel, à une clé près. La section dépend de l'interface
- * `QualityEntrySource` (elle ne connaît ni les deux composables ni leur injection) et y lit la liste sous `entries`, là où
- * chaque composable la nomme à sa façon (`principles`, `traits`) : c'est la seule différence, ajoutée ici. Chaque composable
- * est appelé ici, une fois ; ses refs restent dans l'objet (la page ne les déballe pas : seule la section les lit).
+ * La lecture de chaque contenu, déclarée membre à membre : la section dépend de l'interface `QualityEntrySource` (elle ne connaît
+ * ni les deux composables ni leur injection) et y lit la liste sous `entries`, là où chaque composable la nomme à sa façon
+ * (`principles`, `traits`). Chaque source est un littéral typé qui porte exactement les membres de l'interface (un membre
+ * écrit en trop est une erreur de compilation ; un `...spread` ne serait pas contrôlé, d'où aucun) : les refs restent des
+ * refs, la page ne les déballe pas, seule la section les lit. Chaque composable est appelé ici, une fois.
  */
 const principleReading = useAdminQualityPrinciples()
-const principleSource = { ...principleReading, entries: principleReading.principles }
+const principleSource: QualityEntrySource<AdminQualityPrinciple, QualityEntryInput<'title' | 'description' | 'iconKey'>> = {
+  entries: principleReading.principles,
+  isLoading: principleReading.isLoading,
+  hasError: principleReading.hasError,
+  isLoaded: principleReading.isLoaded,
+  errorMessage: principleReading.errorMessage,
+  load: principleReading.load,
+  create: principleReading.create,
+  update: principleReading.update,
+  remove: principleReading.remove,
+  reorder: principleReading.reorder,
+}
 const traitReading = useAdminQualityTraits()
-const traitSource = { ...traitReading, entries: traitReading.traits }
+const traitSource: QualityEntrySource<AdminQualityTrait, QualityEntryInput<'label'>> = {
+  entries: traitReading.traits,
+  isLoading: traitReading.isLoading,
+  hasError: traitReading.hasError,
+  isLoaded: traitReading.isLoaded,
+  errorMessage: traitReading.errorMessage,
+  load: traitReading.load,
+  create: traitReading.create,
+  update: traitReading.update,
+  remove: traitReading.remove,
+  reorder: traitReading.reorder,
+}
 
 /**
  * Les libellés des champs, à part de la liste des champs (une constante) : ils suivent la langue de l'interface. Une clé
- * littérale chacun, que `no-missing-keys` vérifie ; le type refuse un libellé manquant ou en trop.
+ * littérale chacun, que `no-missing-keys` vérifie ; le type refuse un libellé manquant (un libellé en trop n'est pas vu : un
+ * `computed` n'est pas un littéral frais).
  */
 const principleLabels = computed(() => ({
   title: t('admin.quality.principle.titleLabel'),
@@ -128,7 +157,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <AdminQualityEntrySection
       kind="principle"
       :source="principleSource"
-      :fields="QUALITY_PRINCIPLE_FIELDS"
+      :field-options="QUALITY_PRINCIPLE_FIELD_OPTIONS"
+      :prose-fields="QUALITY_PRINCIPLE_PROSE_FIELDS"
       :labels="principleLabels"
       title-field="title"
       :texts="principleTexts"
@@ -139,7 +169,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <AdminQualityEntrySection
       kind="trait"
       :source="traitSource"
-      :fields="QUALITY_TRAIT_FIELDS"
+      :field-options="QUALITY_TRAIT_FIELD_OPTIONS"
+      :prose-fields="QUALITY_TRAIT_PROSE_FIELDS"
       :labels="traitLabels"
       title-field="label"
       :texts="traitTexts"

@@ -30,12 +30,12 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import {
-  fieldsFrom,
-  requireEveryField,
+  entryFieldsOf,
+  fieldRecord,
   type EntryForm,
   type QualityEntry,
-  type QualityEntryField,
   type QualityEntryInput,
+  type QualityFieldOptions,
   type QualityEntrySource,
   type QualityEntryTexts,
 } from './qualityEntrySection'
@@ -43,12 +43,14 @@ import {
 /**
  * Un contenu de qualité ordonné — les principes, ou les traits — : un formulaire, un tableau groupé par groupe de traduction
  * (toutes les langues, spec 0004 D8) et son brouillon d'ordre. Une moitié de `AdminQualityPage`, instanciée deux fois ; elle
- * ne diffère d'une instance à l'autre que par ses champs (`fields`, `qualityEntrySection.ts`), ses textes (`texts`, traduits
- * par la page) et sa lecture (`source`) : aucune branche sur `kind`, qui ne sert qu'aux identifiants `admin-quality-<kind>-*`.
+ * ne diffère d'une instance à l'autre que par ses champs (`fieldOptions`, un record de `qualityEntrySection.ts`), ses textes
+ * (`texts`, traduits par la page) et sa lecture (`source`) : aucune branche sur `kind`, qui ne sert qu'aux identifiants
+ * `admin-quality-<kind>-*`.
  *
  * **`source` est une interface, `QualityEntrySource`, et non les deux composables** : la section dépend de ce qu'elle lit (la
  * liste, l'état de chargement, les écritures) et non de `useAdminQualityPrinciples` ni de `useAdminQualityTraits`, ni de leur
- * injection ; un test lui passe une fausse source. La page ne lui renomme que la liste (`principles`, `traits` : `entries`).
+ * injection ; un test lui passe une fausse source. La page en écrit chaque membre, la liste des composables (`principles`,
+ * `traits`) étant exposée sous `entries`.
  *
  * **La langue est un champ de formulaire, pas un état de page**
  * (`form.locale`) : c'est la langue de l'entrée en cours d'édition ou
@@ -69,18 +71,23 @@ import {
  * par `isLocked`, à jour après le rendu de la page : la limite est écrite une fois,
  * `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
  *
- * **Ce que la section lit une fois, à sa construction** : `source` (le composable ne change pas de main), `fields` (une
- * constante, `qualityEntrySection.ts`) et `kind`. Les libellés (`labels`), qui suivent la langue de l'interface, sont lus à
- * chaque rendu.
+ * **Ce que la section lit une fois, à sa construction** : `source` (le composable ne change pas de main), `fieldOptions` et
+ * `proseFields` (des constantes, `qualityEntrySection.ts` et `proseFields.ts`) et `kind`. Les libellés (`labels`), qui suivent
+ * la langue de l'interface, sont lus à chaque rendu.
  */
 
 const props = defineProps<{
   /** `principle` ou `trait` : le seul usage est l'identifiant des éléments, `admin-quality-<kind>-*`. */
   kind: 'principle' | 'trait'
   source: QualityEntrySource<E, QualityEntryInput<F>>
-  /** Les champs du formulaire, dans l'ordre où le gabarit les écrit : une constante de `qualityEntrySection.ts`. */
-  fields: readonly QualityEntryField<F>[]
-  /** Le libellé traduit de chaque champ, un par nom de `F` (le compilateur refuse un libellé manquant ou en trop). */
+  /**
+   * Les champs du formulaire, dans l'ordre où le gabarit les écrit : le record d'une instance (`qualityEntrySection.ts`), dont les
+   * clés sont les noms de `F`.
+   */
+  fieldOptions: Readonly<Record<F, QualityFieldOptions>>
+  /** Les champs de prose de l'instance (`proseFields.ts`) : ceux que l'assistant envoie et remplace. */
+  proseFields: readonly string[]
+  /** Le libellé traduit de chaque champ, un par nom de `F` : un libellé manquant est refusé, un libellé en trop n'est pas vu. */
   labels: Readonly<Record<F, string>>
   /** Le champ qui nomme l'entrée : sa ligne dans le tableau, « Version de », la question de la suppression. */
   titleField: F
@@ -112,22 +119,19 @@ function fieldId(name: string): string {
   return `${idPrefix}-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
 }
 
-/** Les champs de prose : ce que l'assistant envoie et remplace, et ce qui devient lisible seulement pendant une traduction. */
-const proseFields = props.fields.filter((field) => field.prose).map((field) => field.name)
-
-/** Les noms des champs, dans l'ordre de `fields` : le formulaire et le corps d'écriture en sont construits (`fieldsFrom`). */
-const fieldNames = props.fields.map((field) => field.name)
+/** Les champs, dans l'ordre des clés du record : le gabarit les écrit, « Modifier » et « Créer la version XX » les parcourent. */
+const fields = entryFieldsOf(props.fieldOptions, props.proseFields)
 
 const CONTROLS = { text: BaseTextInput, textarea: BaseTextarea } as const
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
 // `EntryForm<string>` et non `EntryForm<F>` : `reactive` d'un type indexé par le `F` générique fait boucler le compilateur (mémoire
-// épuisée, mesuré) et le gabarit ne lit plus un objet dont le type dépend de `F` ; le composable reçoit le `Record<F, string>` plus bas.
+// épuisée, mesuré) et le gabarit ne lit plus un objet dont le type dépend de `F` ; `Record<string, string>` vaut `Record<F, string>`.
 const form = reactive<EntryForm<string>>({
   locale: SUPPORTED_LOCALES[0],
   translationGroup: '',
-  ...fieldsFrom(fieldNames, () => ''),
+  ...fieldRecord(props.fieldOptions, () => ''),
 })
 
 // L'état commun des formulaires par entrée (`useEntryFormState`) ; `formState` entier va à la bascule de proposition.
@@ -174,11 +178,12 @@ const {
   proseReadonlyHintId,
   translationHintId,
   proseFieldAttrs,
-} = useTranslatedForm({
+} = useTranslatedForm<string>({
   hintIdPrefix: idPrefix,
-  // Un champ par nom de `fields` (construit de la liste, ci-dessus) : la garde le dit au compilateur, le formulaire reste le même objet.
-  form: requireEveryField(form, fieldNames),
-  proseFields,
+  // `<string>` : le formulaire est un `EntryForm<string>` (ci-dessus), ses noms sont des chaînes ; aucune assertion n'est écrite.
+  form,
+  // Les champs de prose : ce que l'assistant envoie et remplace, et ce qui devient lisible seulement pendant une traduction.
+  proseFields: props.proseFields,
   // Son brouillon d'ordre est lu tout de suite, celui de l'autre section par `props.isLocked` : voir le docblock de la section.
   isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
@@ -217,7 +222,7 @@ const {
 const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
 /** Les champs dont le tableau fait une colonne, dans l'ordre de `fields`. */
-const columnFields = computed(() => props.fields.filter((field) => field.column))
+const columnFields = fields.filter((field) => field.column)
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.
@@ -243,7 +248,7 @@ function resetForm(): void {
   sourceGroup.value = null
   form.locale = SUPPORTED_LOCALES[0]
   form.translationGroup = ''
-  Object.assign(form, fieldsFrom(fieldNames, () => ''))
+  Object.assign(form, fieldRecord(props.fieldOptions, () => ''))
 }
 
 // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
@@ -258,7 +263,7 @@ function startEdit(entry: E): void {
   sourceGroup.value = entry.translationGroup
   form.locale = entry.locale
   form.translationGroup = hasSibling(entries.value, entry) ? entry.translationGroup : ''
-  for (const field of props.fields) {
+  for (const field of fields) {
     form[field.name] = entry[field.name]
   }
 }
@@ -278,7 +283,7 @@ function startCreateVersion(row: TranslationGroupRow<E>, locale: Locale): void {
   sourceGroup.value = row.key
   form.locale = locale
   form.translationGroup = row.key
-  for (const field of props.fields) {
+  for (const field of fields) {
     const copied: string = existing?.[field.name] ?? ''
 
     form[field.name] = field.copiedToNewVersion ? copied : ''
@@ -286,17 +291,17 @@ function startCreateVersion(row: TranslationGroupRow<E>, locale: Locale): void {
 }
 
 async function handleSubmit(): Promise<void> {
-  isSubmitting.value = true
-
-  // Le corps d'écriture : la langue, le groupe et un champ par nom de `fields` (`fieldsFrom` : le compilateur ne peut pas
-  // reconstruire un `QualityEntryInput<F>` d'une liste de noms lue à l'exécution, la garde de `fieldsFrom` le fait).
+  // Le corps d'écriture : la langue, le groupe et un champ par clé du record (`fieldRecord`). Construit **avant** de lever
+  // `isSubmitting`, pour que rien ne puisse lever entre cette ligne et l'appel d'écriture et laisser le formulaire verrouillé.
   const input: QualityEntryInput<F> = {
     locale: form.locale,
     // D3 : aucun `position` n'est jamais envoyé. `null` = contenu neuf à la
     // création, détachement sur une mise à jour.
     translationGroup: '' === form.translationGroup ? null : form.translationGroup,
-    ...fieldsFrom(fieldNames, (name) => form[name]),
+    ...fieldRecord(props.fieldOptions, (name) => form[name]),
   }
+
+  isSubmitting.value = true
 
   const succeeded =
     null !== editingId.value

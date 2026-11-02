@@ -1,21 +1,22 @@
 import type { Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
-import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from './proseFields'
 
 /**
  * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190 ; règle
  * `frontend-backoffice.md`, « Existing resources », `quality`) : la forme commune de leurs entrées, de leurs écritures, de la
- * lecture que la page lui passe, et la liste des champs qui fait toute la différence entre l'une et l'autre. Le gabarit n'a
- * aucune branche sur le genre d'entrée : chaque différence est une propriété d'un champ.
+ * lecture que la page lui passe, et les champs qui font toute la différence entre l'une et l'autre. Le gabarit n'a aucune
+ * branche sur le genre d'entrée : chaque différence est une propriété d'un champ.
  *
- * `F` est l'union des noms de champs d'une instance (`'title' | 'description' | 'iconKey'`, ou `'label'`). Ce que le compilateur
- * vérifie : que l'entrée (`QualityEntry<F>`) et l'écriture (`QualityEntryInput<F>`) portent un champ par nom de `F`, que la page
- * donne un libellé à chacun (`labels: Record<F, string>`) et que le formulaire (`EntryForm<F>`) en a un par nom. Ce qu'il ne
- * vérifie pas : qu'une **liste** de champs (`readonly QualityEntryField<F>[]`) les nomme tous, un tableau ne le disant pas ;
- * le formulaire et le corps d'écriture se construisent de cette liste à l'exécution, et `hasEveryField` (par
- * `requireEveryField`, `fieldsFrom`) le contrôle là : un nom de `F` absent de la liste lève `MissingEntryFieldError`, au lieu
- * d'un champ `undefined` envoyé.
+ * `F` est l'union des noms de champs d'une instance (`'title' | 'description' | 'iconKey'`, ou `'label'`). Chaque instance
+ * déclare ses champs par un **record** (`QUALITY_PRINCIPLE_FIELD_OPTIONS`, `as const satisfies Record<F, QualityFieldOptions>`),
+ * dont les clés sont la liste des champs (`entryFieldsOf`) et dont `fieldRecord` construit le formulaire à blanc et le corps
+ * d'écriture : il n'y a pas de liste à tenir à jour à côté du type, et pas de garde à l'exécution (R215, D1 de la dix-septième
+ * relecture). Ce que le compilateur vérifie : que le record déclare un champ par nom de `F` (`satisfies`, un nom oublié ou en trop
+ * est une erreur de compilation), que l'entrée (`QualityEntry<F>`) et l'écriture (`QualityEntryInput<F>`) portent un champ par nom
+ * de `F`, et que la page donne un libellé à chacun (`labels: Record<F, string>`). Ce qu'il ne vérifie pas : le formulaire est un
+ * `EntryForm<string>` (écart accepté de R202 : `reactive` d'un type indexé par le `F` générique épuise la mémoire de `vue-tsc`),
+ * si bien que `form.nimporteQuoi` compile.
  */
 
 /** Une entrée lue : ce que partagent les deux contenus (clé, langue, groupe de traduction, position), plus ses champs. */
@@ -39,57 +40,32 @@ export type QualityEntryInput<F extends string> = {
  */
 export type EntryForm<F extends string> = { locale: Locale; translationGroup: string } & Record<F, string>
 
-/** Un nom de `F` que la liste des champs ne porte pas : une faute de programmation, que le compilateur ne voit pas (voir en-tête). */
-export class MissingEntryFieldError extends Error {
-  readonly fieldName: string
-
-  constructor(fieldName: string) {
-    super(`Le champ « ${fieldName} » manque à la liste des champs de la section.`)
-    this.name = 'MissingEntryFieldError'
-    this.fieldName = fieldName
-  }
-}
-
 /**
- * Vrai si `value` porte une chaîne pour chacun des `names` : la garde qui fait d'un objet bâti à l'exécution
- * (`Object.fromEntries`, indexé par une chaîne quelconque) un `Record<F, string>` que le compilateur accepte, sans assertion.
+ * Un champ par clé de `options`, sa valeur lue par `valueOf` : le formulaire à blanc (`() => ''`), le corps d'écriture
+ * (`(name) => form[name]`). Seules les clés de `options` sont lues, jamais ses valeurs.
+ *
+ * C'est **la seule assertion de ce fichier et de la section** (`as Record<F, string>`) : un objet bâti à l'exécution est indexé
+ * par une chaîne quelconque, et TypeScript n'accepte pas un `{ [clé: string]: string }` comme `Record<F, string>`. Elle est sûre
+ * parce que les clés de `options` sont `F` (`options: Record<F, …>`, exhaustif par le `satisfies` de chaque instance) et que la
+ * fonction ne fait que les recopier, une valeur chacune.
  */
-export function hasEveryField<F extends string>(
-  value: Readonly<Record<string, string | undefined>>,
-  names: readonly F[],
-): value is Record<F, string> {
-  return names.every((name) => 'string' === typeof value[name])
-}
+export function fieldRecord<F extends string>(
+  options: Readonly<Record<F, unknown>>,
+  valueOf: (name: F) => string,
+): Record<F, string> {
+  const record: Partial<Record<F, string>> = {}
 
-/**
- * Rend `value` lui-même (le même objet : un objet réactif reste le sien), typé comme portant un champ par nom de `names`. Lève
- * `MissingEntryFieldError`, nommant le premier absent, si un nom manque : c'est la garde d'exhaustivité que le compilateur ne
- * peut pas être, une liste de noms lue à l'exécution ne disant pas qu'elle est complète.
- */
-export function requireEveryField<F extends string, V extends Readonly<Record<string, string | undefined>>>(
-  value: V,
-  names: readonly F[],
-): V & Record<F, string> {
-  if (!hasEveryField(value, names)) {
-    throw new MissingEntryFieldError(names.find((name) => 'string' !== typeof value[name]) ?? '')
+  for (const name in options) {
+    record[name] = valueOf(name)
   }
 
-  return value
+  return record as Record<F, string>
 }
 
 /**
- * Un champ par nom de `names`, sa valeur lue par `valueOf` : le formulaire à blanc (`() => ''`), le corps d'écriture
- * (`(name) => form[name]`). Lève `MissingEntryFieldError` si la construction ne donne pas un champ par nom
- * (`requireEveryField`).
- */
-export function fieldsFrom<F extends string>(names: readonly F[], valueOf: (name: F) => string): Record<F, string> {
-  return requireEveryField(Object.fromEntries(names.map((name) => [name, valueOf(name)])), names)
-}
-
-/**
- * Un champ du formulaire d'une section, **sans son libellé** : la liste des champs est une constante, les libellés traduits
- * passent à part (`labels`, `Record<F, string>`, un `computed` de la page : ils suivent la langue de l'interface). Chaque
- * propriété remplace ce qu'une branche sur le genre d'entrée aurait écrit :
+ * Un champ du formulaire d'une section, **sans son libellé** : la liste des champs est dérivée d'une constante
+ * (`entryFieldsOf`), les libellés traduits passent à part (`labels`, `Record<F, string>`, un `computed` de la page : ils suivent
+ * la langue de l'interface). Chaque propriété remplace ce qu'une branche sur le genre d'entrée aurait écrit :
  *
  * - `control` : le champ de saisie, une ligne (`text`) ou un paragraphe (`textarea`) ;
  * - `prose` : le champ est traduit par l'assistant, donc en lecture seule pendant une traduction (`proseFields.ts`, spec 0004
@@ -145,29 +121,60 @@ export interface QualityEntrySource<E, I> {
 }
 
 /** Ce que la fabrique `entryField` lit, hors le nom : la prose est celle de la liste de `proseFields.ts`, jamais redite. */
-export interface EntryFieldOptions<F extends string> {
+export interface EntryFieldOptions {
   readonly control: 'text' | 'textarea'
   /** La liste des champs de prose de l'instance (`proseFields.ts`, la source) : `prose` est « le nom y figure ». */
-  readonly proseFields: readonly F[]
+  readonly proseFields: readonly string[]
   readonly copiedToNewVersion: boolean
   readonly column: boolean
 }
 
-/** Un champ de la constante d'une section : son nom n'est écrit qu'ici, la prose se lit de la liste de `proseFields.ts`. */
-export function entryField<F extends string>(name: F, options: EntryFieldOptions<F>): QualityEntryField<F> {
+/** Un champ de la liste d'une section (`entryFieldsOf` l'appelle) : sa prose se lit de la liste de `proseFields.ts`, jamais redite. */
+export function entryField<F extends string>(name: F, options: EntryFieldOptions): QualityEntryField<F> {
   const { proseFields, ...rest } = options
 
   return { name, ...rest, prose: proseFields.includes(name) }
 }
 
+/**
+ * Ce qu'un champ déclare de lui-même dans le record d'une instance : seul ce qui diffère du défaut s'écrit. Le défaut est
+ * « rien n'est recopié dans "Créer la version XX" et le tableau ne lui consacre aucune colonne » ; `control` n'a pas de défaut.
+ */
+export interface QualityFieldOptions {
+  readonly control: 'text' | 'textarea'
+  /** Recopié de l'entrée existante par « Créer la version XX » (un champ sans traduction : une clé d'icône). */
+  readonly copiedToNewVersion?: true
+  /** Le tableau lui consacre une colonne. */
+  readonly column?: true
+}
+
+/**
+ * La liste des champs d'une instance, dans l'ordre des clés de son record, chaque défaut posé ici. La prose est celle de
+ * `proseFields` (`proseFields.ts`), jamais redite dans le record.
+ */
+export function entryFieldsOf<F extends string>(
+  options: Readonly<Record<F, QualityFieldOptions>>,
+  proseFields: readonly string[],
+): readonly QualityEntryField<F>[] {
+  const fields: QualityEntryField<F>[] = []
+
+  for (const name in options) {
+    const { control, copiedToNewVersion = false, column = false } = options[name]
+
+    fields.push(entryField(name, { control, proseFields, copiedToNewVersion, column }))
+  }
+
+  return fields
+}
+
 /** Principes : un titre et une description, traduits, et une clé d'icône, recopiée et affichée en colonne. */
-export const QUALITY_PRINCIPLE_FIELDS: readonly QualityEntryField<'title' | 'description' | 'iconKey'>[] = [
-  entryField('title', { control: 'text', proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS, copiedToNewVersion: false, column: false }),
-  entryField('description', { control: 'textarea', proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS, copiedToNewVersion: false, column: false }),
-  entryField('iconKey', { control: 'text', proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS, copiedToNewVersion: true, column: true }),
-]
+export const QUALITY_PRINCIPLE_FIELD_OPTIONS = {
+  title: { control: 'text' },
+  description: { control: 'textarea' },
+  iconKey: { control: 'text', copiedToNewVersion: true, column: true },
+} as const satisfies Record<'title' | 'description' | 'iconKey', QualityFieldOptions>
 
 /** Traits : un libellé, seul champ et prose, rien à recopier dans « Créer la version XX », aucune colonne. */
-export const QUALITY_TRAIT_FIELDS: readonly QualityEntryField<'label'>[] = [
-  entryField('label', { control: 'text', proseFields: QUALITY_TRAIT_PROSE_FIELDS, copiedToNewVersion: false, column: false }),
-]
+export const QUALITY_TRAIT_FIELD_OPTIONS = {
+  label: { control: 'text' },
+} as const satisfies Record<'label', QualityFieldOptions>
