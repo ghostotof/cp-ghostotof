@@ -21,7 +21,8 @@ pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
 # run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth, check_finds_library_under_cdpath,
-# check_root_script_dir_is_slash), generated_basic_auth, write_env_noting : communs aux smokes.
+# check_root_script_dir_is_slash, check_http_base_served_without_basic_auth, check_hollow_basic_auth_values),
+# generated_basic_auth, write_env_noting : communs aux smokes.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -368,25 +369,15 @@ run_case check_non_https_refused \
   "${CASE_VARS[@]}"
 # Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
 TEST_BASE_URL=http://example.invalid run httplocal "$witness_ok" "$public_ok" "$me_cleared"
-if ! grep -q -- ' -K ' "$TMP/httplocal.args" && [ -s "$TMP/httplocal.calls" ] && ! grep -q 'non https://' "$TMP/err"; then
-  pass "sans Basic Auth, une base http:// part sans -K"
-else
-  fail "base http:// sans Basic Auth" "rc=$rc ; err : $(cat -A "$TMP/err") ; args : $(head -1 "$TMP/httplocal.args")"
-fi
+run_case check_http_base_served_without_basic_auth "sans Basic Auth, une base http:// part sans -K" "$rc" \
+  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/httplocal.calls" CASE_ARGS="$TMP/httplocal.args"
 
 # --- C11-8 : un utilisateur ou un mot de passe vide n'est pas une Basic Auth : sortie 2 avant tout
 # appel, « sans utilisateur ou sans mot de passe », la valeur jamais citée.
-token="g$RANDOM$RANDOM"
-for hollow in ':' "${token}:" ":${token}"; do
-  AUDIT_BASIC_AUTH="$hollow" run creuse "$witness_ok" "$public_ok" "$me_cleared"
-  if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/err" \
-     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! values_found_in "$token" -- "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
-    pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) → sortie 2, aucun appel, valeur jamais citée"
-  else
-    fail "AUDIT_BASIC_AUTH à côté vide" \
-      "rc=$rc ; err : $(lines_without_values "$TMP/err" "$token" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
-  fi
-done
+# Le lanceur du cas : le script avec la valeur creuse que le cas donne, le code de sortie dans $rc (par `run`).
+run_hollow() { AUDIT_BASIC_AUTH="$1" run creuse "$witness_ok" "$public_ok" "$me_cleared"; }
+run_case check_hollow_basic_auth_values "AUDIT_BASIC_AUTH à côté vide" - CASE_RUNNER=run_hollow \
+  CASE_ERR="$TMP/err" CASE_OUT="$TMP/out" CASE_CALLS="$TMP/creuse.calls" CASE_ARGS="$TMP/creuse.args"
 
 # --- C5-7 : un retour à la ligne dans la Basic Auth ouvrirait une seconde
 # directive dans le fichier -K (`url = …`) : refus, sortie 2 (erreur

@@ -26,7 +26,9 @@
 #   CASE_RANK     (facultatif) le rang de l'argument refusé, que dit le message des deux cas de refus d'argument ;
 #   CASE_ENV_FILE le fichier où les faux outils de write_env_noting ont noté leur environnement, que lit le cas des fils ;
 #   CASE_EXPECTED_RC (facultatif) le code de sortie que le cas exige du script (CASE_RC est celui qu'il a rendu) ;
-#   CASE_SCRIPT   (facultatif) le chemin du script dont le cas relit le bloc d'amorçage.
+#   CASE_SCRIPT   (facultatif) le chemin du script dont le cas relit le bloc d'amorçage ;
+#   CASE_ARGS     (facultatif) le fichier des arguments du faux curl, que lisent les cas qui y cherchent `-K` ou une valeur ;
+#   CASE_RUNNER   le nom de la fonction du test qui lance le script pour une valeur de Basic Auth donnée (check_hollow_basic_auth_values).
 # Exemple :  case_vars_set "$TMP/err" "$TMP/calls" "$TMP/out"
 #            run_case check_empty_basic_auth "AUDIT_BASIC_AUTH vide" "$rc" "${CASE_VARS[@]}"
 # Une variable que le cas exige et que l'appel ne pose pas est un `fail` nommé, jamais une sortie du test (St13-44).
@@ -47,23 +49,37 @@ generated_basic_auth() {
 
 # write_value_patterns <valeur>…
 #
-# Écrit les valeurs, une par ligne, dans $TMP/value-patterns, un fichier en 600 que `grep -F -f` lit : une Basic Auth générée, ou un
-# fragment, ne passe jamais en argument d'un processus, où `ps` la montrerait (St16-44, Q11 (A) de la seizième relecture ; `<(printf …)`
-# est écarté, le chemin /dev/fd étant propre à bash). Le fichier naît dans $TMP et non dans TMPDIR, que des tests exigent vide ;
-# l'appelant le retire (`rm -f -- "$TMP/value-patterns"`) quand il l'a lu. Une valeur vide est refusée, la fonction fait sortir le shell
-# qui l'exécute (code 2) : un motif vide correspond à toute ligne, et une recherche « elle n'est nulle part » serait fausse, une
-# recherche « elle y est » vraie, quoi que le fichier contienne. Les trois fonctions qui suivent l'appellent ; un test peut aussi
-# donner le chemin à un processus fils qui doit lire les motifs (le cas des fils de smoke-http.test.sh).
+# Écrit les valeurs dans $TMP/value-patterns, un motif par ligne non vide, un fichier en 600 que `grep -F -f` lit : une Basic Auth
+# générée, ou un fragment, ne passe jamais en argument d'un processus, où `ps` la montrerait (St16-44, Q11 (A) de la seizième
+# relecture). `<(printf …)` est écarté (St17-27) : son chemin /dev/fd/N ne vit que le temps de la commande qui porte la substitution,
+# et le fichier sert à plusieurs commandes de suite (celui des fils de smoke-http.test.sh : écrit, lu par un `bash -c`, retiré). Le
+# fichier naît dans $TMP et non dans TMPDIR, que des tests exigent vide ; l'appelant le retire (`rm -f -- "$TMP/value-patterns"`)
+# quand il l'a lu. Une valeur qui porte des sauts de ligne donne un motif par ligne non vide : une ligne vide serait un motif qui
+# correspond à toute ligne (CR17-5 : `$'\nabc'`, `$'abc\n'` et `$'a\n\nb'` en écrivaient une). Une valeur vide, ou faite de sauts de
+# ligne seuls, n'a aucune ligne à écrire : elle est refusée et la fonction fait sortir le shell qui l'exécute (code 2), car une
+# recherche « elle n'est nulle part » serait fausse, une recherche « elle y est » vraie, quoi que le fichier contienne. Ce n'est pas
+# un `fail` : la fonction s'appelle souvent dans un `$( )`, où le compteur d'échecs du test serait perdu. Les trois fonctions qui
+# suivent l'appellent ; un test peut aussi donner le chemin à un processus fils qui doit lire les motifs.
 write_value_patterns() {
-  local value
+  local value rest line
   for value in "$@"; do
-    if [ -z "$value" ]; then
-      echo "write_value_patterns : une valeur vide correspondrait à toute ligne, refusée" >&2
+    if [ -z "${value//$'\n'/}" ]; then
+      echo "write_value_patterns : une valeur vide ou faite de sauts de ligne seuls correspondrait à toute ligne, refusée" >&2
       exit 2
     fi
   done
   rm -f -- "${TMP:?write_value_patterns : TMP absente}/value-patterns"
-  ( umask 077; printf '%s\n' "$@" > "$TMP/value-patterns" )
+  (
+    umask 077
+    for value in "$@"; do
+      rest="$value"
+      while [ -n "$rest" ]; do
+        line="${rest%%$'\n'*}"
+        if [[ "$rest" == *$'\n'* ]]; then rest="${rest#*$'\n'}"; else rest=""; fi
+        if [ -n "$line" ]; then printf '%s\n' "$line"; fi
+      done
+    done > "$TMP/value-patterns"
+  )
 }
 
 # values_found_in <valeur>… -- <fichier>…
@@ -176,7 +192,7 @@ case_vars_set() {
 # Les noms de variable de cas qu'un appel de `run_case` peut donner (St15-35), écrits une fois : la déclaration des locales, le
 # contrôle des affectations et le message d'une faute d'appel les lisent. CASE_LABEL et CASE_RC ne sont pas du nombre : ils
 # viennent des deux paramètres qui suivent le cas. Un test qui boucle sur les noms (smoke-http.test.sh) lit ce tableau aussi.
-CASE_NAMES=(CASE_ERR CASE_OUT CASE_CALLS CASE_TMPDIR CASE_VALUE CASE_RANK CASE_ENV_FILE CASE_EXPECTED_RC CASE_SCRIPT)
+CASE_NAMES=(CASE_ERR CASE_OUT CASE_CALLS CASE_TMPDIR CASE_VALUE CASE_RANK CASE_ENV_FILE CASE_EXPECTED_RC CASE_SCRIPT CASE_ARGS CASE_RUNNER)
 
 # _case_assign <NOM=valeur>
 #
@@ -315,25 +331,76 @@ check_curl_opts_file_refused() {
     " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié\$"
 }
 
+# Le texte du refus d'un `-D` qui écrit sur un fichier de la Basic Auth ou de son corps, le même pour le `-K`, son dossier et le fichier
+# de smoke_data_file (R212) : les deux cas qui suivent le lisent.
+WRITE_REFUSAL="une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée"
+
 # check_args_write_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Une Basic Auth et, dans les arguments de smoke_fetch, la valeur de `-D` qui désigne le fichier `-K` ou un fichier du dossier de la
-# Basic Auth (C16-4) : curl l'y écrirait, et le `-K` écrasé serait relu au prochain appel comme une configuration vide. Sortie 2
-# avant tout appel de curl, « argument n° <rang> : une valeur qui écrit dans le dossier de la Basic Auth est refusée — rien de
-# vérifié » en queue du message (le rang de la valeur, jamais son texte), la valeur de la Basic Auth nulle part.
+# Une Basic Auth et, dans les arguments de smoke_fetch, la valeur de `-D` qui désigne le fichier `-K`, le dossier de la Basic Auth, un
+# fichier de ce dossier ou le fichier de corps de smoke_data_file (C16-4, R211) : curl l'y écrirait, et le `-K` écrasé serait relu au
+# prochain appel comme une configuration vide. Sortie 2 avant tout appel de curl, « argument n° <rang> : une valeur qui écrit sur un
+# fichier de la Basic Auth ou de son corps est refusée — rien de vérifié » en queue du message, le même texte pour les deux cas
+# (R212 ; le rang de la valeur, jamais son texte), la valeur de la Basic Auth nulle part.
 check_args_write_refused() {
   _case_incomplete CASE_RANK && return 0
-  _check_value_refused " : argument n° $CASE_RANK : une valeur qui écrit dans le dossier de la Basic Auth est refusée — rien de vérifié\$"
+  _check_value_refused " : argument n° $CASE_RANK : $WRITE_REFUSAL — rien de vérifié\$"
 }
 
 # check_curl_opts_write_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Le même refus pour un élément de SMOKE_CURL_OPTS : « SMOKE_CURL_OPTS, élément n° <rang> : une valeur qui écrit dans le dossier de
-# la Basic Auth est refusée — rien de vérifié » en queue du message.
+# Le même refus pour un élément de SMOKE_CURL_OPTS : « SMOKE_CURL_OPTS, élément n° <rang> : une valeur qui écrit sur un fichier de la
+# Basic Auth ou de son corps est refusée — rien de vérifié » en queue du message.
 check_curl_opts_write_refused() {
   _case_incomplete CASE_RANK && return 0
-  _check_value_refused \
-    " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : une valeur qui écrit dans le dossier de la Basic Auth est refusée — rien de vérifié\$"
+  _check_value_refused " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : $WRITE_REFUSAL — rien de vérifié\$"
+}
+
+# check_http_base_served_without_basic_auth  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_ARGS)
+#
+# Sans Basic Auth, une base en `http://` est servie comme avant (un smoke local, R212, St17-23) : aucun appel ne porte de `-K`, le
+# faux curl a été appelé, et le stderr ne dit pas « non https:// ». Le pendant de check_non_https_refused, qui exige le refus.
+check_http_base_served_without_basic_auth() {
+  _case_incomplete CASE_LABEL CASE_RC CASE_ERR CASE_CALLS CASE_ARGS && return 0
+  if ! grep -q -- ' -K ' "$CASE_ARGS" && [ -s "$CASE_CALLS" ] && ! grep -q 'non https://' "$CASE_ERR"; then
+    pass "$CASE_LABEL"
+  else
+    fail "$CASE_LABEL" "rc=$CASE_RC ; err : $(cat -A "$CASE_ERR") ; args : $(head -1 "$CASE_ARGS")"
+  fi
+}
+
+# check_hollow_basic_auth_values  (CASE_LABEL, CASE_RUNNER, CASE_ERR, CASE_OUT, CASE_CALLS ; CASE_ARGS et CASE_TMPDIR facultatifs)
+#
+# Un utilisateur ou un mot de passe vide n'est pas une Basic Auth (C11-8, R212, St17-23) : pour chacune des trois valeurs creuses
+# (`:`, `<repère>:` et `:<repère>`, le repère étant généré), sortie 2 avant tout appel de curl, « Basic Auth sans utilisateur ou sans
+# mot de passe » en tête d'une ligne du stderr, rien sur stdout, rien dans TMPDIR si le dossier est donné, et le repère nulle part
+# (stdout, stderr, et le fichier des arguments s'il est donné). Ce cas lance le script : il appelle `$CASE_RUNNER <valeur>`, une
+# fonction du test qui le lance avec AUDIT_BASIC_AUTH=<valeur> et laisse son code de sortie dans `rc`, comme le `run` de chaque test ;
+# un lanceur qui ne pose pas `rc` est un `fail` nommé. Un `pass` par valeur, le libellé suivi du nombre de caractères.
+check_hollow_basic_auth_values() {
+  local token hollow detail tmpdir="${CASE_TMPDIR:-}" searched
+  _case_incomplete CASE_LABEL CASE_RUNNER CASE_ERR CASE_OUT CASE_CALLS && return 0
+  token="g$RANDOM$RANDOM"
+  searched=("$CASE_OUT" "$CASE_ERR")
+  if [ -n "${CASE_ARGS:-}" ]; then
+    searched+=("$CASE_ARGS")
+  fi
+  for hollow in ':' "${token}:" ":${token}"; do
+    rc=""
+    "$CASE_RUNNER" "$hollow"
+    if [ -z "$rc" ]; then
+      fail "$CASE_LABEL" "le lanceur $CASE_RUNNER n'a pas posé rc : le cas ne sait pas ce que le script a rendu"
+      continue
+    fi
+    if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$CASE_ERR" \
+       && [ ! -s "$CASE_CALLS" ] && [ ! -s "$CASE_OUT" ] && { [ -z "$tmpdir" ] || [ -z "$(ls -A "$tmpdir")" ]; } \
+       && ! values_found_in "$token" -- "${searched[@]}"; then
+      pass "$CASE_LABEL (${#hollow} caractères) → sortie 2, aucun appel${tmpdir:+, aucun dossier}, valeur jamais citée"
+    else
+      detail="rc=$rc ; err : $(lines_without_values "$CASE_ERR" "$token" | cat -A) ; appels : $(cat "$CASE_CALLS")"
+      fail "$CASE_LABEL" "$detail${tmpdir:+ ; TMPDIR : $(ls -A "$tmpdir")}"
+    fi
+  done
 }
 
 # check_no_child_sees_basic_auth  (CASE_LABEL, CASE_RC, CASE_EXPECTED_RC, CASE_ENV_FILE)

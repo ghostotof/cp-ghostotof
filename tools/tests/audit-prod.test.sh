@@ -23,8 +23,8 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# run_case (check_no_child_sees_basic_auth, check_finds_library_under_cdpath, check_root_script_dir_is_slash), write_env_noting :
-# les cas et les faux communs aux smokes et à l'audit.
+# run_case (check_no_child_sees_basic_auth, check_finds_library_under_cdpath, check_root_script_dir_is_slash,
+# check_hollow_basic_auth_values), write_env_noting : les cas et les faux communs aux smokes et à l'audit.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -562,19 +562,11 @@ fi
 # --- C11-8 : un utilisateur vide (`:`, `:p`) ou un mot de passe vide (`u:`) n'est pas une Basic Auth : sortie 2
 # avant toute requête, « sans utilisateur ou sans mot de passe », aucun dossier, la valeur ni dans la sortie
 # ni dans la trace de `bash -x`. Valeurs générées.
-token="g$RANDOM$RANDOM"
 copy_tools creuse reelle
-for hollow in ':' "${token}:" ":${token}"; do
-  AUDIT_BASIC_AUTH="$hollow" run_traced creuse
-  if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/creuse.err" \
-     && [ ! -s "$TMP/creuse.calls" ] && [ -z "$(ls -A "$TMP/creuse.tmpdir")" ] \
-     && ! values_found_in "$token" -- "$TMP/creuse.out" "$TMP/creuse.err"; then
-    pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) : sortie 2, aucun appel, aucun dossier, valeur ni citée ni tracée"
-  else
-    fail "AUDIT_BASIC_AUTH à côté vide" \
-      "rc=$rc ; err : $(lines_without_values "$TMP/creuse.err" "$token" | head -3) ; TMPDIR : $(ls -A "$TMP/creuse.tmpdir")"
-  fi
-done
+# Le lanceur du cas : l'audit sous `bash -x` avec la valeur creuse que le cas donne, le code de sortie dans $rc (par run_audit).
+run_hollow() { AUDIT_BASIC_AUTH="$1" run_traced creuse; }
+run_case check_hollow_basic_auth_values "AUDIT_BASIC_AUTH à côté vide" - CASE_RUNNER=run_hollow \
+  CASE_ERR="$TMP/creuse.err" CASE_OUT="$TMP/creuse.out" CASE_CALLS="$TMP/creuse.calls" CASE_TMPDIR="$TMP/creuse.tmpdir"
 
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les
 # deux (signal, `exit` d'une expansion) laisserait sinon le fichier de la Basic

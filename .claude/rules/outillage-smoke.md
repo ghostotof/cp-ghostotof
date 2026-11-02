@@ -105,7 +105,8 @@ The message gives the **rank** of the argument, never its text (a glued value co
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
 « argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth »; for a `-D` that overwrites a file of the call:
-« argument n° N : une valeur qui écrit dans le dossier de la Basic Auth est refusée » (the same text for a body file).
+« argument n° N : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée » (R212: one text for the `-K`, its
+directory and a body file).
 Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
 To admit a new option, **eleven places** (St16-25, St17-24), written here once; the docblock of `_smoke_option_arity` points here:
 (1) a line of its `case`, with the arity; (2) the list of that docblock; (3) the sentence « It admits <n> options » above, its number, in
@@ -215,5 +216,9 @@ The names a call may give are the array `CASE_NAMES`. A variable a case needs th
 of the test; a case that reads no exit code takes `-` for `<rc>` (`CASE_RC` stays empty), never a dummy `0`.
 `case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are
 written once. A generated value is never an argument of a process (`ps` would show it): `values_found_in <value>… -- <file>…` searches it
-through a mode-600 pattern file (`grep -F -f`), and `call_carrying <file> <rank> <fragment>…` finds a fake curl call by what it carries,
-never by its line number.
+through a mode-600 pattern file (`grep -F -f`), one pattern per non-empty line (a value with a leading, trailing or doubled line break
+would write an empty pattern, which matches every line; a value that is empty or only line breaks exits 2, CR17-5), and
+`call_carrying <file> <rank> <fragment>…` finds a fake curl call by what it carries, never by its line number.
+`check_hollow_basic_auth_values` (R212) runs the script itself, for the three hollow values (`:`, `<token>:`, `:<token>`): the call names
+`CASE_RUNNER`, a function of the test that launches the script with `AUDIT_BASIC_AUTH` set to its first argument and leaves the exit
+code in `rc`, as each test's `run` does; `check_http_base_served_without_basic_auth` is the case of an `http://` base without a Basic Auth.

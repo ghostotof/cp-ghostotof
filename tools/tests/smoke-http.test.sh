@@ -823,7 +823,8 @@ refuse_curl_opts_file 3 -sS -b '@a=b'
 # curl l'écraserait (mesuré sur l'image épinglée : `-D <le -K>` le laisse à 0 octet, même quand le transfert échoue) et le
 # prochain appel lirait un `-K` vide, donc sans Basic Auth. Le jugement est un test de bash, `-ef` (même périphérique, même inode),
 # qui suit `..` et les liens sans processus : refus de sortie 2, curl jamais appelé, le rang de la valeur, jamais son texte, et le
-# message propre « une valeur qui écrit dans le dossier de la Basic Auth ».
+# message propre « une valeur qui écrit sur un fichier de la Basic Auth ou de son corps » (R212 : le même pour le `-K`, son dossier
+# et le corps).
 refuse_write_args() { _refuse_in_args check_args_write_refused valeur "$@"; }
 refuse_write_curl_opts() { _refuse_in_curl_opts check_curl_opts_write_refused valeur "$@"; }
 write_dir_name="${SMOKE_AUTH_DIR##*/}"
@@ -1961,6 +1962,37 @@ if [ "$rc" -eq 2 ] && grep -q 'valeur vide' "$TMP/stderr"; then
 else
   fail "values_found_in : valeur vide" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
 fi
+# R212 (CR17-5) : une valeur dont un saut de ligne est en tête, en fin ou doublé donne, par `printf '%s\n'`, une ligne vide dans le
+# fichier de motifs, que `grep -F -f` lit comme un motif qui trouve toute ligne : le fichier de motifs n'a aucune ligne vide, et une
+# valeur de sauts de ligne seuls est refusée comme la valeur vide (sortie 2, message nommé). Le fichier cherché ne porte ni « abc », ni
+# « a », ni « b » : seule une ligne vide, motif qui trouve tout, répondrait « trouvée ».
+printf 'xyz\n' > "$TMP/haystack-xyz"
+printf 'la ligne abc est ici\n' > "$TMP/haystack-abc"
+for newline_value in $'\nabc' $'abc\n' $'a\n\nb' $'\n\nabc\n\n'; do
+  rc_absent=0; rc_present=0
+  values_found_in "$newline_value" -- "$TMP/haystack-xyz" || rc_absent=$?
+  values_found_in "$newline_value" -- "$TMP/haystack-abc" || rc_present=$?
+  write_value_patterns "$newline_value" "autre"
+  empty_lines="$(grep -c '^$' "$TMP/value-patterns" || true)"
+  rm -f -- "$TMP/value-patterns"
+  if [ "$rc_absent" -eq 1 ] && [ "$rc_present" -eq 0 ] && [ "$empty_lines" -eq 0 ]; then
+    pass "values_found_in : sauts de ligne en tête, en fin ou doublés (${#newline_value} caractères) : absente (1), présente (0)"
+  else
+    fail "values_found_in : valeur à sauts de ligne" \
+      "absente : $rc_absent (attendu 1) ; présente : $rc_present ; lignes vides du fichier de motifs : $empty_lines (attendu 0)"
+  fi
+done
+unset newline_value rc_absent rc_present empty_lines
+for only_newlines in $'\n' $'\n\n\n'; do
+  rc=0
+  ( values_found_in "$only_newlines" -- "$TMP/haystack-xyz" ) > /dev/null 2> "$TMP/stderr" || rc=$?
+  if [ "$rc" -eq 2 ] && grep -q 'sauts de ligne' "$TMP/stderr"; then
+    pass "values_found_in : une valeur de sauts de ligne seuls (${#only_newlines} caractères) est refusée (sortie 2)"
+  else
+    fail "values_found_in : sauts de ligne seuls" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fi
+done
+unset only_newlines
 mkdir "$TMP/grep-bin"
 real_grep="$(command -v grep)"
 cat > "$TMP/grep-bin/grep" <<'FAKE'
