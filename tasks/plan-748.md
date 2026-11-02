@@ -14333,6 +14333,20 @@ Constats : St17-23 ; CR17-5 ; St17-26 ; St17-27 ; refactoring (sauf CR17-5).
   restante dite.
 - [ ] **Step 6 : commit** — `test(tools): un cas partagé pour les valeurs creuses, des motifs sans ligne vide (#748)`.
 
+**Ajout à R212 (décision de l'auteur, 2026-11-02, question rendue par R211).** Le message de la raison `writes`
+(`tools/lib/smoke-http.sh`, `_smoke_judge`, « une valeur qui écrit dans le dossier de la Basic Auth est refusée ») est faux
+depuis R211 pour un `-D` vers un fichier de `smoke_data_file`, qui vit sous `TMPDIR`. R212 le remplace par **un seul texte vrai
+pour les deux cas** (par exemple « une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée »), sans
+raison nouvelle : dans `_smoke_judge`, dans chaque docblock qui le cite (`_smoke_judge`, `smoke_fetch`), dans
+`outillage-smoke.md` et dans le cas partagé de `tools/tests/lib/smoke-cases.sh` qui le lit, puis retire de la règle et du
+docblock la phrase qui signalait l'écart. Test rouge : un cas qui exige le nouveau texte pour `-D <corps>` et pour `-D <dossier>`.
+Mutation : l'ancien texte rétabli dans `_smoke_judge` → les cas rougissent ; dans le corps du commit. Le préfixe du commit
+devient `fix(tools):` si l'agent le juge plus juste, dit au rendu.
+
+**Décision de l'auteur, 2026-11-02 (question rendue par R211)** : un `TMPDIR` qui porte un composant `..` ferait refuser le
+`-D "$headers_file"` des smokes avec la Basic Auth (sortie 2, message dit) ; **limite acceptée**, telle que R211 l'a écrite dans
+`outillage-smoke.md`. Rien ne change.
+
 ---
 
 ### Task R213 : Frontend — `useCurrentLocale()` remplace les copies de `locale.value as Locale`
