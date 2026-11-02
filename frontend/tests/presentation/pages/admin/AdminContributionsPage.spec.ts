@@ -13,7 +13,6 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { startEditThroughSetup } from '../../../support/startEditThroughSetup'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
@@ -483,14 +482,5 @@ describe('AdminContributionsPage', () => {
     const { wrapper } = await mountPage()
 
     await expectNoAccessibilityViolation(wrapper)
-  })
-
-  it("une langue non prise en charge n'est pas posée : le sélecteur garde la précédente (#748, R204)", async () => {
-    const { wrapper } = await mountPage()
-    await startEditThroughSetup(wrapper, AdminContributionsPage, EN_ONE)
-
-    await startEditThroughSetup(wrapper, AdminContributionsPage, { ...FR_ONE, locale: 'de' })
-
-    expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
   })
 })

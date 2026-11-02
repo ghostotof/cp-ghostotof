@@ -7,18 +7,12 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_FRAGMENTS } from '../support/srcSources'
  * `as Locale`. La langue d'interface se lit par `useCurrentLocale()` (`application/shared/`), qui ramène une langue hors du
  * site à la langue par défaut ; la langue d'une route par `routeLocale()`.
  *
- * Les fichiers qui portent encore l'assertion sont **exactement** `REMAINING_LOCALE_CASTS` (une égalité, non un plafond) :
- * un fichier de plus fait rougir la garde, et un fichier qui s'en défait aussi, jusqu'à ce que la liste le retire. R214 la
- * vide, en validant la langue à la frontière des dépôts d'admin.
+ * Les fichiers qui portent l'assertion sont **exactement** `REMAINING_LOCALE_CASTS` (une égalité, non un plafond) : un fichier
+ * de plus fait rougir la garde, et un fichier qui s'en défait aussi, jusqu'à ce que la liste le retire. Elle est vide depuis
+ * R214, qui valide la langue à la frontière des dépôts d'admin (`supportedLocaleOf`) : une entrée qui y reviendrait est un retour
+ * à la conversion sans jugement, non une exception à lister.
  */
-const REMAINING_LOCALE_CASTS: readonly string[] = [
-  'domain/admin/shared/ordering/groupByTranslationGroup.ts',
-  'infrastructure/admin/about/HttpAdminAboutMeCardRepository.ts',
-  'infrastructure/admin/about/HttpAdminAboutSettingsRepository.ts',
-  'infrastructure/admin/about/HttpAdminAboutSiteCardRepository.ts',
-  'infrastructure/admin/quality/HttpAdminQualityPrincipleRepository.ts',
-  'infrastructure/admin/quality/HttpAdminQualityTraitRepository.ts',
-]
+const REMAINING_LOCALE_CASTS: readonly string[] = []
 
 /** Vrai si le code porte une assertion `as Locale` (hors commentaire ; le gabarit d'un `.vue` compris). */
 function castsToLocale(path: string): boolean {
@@ -40,7 +34,7 @@ describe('aucun `as Locale` dans src/', () => {
     expect(detect('const l = x as LocaleKey')).toBe(false)
   })
 
-  it('les fichiers qui portent `as Locale` sont exactement ceux de la liste (R214 la vide)', () => {
+  it('les fichiers qui portent `as Locale` sont exactement ceux de la liste, vide depuis R214', () => {
     const casting = Object.keys(SRC_SCRIPTS).filter(castsToLocale).sort()
     const expected = [...REMAINING_LOCALE_CASTS].sort()
 

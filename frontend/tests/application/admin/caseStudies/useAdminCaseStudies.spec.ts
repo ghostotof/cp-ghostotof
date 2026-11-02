@@ -17,7 +17,7 @@ const SECTION: AdminCaseStudy = {
   problem: 'Problème.', solution: 'Solution.', tradeoffs: 'Compromis.', measuredResult: 'Résultat.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', translationGroup: null, title: 'Un moteur de tarification',
+  locale: 'fr' as const, translationGroup: null, title: 'Un moteur de tarification',
   problem: 'Problème.', solution: 'Solution.', tradeoffs: 'Compromis.', measuredResult: 'Résultat.',
 }
 

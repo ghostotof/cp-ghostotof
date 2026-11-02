@@ -5,10 +5,10 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutMeCardRepository'
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf } from '../shared/supportedLocale'
 
 interface BackofficeAboutMeCardApiResponse {
   id: string
@@ -22,6 +22,14 @@ interface BackofficeAboutMeCardApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/about/me-cards'
+
+/**
+ * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
+ * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
+ */
+function unsupportedLocale(): AdminAboutError {
+  return new AdminAboutError('unknown', 'Unsupported locale in response')
+}
 
 /**
  * Implémentation HTTP de AdminAboutMeCardRepository, même pattern que
@@ -88,7 +96,7 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
   private toEntity(card: BackofficeAboutMeCardApiResponse): AdminAboutMeCard {
     return {
       id: card.id,
-      locale: card.locale as Locale,
+      locale: supportedLocaleOf(card.locale, unsupportedLocale),
       translationGroup: card.translationGroup,
       category: card.category as AdminAboutMeCardCategory,
       title: card.title,

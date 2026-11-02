@@ -17,7 +17,7 @@ const SECTION: AdminAnonymousCvSection = {
   yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', translationGroup: null, title: 'Backend', skills: 'Symfony', yearsOfExperience: 12,
+  locale: 'fr' as const, translationGroup: null, title: 'Backend', skills: 'Symfony', yearsOfExperience: 12,
   achievements: 'Réalisations.',
 }
 

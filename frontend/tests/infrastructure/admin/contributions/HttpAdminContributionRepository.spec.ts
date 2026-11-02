@@ -16,7 +16,7 @@ const API_CONTRIBUTION = {
   reference: 'PR #42', url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
+  locale: 'fr' as const, translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
   url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.',
 }
 
@@ -161,5 +161,24 @@ describe('HttpAdminContributionRepository', () => {
 
     expect(error).toBeInstanceOf(AdminContributionError)
     expect((error as AdminContributionError).reason).toBe('validation')
+  })
+
+  // Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat, que le dépôt dit à la frontière
+  // (Q1 (A) : la raison `unknown`, aucune clé de traduction nouvelle) plutôt que de la laisser entrer dans une entité `Locale`.
+  it("une langue que le site ne porte pas rend l'erreur 'unknown', en lecture comme en réponse d'écriture (#748, R214)", async () => {
+    const unsupportedEntry = { ...API_CONTRIBUTION, locale: 'de' }
+    const repository = new HttpAdminContributionRepository(API_BASE_URL)
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [unsupportedEntry])))
+    const listError = await repository.list().catch((caught: unknown) => caught)
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, unsupportedEntry)))
+    const createError = await repository.create(INPUT).catch((caught: unknown) => caught)
+
+    for (const error of [listError, createError]) {
+      expect(error).toBeInstanceOf(AdminContributionError)
+      expect((error as AdminContributionError).reason).toBe('unknown')
+      expect((error as AdminContributionError).message).toBe('Unsupported locale in response')
+    }
   })
 })

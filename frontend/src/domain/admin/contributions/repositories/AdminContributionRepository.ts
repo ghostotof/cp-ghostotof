@@ -1,4 +1,5 @@
 import type { AdminContribution } from '../entities/AdminContribution'
+import type { Locale } from '../../../portfolio/entities/Locale'
 
 /**
  * Corps d'écriture d'une contribution. Sans `position` (spec 0004, D3 : elle
@@ -13,7 +14,7 @@ import type { AdminContribution } from '../entities/AdminContribution'
  *   le faire romprait le lien FR/EN à la première édition.
  */
 export interface AdminContributionInput {
-  locale: string
+  locale: Locale
   translationGroup: string | null
   title: string
   project: string

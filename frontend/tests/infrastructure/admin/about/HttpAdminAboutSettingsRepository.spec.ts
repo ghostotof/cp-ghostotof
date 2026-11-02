@@ -97,4 +97,28 @@ describe('HttpAdminAboutSettingsRepository', () => {
     expect(error).toBeInstanceOf(AdminAboutError)
     expect((error as AdminAboutError).reason).toBe('unknown')
   })
+
+  // Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat, que le dépôt dit à la frontière
+  // (Q1 (A) : la raison `unknown`, aucune clé de traduction nouvelle) plutôt que de la laisser entrer dans une entité `Locale`.
+  it("une langue que le site ne porte pas rend l'erreur 'unknown', en lecture comme en réponse d'écriture (#748, R214)", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { ...SETTINGS_BODY, locale: 'de' })))
+    const repository = new HttpAdminAboutSettingsRepository(API_BASE_URL)
+
+    const getError = await repository.get('fr').catch((caught: unknown) => caught)
+    const updateError = await repository
+      .update('fr', {
+        siteEyebrow: 'a',
+        meEyebrow: 'b',
+        technicalSubtitle: 'c',
+        personalSubtitle: 'd',
+        hobbiesSubtitle: 'e',
+      })
+      .catch((caught: unknown) => caught)
+
+    for (const error of [getError, updateError]) {
+      expect(error).toBeInstanceOf(AdminAboutError)
+      expect((error as AdminAboutError).reason).toBe('unknown')
+      expect((error as AdminAboutError).message).toBe('Unsupported locale in response')
+    }
+  })
 })

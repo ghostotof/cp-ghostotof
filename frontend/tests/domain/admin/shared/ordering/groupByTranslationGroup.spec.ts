@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { groupByTranslationGroup } from '../../../../../src/domain/admin/shared/ordering/groupByTranslationGroup'
+import type { Locale } from '../../../../../src/domain/portfolio/entities/Locale'
 
 interface Entry {
   translationGroup: string
-  locale: string
+  locale: Locale
   position: number
 }
 
@@ -58,12 +59,13 @@ describe('groupByTranslationGroup', () => {
   it('ignore une locale rendue par une entrée mais absente du périmètre demandé', () => {
     const entries: Entry[] = [
       entry({ translationGroup: 'g1', locale: 'fr', position: 0 }),
-      entry({ translationGroup: 'g1', locale: 'de', position: 0 }),
+      entry({ translationGroup: 'g1', locale: 'en', position: 0 }),
     ]
 
-    const rows = groupByTranslationGroup(entries, ['fr', 'en'])
+    // Le type exclut désormais une langue hors du site (`de`), que le dépôt refuse (R214) : le périmètre demandé reste le seul filtre.
+    const rows = groupByTranslationGroup(entries, ['fr'])
 
     expect(rows[0].byLocale).toEqual({ fr: entries[0] })
-    expect(rows[0].missing).toEqual(['en'])
+    expect(rows[0].missing).toEqual([])
   })
 })

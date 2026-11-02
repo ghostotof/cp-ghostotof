@@ -163,4 +163,23 @@ describe('HttpAdminQualityTraitRepository', () => {
     expect(error).toBeInstanceOf(AdminQualityError)
     expect((error as AdminQualityError).reason).toBe('unknown')
   })
+
+  // Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat, que le dépôt dit à la frontière
+  // (Q1 (A) : la raison `unknown`, aucune clé de traduction nouvelle) plutôt que de la laisser entrer dans une entité `Locale`.
+  it("une langue que le site ne porte pas rend l'erreur 'unknown', en lecture comme en réponse d'écriture (#748, R214)", async () => {
+    const unsupportedEntry = { ...API_TRAIT, locale: 'de' }
+    const repository = new HttpAdminQualityTraitRepository(API_BASE_URL)
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [unsupportedEntry])))
+    const listError = await repository.list().catch((caught: unknown) => caught)
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, unsupportedEntry)))
+    const createError = await repository.create(INPUT).catch((caught: unknown) => caught)
+
+    for (const error of [listError, createError]) {
+      expect(error).toBeInstanceOf(AdminQualityError)
+      expect((error as AdminQualityError).reason).toBe('unknown')
+      expect((error as AdminQualityError).message).toBe('Unsupported locale in response')
+    }
+  })
 })

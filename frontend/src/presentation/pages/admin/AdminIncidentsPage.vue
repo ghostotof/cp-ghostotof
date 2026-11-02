@@ -32,7 +32,7 @@ import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
 import { INCIDENT_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
-import { isSupportedLocale, LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
+import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminIncident } from '../../../domain/admin/incidents/entities/AdminIncident'
 
 const { t } = useI18n()
@@ -189,11 +189,7 @@ function startEdit(incident: AdminIncident): void {
   editingId.value = incident.id
   proposalSourceLocale.value = null
   sourceGroup.value = incident.translationGroup
-  // Une langue hors de `SUPPORTED_LOCALES` n'est pas posée : le tableau n'en montre aucune (`groupByTranslationGroup`),
-  // la garde ne sert que si une entrée de cette sorte arrivait jusqu'ici (même forme que `chooseLocale` d'« À propos »).
-  if (isSupportedLocale(incident.locale)) {
-    form.locale = incident.locale
-  }
+  form.locale = incident.locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
   // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`

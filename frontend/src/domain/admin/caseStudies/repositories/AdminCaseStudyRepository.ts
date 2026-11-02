@@ -1,4 +1,5 @@
 import type { AdminCaseStudy } from '../entities/AdminCaseStudy'
+import type { Locale } from '../../../portfolio/entities/Locale'
 
 /**
  * Corps d'écriture d'une étude de cas (ADR 0003 D5, palier de base : jamais de nom de client). Sans `position`
@@ -13,7 +14,7 @@ import type { AdminCaseStudy } from '../entities/AdminCaseStudy'
  *   le faire romprait le lien FR/EN à la première édition.
  */
 export interface AdminCaseStudyInput {
-  locale: string
+  locale: Locale
   translationGroup: string | null
   title: string
   problem: string

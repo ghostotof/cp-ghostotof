@@ -11,6 +11,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf } from '../shared/supportedLocale'
 
 interface BackofficeCaseStudyApiResponse {
   id: string
@@ -25,6 +26,14 @@ interface BackofficeCaseStudyApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/case-studies'
+
+/**
+ * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
+ * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
+ */
+function unsupportedLocale(): AdminCaseStudyError {
+  return new AdminCaseStudyError('unknown', 'Unsupported locale in response')
+}
 
 /**
  * Implémentation HTTP de AdminCaseStudyRepository. Toutes les
@@ -87,7 +96,7 @@ export class HttpAdminCaseStudyRepository implements AdminCaseStudyRepository {
   private toEntity(caseStudy: BackofficeCaseStudyApiResponse): AdminCaseStudy {
     return {
       id: caseStudy.id,
-      locale: caseStudy.locale,
+      locale: supportedLocaleOf(caseStudy.locale, unsupportedLocale),
       translationGroup: caseStudy.translationGroup,
       title: caseStudy.title,
       problem: caseStudy.problem,

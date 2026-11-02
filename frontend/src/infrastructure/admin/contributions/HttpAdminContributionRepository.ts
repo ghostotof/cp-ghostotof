@@ -11,6 +11,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf } from '../shared/supportedLocale'
 
 interface BackofficeContributionApiResponse {
   id: string
@@ -26,6 +27,14 @@ interface BackofficeContributionApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/contributions'
+
+/**
+ * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
+ * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
+ */
+function unsupportedLocale(): AdminContributionError {
+  return new AdminContributionError('unknown', 'Unsupported locale in response')
+}
 
 /**
  * Implémentation HTTP de AdminContributionRepository. Toutes les méthodes
@@ -88,7 +97,7 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
   private toEntity(contribution: BackofficeContributionApiResponse): AdminContribution {
     return {
       id: contribution.id,
-      locale: contribution.locale,
+      locale: supportedLocaleOf(contribution.locale, unsupportedLocale),
       translationGroup: contribution.translationGroup,
       title: contribution.title,
       project: contribution.project,

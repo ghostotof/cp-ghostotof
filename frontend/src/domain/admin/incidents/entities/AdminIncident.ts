@@ -1,3 +1,5 @@
+import type { Locale } from '../../../portfolio/entities/Locale'
+
 /**
  * Forme à plat éditable d'un incident, distincte du contrat public (id, locale,
  * position et groupe de traduction en plus).
@@ -12,7 +14,7 @@
  */
 export interface AdminIncident {
   readonly id: string
-  readonly locale: string
+  readonly locale: Locale
   readonly translationGroup: string
   readonly title: string
   readonly version: string

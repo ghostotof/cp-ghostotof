@@ -1,3 +1,5 @@
+import type { Locale } from '../../../portfolio/entities/Locale'
+
 /**
  * Forme à plat éditable d'une étude de cas, distincte de CaseStudy (contrat
  * public en lecture seule) : celle-ci porte l'id,
@@ -15,7 +17,7 @@
  */
 export interface AdminCaseStudy {
   readonly id: string
-  readonly locale: string
+  readonly locale: Locale
   readonly translationGroup: string
   readonly title: string
   readonly problem: string
