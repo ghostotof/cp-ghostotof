@@ -14499,6 +14499,14 @@ Constats : St17-10 ; St17-11 = Sp17-8 ; St17-12 ; St17-13 = Sp17-19 ; St17-14 ; 
   si la règle change (taille notée).
 - [ ] **Step 5 : commit** — `refactor(frontend): les formulaires par entrée sans commentaire recopié (#748)`.
 
+**Ajout à R216 (décision de l'auteur, 2026-11-02, écart 3 rendu par R215).** R215 (b97f80db) a typé `proseFields` en
+`readonly string[]` dans `entryFieldsOf` et `EntryFieldOptions` (`qualityEntrySection.ts`), à la lettre de la signature du choix 9 ;
+avant, il était `readonly F[]`, et un nom de prose absent du record était refusé par le compilateur. R216 **rétablit ce contrôle** :
+`proseFields: readonly F[]` partout où la liste est reçue pour une instance (la prop de `AdminQualityEntrySection.vue` comprise, si
+sa forme le permet) ; les constantes de `proseFields.ts` passées telles quelles doivent compiler. Mutation : un nom de prose hors du
+record passé à `entryFieldsOf` (ou à la prop) → `make front-build` échoue (ligne TS au commit) ; restauré ; dans le corps du
+commit. Si `vue-tsc` refuse la forme générique ou manque de mémoire (R202), l'agent s'arrête et rend la question.
+
 ---
 
 ### Task R217 : Gardes de source et specs — des docblocks qui renvoient aux constantes, les limites écrites, la raison du plancher
