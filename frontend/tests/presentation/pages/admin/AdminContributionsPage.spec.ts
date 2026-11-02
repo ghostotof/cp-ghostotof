@@ -16,6 +16,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
+import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
@@ -140,11 +141,10 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
-// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
-const DELETE_FR: string = fr.admin.contributions.deleteAction
-// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
-const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
+// de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = entryFormTexts('contributions')
+const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.contributions.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
@@ -172,7 +172,7 @@ describe('AdminContributionsPage', () => {
 
     const missing = rows(wrapper)[1]
     expect(missing.text()).toContain('Traduction manquante')
-    expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+    expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
   it('n\'affiche plus aucune colonne ni champ de position', async () => {
@@ -190,7 +190,7 @@ describe('AdminContributionsPage', () => {
     expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
 
     vi.mocked(contributions.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(contributions.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
@@ -230,10 +230,10 @@ describe('AdminContributionsPage', () => {
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), DELETE_FR).attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), FORM_TEXTS.delete).attributes('disabled'),
     ).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, CREATE_EN_LABEL).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
@@ -241,12 +241,12 @@ describe('AdminContributionsPage', () => {
     // c'est celui qui a le plus besoin de l'aide.
     expect(translateEntryButton(wrapper, 0).attributes('aria-describedby')).toBe('admin-order-locked-hint')
 
-    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
     expect(
       buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR).attributes('disabled'),
     ).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
   })
@@ -259,7 +259,7 @@ describe('AdminContributionsPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(contributions.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(contributions.list).toHaveBeenCalledOnce()
@@ -271,7 +271,7 @@ describe('AdminContributionsPage', () => {
   it('« Créer la version EN » ouvre une création rattachée, projet / référence / URL recopiés, prose vide', async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
     expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
@@ -321,7 +321,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
     await wrapper.get('#admin-contribution-title').setValue('A homemade observability dashboard')
     await wrapper.get('#admin-contribution-summary').setValue('Summary.')
     await wrapper.get('#admin-contribution-body').setValue('Body.')
@@ -396,16 +396,16 @@ describe('AdminContributionsPage', () => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), FORM_TEXTS.delete).trigger('click')
     },
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR).trigger('click')
     },
     // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
     deleteSiblingOfOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'An npm lock in the manifest'), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'An npm lock in the manifest'), FORM_TEXTS.delete).trigger('click')
     },
-    startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
+    startCreateVersion: (wrapper) => buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click'),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()

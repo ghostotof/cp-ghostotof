@@ -3,14 +3,14 @@ import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 /**
  * Le bouton de `scope` dont le texte est `label`, ou une erreur qui le nomme. **Écrite une fois** pour les specs des pages
  * d'admin : un test qui cherche un bouton introuvable échoue sur son libellé, jamais sur un
- * `undefined?.trigger()` muet. Le libellé se lit du catalogue (`fr.json`, une clé par page), jamais d'un littéral français : une
- * retouche du libellé ne doit pas faire rougir la moitié d'un fichier de spec. Un test qui juge le texte lui-même n'est pas
- * ici : il l'écrit en toutes lettres, ce que le catalogue ne dirait pas.
+ * `undefined?.trigger()` muet. Le libellé se lit du catalogue (`fr.json`) par `adminButtonTexts.ts`, jamais d'un littéral
+ * français : une retouche du libellé ne doit pas faire rougir la moitié d'un fichier de spec. Seule exception, un test qui
+ * juge le texte lui-même (`adminTranslationTexts.spec.ts`) : il l'écrit en toutes lettres, ce que le catalogue ne dirait pas.
  */
 export function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
+  const button = scope.findAll<HTMLButtonElement>('button').find((candidate) => candidate.text() === label)
   if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
+  return button
 }
 
 /**

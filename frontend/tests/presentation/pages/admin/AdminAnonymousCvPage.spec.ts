@@ -16,6 +16,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { ANONYMOUS_CV_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
+import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
@@ -141,11 +142,10 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
-// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
-const DELETE_FR: string = fr.admin.anonymousCv.deleteAction
-// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
-const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
+// de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = entryFormTexts('anonymousCv')
+const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.anonymousCv.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
@@ -173,7 +173,7 @@ describe('AdminAnonymousCvPage', () => {
 
     const missing = rows(wrapper)[1]
     expect(missing.text()).toContain('Traduction manquante')
-    expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+    expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
   it("n'affiche plus aucune colonne ni champ de position", async () => {
@@ -197,7 +197,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
 
     vi.mocked(sections.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(sections.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
@@ -237,20 +237,20 @@ describe('AdminAnonymousCvPage', () => {
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), DELETE_FR).attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), FORM_TEXTS.delete).attributes('disabled'),
     ).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, CREATE_EN_LABEL).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
     expect(
       buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), EDIT_FR).attributes('disabled'),
     ).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
   })
@@ -263,7 +263,7 @@ describe('AdminAnonymousCvPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(sections.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(sections.list).toHaveBeenCalledOnce()
@@ -275,7 +275,7 @@ describe('AdminAnonymousCvPage', () => {
   it('« Créer la version EN » ouvre une création rattachée, années recopiées, prose vide', async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
     expect(wrapper.get('h2').text()).toBe('Ajouter une section')
     expect(valueOf(wrapper, '#admin-anonymous-cv-locale')).toBe('en')
@@ -323,7 +323,7 @@ describe('AdminAnonymousCvPage', () => {
     const sections = createStubRepository()
     const { wrapper } = await mountPage(sections)
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
     await wrapper.get('#admin-anonymous-cv-title').setValue('Vue 3 frontend')
     await wrapper.get('#admin-anonymous-cv-skills').setValue('Vue 3, TypeScript')
     await wrapper.get('#admin-anonymous-cv-achievements').setValue('Decoupled SPA.')
@@ -399,16 +399,16 @@ describe('AdminAnonymousCvPage', () => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), EDIT_FR).trigger('click')
     },
     deleteEditedEntry: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), FORM_TEXTS.delete).trigger('click')
     },
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), EDIT_FR).trigger('click')
     },
     // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
     deleteSiblingOfOther: async (wrapper) => {
-      await buttonLabelled(actionsForLine(wrapper, 'PHP / Symfony backend'), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, 'PHP / Symfony backend'), FORM_TEXTS.delete).trigger('click')
     },
-    startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
+    startCreateVersion: (wrapper) => buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click'),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
