@@ -146,10 +146,13 @@ with an `n` option in any cluster (a nameref reads a variable by name: `local -r
 `compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`) or a
 quote, a backtick or a backslash (`bash -c 'set'`, `` x=`set` ``, `\set`), bare or followed by a redirection, a pipe, `;`, `&&`, `||`, a
 quote, a backtick or a backslash (`set\`); `eval`; `printenv`; `env` as a command; `${!`; `ps` with the BSD option `e` in any position
-(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`),
-not the POSIX `-e` (every process, not its environment: `ps -ef` passes); a quote, a backtick or a backslash glued to a word is dropped
-first, and a final backslash refuses the line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, prose included,
-however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
+(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`) **or with any option in `-` outside an allow-list** (C17-1): `-o` and `-p`
+(their value is skipped), `-e`, `-f`, `-ef` and `-aux` pass (every process, not its environment: `ps -ef`, `ps -aux` and
+`ps -p $$ -o comm=` pass), every other one refuses the line, the long ones too (`ps -auxe` and `ps -eaux`, which procps reads as the
+BSD options `aux` and `e` behind a dash, `ps -A e`, `ps -www`, `ps --cols 200`); a quote, a backtick or a backslash glued to a word is
+dropped first, and a final backslash refuses the line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, in any
+case (`ENVIRON` of awk, C17-2), prose included, however `/proc/<pid>/environ` is written (`cat /proc/self/environ`,
+`cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
 French prose writes « à peu près » or « près de », never that word, in a comment of these files.
 Such a bare word ends its command at the end of the line, `;`, `&`, `|`, `)`, `#`, a redirection, a backslash (`declare\`: the next line
 carries on the command), or at a quote or a backtick **glued** to the word or to its last option (C16-2: `bash -c 'declare'`,
@@ -158,14 +161,17 @@ follows (`bash -c 'declare -x '`): `export -n -- "$n"` opens the name, it passes
 `export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
 `if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``,
 `bash -c 'export -n -- NAME'`, `x="${env}"` and `environment` pass.
-The forms of C16-2 that print are **measured** in `smoke-http.test.sh`: run by `bash -c` with an exported dummy variable (a random value),
-each prints the value, and the same list is then refused by the guard.
+The forms of C16-2 and `ps -auxe` / `ps -eaux` that print are **measured** in `smoke-http.test.sh`: run by `bash -c` under `env -i` with
+the one dummy variable (a random value, never an argument of a process: the output goes through a pattern file, `grep -F -f`, and is read
+by `values_found_in`), each prints the value, and the same list is then refused by the guard. A witness variable the test itself exports
+must not appear in that output (C17-8): the measure inherits nothing. Never run such a form in a session outside `env -i` with a dummy.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
 and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, a `set` alone between
 quotes: `echo 'set'`, `echo "declare"`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of
 patterns is never complete against a deliberate bypass, which the review of the diff stops: a word cut inside by a quote or a backslash
-(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`; « no line lists the environment » holds under that limit only.
+(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`, perl's `%ENV` and PHP's `getenv()` and `$_ENV` (no guarded
+script runs either); « no line lists the environment » holds under that limit only.
 Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
