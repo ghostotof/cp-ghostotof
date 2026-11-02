@@ -185,8 +185,6 @@ const {
   proseFields: props.proseFields,
   // Son brouillon d'ordre est lu tout de suite, celui de l'autre section par `props.isLocked` : voir le docblock de la section.
   isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
     entry: editingId.value,
     locale: form.locale,
@@ -323,7 +321,6 @@ async function handleDelete(entry: E): Promise<void> {
     return
   }
 
-  // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
   await removeEntry(entry, () => remove(entry.id))
 }
 </script>

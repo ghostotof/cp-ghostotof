@@ -137,8 +137,6 @@ const {
   // Son brouillon d'ordre est lu tout de suite, celui des autres sections par `props.isLocked` : la limite de cette
   // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
   isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
-  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   identity: () => ({
     entry: editingId.value,
     locale: form.locale,
@@ -262,7 +260,6 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
     return
   }
 
-  // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
   await removeEntry(card, () => remove(card.id))
 }
 </script>

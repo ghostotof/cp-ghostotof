@@ -140,7 +140,7 @@ status announcement) that a fork would silently lose:
   text per state. A proposal is born of an edit, of « Créer la version XX » or of a blank form, and the language lock
   holds in the three (the proposed prose is in the target language). `tests/support/entryFormLock.ts`
   (`describedTexts()`, `describeEntryFormLock()`) reads the texts an `aria-describedby` designates, fails on a dangling
-  IDREF and runs the lock cases on the eight forms (it creates each case's translation repository and counts its
+  IDREF and runs the lock cases on each form (it creates each case's translation repository and counts its
   calls); `AdminAboutPage.spec.ts` and `AdminQualityPage.spec.ts` pin the
   permanent help.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
@@ -186,7 +186,7 @@ synchronously in the very checkpoint that judges the response current, and retur
 `applyTranslationProposal` leaves a field absent from the proposal untouched) →
 `presentation/ui/admin/TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits
 `translate`) and, per form, `presentation/ui/admin/useTranslatedForm.ts`, which wraps `useAdminTranslation` and writes once
-what the nine forms share. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
+what every form shares. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
 and what to do with the proposal.
 
 - `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is the reactive object itself, so the page
