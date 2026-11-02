@@ -9,16 +9,18 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R196 et suivantes**, la section « Corrections de la
-  seizième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série précédente a réellement fait, décisions D1 à
-  D4, vérification des constats, ordre, choix tranchés, questions Q1 à Q12, Review Focus, contraintes d'exécution, table des
-  fichiers), puis **ta tâche**. (R182–R195, R187b, R189b : « … quinzième relecture » ; R168–R181, R173b : « … quatorzième
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R209 et suivantes**, la section « Corrections de la
+  dix-septième relecture (2026-11-01) » en entier jusqu'à la première tâche (ce que la série précédente a réellement fait, décisions
+  D1 à D4, vérification des constats, ordre, choix tranchés, questions Q1 à Q3, Review Focus, contraintes d'exécution, table des
+  fichiers), puis **ta tâche**. (R196–R208 : « … seizième relecture » ; R182–R195, R187b, R189b : « … quinzième relecture » ;
+  R168–R181, R173b : « … quatorzième
   relecture » ; R152–R167, R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ; R121–R136 :
   « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 :
   « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième relecture » ;
   R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 :
   « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
-  `tasks/relectures-748/relecture-16-constats.md` (R182–R195 : `relecture-15-constats.md` ; R168–R181 : `relecture-14-constats.md` ;
+  `tasks/relectures-748/relecture-17-constats.md` (R196–R208 : `relecture-16-constats.md` ; R182–R195 : `relecture-15-constats.md` ;
+  R168–R181 : `relecture-14-constats.md` ;
   R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ; R121–R136 : `relecture-11-constats.md`). Les
   sections passées sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux. Suis-la ; si
   elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de son intention et note l'écart,
@@ -79,8 +81,8 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
 - Backend, toujours `-u dev` : ciblé `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis
   `make back-test; echo "exit=$?"` et `make back-quality; echo "exit=$?"` ; après un changement de service ou de
   configuration, le cache de test se vide **dans le conteneur** (`docker compose exec -u dev backend rm -rf
-  var/cache/test`), jamais par `rm -rf` sur l'hôte, qui désynchronise le montage (R108). Jamais de secret littéral dans un test (`TestCredentials`, `TestKeys::material()`, une
-  valeur aléatoire).
+  var/cache/test`), jamais par `rm -rf` sur l'hôte, qui désynchronise le montage (R108).
+  Jamais de secret littéral dans un test (`TestCredentials`, `TestKeys::material()`, une valeur aléatoire).
 - Outillage : `bash tools/tests/<script>.test.sh; echo "exit=$?"` hors ligne, et shellcheck dans l'image épinglée du job
   `tools-tests` (commande exacte dans les contraintes de la section du plan).
 - Partout, si une règle ou `.claude/CLAUDE.md` est touché : `tools/check-claude-rules.sh; echo "exit=$?"`.
@@ -95,9 +97,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne serait pas mesurée et un test
   resterait vert à tort (R99 : une mutation faite par Edit est restée verte dans le conteneur backend). On restaure
   depuis la copie, puis on vérifie par `cmp`. En cas de doute sur ce que voit le conteneur : `docker compose restart
-  backend` ou `docker compose restart frontend`. **Chaque mutation s'écrit dans le corps de ton message de commit**, avec sa
-  commande et la ligne de sortie qui rougit (décision de l'auteur du 2026-11-01, Sp16-1 : rendues aux seuls rendus, elles ne se
-  lisaient ni dans le diff ni au plan) ; format dans « Commit ». Pour un refactoring pur, le filet est la suite existante, verte
+  backend` ou `docker compose restart frontend`. **Avant `git add`, chaque fichier muté que ta tâche ne modifie pas rend
+  `git diff --exit-code -- <fichier>; echo "exit=$?"` à 0** (C17-9 : `cmp` contre ta copie ne prouve pas que la copie était
+  l'état suivi) ; un fichier muté que ta tâche modifie aussi se compare par `cmp` à une copie prise **après** ta modification
+  et **avant** la mutation. Un agent interrompu entre une mutation et sa restauration ne commite rien avant cette vérification.
+  **Chaque mutation s'écrit dans le corps de ton message de commit**, avec sa commande et la ligne de sortie qui rougit (décision
+  de l'auteur du 2026-11-01, Sp16-1 : rendues aux seuls rendus, elles ne se lisaient ni dans le diff ni au plan) ; format dans
+  « Commit ». Pour un refactoring pur, le filet est la suite existante, verte
   avant et après, nombre de tests noté au même endroit ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
@@ -115,14 +121,22 @@ déplacé), message en français au préfixe que donne la tâche, terminé par l
 
 Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
 
+**Le message s'écrit dans un fichier** du scratchpad, jamais en ligne de commande : `awk 'length>140' <fichier>` y rend vide
+(St17-32 : trois commits de la dix-septième série portaient des lignes de 141 à 168 caractères) — seule exception, une ligne
+rouge citée entière, que tu dis au rendu — puis `git commit -F <fichier>`. Le message ne contient jamais `[skip ci]`,
+`[ci skip]`, `[no ci]`, `[skip actions]` ni `[actions skip]`.
+
 **Le corps du message porte les mutations** (R196 et suivantes), un bloc par commit, après le paragraphe qui dit ce que fait le
-commit et avant les deux lignes de fin, lignes ≤ 140 (une ligne rouge plus longue se cite entière, sur sa ligne) :
+commit (ce paragraphe donne aussi la taille en octets de chaque règle touchée) et avant les deux lignes de fin, lignes ≤ 140
+(une ligne rouge plus longue se cite entière, sur sa ligne) :
 
 ```
 Mutations :
 - M1 <fichier>:<ligne> : <ce qui change, en une phrase ou « avant » → « après »>
+  méthode : python3 -I (copie <chemin>, cmp)
   commande : <la commande exacte, telle que lancée>
   rouge : <la ligne de sortie qui rougit, copiée> (<nombre> échec(s))
+  restauré : <git diff --exit-code -- <fichier>, ou cmp contre la copie d'après modification> → <sortie, exit=0>
 - M2 …
 Filet : <commande> — <n> avant, <n> après   (pour un refactoring ; « Filet : aucun » sinon)
 ```
@@ -145,7 +159,7 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R208 écrit la sous-section « Ce que la dix-septième
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R221 écrit la sous-section « Ce que la dix-huitième
 série a réellement fait » du plan, avec les commandes et les nombres de son balayage) ; ne coche rien —
 **aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
