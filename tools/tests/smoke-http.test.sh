@@ -828,12 +828,29 @@ refuse_write_args() { _refuse_in_args check_args_write_refused valeur "$@"; }
 refuse_write_curl_opts() { _refuse_in_curl_opts check_curl_opts_write_refused valeur "$@"; }
 write_dir_name="${SMOKE_AUTH_DIR##*/}"
 ln -s "$SMOKE_AUTH_CONFIG" "$TMP/lien-vers-le-k"
+ln -s "$data_file" "$TMP/lien-vers-le-corps"
 refuse_write_args 4 -D "$SMOKE_AUTH_CONFIG"
 refuse_write_args 4 -D "$SMOKE_AUTH_DIR/x"
 refuse_write_args 4 -D "$SMOKE_AUTH_DIR/../$write_dir_name/curl-auth.conf"
 refuse_write_args 4 -D "$SMOKE_AUTH_DIR/../$write_dir_name/neuf"
 refuse_write_args 4 -D "$TMP/lien-vers-le-k"
 refuse_write_args 6 -H 'A: b' -D "$SMOKE_AUTH_CONFIG"
+# R211 (CR17-7, C17-4) : le fichier de corps de `smoke_data_file` (curl y écrirait les en-têtes de réponse, `Set-Cookie` compris, que
+# `--data-binary @…` enverrait ensuite), un lien vers lui, le dossier de la Basic Auth lui-même (avec ou sans `/` final) et toute valeur
+# dont un composant est `..` : `-ef` ne suit `..` qu'à travers des composants existants, `<dossier>/absent/../curl-auth.conf` lui échappe
+# (sortie 23 de curl, le `-K` intact : mesuré, mais le jugement ne s'en remet pas à curl).
+refuse_write_args 4 -D "$data_file"
+refuse_write_args 4 -D "$SMOKE_AUTH_DATA_FILE"
+refuse_write_args 4 -D "$TMP/lien-vers-le-corps"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR/"
+refuse_write_args 4 -D "$SMOKE_AUTH_DIR/absent/../curl-auth.conf"
+refuse_write_args 4 -D ../x
+refuse_write_args 4 -D ..
+refuse_write_args 4 -D a/../b
+refuse_write_args 4 -D "$TMP/headers/.."
+refuse_write_args 6 -H 'A: b' -D "$data_file"
+refuse_write_args 6 -H 'A: b' -D "$SMOKE_AUTH_DIR"
 # Un nom sans `/`, jugé depuis le dossier courant : dans le dossier de la Basic Auth, il écrit chez elle.
 cd "$SMOKE_AUTH_DIR"
 refuse_write_args 4 -D curl-auth.conf
@@ -842,62 +859,96 @@ cd "$OLDPWD"
 refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_CONFIG"
 refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR/x"
 refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR/../$write_dir_name/curl-auth.conf"
-rm -f "$TMP/lien-vers-le-k"
+refuse_write_curl_opts 3 -sS -D "$data_file"
+refuse_write_curl_opts 3 -sS -D "$TMP/lien-vers-le-corps"
+refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR"
+refuse_write_curl_opts 3 -sS -D "$SMOKE_AUTH_DIR/absent/../curl-auth.conf"
+refuse_write_curl_opts 3 -sS -D ../x
+# Voisins permis (R211) : `..` n'est refusé que comme composant entier ; `-` est la sortie standard, un nom sans `/` ou avec des points
+# collés à d'autres caractères est un nom de fichier comme un autre.
+accept_args "-D a..b (deux points dans un nom ne sont pas un composant ..)" "-D a..b" -D a..b
+accept_args "-D ... (trois points sont un nom de fichier)" "-D ..." -D ...
+accept_args "-D <dossier>/a..b" "-D $TMP/a..b" -D "$TMP/a..b"
+accept_args "-D <fichier du dossier de l'en-tête, jamais celui de la Basic Auth ni le corps>" "-D $TMP/h2" -D "$TMP/h2"
+rm -f "$TMP/lien-vers-le-k" "$TMP/lien-vers-le-corps"
 unset write_dir_name
 
-# --- R196 (St16-25, Q3 (A)) : les trois listes d'options que la procédure d'admission d'une option dit de tenir ensemble — les
-# lignes du `case` de `_smoke_option_arity`, la liste de sa docblock et la phrase « It admits <n> options » de la règle — sont
-# égales, et le nombre que dit la phrase est celui de sa liste. Une option ajoutée à une seule des trois (ou le nombre non mis à
-# jour) rougit en la nommant. Chaque liste se lit **dans sa forme écrite** : un `case` ne se lit pas comme une docblock.
+# --- R196 (St16-25, Q3 (A)), R211 (St17-24, St17-25) : les listes d'options que la procédure de la règle dit de tenir ensemble sont
+# égales, et le nombre que dit la règle, **écrit en chiffres**, est celui de sa liste (aucune table de mots anglais à borner). Deux
+# ensembles : les options admises (les lignes du `case` de `_smoke_option_arity`, la liste de sa docblock, la phrase « It admits <n>
+# options » de la règle) et les options dont la valeur est jugée (les lignes du `case` de `_smoke_value_touches_file`, la liste de sa
+# docblock, la phrase « The value of <n> options » de la règle). Une option ajoutée à une liste seule, ou un nombre non mis à jour,
+# rougit en nommant l'option ou le nombre. Chaque liste se lit **dans sa forme écrite** : un `case` ne se lit pas comme une docblock.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 rule_file="$repo_root/.claude/rules/outillage-smoke.md"
-case_options="$(awk '
-  /^_smoke_option_arity\(\) \{/ { on = 1; next }
-  on && /^\}/ { on = 0 }
-  on && /^[[:space:]]+-[^)]*\)/ {
-    line = $0
-    sub(/\).*/, "", line)
-    n = split(line, parts, "|")
-    for (i = 1; i <= n; i++) { gsub(/[[:space:]]/, "", parts[i]); print parts[i] }
-  }' "$LIB" | sort)"
-# Lue par indirection (`${!first_list}`, plus bas) : shellcheck ne le voit pas.
+# option_case_list <fonction> : les options des lignes du `case` d'une fonction de la bibliothèque (`-H | -d)` donne -H puis -d).
+option_case_list() {
+  awk -v fn="$1" '
+    $0 ~ "^" fn "\\(\\) \\{" { on = 1; next }
+    on && /^\}/ { on = 0 }
+    on && /^[[:space:]]+-[^)]*\)/ {
+      line = $0
+      sub(/\).*/, "", line)
+      n = split(line, parts, "|")
+      for (i = 1; i <= n; i++) { gsub(/[[:space:]]/, "", parts[i]); print parts[i] }
+    }' "$LIB" | sort
+}
+# code_options : les mots à tiret entre accents graves d'un texte lu sur l'entrée standard (`-H`, `--data-binary`), triés.
+code_options() { { grep -oE '`-[A-Za-z-]+`' || true; } | tr -d '`' | sort; }
+rule_sentence="$(awk '/^It admits / { on = 1 } on { print } on && /\(one value each\)/ { on = 0 }' "$rule_file")"
+judged_sentence="$(grep -E '^The value of [0-9]+ options' "$rule_file" || true)"
+# Les six listes sont lues par indirection (`${!reference}`, plus bas) : shellcheck ne le voit pas.
+# shellcheck disable=SC2034
+case_options="$(option_case_list _smoke_option_arity)"
+# shellcheck disable=SC2034
+judged_case_options="$(option_case_list _smoke_value_touches_file)"
 # shellcheck disable=SC2034
 docblock_options="$(awk '
   /^# La liste d.autorisation/ { on = 1 }
   /^# Ce sont les options/ { on = 0 }
-  on && /^#   / { print }' "$LIB" | grep -oE '`-[A-Za-z-]+`' | tr -d '`' | sort)"
-rule_sentence="$(awk '/^It admits / { on = 1 } on { print } on && /\(one value each\)/ { on = 0 }' "$rule_file")"
+  on && /^#   / { print }' "$LIB" | code_options)"
 # shellcheck disable=SC2034
-rule_options="$(printf '%s\n' "$rule_sentence" | grep -oE '`-[A-Za-z-]+`' | tr -d '`' | sort)"
-rule_count_word="$(printf '%s\n' "$rule_sentence" | sed -n 's/^It admits \([a-z]*\) options.*/\1/p')"
-case "$rule_count_word" in
-  one) rule_count=1 ;; two) rule_count=2 ;; three) rule_count=3 ;; four) rule_count=4 ;; five) rule_count=5 ;;
-  six) rule_count=6 ;; seven) rule_count=7 ;; eight) rule_count=8 ;; nine) rule_count=9 ;; ten) rule_count=10 ;;
-  eleven) rule_count=11 ;; twelve) rule_count=12 ;; *) rule_count=-1 ;;
-esac
+judged_docblock_options="$(awk '
+  /^# _smoke_value_touches_file / { on = 1 }
+  /^_smoke_refused_reason=/ { on = 0 }
+  on && /^#   - / { sub(/ : .*/, ""); print }' "$LIB" | code_options)"
+# shellcheck disable=SC2034
+rule_options="$(printf '%s\n' "$rule_sentence" | code_options)"
+# shellcheck disable=SC2034
+judged_rule_options="$(printf '%s\n' "$judged_sentence" | code_options)"
+rule_count="$(printf '%s\n' "$rule_sentence" | sed -n 's/^It admits \([0-9][0-9]*\) options.*/\1/p')"
+judged_count="$(printf '%s\n' "$judged_sentence" | sed -n 's/^The value of \([0-9][0-9]*\) options.*/\1/p')"
 options_problems=""
-for named in case_options docblock_options rule_options; do
-  if [ -z "${!named}" ]; then options_problems+="la liste « $named » est introuvable ; "; fi
-done
-for pair in "case_options docblock_options" "case_options rule_options"; do
-  read -r first_list second_list <<< "$pair"
-  only_first="$(comm -23 <(printf '%s\n' "${!first_list}") <(printf '%s\n' "${!second_list}") | tr '\n' ' ')"
-  only_second="$(comm -13 <(printf '%s\n' "${!first_list}") <(printf '%s\n' "${!second_list}") | tr '\n' ' ')"
-  if [ -n "$only_first$only_second" ]; then
-    options_problems+="$first_list seule : ${only_first:-aucune} ; $second_list seule : ${only_second:-aucune} ; "
+# Un `grep` sans réponse (une liste que la règle n'écrit plus) ne fait pas sortir le test sous `set -e` : la liste vide est un `fail` nommé.
+# check_option_lists <nom de l'ensemble> <nombre que dit la règle> <liste du case> <liste de la docblock> <liste de la règle> : ajoute à
+# options_problems chaque liste introuvable, chaque option qui n'est pas dans les trois, et un nombre qui n'est pas celui du case.
+check_option_lists() {
+  local set_name="$1" said="$2" reference="$3" other only_reference only_other
+  shift 3
+  for other in "$reference" "$@"; do
+    if [ -z "${!other}" ]; then options_problems+="$set_name : la liste « $other » est introuvable ; "; fi
+  done
+  for other in "$@"; do
+    only_reference="$(comm -23 <(printf '%s\n' "${!reference}") <(printf '%s\n' "${!other}") | tr '\n' ' ')"
+    only_other="$(comm -13 <(printf '%s\n' "${!reference}") <(printf '%s\n' "${!other}") | tr '\n' ' ')"
+    if [ -n "$only_reference$only_other" ]; then
+      options_problems+="$set_name : $reference seule : ${only_reference:-aucune} ; $other seule : ${only_other:-aucune} ; "
+    fi
+  done
+  if [ "$said" != "$(printf '%s\n' "${!reference}" | grep -c .)" ]; then
+    options_problems+="$set_name : la règle dit « ${said:-?} options » pour $(printf '%s\n' "${!reference}" | grep -c .) options du case ; "
   fi
-done
-case_count="$(printf '%s\n' "$case_options" | grep -c .)"
-if [ "$rule_count" -ne "$case_count" ]; then
-  options_problems+="la règle dit « It admits ${rule_count_word:-?} options » pour $case_count options du case ; "
-fi
+}
+check_option_lists "options admises" "$rule_count" case_options docblock_options rule_options
+check_option_lists "options dont la valeur est jugée" "$judged_count" judged_case_options judged_docblock_options judged_rule_options
 if [ -z "$options_problems" ]; then
-  pass "les options du case de _smoke_option_arity, de sa docblock et de la règle sont les mêmes ($case_count), le nombre dit vrai"
+  pass "options admises ($rule_count) et jugées ($judged_count) : le case, la docblock et la règle disent les mêmes listes, nombres vrais"
 else
-  fail "options admises : le case, la docblock et la règle ne disent pas la même liste" "$options_problems"
+  fail "options admises ou jugées : le case, la docblock et la règle ne disent pas la même liste" "$options_problems"
 fi
-unset repo_root rule_file case_options docblock_options rule_sentence rule_options rule_count_word rule_count options_problems named pair \
-  first_list second_list only_first only_second case_count
+unset repo_root rule_file rule_sentence judged_sentence case_options judged_case_options docblock_options judged_docblock_options \
+  rule_options judged_rule_options rule_count judged_count options_problems
+unset -f option_case_list code_options check_option_lists
 # La Basic Auth portée, l'appel part avec `--noproxy '*'` derrière `--proto-redir =https` (curl 8.5.0 : `CURLOPT_NOPROXY, "*"`,
 # que `--libcurl -` imprime), et un proxy exporté **après** `smoke_use_auth_config` ne change rien à l'appel : l'option le couvre,
 # la bibliothèque ne retire les variables qu'une fois. L'appel sans Basic Auth ne la porte pas (plus bas).
