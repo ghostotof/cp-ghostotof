@@ -14,7 +14,32 @@ Avant les relectures, le fil principal a rejoué sur conteneurs redémarrés les
 rouverts : C18-1, C18-2), C17-2, C17-3, C17-4, C17-5, C17-6, C17-8 (reste C18-4), C17-9 ; C17-7 reste à la charge de l'auteur.
 
 ## Décisions de l'utilisateur
-(à venir)
+Prises le 2026-11-03 : **les quatre recommandations**.
+- Q1 (C18-3) → corrigé dans la dix-neuvième série : `ANTHROPIC_API_KEY`, `SCALEWAY_AI_*`, `CONTACT_*` forcés aussi par
+  `<env force>` (le `<server>` gardé), un test qui lance un fils avec une valeur factice exportée et vérifie par empreinte que le
+  parent et le fils lisent la fausse clé, la phrase de `phpunit.dist.xml` corrigée.
+- Q2 (C18-4) → les formes qui lisent d'autres processus (`ps -auxe`, `ps -eaux`…) sont jugées par la garde **sans être
+  exécutées** ; seules les formes bornées au processus mesuré (`ps e -p $$`…) sont lancées ; `write_value_patterns` refuse une
+  valeur faite de blancs seuls ; la phrase de `outillage-smoke.md:182` dit vrai.
+- Q3 (St18-2) → le critère de R219 s'applique aux extraits (`includes`/`toContain`/`startsWith`) : un extrait dont la mutation de
+  la clé fait rougir le spec se lit du catalogue (clé entière ou constante partagée, `ORDER_TEXTS` pour les erreurs) ; les autres
+  restent avec leur raison ; le relevé est rejoué avec déséchappement (St18-1).
+- Q4 (CR18-2 ≈ Sp18-12) → sur un chemin sans préfixe de langue, le sélecteur change la langue d'interface sans naviguer ; ailleurs
+  il remplace le premier segment **en gardant query et hash** (CR18-1) ; les deux cas testés.
+- Les sept questions de R221 suivent leur recommandation : (a) chaque numéro de tâche seul gagne sa série et sa règle (forme de Q9
+  (A) de la seizième) ; (b) récits au passé mis au présent, un nom de test renommé si son sens est un récit ; (c) les docblocks qui
+  redisent le membre retirés ; (d) les dix lignes de code > 140 coupées ; (e) les deux lignes du brief recollées ; (f) la limite de
+  curl de la règle dit 8.5.0 pour les trois mesures faites, la quatrième dite ; (g) la ligne de 151 de ddf40ed8 déclarée (non
+  réécrivable).
+- C17-7 : rotation du jeton à la charge de l'auteur, hors session.
+- Tout le reste se corrige (critère « tout jusqu'à zéro »).
+
+Questions posées :
+1. **C18-3** : clés de test forcées en `<server>` seul. Reco : `<env force>` en plus, test par empreinte. Option : ticket à part.
+2. **C18-4** : `ps -auxe` exécuté. Reco : juger sans exécuter. Options : `unshare -rpf --mount-proc` (restreint sur Ubuntu 24.04) ;
+   garder et refuser les blancs.
+3. **St18-2** : extraits du catalogue. Reco : même critère. Options : erreurs partagées seules ; écrire l'exclusion.
+4. **CR18-2 / Sp18-12** : sélecteur sur la 404 sans préfixe. Reco : changer la langue sans naviguer. Options : masquer ; limite.
 
 ## Moyens
 - **CR18-1** (moyen, haute) — `frontend/src/presentation/ui/LocaleSwitcher.vue:29`. `switchTo` pousse `{ path, hash }` sans
