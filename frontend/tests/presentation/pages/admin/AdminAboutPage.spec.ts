@@ -49,6 +49,7 @@ import {
 import {
   ABOUT_LOCALE_HELP_FR,
   ENTRY_LOCK_PROPOSAL_FR,
+  PROPOSE_VERSION_PREFIX_FR,
   SETTINGS_PROPOSAL_LOCKED_FR,
 } from '../../../support/entryFormLockTexts'
 import {
@@ -57,6 +58,7 @@ import {
   TRANSLATION_UNAVAILABLE_FR,
 } from '../../../support/adminTranslationTexts'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
+import { createVersionLabel, entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 
 const SETTINGS: AdminAboutSettings = {
   locale: 'fr',
@@ -334,12 +336,13 @@ const editButton = editButtonFor(actionsForLine, (which) =>
   SITE === which ? fr.admin.about.siteCard.editAction : fr.admin.about.meCard.editAction,
 )
 
-// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
-// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
-const DELETE_FR: string = fr.admin.about.delete
-const CANCEL_FR: string = fr.admin.about.cancel
-// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
-const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
+// à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = entryFormTexts('about')
+const CREATE_EN_LABEL: string = createVersionLabel('en')
+const CREATE_FR_LABEL: string = createVersionLabel('fr')
+const SITE_CREATE: string = fr.admin.about.siteCard.create
+const ME_CREATE: string = fr.admin.about.meCard.create
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, which: number, from: number, to: number): Promise<void> {
@@ -385,8 +388,8 @@ describe('AdminAboutPage', () => {
 
       const missing = rowsOf(wrapper, SITE)[1]
       expect(missing.text()).toContain('Stack technique')
-      expect(missing.text()).toContain('Traduction manquante')
-      expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+      expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
+      expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
     })
 
     it.each(CATEGORIES)(
@@ -405,8 +408,8 @@ describe('AdminAboutPage', () => {
 
         const missing = rowsOf(wrapper, which)[1]
         expect(missing.text()).toContain(fixture.titles[2])
-        expect(missing.text()).toContain('Traduction manquante')
-        expect(buttonLabelled(missing, 'Créer la version FR').exists()).toBe(true)
+        expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
+        expect(buttonLabelled(missing, CREATE_FR_LABEL).exists()).toBe(true)
       },
     )
 
@@ -436,8 +439,8 @@ describe('AdminAboutPage', () => {
       for (const category of ['personal', 'hobby'] as const) {
         const section = meSectionOf(wrapper, category)
         expect(section.findAll('table')).toHaveLength(0)
-        expect(section.text()).toContain('Aucune carte enregistrée dans cette catégorie.')
-        expect(section.text()).not.toContain("Enregistrer l'ordre")
+        expect(section.text()).toContain(fr.admin.about.meCard.empty)
+        expect(section.text()).not.toContain(ORDER_TEXTS.save)
       }
     })
 
@@ -459,10 +462,10 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository, meCardRepository)
 
       await dragRow(wrapper, SITE, 0, 2)
-      expect(panelOf(wrapper, SITE_PANEL).text()).toContain('Ordre · modifié, non enregistré')
+      expect(panelOf(wrapper, SITE_PANEL).text()).toContain(ORDER_TEXTS.statusDirty)
 
       vi.mocked(siteCardRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, SITE_PANEL), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, SITE_PANEL), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(siteCardRepository.reorder).toHaveBeenCalledWith([S_GROUP_TWO, S_GROUP_THREE, S_GROUP_ONE])
@@ -470,7 +473,7 @@ describe('AdminAboutPage', () => {
       // Les brouillons sont indépendants : aucune catégorie de cartes « moi »
       // n'a bougé, donc leur endpoint n'est pas appelé.
       expect(meCardRepository.reorder).not.toHaveBeenCalled()
-      expect(panelOf(wrapper, SITE_PANEL).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, SITE_PANEL).text()).toContain(ORDER_TEXTS.statusClean)
     })
 
     it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -484,7 +487,7 @@ describe('AdminAboutPage', () => {
       expect(rowsOf(wrapper, SITE)[1].text()).toContain('Architecture')
       // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
       expect(rowsOf(wrapper, SITE)[1].find('[role="status"]').exists()).toBe(false)
-      expect(panelOf(wrapper, SITE_PANEL).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      expect(panelOf(wrapper, SITE_PANEL).get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
       expect(document.activeElement).toBe(rowsOf(wrapper, SITE)[1].get('button').element)
 
       wrapper.unmount()
@@ -498,13 +501,13 @@ describe('AdminAboutPage', () => {
 
       await dragRow(wrapper, SITE, 0, 2)
       vi.mocked(siteCardRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, SITE_PANEL), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, SITE_PANEL), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(siteCardRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
       expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-      expect(panelOf(wrapper, SITE_PANEL).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, SITE_PANEL).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
 
@@ -519,10 +522,10 @@ describe('AdminAboutPage', () => {
         const scope = () => meSectionOf(wrapper, category)
 
         await dragRow(wrapper, ME_TABLE[category], 0, 2)
-        expect(scope().text()).toContain('Ordre · modifié, non enregistré')
+        expect(scope().text()).toContain(ORDER_TEXTS.statusDirty)
 
         vi.mocked(meCardRepository.list).mockClear()
-        await buttonLabelled(scope(), "Enregistrer l'ordre").trigger('click')
+        await buttonLabelled(scope(), ORDER_TEXTS.save).trigger('click')
         await flushPromises()
 
         // La catégorie accompagne les clés : c'est elle le périmètre de l'ordre,
@@ -534,7 +537,7 @@ describe('AdminAboutPage', () => {
         )
         expect(meCardRepository.list).toHaveBeenCalledOnce()
         expect(siteCardRepository.reorder).not.toHaveBeenCalled()
-        expect(scope().text()).toContain('Ordre · à jour')
+        expect(scope().text()).toContain(ORDER_TEXTS.statusClean)
       },
     )
 
@@ -543,9 +546,9 @@ describe('AdminAboutPage', () => {
 
       await dragRow(wrapper, ME_TABLE.technical, 0, 2)
 
-      expect(meSectionOf(wrapper, 'technical').text()).toContain('Ordre · modifié, non enregistré')
-      expect(meSectionOf(wrapper, 'personal').text()).toContain('Ordre · à jour')
-      expect(meSectionOf(wrapper, 'hobby').text()).toContain('Ordre · à jour')
+      expect(meSectionOf(wrapper, 'technical').text()).toContain(ORDER_TEXTS.statusDirty)
+      expect(meSectionOf(wrapper, 'personal').text()).toContain(ORDER_TEXTS.statusClean)
+      expect(meSectionOf(wrapper, 'hobby').text()).toContain(ORDER_TEXTS.statusClean)
     })
 
     it.each(CATEGORIES)(
@@ -562,7 +565,7 @@ describe('AdminAboutPage', () => {
         expect(rowsOf(wrapper, which)[1].text()).toContain(ME_FIXTURES[category].titles[0])
         // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
         expect(rowsOf(wrapper, which)[1].find('[role="status"]').exists()).toBe(false)
-        expect(meSectionOf(wrapper, category).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+        expect(meSectionOf(wrapper, category).get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
         expect(document.activeElement).toBe(rowsOf(wrapper, which)[1].get('button').element)
 
         wrapper.unmount()
@@ -577,20 +580,20 @@ describe('AdminAboutPage', () => {
 
       await dragRow(wrapper, ME_TABLE.technical, 0, 2)
       vi.mocked(meCardRepository.list).mockClear()
-      await buttonLabelled(meSectionOf(wrapper, 'technical'), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(meSectionOf(wrapper, 'technical'), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(meCardRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
       expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-      expect(meSectionOf(wrapper, 'technical').text()).toContain('Ordre · à jour')
+      expect(meSectionOf(wrapper, 'technical').text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
 
   describe('verrouillage', () => {
     it.each([
-      [SITE, 'Architecture (en)', 'Stack technique', 'Créer la version EN'],
-      [ME_TABLE.technical, 'Senior developer', 'Continuous watch', 'Créer la version FR'],
+      [SITE, 'Architecture (en)', 'Stack technique', CREATE_EN_LABEL],
+      [ME_TABLE.technical, 'Senior developer', 'Continuous watch', CREATE_FR_LABEL],
     ])(
       "un brouillon du tableau %i verrouille toute la page, et Annuler la libère",
       async (which, editableTitle, lonelyTitle, createVersionLabel) => {
@@ -605,13 +608,13 @@ describe('AdminAboutPage', () => {
         // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
         // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
         const hint = wrapper.get('#admin-order-locked-hint')
-        expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+        expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
         const edit = editButton(wrapper, which, editableTitle)
         expect(edit.attributes('disabled')).toBeDefined()
         expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
         expect(
-          buttonLabelled(actionsForLine(wrapper, which, lonelyTitle), DELETE_FR).attributes('disabled'),
+          buttonLabelled(actionsForLine(wrapper, which, lonelyTitle), FORM_TEXTS.delete).attributes('disabled'),
         ).toBeDefined()
         // Par tableau et non par index de ligne : le glisser-déposer vient de
         // déplacer le groupe sans traduction.
@@ -620,19 +623,19 @@ describe('AdminAboutPage', () => {
         // Les trois formulaires, réglages compris : enregistrer y rechargerait
         // une liste et perdrait le brouillon.
         for (const form of [SETTINGS_FORM, SITE_FORM, ME_FORM]) {
-          expect(buttonLabelled(formOf(wrapper, form), 'Enregistrer').attributes('disabled')).toBeDefined()
+          expect(buttonLabelled(formOf(wrapper, form), FORM_TEXTS.save).attributes('disabled')).toBeDefined()
           // Un appel au modèle produirait une proposition que le formulaire
           // verrouillé ne pourrait pas enregistrer : du quota dépensé pour rien
           // (ADR 0004).
           expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
         }
 
-        await buttonLabelled(orderScopeOf(wrapper, which), ORDER_CANCEL_FR).trigger('click')
+        await buttonLabelled(orderScopeOf(wrapper, which), ORDER_TEXTS.cancel).trigger('click')
 
         expect(
           editButton(wrapper, which, editableTitle).attributes('disabled'),
         ).toBeUndefined()
-        expect(buttonLabelled(formOf(wrapper, SETTINGS_FORM), 'Enregistrer').attributes('disabled')).toBeUndefined()
+        expect(buttonLabelled(formOf(wrapper, SETTINGS_FORM), FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
         expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
       },
     )
@@ -673,9 +676,9 @@ describe('AdminAboutPage', () => {
     it("carte « site » : ouvre une création rattachée, l'icône recopiée, la prose vide, la langue basculée", async () => {
       const { wrapper } = await mountPage()
 
-      await buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, SITE)[1], CREATE_EN_LABEL).trigger('click')
 
-      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Ajouter une carte')
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe(SITE_CREATE)
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('en')
       expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe(S_GROUP_TWO)
       expect(valueOf(wrapper, '#admin-about-site-card-icon-key')).toBe('server')
@@ -689,9 +692,9 @@ describe('AdminAboutPage', () => {
         const { wrapper } = await mountPage()
         const fixture = ME_FIXTURES[category]
 
-        await buttonLabelled(rowsOf(wrapper, ME_TABLE[category])[1], 'Créer la version FR').trigger('click')
+        await buttonLabelled(rowsOf(wrapper, ME_TABLE[category])[1], CREATE_FR_LABEL).trigger('click')
 
-        expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
+        expect(wrapper.findAll('h2')[ME_FORM].text()).toBe(ME_CREATE)
         expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('fr')
         // La catégorie est un champ non-prose recopié : sans elle, la version
         // créée atterrirait dans une autre catégorie que son groupe.
@@ -778,7 +781,7 @@ describe('AdminAboutPage', () => {
       // Un groupe appartient à une seule catégorie : proposer les autres serait
       // proposer un rattachement que le serveur refuse (422).
       expect(optionsOf(wrapper, '#admin-about-me-card-translation-group')).toEqual([
-        '— aucune —',
+        fr.admin.about.translationOfNone,
         `EN · ${ME_FIXTURES.technical.titles[2]}`,
       ])
 
@@ -786,7 +789,7 @@ describe('AdminAboutPage', () => {
       await wrapper.get('#admin-about-me-card-category').setValue('hobby')
 
       expect(optionsOf(wrapper, '#admin-about-me-card-translation-group')).toEqual([
-        '— aucune —',
+        fr.admin.about.translationOfNone,
         `EN · ${ME_FIXTURES.hobby.titles[2]}`,
       ])
       // Le rattachement retenu est remis à zéro : sans cela le sélecteur
@@ -837,7 +840,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage()
 
       await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
-      await buttonLabelled(formOf(wrapper, ME_FORM), CANCEL_FR).trigger('click')
+      await buttonLabelled(formOf(wrapper, ME_FORM), FORM_TEXTS.cancel).trigger('click')
 
       const category = wrapper.get('#admin-about-me-card-category')
       expect(category.attributes('disabled')).toBeUndefined()
@@ -904,7 +907,7 @@ describe('AdminAboutPage', () => {
       const meCardRepository = createMeCardRepository()
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository, meCardRepository)
 
-      await buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, SITE)[1], CREATE_EN_LABEL).trigger('click')
       await wrapper.get('#admin-about-site-card-title').setValue('Technical stack')
       await wrapper.get('#admin-about-site-card-description').setValue('Stack description')
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
@@ -914,7 +917,7 @@ describe('AdminAboutPage', () => {
       expect(sitePayload).not.toHaveProperty('position')
       expect(sitePayload.translationGroup).toBe(S_GROUP_TWO)
 
-      await buttonLabelled(rowsOf(wrapper, ME_TABLE.hobby)[1], 'Créer la version FR').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, ME_TABLE.hobby)[1], CREATE_FR_LABEL).trigger('click')
       await wrapper.get('#admin-about-me-card-title').setValue('Randonnée')
       await wrapper.get('#admin-about-me-card-description').setValue('Description randonnée')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')
@@ -932,14 +935,14 @@ describe('AdminAboutPage', () => {
       })
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository)
 
-      await buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, SITE)[1], CREATE_EN_LABEL).trigger('click')
       await wrapper.get('#admin-about-site-card-title').setValue('Technical stack')
       await wrapper.get('#admin-about-site-card-description').setValue('Stack description')
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
       await flushPromises()
 
       expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toBe(
-        'Ce contenu a déjà une version dans cette langue.',
+        fr.admin.about.errors['translation-already-exists'],
       )
     })
 
@@ -954,7 +957,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(formOf(wrapper, ME_FORM).get('[role="alert"]').text()).toBe(
-        "La catégorie d'une carte ne se modifie pas. Rechargez la page.",
+        fr.admin.about.errors['category-immutable'],
       )
     })
 
@@ -963,7 +966,7 @@ describe('AdminAboutPage', () => {
       const meCardRepository = createMeCardRepository()
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.personal, 'Curious'), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.personal, 'Curious'), FORM_TEXTS.delete).trigger('click')
       await flushPromises()
 
       expect(meCardRepository.remove).toHaveBeenCalledWith(ME_FIXTURES.personal.cards[1].id)
@@ -974,7 +977,7 @@ describe('AdminAboutPage', () => {
     it('propose un bouton par formulaire : réglages, cartes « site », cartes « moi »', async () => {
       const { wrapper } = await mountPage()
 
-      expect(wrapper.findAll('button').filter((b) => b.text().includes('Proposer la version'))).toHaveLength(3)
+      expect(wrapper.findAll('button').filter((b) => b.text().includes(PROPOSE_VERSION_PREFIX_FR))).toHaveLength(3)
     })
 
     it("carte « site » : envoie les seuls champs de prose, jamais la clé d'icône", async () => {
@@ -997,13 +1000,13 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository, undefined, translation)
 
       await editButton(wrapper, SITE, 'Stack technique').trigger('click')
-      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Modifier la carte')
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe(fr.admin.about.siteCard.edit)
       vi.mocked(siteCardRepository.list).mockClear()
 
       await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
-      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Ajouter une carte')
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe(SITE_CREATE)
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('en')
       // La langue de page (celle des réglages) n'a pas bougé, et aucune liste
       // n'a été rechargée : le tableau affiche déjà les deux langues.
@@ -1054,7 +1057,7 @@ describe('AdminAboutPage', () => {
         title: fixture.titles[2],
         description: 'Description',
       })
-      expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
+      expect(wrapper.findAll('h2')[ME_FORM].text()).toBe(ME_CREATE)
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('fr')
       expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
       expect(valueOf(wrapper, '#admin-about-me-card-translation-group')).toBe(fixture.groups[1])
@@ -1095,22 +1098,22 @@ describe('AdminAboutPage', () => {
         hint: 'admin-about-site-card-entry-lock-help',
       },
       proseFields: SITE_CARD_PROSE_FIELDS,
-      heading: 'Ajouter une carte',
+      heading: SITE_CREATE,
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await editButton(wrapper, SITE, 'Stack technique').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), FORM_TEXTS.delete).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, SITE, 'Architecture').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), FORM_TEXTS.delete).trigger('click')
       },
-      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], CREATE_EN_LABEL).trigger('click'),
       orderTable: SITE,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
@@ -1136,22 +1139,22 @@ describe('AdminAboutPage', () => {
         hint: 'admin-about-me-card-entry-lock-help',
       },
       proseFields: ME_CARD_PROSE_FIELDS,
-      heading: 'Ajouter une carte',
+      heading: ME_CREATE,
       permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]).trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), FORM_TEXTS.delete).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), FORM_TEXTS.delete).trigger('click')
       },
-      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], CREATE_FR_LABEL).trigger('click'),
       orderTable: ME_TABLE.technical,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
@@ -1188,7 +1191,7 @@ describe('AdminAboutPage', () => {
     it("carte « moi » : « Créer la version FR » laisse la catégorie libre, sans explication de verrou", async () => {
       const { wrapper } = await mountPage()
 
-      await buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], CREATE_FR_LABEL).trigger('click')
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
       expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([])
@@ -1208,7 +1211,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toContain('Quota horaire')
-      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Modifier la carte')
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe(fr.admin.about.siteCard.edit)
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
       expect(valueOf(wrapper, '#admin-about-site-card-title')).toBe(SITE_FR_TWO.title)
     })
@@ -1703,8 +1706,8 @@ describe('AdminAboutPage', () => {
 
         return {
           values: panel.findAll('input').map((input) => (input.element as HTMLInputElement).value),
-          saveButton: panel.findAll('button').some((button) => 'Enregistrer' === button.text()),
-          translateButton: panel.findAll('button').some((button) => button.text().includes('Proposer la version')),
+          saveButton: panel.findAll('button').some((button) => FORM_TEXTS.save === button.text()),
+          translateButton: panel.findAll('button').some((button) => button.text().includes(PROPOSE_VERSION_PREFIX_FR)),
           text: panel.text(),
         }
       }
@@ -2143,7 +2146,7 @@ describe('AdminAboutPage', () => {
         update: vi.fn().mockReturnValueOnce(frenchSave).mockResolvedValue(SETTINGS_EN),
       })
       const { wrapper } = await mountPage(settingsRepository)
-      const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), 'Enregistrer')
+      const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), FORM_TEXTS.save)
 
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
@@ -2187,7 +2190,7 @@ describe('AdminAboutPage', () => {
         })
         const translation = createTranslationRepository(TRANSLATED_SETTINGS)
         const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
-        const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), 'Enregistrer')
+        const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), FORM_TEXTS.save)
 
         await wrapper.get('#admin-about-locale').setValue('en')
         await flushPromises()

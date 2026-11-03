@@ -9,6 +9,7 @@ import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import { sessionFor } from '../../support/authSession'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const StubPage = { template: '<div />' }
 
@@ -79,7 +80,7 @@ describe('AdminLayout', () => {
     const wrapper = await mountLayout('/fr/admin/technologies')
 
     const toggle = contentToggle(wrapper)
-    expect(toggle.text()).toBe('Contenu')
+    expect(toggle.text()).toBe(fr.admin.nav.content)
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.findAll('.dropdown-item')).toHaveLength(0)
 
@@ -94,14 +95,14 @@ describe('AdminLayout', () => {
     expect(contentToggle(wrapper).attributes('aria-expanded')).toBe('true')
     const items = wrapper.findAll('.dropdown-item')
     expect(items.map((item) => item.text())).toEqual([
-      'Technologies',
-      'À propos',
-      'Qualité',
-      'Contributions',
-      'Incidents',
-      'CV sans identité',
-      'Études de cas',
-      'Veille',
+      fr.admin.nav.technologies,
+      fr.admin.nav.about,
+      fr.admin.nav.quality,
+      fr.admin.nav.contributions,
+      fr.admin.nav.incidents,
+      fr.admin.nav.anonymousCv,
+      fr.admin.nav.caseStudies,
+      fr.admin.nav.watch,
     ])
 
     wrapper.unmount()
@@ -151,7 +152,7 @@ describe('AdminLayout', () => {
     expect(contentToggle(wrapper).classes()).toContain('btn-gradient')
 
     await contentToggle(wrapper).trigger('click')
-    const active = wrapper.findAll('.dropdown-item').find((item) => item.text() === 'Qualité')
+    const active = wrapper.findAll('.dropdown-item').find((item) => item.text() === fr.admin.nav.quality)
     expect(active?.attributes('aria-current')).toBe('page')
 
     wrapper.unmount()
@@ -161,7 +162,7 @@ describe('AdminLayout', () => {
     const wrapper = await mountLayout('/fr/admin/users')
 
     const usersTab = wrapper.get('a[aria-current="page"]')
-    expect(usersTab.text()).toBe('Utilisateurs')
+    expect(usersTab.text()).toBe(fr.admin.nav.users)
     expect(contentToggle(wrapper).classes()).not.toContain('btn-gradient')
     expect(contentToggle(wrapper).classes()).toContain('btn-outline-light')
 
@@ -223,7 +224,7 @@ describe('AdminLayout', () => {
     await contentToggle(wrapper).trigger('click')
 
     expect(wrapper.get('nav').attributes('aria-label')).toBe('Navigation d\'administration')
-    expect(wrapper.get('.dropdown-menu').attributes('aria-label')).toBe('Navigation du contenu')
+    expect(wrapper.get('.dropdown-menu').attributes('aria-label')).toBe(fr.admin.contentNavigation)
 
     wrapper.unmount()
   })

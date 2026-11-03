@@ -16,7 +16,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { INCIDENT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
+import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
@@ -147,6 +147,7 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
 // de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
 const FORM_TEXTS = entryFormTexts('incidents')
+const TITLES = entryTitleTexts('incidents')
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.incidents.editAction
 
@@ -174,7 +175,7 @@ describe('AdminIncidentsPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
     expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
@@ -190,7 +191,7 @@ describe('AdminIncidentsPage', () => {
     const { wrapper } = await mountPage(incidents)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(incidents.list).mockClear()
     await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
@@ -198,7 +199,7 @@ describe('AdminIncidentsPage', () => {
 
     expect(incidents.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(incidents.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -212,7 +213,7 @@ describe('AdminIncidentsPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Panne du broker RabbitMQ')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
   })
 
@@ -225,7 +226,7 @@ describe('AdminIncidentsPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
     const edit = buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
@@ -242,7 +243,7 @@ describe('AdminIncidentsPage', () => {
     expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), EDIT_FR).attributes('disabled')).toBeUndefined()
     expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('recharge la liste et annonce un ordre obsolète quand le serveur refuse l\'ensemble envoyé', async () => {
@@ -259,7 +260,7 @@ describe('AdminIncidentsPage', () => {
     expect(incidents.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
 
     // Issue #170 F4 : l'ordre est à jour, mais l'alerte doit pouvoir être
     // effacée — Annuler reste actif tant qu'elle est posée.
@@ -291,7 +292,7 @@ describe('AdminIncidentsPage', () => {
 
     await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter un incident')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-incident-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-incident-version')).toBe('v0.7.0')
@@ -374,12 +375,12 @@ describe('AdminIncidentsPage', () => {
     const { wrapper } = await mountPage(incidents)
 
     await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'incident")
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter un incident')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-incident-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-incident-title')).toBe(TRANSLATED.title)
@@ -412,7 +413,7 @@ describe('AdminIncidentsPage', () => {
       hint: 'admin-incident-entry-lock-help',
     },
     proseFields: INCIDENT_PROSE_FIELDS,
-    heading: 'Ajouter un incident',
+    heading: TITLES.create,
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), EDIT_FR).trigger('click')
     },
@@ -472,7 +473,7 @@ describe('AdminIncidentsPage', () => {
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'incident")
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-incident-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-incident-title')).toBe(FR_TWO.title)
   })

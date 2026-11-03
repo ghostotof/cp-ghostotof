@@ -18,9 +18,10 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, emitTranslateRightAfterMove, translateEntryButton } from '../../../support/entryFormLock'
-import { QUALITY_LOCALE_HELP_FR } from '../../../support/entryFormLockTexts'
+import { PROPOSE_VERSION_PREFIX_FR, QUALITY_LOCALE_HELP_FR } from '../../../support/entryFormLockTexts'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
+import { createVersionLabel, entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -200,11 +201,10 @@ const editButton = editButtonFor(actionsForLine, (which) =>
   PRINCIPLES === which ? fr.admin.quality.principle.editAction : fr.admin.quality.trait.editAction,
 )
 
-// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
-// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
-const DELETE_FR: string = fr.admin.quality.delete
-// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
-const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
+// à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = entryFormTexts('quality')
+const CREATE_EN_LABEL: string = createVersionLabel('en')
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, which: number, from: number, to: number): Promise<void> {
@@ -260,8 +260,8 @@ describe('AdminQualityPage', () => {
 
         const missing = rowsOf(wrapper, which)[1]
         expect(missing.text()).toContain(lonelyTitle)
-        expect(missing.text()).toContain('Traduction manquante')
-        expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+        expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
+        expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
       },
     )
 
@@ -282,10 +282,10 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(principleRepository, traitRepository)
 
       await dragRow(wrapper, PRINCIPLES, 0, 2)
-      expect(panelOf(wrapper, PRINCIPLES).text()).toContain('Ordre · modifié, non enregistré')
+      expect(panelOf(wrapper, PRINCIPLES).text()).toContain(ORDER_TEXTS.statusDirty)
 
       vi.mocked(principleRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, PRINCIPLES), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, PRINCIPLES), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(principleRepository.reorder).toHaveBeenCalledWith([P_GROUP_TWO, P_GROUP_THREE, P_GROUP_ONE])
@@ -293,7 +293,7 @@ describe('AdminQualityPage', () => {
       // Les deux brouillons sont indépendants : l'ordre des traits n'a pas bougé,
       // donc son endpoint n'est pas appelé.
       expect(traitRepository.reorder).not.toHaveBeenCalled()
-      expect(panelOf(wrapper, PRINCIPLES).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, PRINCIPLES).text()).toContain(ORDER_TEXTS.statusClean)
     })
 
     it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -309,7 +309,7 @@ describe('AdminQualityPage', () => {
       expect(rowsOf(wrapper, PRINCIPLES)[1].text()).toContain('DDD')
       // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
       expect(rowsOf(wrapper, PRINCIPLES)[1].find('[role="status"]').exists()).toBe(false)
-      expect(panelOf(wrapper, PRINCIPLES).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      expect(panelOf(wrapper, PRINCIPLES).get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
       expect(document.activeElement).toBe(rowsOf(wrapper, PRINCIPLES)[1].get('button').element)
 
       wrapper.unmount()
@@ -323,13 +323,13 @@ describe('AdminQualityPage', () => {
 
       await dragRow(wrapper, PRINCIPLES, 0, 2)
       vi.mocked(principleRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, PRINCIPLES), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, PRINCIPLES), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(principleRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
       expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-      expect(panelOf(wrapper, PRINCIPLES).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, PRINCIPLES).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
 
@@ -340,16 +340,16 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(principleRepository, traitRepository)
 
       await dragRow(wrapper, TRAITS, 0, 2)
-      expect(panelOf(wrapper, TRAITS).text()).toContain('Ordre · modifié, non enregistré')
+      expect(panelOf(wrapper, TRAITS).text()).toContain(ORDER_TEXTS.statusDirty)
 
       vi.mocked(traitRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, TRAITS), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, TRAITS), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(traitRepository.reorder).toHaveBeenCalledWith([T_GROUP_TWO, T_GROUP_THREE, T_GROUP_ONE])
       expect(traitRepository.list).toHaveBeenCalledOnce()
       expect(principleRepository.reorder).not.toHaveBeenCalled()
-      expect(panelOf(wrapper, TRAITS).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, TRAITS).text()).toContain(ORDER_TEXTS.statusClean)
     })
 
     it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -365,7 +365,7 @@ describe('AdminQualityPage', () => {
       expect(rowsOf(wrapper, TRAITS)[1].text()).toContain('Testé')
       // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
       expect(rowsOf(wrapper, TRAITS)[1].find('[role="status"]').exists()).toBe(false)
-      expect(panelOf(wrapper, TRAITS).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      expect(panelOf(wrapper, TRAITS).get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
       expect(document.activeElement).toBe(rowsOf(wrapper, TRAITS)[1].get('button').element)
 
       wrapper.unmount()
@@ -379,13 +379,13 @@ describe('AdminQualityPage', () => {
 
       await dragRow(wrapper, TRAITS, 0, 2)
       vi.mocked(traitRepository.list).mockClear()
-      await buttonLabelled(panelOf(wrapper, TRAITS), "Enregistrer l'ordre").trigger('click')
+      await buttonLabelled(panelOf(wrapper, TRAITS), ORDER_TEXTS.save).trigger('click')
       await flushPromises()
 
       expect(traitRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
       expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-      expect(panelOf(wrapper, TRAITS).text()).toContain('Ordre · à jour')
+      expect(panelOf(wrapper, TRAITS).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
 
@@ -401,35 +401,35 @@ describe('AdminQualityPage', () => {
       // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
       // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
       const hint = wrapper.get('#admin-order-locked-hint')
-      expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+      expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
       const edit = editButton(wrapper, PRINCIPLES, 'DDD in English')
       expect(edit.attributes('disabled')).toBeDefined()
       expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
       expect(
-        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), DELETE_FR).attributes('disabled'),
+        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), FORM_TEXTS.delete).attributes('disabled'),
       ).toBeDefined()
       // Par tableau et non par index de ligne : le glisser-déposer vient de
       // déplacer le groupe sans traduction.
       expect(
-        buttonLabelled(tableOf(wrapper, PRINCIPLES), 'Créer la version EN').attributes('disabled'),
+        buttonLabelled(tableOf(wrapper, PRINCIPLES), CREATE_EN_LABEL).attributes('disabled'),
       ).toBeDefined()
-      expect(buttonLabelled(formOf(wrapper, PRINCIPLES), 'Enregistrer').attributes('disabled')).toBeDefined()
+      expect(buttonLabelled(formOf(wrapper, PRINCIPLES), FORM_TEXTS.save).attributes('disabled')).toBeDefined()
       // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
       // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
       expect(translateEntryButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
 
       // L'autre panneau est verrouillé lui aussi.
       expect(editButton(wrapper, TRAITS, 'Testé').attributes('disabled')).toBeDefined()
-      expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeDefined()
+      expect(buttonLabelled(formOf(wrapper, TRAITS), FORM_TEXTS.save).attributes('disabled')).toBeDefined()
       expect(translateEntryButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
 
-      await buttonLabelled(panelOf(wrapper, PRINCIPLES), ORDER_CANCEL_FR).trigger('click')
+      await buttonLabelled(panelOf(wrapper, PRINCIPLES), ORDER_TEXTS.cancel).trigger('click')
 
       expect(
         editButton(wrapper, PRINCIPLES, 'DDD in English').attributes('disabled'),
       ).toBeUndefined()
-      expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeUndefined()
+      expect(buttonLabelled(formOf(wrapper, TRAITS), FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
       expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     })
 
@@ -462,9 +462,9 @@ describe('AdminQualityPage', () => {
     it("principe : ouvre une création rattachée, l'icône recopiée, la prose vide, la langue basculée", async () => {
       const { wrapper } = await mountPage()
 
-      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], CREATE_EN_LABEL).trigger('click')
 
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe(fr.admin.quality.principle.create)
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_TWO)
       expect(valueOf(wrapper, '#admin-quality-principle-icon-key')).toBe('flask-conical')
@@ -475,9 +475,9 @@ describe('AdminQualityPage', () => {
     it('trait : ouvre une création rattachée, le libellé vide (aucun champ non-prose à recopier)', async () => {
       const { wrapper } = await mountPage()
 
-      await buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, TRAITS)[1], CREATE_EN_LABEL).trigger('click')
 
-      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
+      expect(wrapper.findAll('h2')[TRAITS].text()).toBe(fr.admin.quality.trait.create)
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe(T_GROUP_TWO)
       expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe('')
@@ -556,7 +556,7 @@ describe('AdminQualityPage', () => {
       const traitRepository = createTraitRepository()
       const { wrapper } = await mountPage(principleRepository, traitRepository)
 
-      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], CREATE_EN_LABEL).trigger('click')
       await wrapper.get('#admin-quality-principle-title').setValue('Tests first')
       await wrapper.get('#admin-quality-principle-description').setValue('The test comes first.')
       await formOf(wrapper, PRINCIPLES).trigger('submit.prevent')
@@ -566,7 +566,7 @@ describe('AdminQualityPage', () => {
       expect(principlePayload).not.toHaveProperty('position')
       expect(principlePayload.translationGroup).toBe(P_GROUP_TWO)
 
-      await buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, TRAITS)[1], CREATE_EN_LABEL).trigger('click')
       await wrapper.get('#admin-quality-trait-label').setValue('Documented')
       await formOf(wrapper, TRAITS).trigger('submit.prevent')
       await flushPromises()
@@ -582,14 +582,14 @@ describe('AdminQualityPage', () => {
       })
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click')
+      await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], CREATE_EN_LABEL).trigger('click')
       await wrapper.get('#admin-quality-principle-title').setValue('Tests first')
       await wrapper.get('#admin-quality-principle-description').setValue('The test comes first.')
       await formOf(wrapper, PRINCIPLES).trigger('submit.prevent')
       await flushPromises()
 
       expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toBe(
-        'Ce contenu a déjà une version dans cette langue.',
+        fr.admin.quality.errors['translation-already-exists'],
       )
     })
 
@@ -598,7 +598,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), DELETE_FR).trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), FORM_TEXTS.delete).trigger('click')
       await flushPromises()
 
       expect(principleRepository.remove).toHaveBeenCalledWith(PRINCIPLE_EN_ONE.id)
@@ -609,7 +609,7 @@ describe('AdminQualityPage', () => {
     it('propose un bouton par formulaire, principes et traits', async () => {
       const { wrapper } = await mountPage()
 
-      expect(wrapper.findAll('button').filter((b) => b.text().includes('Proposer la version'))).toHaveLength(2)
+      expect(wrapper.findAll('button').filter((b) => b.text().includes(PROPOSE_VERSION_PREFIX_FR))).toHaveLength(2)
     })
 
     it("principe : envoie les seuls champs de prose, jamais la clé d'icône", async () => {
@@ -631,13 +631,13 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(principleRepository)
 
       await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe(fr.admin.quality.principle.edit)
       vi.mocked(principleRepository.list).mockClear()
 
       await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe(fr.admin.quality.principle.create)
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       // Aucune liste rechargée : le tableau affiche déjà les deux langues.
       expect(principleRepository.list).not.toHaveBeenCalled()
@@ -684,7 +684,7 @@ describe('AdminQualityPage', () => {
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', { label: TRAIT_FR_TWO.label })
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('en')
-      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
+      expect(wrapper.findAll('h2')[TRAITS].text()).toBe(fr.admin.quality.trait.create)
       expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe(TRANSLATED_TRAIT.label)
 
       await formOf(wrapper, TRAITS).trigger('submit.prevent')
@@ -719,22 +719,22 @@ describe('AdminQualityPage', () => {
         hint: 'admin-quality-principle-entry-lock-help',
       },
       proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
-      heading: 'Ajouter un principe',
+      heading: fr.admin.quality.principle.create,
       permanentHelp: QUALITY_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await editButton(wrapper, PRINCIPLES, "Tests d'abord").trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), FORM_TEXTS.delete).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, PRINCIPLES, 'Revue systématique').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), FORM_TEXTS.delete).trigger('click')
       },
-      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], CREATE_EN_LABEL).trigger('click'),
       orderTable: PRINCIPLES,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
@@ -760,22 +760,22 @@ describe('AdminQualityPage', () => {
         hint: 'admin-quality-trait-entry-lock-help',
       },
       proseFields: QUALITY_TRAIT_PROSE_FIELDS,
-      heading: 'Ajouter un trait',
+      heading: fr.admin.quality.trait.create,
       permanentHelp: QUALITY_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await editButton(wrapper, TRAITS, 'Documenté').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), FORM_TEXTS.delete).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, TRAITS, 'Observable').trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), DELETE_FR).trigger('click')
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), FORM_TEXTS.delete).trigger('click')
       },
-      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], CREATE_EN_LABEL).trigger('click'),
       orderTable: TRAITS,
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
@@ -799,7 +799,7 @@ describe('AdminQualityPage', () => {
       await flushPromises()
 
       expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toContain('Quota horaire')
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe(fr.admin.quality.principle.edit)
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('fr')
       expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe(PRINCIPLE_FR_TWO.title)
     })

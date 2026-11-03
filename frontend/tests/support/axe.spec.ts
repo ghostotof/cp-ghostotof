@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { accessibleNameOf, expectNoAccessibilityViolation } from './axe'
+import { proposeVersionLabel } from './adminButtonTexts'
 
 /**
  * L'adaptateur se teste lui-même, et ce n'est pas de la coquetterie : un audit
@@ -68,11 +69,12 @@ describe('expectNoAccessibilityViolation', () => {
  */
 describe('accessibleNameOf', () => {
   it("rend le contenu d'un bouton sans ce qu'il masque aux lecteurs d'écran", () => {
+    const label = proposeVersionLabel('en')
     const Bouton = defineComponent({
-      template: '<button type="button"><span aria-hidden="true">chargement</span><span>Proposer la version EN</span></button>',
+      template: `<button type="button"><span aria-hidden="true">chargement</span><span>${label}</span></button>`,
     })
 
-    expect(accessibleNameOf(mount(Bouton).element)).toBe('Proposer la version EN')
+    expect(accessibleNameOf(mount(Bouton).element)).toBe(label)
   })
 
   it("préfère l'étiquette ARIA au contenu, comme le fait un lecteur d'écran", () => {

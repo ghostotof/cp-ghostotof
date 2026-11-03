@@ -4,6 +4,7 @@ import TranslateEntryButton from '../../../../src/presentation/ui/admin/Translat
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { EXPIRED_CALL_PENDING_FR } from '../../../support/adminTranslationTexts'
+import { proposeVersionLabel } from '../../../support/adminButtonTexts'
 
 type Props = InstanceType<typeof TranslateEntryButton>['$props']
 
@@ -21,13 +22,13 @@ describe('TranslateEntryButton', () => {
   it('propose la version EN depuis un formulaire en français', () => {
     const wrapper = mountButton({ formLocale: 'fr', isTranslating: false })
 
-    expect(wrapper.get('button').text()).toContain('Proposer la version EN')
+    expect(wrapper.get('button').text()).toContain(proposeVersionLabel('en'))
   })
 
   it('propose la version FR depuis un formulaire en anglais', () => {
     const wrapper = mountButton({ formLocale: 'en', isTranslating: false })
 
-    expect(wrapper.get('button').text()).toContain('Proposer la version FR')
+    expect(wrapper.get('button').text()).toContain(proposeVersionLabel('fr'))
   })
 
   it('émet « translate » avec la locale cible, jamais la locale du formulaire', async () => {

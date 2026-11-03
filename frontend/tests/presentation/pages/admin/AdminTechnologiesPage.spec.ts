@@ -57,7 +57,7 @@ describe('AdminTechnologiesPage', () => {
     const repository = createStubRepository({ list: vi.fn(async () => []) })
     const wrapper = await mountPage(repository)
 
-    expect(wrapper.text()).toContain('Aucune technologie enregistrée pour le moment.')
+    expect(wrapper.text()).toContain(fr.admin.technologies.empty)
   })
 
   it('crée une technologie via le formulaire puis réinitialise les champs', async () => {
@@ -121,6 +121,6 @@ describe('AdminTechnologiesPage', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Une technologie porte déjà ce nom.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.technologies.errors.duplicate)
   })
 })

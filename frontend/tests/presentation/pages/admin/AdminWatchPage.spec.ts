@@ -21,6 +21,7 @@ import { createBackofficeSessionReaction } from '../../../../src/presentation/ro
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { buttonLabelled } from '../../../support/buttonLabelled'
+import { entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const VULNERABILITY: AdminVulnerability = {
@@ -124,11 +125,9 @@ function rowContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
   return row
 }
 
-// Les libellés des boutons, lus du catalogue (`fr.json`) et jamais écrits ici : retoucher « Supprimer », « Annuler » ou
-// « Modifier » ne fait pas rougir le fichier (`tests/support/buttonLabelled.ts`).
-const DELETE_FR: string = fr.admin.watch.deleteAction
-// Le « Annuler » de la barre d'ordre : un seul libellé pour tous les tableaux (`admin.order`), distinct de celui du formulaire.
-const ORDER_CANCEL_FR: string = fr.admin.order.cancel
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
+// à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = entryFormTexts('watch')
 const EDIT_FR: string = fr.admin.watch.editAction
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
@@ -193,7 +192,7 @@ describe('AdminWatchPage', () => {
     const { wrapper } = await mountPage(repository)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
     expect(rows(wrapper).map((row) => row.text())).toEqual([
       expect.stringContaining('php'),
       expect.stringContaining('rabbitmq'),
@@ -201,12 +200,12 @@ describe('AdminWatchPage', () => {
     ])
 
     vi.mocked(repository.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(repository.reorder).toHaveBeenCalledWith([PHP_ID, RABBITMQ_ID, POSTGRES_ID])
     expect(repository.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -220,7 +219,7 @@ describe('AdminWatchPage', () => {
     expect(rows(wrapper)[1].text()).toContain('postgresql')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -232,21 +231,21 @@ describe('AdminWatchPage', () => {
     await dragRow(wrapper, 0, 2)
 
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
     const edit = buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
-    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), DELETE_FR).attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), FORM_TEXTS.delete).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, ORDER_CANCEL_FR).trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
     expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).attributes('disabled')).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(rows(wrapper)[0].text()).toContain('postgresql')
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('recharge la liste et annonce un ordre obsolète quand le serveur refuse l\'ensemble envoyé', async () => {
@@ -257,13 +256,13 @@ describe('AdminWatchPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(repository.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(repository.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   /**
@@ -280,7 +279,7 @@ describe('AdminWatchPage', () => {
     await buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).trigger('click')
 
     expect(wrapper.find('#admin-watch-slug').exists()).toBe(false)
-    expect(wrapper.get('h2').text()).toBe('Modifier le produit surveillé')
+    expect(wrapper.get('h2').text()).toBe(fr.admin.watch.edit)
   })
 
   /**
@@ -337,7 +336,7 @@ describe('AdminWatchPage', () => {
     const { wrapper } = await mountPage(repository)
 
     const row = rowContaining(wrapper, 'nginx')
-    expect(row.text()).toContain('Version déployée, relevée au build')
+    expect(row.text()).toContain(fr.admin.watch.sources.deployed)
 
     await buttonLabelled(row, EDIT_FR).trigger('click')
 
@@ -359,7 +358,7 @@ describe('AdminWatchPage', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const { wrapper } = await mountPage(repository)
 
-    await buttonLabelled(rowContaining(wrapper, 'postgresql'), DELETE_FR).trigger('click')
+    await buttonLabelled(rowContaining(wrapper, 'postgresql'), FORM_TEXTS.delete).trigger('click')
     await flushPromises()
 
     expect(confirmSpy).toHaveBeenCalled()
@@ -520,7 +519,7 @@ describe('AdminWatchPage', () => {
 
         // Ce que le volet dirait sinon est une affirmation (« aucune vulnérabilité ») que personne n'a vérifiée.
         expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
-        expect(wrapper.text()).toContain('Contenu non chargé : voyez le message en haut de la page.')
+        expect(wrapper.text()).toContain(fr.admin.notLoaded)
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       })
 

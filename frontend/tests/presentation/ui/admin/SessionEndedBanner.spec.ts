@@ -9,6 +9,7 @@ import type { AuthRepository } from '../../../../src/domain/auth/repositories/Au
 import type { AuthSession } from '../../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -96,7 +97,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain('Votre session a pris fin')
     const link = alert.get('a')
-    expect(link.text()).toContain('Se reconnecter')
+    expect(link.text()).toContain(fr.admin.sessionEnded.signInAgain)
     expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&expired=1')
     wrapper.unmount()
   })
@@ -205,7 +206,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     const status = wrapper.get('[role="status"]')
     // La région est la même que celle du montage : insérée avec son texte, elle risquerait de ne pas être annoncée.
     expect(status.element).toBe(statusBefore)
-    expect(status.text()).toBe('Session rétablie, vous pouvez enregistrer.')
+    expect(status.text()).toBe(fr.admin.sessionEnded.restored)
     expect(status.classes()).not.toContain('visually-hidden')
     wrapper.unmount()
   })
@@ -263,7 +264,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     markSessionExpired()
     await flushPromises()
     await recheck(repository)
-    expect(wrapper.get('[role="status"]').text()).toBe('Session rétablie, vous pouvez enregistrer.')
+    expect(wrapper.get('[role="status"]').text()).toBe(fr.admin.sessionEnded.restored)
 
     // CR6 : le message disait « vous pouvez enregistrer » alors que le bandeau est de nouveau affiché.
     markSessionExpired()
@@ -389,7 +390,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
 
     const link = wrapper.get('[role="alert"] a')
     expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
-    expect(link.text()).toContain("Se reconnecter (s'ouvre dans un nouvel onglet)")
+    expect(link.text()).toContain(`${fr.admin.sessionEnded.signInAgain} ${fr.common.opensInNewTab}`)
     wrapper.unmount()
   })
 

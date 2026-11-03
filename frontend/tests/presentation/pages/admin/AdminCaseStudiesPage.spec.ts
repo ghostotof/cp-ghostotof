@@ -20,7 +20,7 @@ import { describeEntryFormLock, textsDescribing, translateEntryButton } from '..
 import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
+import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
@@ -151,6 +151,7 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
 // de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
 const FORM_TEXTS = entryFormTexts('caseStudies')
+const TITLES = entryTitleTexts('caseStudies')
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.caseStudies.editAction
 
@@ -178,7 +179,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
     expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
@@ -200,7 +201,7 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(caseStudies)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(caseStudies.list).mockClear()
     await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
@@ -208,7 +209,7 @@ describe('AdminCaseStudiesPage', () => {
 
     expect(caseStudies.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(caseStudies.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -222,7 +223,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Un moteur de tarification asynchrone')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -237,7 +238,7 @@ describe('AdminCaseStudiesPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
     const edit = buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
@@ -258,7 +259,7 @@ describe('AdminCaseStudiesPage', () => {
     ).toBeUndefined()
     expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   // (#748, R93) : le bouton de traduction porte deux verrous à la fois et les décrit tous les deux, celui de l'ordre d'abord.
@@ -271,7 +272,7 @@ describe('AdminCaseStudiesPage', () => {
     await dragRow(wrapper, 0, 2)
 
     expect(textsDescribing(wrapper, translateEntryButton(wrapper, 0))).toEqual([
-      "Enregistrez ou annulez l'ordre d'abord.",
+      ORDER_TEXTS.lockedHint,
       ENTRY_LOCK_PROPOSAL_FR,
     ])
   })
@@ -290,7 +291,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(caseStudies.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('« Créer la version EN » ouvre une création rattachée, tout vide — une étude de cas est prose de bout en bout', async () => {
@@ -298,7 +299,7 @@ describe('AdminCaseStudiesPage', () => {
 
     await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_TWO)
     for (const field of ['title', 'problem', 'solution', 'tradeoffs', 'measured-result']) {
@@ -333,7 +334,7 @@ describe('AdminCaseStudiesPage', () => {
       const { wrapper } = await mountPage(repositoryEndingSession({ ended: true }))
       mountedPage = wrapper
 
-      expect(wrapper.text()).toContain('Contenu non chargé : voyez le message en haut de la page.')
+      expect(wrapper.text()).toContain(fr.admin.notLoaded)
       expect(wrapper.text()).not.toContain('Aucune étude de cas')
       expect(wrapper.find('table').exists()).toBe(false)
       // Le bandeau de session finie est la seule alerte : la mention n'en est pas une.
@@ -460,12 +461,12 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(caseStudies)
 
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-case-study-title')).toBe(TRANSLATED.title)
@@ -498,7 +499,7 @@ describe('AdminCaseStudiesPage', () => {
       hint: 'admin-case-study-entry-lock-help',
     },
     proseFields: CASE_STUDY_PROSE_FIELDS,
-    heading: 'Ajouter une étude de cas',
+    heading: TITLES.create,
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     },
@@ -552,7 +553,7 @@ describe('AdminCaseStudiesPage', () => {
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-case-study-title')).toBe(FR_TWO.title)
   })

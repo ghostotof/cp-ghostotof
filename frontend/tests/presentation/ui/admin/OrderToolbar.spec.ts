@@ -5,6 +5,7 @@ import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEnd
 import OrderToolbar from '../../../../src/presentation/ui/admin/OrderToolbar.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 
 type Props = InstanceType<typeof OrderToolbar>['$props']
 
@@ -16,7 +17,7 @@ describe('OrderToolbar', () => {
   it("affiche le statut « modifié » et active les boutons quand le brouillon est modifié", () => {
     const wrapper = mountToolbar({ isDirty: true, isSaving: false, errorReason: null })
 
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(2)
     expect(buttons.every((button) => button.attributes('disabled') === undefined)).toBe(true)
@@ -25,7 +26,7 @@ describe('OrderToolbar', () => {
   it("affiche le statut « à jour » et désactive Annuler et Enregistrer quand rien n'est modifié", () => {
     const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: null })
 
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
     const buttons = wrapper.findAll('button')
     expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })
@@ -107,7 +108,7 @@ describe('OrderToolbar', () => {
   it('annonce le dernier déplacement clavier dans une région status', () => {
     const wrapper = mountToolbar({ isDirty: true, isSaving: false, errorReason: null, lastMove: { position: 2, count: 3 } })
 
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
   })
 
   it("rend la région status vide, mais présente, tant qu'aucun déplacement clavier n'a eu lieu", () => {

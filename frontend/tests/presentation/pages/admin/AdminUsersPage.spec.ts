@@ -133,7 +133,7 @@ describe('AdminUsersPage', () => {
     await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Un compte existe déjà avec cette adresse e-mail.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.users.errors['email-taken'])
     expect(wrapper.text()).toContain('jane')
   })
 
@@ -148,7 +148,7 @@ describe('AdminUsersPage', () => {
     await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Adresse e-mail invalide.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.users.errors['email-invalid'])
   })
 
   it('le menu d\'actions n\'est ouvert que pour une ligne à la fois', async () => {
@@ -208,21 +208,21 @@ describe('AdminUsersPage', () => {
     await openRowMenu(wrapper, 'newcomer')
     await rowButton(wrapper, 'newcomer', 'Renvoyer')?.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Invitation renvoyée.')
+    expect(wrapper.text()).toContain(fr.admin.users.resendSuccess)
 
     await openRowMenu(wrapper, 'jane')
     await rowButton(wrapper, 'jane', 'Promouvoir')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Invitation renvoyée.')
+    expect(wrapper.text()).not.toContain(fr.admin.users.resendSuccess)
   })
 
   it('affiche le statut En attente / Actif', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const wrapper = await mountPage()
 
-    expect(rowFor(wrapper, 'newcomer')?.text()).toContain('En attente')
-    expect(rowFor(wrapper, 'jane')?.text()).toContain('Actif')
+    expect(rowFor(wrapper, 'newcomer')?.text()).toContain(fr.admin.users.statusPending)
+    expect(rowFor(wrapper, 'jane')?.text()).toContain(fr.admin.users.statusActive)
   })
 
   it('affiche l\'e-mail lié dans une colonne dédiée, ou un tiret quand il n\'y en a pas', async () => {
@@ -230,7 +230,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage()
 
     const headers = wrapper.findAll('thead th').map((th) => th.text())
-    expect(headers).toContain('E-mail')
+    expect(headers).toContain(fr.admin.users.emailLabel)
 
     expect(rowFor(wrapper, 'newcomer')?.text()).toContain('newcomer@example.com')
     expect(rowFor(wrapper, 'jane')?.get('td:nth-child(2)').text()).toBe('—')
@@ -278,7 +278,7 @@ describe('AdminUsersPage', () => {
     await flushPromises()
 
     expect(repository.changePassword).toHaveBeenCalledWith(SUPER_ID, 'NewPassword123')
-    expect(wrapper.text()).toContain('Mot de passe mis à jour.')
+    expect(wrapper.text()).toContain(fr.admin.users.passwordChanged)
   })
 
   it('un 422 au changement de mot de passe nomme les trois causes possibles, pas seulement la longueur minimale (#410)', async () => {

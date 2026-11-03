@@ -4,6 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useUnsavedOrderGuard } from '../../../../src/application/admin/shared/useUnsavedOrderGuard'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const isDirty = ref(false)
 
@@ -53,7 +54,7 @@ describe('useUnsavedOrderGuard', () => {
     await router.push('/elsewhere')
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalledWith("L'ordre modifié n'est pas enregistré. Quitter cette page l'abandonnera. Continuer ?")
+    expect(confirmSpy).toHaveBeenCalledWith(fr.admin.order.leaveConfirm)
     expect(router.currentRoute.value.path).toBe('/guarded')
   })
 

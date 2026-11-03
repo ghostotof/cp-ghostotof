@@ -16,7 +16,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { ANONYMOUS_CV_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
+import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
@@ -145,6 +145,7 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
 // de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
 const FORM_TEXTS = entryFormTexts('anonymousCv')
+const TITLES = entryTitleTexts('anonymousCv')
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.anonymousCv.editAction
 
@@ -172,7 +173,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
     expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
@@ -194,7 +195,7 @@ describe('AdminAnonymousCvPage', () => {
     const { wrapper } = await mountPage(sections)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(sections.list).mockClear()
     await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
@@ -202,7 +203,7 @@ describe('AdminAnonymousCvPage', () => {
 
     expect(sections.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(sections.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -216,7 +217,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Backend PHP / Symfony')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -231,7 +232,7 @@ describe('AdminAnonymousCvPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
     const edit = buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
@@ -252,7 +253,7 @@ describe('AdminAnonymousCvPage', () => {
     ).toBeUndefined()
     expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it("recharge la liste et annonce un ordre obsolète quand le serveur refuse l'ensemble envoyé", async () => {
@@ -269,7 +270,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(sections.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('« Créer la version EN » ouvre une création rattachée, années recopiées, prose vide', async () => {
@@ -277,7 +278,7 @@ describe('AdminAnonymousCvPage', () => {
 
     await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une section')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-anonymous-cv-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-anonymous-cv-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-anonymous-cv-years')).toBe('4')
@@ -356,12 +357,12 @@ describe('AdminAnonymousCvPage', () => {
     const { wrapper } = await mountPage(sections)
 
     await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), EDIT_FR).trigger('click')
-    expect(wrapper.get('h2').text()).toBe('Modifier la section')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une section')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-anonymous-cv-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-anonymous-cv-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-anonymous-cv-title')).toBe(TRANSLATED.title)
@@ -394,7 +395,7 @@ describe('AdminAnonymousCvPage', () => {
       hint: 'admin-anonymous-cv-entry-lock-help',
     },
     proseFields: ANONYMOUS_CV_PROSE_FIELDS,
-    heading: 'Ajouter une section',
+    heading: TITLES.create,
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), EDIT_FR).trigger('click')
     },
@@ -451,7 +452,7 @@ describe('AdminAnonymousCvPage', () => {
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe('Modifier la section')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-anonymous-cv-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-anonymous-cv-title')).toBe(FR_TWO.title)
   })

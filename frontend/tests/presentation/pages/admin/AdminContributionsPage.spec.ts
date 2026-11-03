@@ -16,7 +16,7 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS } from '../../../support/adminButtonTexts'
+import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
@@ -144,6 +144,7 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
 // de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
 const FORM_TEXTS = entryFormTexts('contributions')
+const TITLES = entryTitleTexts('contributions')
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.contributions.editAction
 
@@ -171,7 +172,7 @@ describe('AdminContributionsPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
     expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
@@ -187,7 +188,7 @@ describe('AdminContributionsPage', () => {
     const { wrapper } = await mountPage(contributions)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(contributions.list).mockClear()
     await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
@@ -195,7 +196,7 @@ describe('AdminContributionsPage', () => {
 
     expect(contributions.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(contributions.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -209,7 +210,7 @@ describe('AdminContributionsPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Un lock npm dans le manifeste')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -224,7 +225,7 @@ describe('AdminContributionsPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
     const edit = buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
@@ -248,7 +249,7 @@ describe('AdminContributionsPage', () => {
     ).toBeUndefined()
     expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('recharge la liste et annonce un ordre obsolète quand le serveur refuse l\'ensemble envoyé', async () => {
@@ -265,7 +266,7 @@ describe('AdminContributionsPage', () => {
     expect(contributions.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('« Créer la version EN » ouvre une création rattachée, projet / référence / URL recopiés, prose vide', async () => {
@@ -273,7 +274,7 @@ describe('AdminContributionsPage', () => {
 
     await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-contribution-project')).toBe('grafana-stack')
@@ -353,12 +354,12 @@ describe('AdminContributionsPage', () => {
     const { wrapper } = await mountPage(contributions)
 
     await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
-    expect(wrapper.get('h2').text()).toBe('Modifier la contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-contribution-title')).toBe(TRANSLATED.title)
@@ -391,7 +392,7 @@ describe('AdminContributionsPage', () => {
       hint: 'admin-contribution-entry-lock-help',
     },
     proseFields: CONTRIBUTION_PROSE_FIELDS,
-    heading: 'Ajouter une contribution',
+    heading: TITLES.create,
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
     },
@@ -450,7 +451,7 @@ describe('AdminContributionsPage', () => {
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe('Modifier la contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-contribution-title')).toBe(FR_TWO.title)
   })
