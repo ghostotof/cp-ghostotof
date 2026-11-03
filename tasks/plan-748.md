@@ -15345,6 +15345,819 @@ de `tools/` : `make front-test` 2 663 / 185, `make front-lint` et `make front-bu
 
 ---
 
+## Corrections de la dix-huitième relecture (2026-11-03)
+
+R209 à R221, et R216b, R220b, R219b, R219c, sont faites (après 16aa56f5, jusqu'à d0b896c1 ; constats de la dix-huitième relecture :
+cb6d7b67, décisions : cd412c1a). Leurs cases restent non cochées, par convention des séries : cette phrase dit qu'elles sont faites.
+
+Quatre relectures du diff 16aa56f5...d0b896c1 (`/code-review medium` CR18-*, audit de sécurité C18-*, axe Standards St18-*, axe
+Spec Sp18-*) : aucun critique ni haut ; moyens : CR18-1, St18-1 ; faibles à moyens : St18-2, St18-8 = CR18-5 = St18-10 = Sp18-21,
+St18-17, St18-20 ≈ Sp18-17. Constats complets et décisions : `tasks/relectures-748/relecture-18-constats.md` (la source de vérité).
+Tous sont traités ici par R222 à R234, avant les tâches 11 et 12 : corrigés, rectifiés ci-dessous (ceux qui ne portent que sur le
+plan ou sur un bilan), laissés à l'auteur (C17-7, hors dépôt), ou écartés avec leur raison.
+
+**Numérotation.** Les quatre décisions de l'utilisateur (questions 1 à 4 du fichier de constats) sont citées ici **D1 à D4** ; ses
+réponses aux sept questions ouvertes de R221 sont **D5 (a) à (g)** ; les questions que ce plan pose sont **Q1 à Q4** (« Questions à
+l'auteur »). Cette série est la **dix-neuvième** ; sa sous-section de bilan s'appelle « Ce que la dix-neuvième série a réellement
+fait », écrite par R234.
+
+### Ce que la dix-huitième série a réellement fait *(rectifié le 2026-11-03)*
+
+La sous-section « Ce que la dix-huitième série a réellement fait », écrite par R221, est l'archive de son moment et n'est pas
+réécrite. La dix-huitième relecture y a montré ces inexactitudes et ces oublis :
+
+- **R219, « 79 lignes gardées »** (Sp18-20 (i)) : vrai à f47804d8 ; à HEAD, après les conversions de R219b et R219c, le relevé de
+  R219 en rend **68**.
+- **R220b, le trailer « Claude Opus 5.5 »** (Sp18-20 (ii), St18-4 = Sp18-10, D5 (g)) : ce n'est pas une anomalie. Le trailer est
+  celui du modèle de l'agent (9 commits Opus, 16 Sonnet dans la série, le fil principal compris). La ligne de **151** caractères du
+  corps de ddf40ed8 (l'en-tête de M1) n'est pas une ligne rouge : déclarée ici, **non réécrivable** (`--amend` interdit).
+- **Lignes longues du plan** (Sp18-20 (iii)) : dans la section de la dix-septième relecture, 12 lignes de la table « Fichiers » et
+  1 de la « Traçabilité des constats », non « 13 lignes de table ».
+- **Moignons d'`outillage-smoke.md`** (Sp18-20 (iv)) : 11 lignes de 45 caractères ou moins après le recollage de R221, non 12.
+- **Vérifications absentes des corps** (Sp18-20 (v)) : le bilan relève l'absence de shellcheck, de `check-claude-rules`, de lint ou
+  de build pour R210, R220, R220b ; elle vaut aussi pour **R211, R212 et R213 à R218**. Les cibles ont été rejouées vertes par R221 ;
+  R222 demande au brief le code de sortie de chaque vérification au corps.
+- **R212, l'écart non cité** (Sp18-20 (vi)) : le plan voulait un `fail` nommé pour une valeur faite de sauts de ligne ;
+  `write_value_patterns` fait sortir le shell en 2 (raison au docblock : un `$( )` perdrait le compteur). Déclaré ici.
+- **R211** (Sp18-5) : la longueur des fonctions (`awk`, Step 3) manque au corps de a4b4192a ; vrai à HEAD (23 lignes au plus).
+  (Sp18-6) La sortie du premier `grep` du Step 6 (`jamais un fichier lu\|Vides à la$`) n'est pas rendue : vide à HEAD.
+- **R220** (Sp18-7) : « cache vidé » (Step 4) manque au corps de bef7d560. (Sp18-8) Le filet du corps vient d'un `phpunit` direct,
+  sans code de sortie, qui taisait les cinq échecs de l'incident d'environnement : c'est un **écart**, non « conforme, avec une
+  réserve ».
+- **Corps faux** (Sp18-18) : f149381e dit « les sept composables de contenu », ils sont **huit** ; b2fae12b dit « la source n'a plus
+  aucun `as Locale` », alors que le docblock de `useCurrentLocale.ts:9` en cite un (le bilan le disait pour R213, non pour ce corps).
+  (Sp18-19) Le corps de 2f9b6391 donne un détail EN faux (« 51 FR + 20 EN déjà gardées », « +1 EN pour les deux premières ») : 18
+  EN, trois fichiers à une ligne EN ; le total, 23 EN, est juste.
+- **R221, `orderProblems.ts:10`** (Sp18-15) : « neuf copies » était un nombre du domaine (les neuf dépôts), non un décompte
+  d'appelants ; le texte écrit par R221 (« une copie par dépôt aurait divergé ») reste vrai et reste.
+
+### Décisions de l'utilisateur (2026-11-03)
+
+1. **D1** (C18-3) : `ANTHROPIC_API_KEY`, `SCALEWAY_AI_*`, `CONTACT_*` forcés aussi par `<env … force="true">`, le `<server>` gardé ;
+   un test lance un fils avec une valeur factice exportée et vérifie **par empreinte** que le parent et le fils lisent la fausse clé ;
+   la phrase de `phpunit.dist.xml` corrigée (et celles de `backend-outillage.md:164` et de `.claude/CLAUDE.md`). R226.
+2. **D2** (C18-4) : les formes de `ps` qui lisent d'autres processus (`ps -auxe`, `ps -eaux`…) sont jugées par la garde **sans être
+   exécutées** ; seules les formes bornées au processus mesuré (`ps e -p $$`…) sont lancées ; `write_value_patterns` refuse une
+   valeur faite de blancs seuls ; la phrase de `outillage-smoke.md:182` dit vrai. R223.
+3. **D3** (St18-2) : le critère de R219 s'applique aux extraits (`includes`, `toContain`, `startsWith`) : un extrait dont la mutation
+   de la clé fait rougir le spec se lit du catalogue (clé entière ou constante partagée, `ORDER_TEXTS` pour les erreurs) ; les autres
+   restent avec leur raison ; le relevé est rejoué avec déséchappement (St18-1). R232, R233.
+4. **D4** (CR18-2 ≈ Sp18-12) : sur un chemin sans préfixe de langue, le sélecteur change la langue d'interface **sans naviguer** ;
+   ailleurs il remplace le premier segment **en gardant query et hash** (CR18-1) ; les deux cas testés. R227.
+5. **D5**, les sept questions de R221, à leur recommandation : (a) chaque numéro de tâche seul gagne sa série et sa règle (forme de
+   Q9 (A) de la seizième) : R228, R229, R230 ; (b) récits au passé mis au présent, un nom de test renommé si son sens est un récit :
+   R226, R228 ; (c) les deux docblocks qui redisent le membre retirés : R231 ; (d) les dix lignes de code de plus de 140 caractères
+   coupées : R226, R231, R232, R233 ; (e) les deux lignes du brief recollées : R222 ; (f) la limite de curl de la règle dit 8.5.0
+   pour les trois mesures faites, la quatrième dite : R224 ; (g) la ligne de 151 de ddf40ed8 déclarée (non réécrivable) : rectifié
+   ci-dessus.
+6. **C17-7** : la rotation du jeton est à la charge de l'auteur, hors session ; rien dans ce plan ne la fait ni ne la vérifie. R234 la
+   cite comme action à confirmer par l'auteur seul.
+
+Tout le reste se corrige (critère **tout jusqu'à zéro**). Toujours valables : les décisions et « Sans suite » des séries
+précédentes, sauf ce que D1 à D5 revoient.
+
+### Vérification de chaque constat dans le code (HEAD cd412c1a)
+
+- **CR18-1, confirmé** : `frontend/src/presentation/ui/LocaleSwitcher.vue:29`, `router.push({ path: …, hash: route.hash })`, sans
+  `query`. **CR18-2** : l. 27-29, un chemin qui ne commence pas par la langue est poussé tel quel.
+- **St18-1, confirmé** : `AdminLayout.spec.ts:226`, `toBe('Navigation d\'administration')` ; la l. 227 lit `fr.admin.contentNavigation`.
+  **St18-2** : « La liste a changé entre-temps » rend 10 lignes dans 7 specs (`grep -rn … frontend/tests`).
+- **St18-8 et formes, confirmés** : `function unsupportedLocale(): Admin…Error` et `'Unsupported locale in response'` dans les neuf
+  dépôts (`grep -rn 'Unsupported locale' frontend/src` : 9 lignes) ; `supportedLocale.ts:19`, `unsupported: (value: string) => Error`.
+  **CR18-4** : `HttpAdminAboutMeCardRepository.ts:101`, `category: card.category as AdminAboutMeCardCategory`.
+- **C18-3, confirmé, et une forme voisine** : `backend/phpunit.dist.xml:33-34` (`CONTACT_*`), `:48` (`ANTHROPIC_API_KEY`), `:51-52`
+  (`SCALEWAY_AI_*`) en `<server force>` seul ; **`APP_ENV`** (`:22`) aussi, et `KernelTestCase` lit `$_ENV['APP_ENV']` avant
+  `$_SERVER` : question Q1. **Sp18-13** : `ChildPhpProcess.php` (`testEnvironment()`, la boucle sur
+  `Registry::get()->php()->envVariables()`) recouvre tous les `<env>`, sans regarder `force`.
+- **C18-1, C18-2, confirmés** : `tools/tests/smoke-http.test.sh:1477`, `ps_word='(^|[^[:alnum:]_.-])ps([[:space:]]|$|\\)'` (aucun
+  guillemet admis autour de `ps`) ; le jeton est jugé par `^[[:alpha:]]*e[[:alpha:]]*$` sans retirer chiffres ni `$`. **C18-4** :
+  `dump_printing` porte `ps -auxe` et `ps -eaux`, exécutées par `measure_dump_output` (l. 1597) ; `write_value_patterns`
+  (`tools/tests/lib/smoke-cases.sh`) ne refuse que le vide et les sauts de ligne seuls.
+- **St18-20, St18-21, St18-22, confirmés** : `tools/lib/smoke-http.sh:405-428` (`_smoke_writes_in_auth_dir`), `:464`, `:526` (le
+  texte), `:520`, `:592-597` (docblocks qui le recopient) ; `smoke-cases.sh:336`, `WRITE_REFUSAL`. **St18-5** : `smoke-http.sh:378`
+  (« **onze endroits** »).
+- **St18-7, confirmé** : `frontend-session-bandeau.md:69`, « `AppHeader`'s `homeLink`, `LocaleSwitcher` and `AppFooter` use it
+  too » ; `routeLocale(route, …)` est appelé aussi par `ContactPage.vue`, `LoginPage.vue`, `SetPasswordPage.vue`.
+- **St18-6, confirmé** : `backend/tests/Support/PhpSources.php:124`, « `'(('` passerait pour `'('` », contredit par la l. 126
+  (`NotASingleCharacterException`).
+- **St18-27, confirmé** : `OAuthConsentPage.spec.ts:89-91`, une seule option `withoutRouteLocale` pour la route et la langue `de`.
+- **Sp18-16, confirmé** : `useUnsavedOrderGuard.ts:11`, « Un seul composable pour chaque page ordonnée ».
+- **Les autres constats** sont pris tels que le fichier de constats les situe ; chaque tâche relit la ligne citée avant d'écrire (une
+  tâche précédente a pu la déplacer).
+
+### Pourquoi cet ordre
+
+- **R222 (le brief) d'abord** : la série et ses constats changent, D5 (e) recolle deux lignes, Sp18-20 (v) et Sp18-8 changent ce que
+  le corps d'un commit rend ; les agents de R223 à R234 lisent le brief à jour.
+- **Outillage (R223 → R225)**, chaque fonction et chaque paragraphe de `outillage-smoke.md` touché une fois :
+  - **R223** change la garde des vidages et sa mesure (`ps_lists_environment`, `dump_printing`, `write_value_patterns`), règle l. ~158-184 ;
+  - **R224** change le jugement des valeurs de `-D` et de `--data-binary` dans la bibliothèque, règle l. ~71-110 ;
+  - **R225** est l'hygiène des tests (blocs recopiés, `rc` global, libellés) : après les comportements, elle factorise aussi ce que
+    R223 et R224 ajoutent.
+- **Backend (R226)** entre l'outillage et le frontend, pour qu'un seul agent à la fois touche un conteneur.
+- **Frontend (R227 → R233)** :
+  - **R227** (le sélecteur, D4, et `useRouteLocale()`, Q4) avant **R228** (la garde de source) : R227 change les lecteurs de langue
+    que R228 relève ;
+  - **R229** (la frontière des dépôts) et **R230** (Qualité) ensuite, chacun sur ses fichiers ;
+  - **R231** (les moyens de lire le catalogue dans les specs) avant **R232 → R233** (D3, les extraits) : convertir les extraits avant
+    d'avoir fixé les moyens ferait récrire deux fois les mêmes sites. **D3 est découpé en deux**, comme R218/R219 : R232 rejoue le
+    relevé déséchappé et convertit les specs d'admin, R233 le reste.
+- **R234** (balayage) en dernier : il relit ce que toute la série a écrit et tient le plan à jour.
+
+### Choix de conception tranchés
+
+Le plan suit la recommandation de chaque question ; une autre réponse ne change que la tâche nommée.
+
+1. **R223 (C18-1).** Dans la branche `*)` de `ps_lists_environment`, le jeton est jugé sur **ses seules lettres**
+   (`${token//[^[:alpha:]]/}`) : `e$$`, `e1`, `e9999999`, `e${pid}` deviennent `e` ou `epid`, refusés ; `-p 1` reste admis (la valeur
+   est sautée), et un jeton fait de chiffres seuls (`1`) ne rend aucune lettre, il passe. Les options à tiret restent jugées par le
+   `case` d'abord, telles quelles.
+2. **R223 (C18-2).** `ps_word` admet un guillemet, une apostrophe ou un accent grave autour du mot
+   (`["'\`]?ps["'\`]?` entre les mêmes bornes) ; `"$(command -v ps)" e` et `p=ps; $p e` restent dans la limite écrite.
+3. **R223 (D2).** `ps -auxe` et `ps -eaux` quittent `dump_printing` pour `dump_forbidden` ; **un cas, avant la boucle de mesure**,
+   exige que chaque ligne de `dump_printing` que `ps_lists_environment` refuse porte `$$` et aucune option qui vise tous les
+   processus (`-A`, `-e`, `a`, `x` en grappe BSD) ; la boucle **saute** toute ligne que ce cas refuse : une ligne ajoutée par erreur
+   n'est jamais exécutée. `write_value_patterns` refuse une valeur faite de blancs seuls (`[[:space:]]`, l'espace et la tabulation
+   comprises), en sortie 2 comme le vide. La phrase de la règle dit que la valeur factice est un argument de l'`env -i` qui la pose,
+   et de rien d'autre.
+4. **R224 (St18-20), le nom et le texte.** `_smoke_writes_in_auth_dir` devient **`_smoke_writes_on_call_file`** ; le texte du refus
+   `writes` suit Q2 (A) : « une valeur qui peut écrire sur un fichier de la Basic Auth ou de son corps est refusée », vrai pour le
+   `-K`, son dossier, un corps et une valeur à composant `..` (refusée par précaution). Le texte n'est écrit qu'**au code**
+   (`_smoke_judge`), **dans la règle** (qui liste les messages) et **dans l'oracle du test** (`CASE_WRITE_REFUSAL`, St18-22) ; les
+   docblocks nomment la raison `writes` et renvoient à `_smoke_judge` (St18-21).
+5. **R224 (C18-5).** Un `-D` égal **en chaîne** à un élément de `SMOKE_AUTH_DATA_FILES` est refusé même si le fichier n'existe plus
+   (`-ef` exige l'existence) ; `--data-binary @<chemin>` exige en plus que le fichier existe (`[[ -f … ]]`), sinon `reads`.
+   **C18-6** reste une limite, écrite dans la règle avec sa mesure : `-D "<fichier>/"` ou `-D "<dossier>/neuf/"` passe le jugement,
+   curl sort en 23 à l'écriture, le `-K` et les corps intacts.
+6. **R226 (D1, Sp18-13, C18-7).** La seconde couche de `ChildPhpProcess::testEnvironment()` ne recouvre que les `<env>` à
+   **`force`** (`$variable->force()`, la lettre du plan de R220b) : un `<env>` sans `force` d'un `phpunit.xml` local ne fait plus
+   gagner le shell chez le fils (C18-7). Le test de D1 est un **test-sonde** (`ForcedTestValuesProbeTest`) qui compare par empreinte
+   (`hash('sha256', …)`) la valeur que lisent le noyau du parent et un fils à celle de `phpunit.dist.xml`, et un test qui relance
+   `bin/phpunit --filter` sur la sonde avec une valeur factice aléatoire exportée pour chaque nom : vert dans la suite ordinaire, il
+   ne rougit qu'au rejeu sous le shell piégé, ce qui est la régression.
+7. **R227 (D4, Q4).** `useRouteLocale(): ComputedRef<Locale>` (`presentation/router/useRouteLocale.ts`) rend
+   `routeLocale(useRoute(), useCurrentLocale().value)` ; les six appelants le lisent et leur variable s'appelle **`pageLocale`** :
+   `currentLocale` ne désigne plus que la langue d'interface (St18-12). La pose de la langue (`syncLocale` du routeur) passe dans
+   `presentation/router/interfaceLocale.ts`, `applyInterfaceLocale(locale: Locale): void` (vue-i18n, `localStorage`,
+   `document.documentElement.lang`), que le routeur et le sélecteur appellent ; sur un chemin sans préfixe, le sélecteur l'appelle
+   puis `applySeoMeta(route)`, sans `router.push`.
+8. **R228 (St18-17, CR18-8, St18-18).** Une constante `LOCALE_CASTS: readonly RegExp[]`, lue par la garde et par le cas du
+   détecteur : `as Locale`, `<Locale>` en assertion (non précédé d'un identifiant ni d'un `>`, `)` ou `]` : `ComputedRef<Locale>`,
+   `computed<Locale>(`, `ref<Locale>(` passent), `as 'fr' | 'en'` (un littéral de langue), `as typeof DEFAULT_LOCALE`,
+   `as (typeof SUPPORTED_LOCALES)[number]`. Le fichier devient **`frontend/tests/presentation/localeSourceGuards.spec.ts`**
+   (`git mv`), `REMAINING_LOCALE_CASTS` disparaît (le relevé égale `[]`), et un `expectExactly(found, expected, describe)` porte le
+   bloc `surplus`/`missing` une fois.
+9. **R229 (St18-8, St18-9).** `UNSUPPORTED_LOCALE_MESSAGE = 'Unsupported locale in response'`, exporté de `supportedLocale.ts`,
+   l'explication écrite là seulement ; `supportedLocaleOf(value: string, unsupported: () => Error): Locale` ; chaque dépôt garde une
+   fonction `unsupportedLocaleError(): Admin…Error` sans docblock (son contexte d'erreur est ce qui diffère). **CR18-4** :
+   `isAdminAboutMeCardCategory(value: string): value is AdminAboutMeCardCategory` à côté de `ME_CARD_CATEGORIES`, le dépôt lève
+   `AdminAboutError('unknown', …)` hors des catégories, sans `as`.
+10. **R230 (St18-15).** Le vocabulaire du module : `QualityFieldOptions` (le record déclaré) reste ; `EntryFieldOptions` devient
+    `ResolvedQualityFieldOptions`, `entryField` → `qualityEntryField`, `entryFieldsOf` → `qualityEntryFieldsOf`.
+11. **R231 (St18-24, St18-26, CR18-10).** Une seule façon par cas, écrite **une fois** dans `frontend.md` (« Tests read the catalogue
+    », une phrase) : un message sans paramètre se lit de `fr.…` / `en.…` dans le spec, ou d'un module de `tests/support/` s'il sert
+    à deux specs ou plus ; un message à paramètres par `renderedMessage` seul (plus de `createAppI18n().global.t` en ligne) ; un
+    module qui sert les deux langues expose une **fonction par langue** (`accessRefusalTexts(locale: Locale)`), non des paires
+    `_FR` / `_EN`. `renderedMessage` garde une instance par langue (créée au premier appel), `key: CatalogKey` (les chemins de
+    `fr.json`, un type récursif de `tests/support/catalogKey.ts`), `undefined === plural`.
+
+### Questions à l'auteur
+
+Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
+
+- **Q1 (R226), la forme voisine de D1 : `APP_ENV`.** `phpunit.dist.xml:22` le force par `<server>` seul, et `KernelTestCase` lit
+  `$_ENV['APP_ENV']` avant `$_SERVER` : un `APP_ENV=dev` exporté dans le conteneur démarrerait le noyau de dev dans les tests.
+  (A) recommandé : le même traitement que D1 (`<env name="APP_ENV" value="test" force="true" />` en plus, le même test par
+  empreinte) ; avantage : la classe de défaut corrigée en entier, comme le brief le demande ; inconvénient : un nom de plus que D1
+  n'en liste, à mesurer (Dotenv `bootEnv` lit aussi `APP_ENV`). (B) une limite écrite dans `backend-outillage.md` : rien ne change,
+  mais la règle grossit (46 050 octets). (C) un ticket à part.
+- **Q2 (R224), le texte du refus `writes` (St18-20).** (A) recommandé : un seul texte, « une valeur qui **peut** écrire sur un
+  fichier de la Basic Auth ou de son corps est refusée », vrai pour les trois cas (le `..` refusé par précaution) ; avantage : aucune
+  raison nouvelle, un oracle ; inconvénient : moins précis pour `..`. (B) une raison `dotdot` et son message (« une valeur à
+  composant `..` est refusée par précaution ») : plus précis, mais une raison, des cas et une ligne de la procédure de plus.
+- **Q3 (R216b revisité), CR18-7.** R216/R216b ont retiré des sept formulaires le commentaire « pourquoi la prose n'entre pas dans
+  l'identité » ; la raison reste dans les docblocks sources (`useAdminTranslation.ts:67`, `useTranslatedForm.ts:33`). (A) recommandé :
+  **écarter**, la décision f0a3b889 (R216b : retirer la redite) tient, et chaque site appelle la fonction dont le docblock le dit ;
+  avantage : aucune copie ; inconvénient : la raison ne se lit pas au site. (B) une ligne de renvoi par formulaire (« pourquoi :
+  docblock de `identity`, `useTranslatedForm.ts` ») : la raison se trouve, mais sept lignes reviennent.
+- **Q4 (R227), St18-12 et St18-13.** (A) recommandé : `useRouteLocale()` (choix 7) remplace les six `routeLocale(route,
+  interfaceLocale.value)`, la variable locale s'appelle `pageLocale` ; avantage : un seul calcul, le nom ne porte plus deux sens,
+  la règle n'énumère plus de lecteurs ; inconvénient : un composable de plus, et le choix 1 de la dix-septième (« les cinq formes
+  l'appellent ») se lit désormais à travers lui. (B) les variables seules renommées (`pageLocale`), les six copies gardées comme le
+  choix 1 l'avait avalisé (St18-13 écarté) : moins de changement, l'expression reste recopiée.
+
+### Review Focus (dix-huitième relecture)
+
+1. **`/fr/oauth/consent?client_id=c&state=s&code_challenge=x#h`, puis « English »** : la page devient
+   `/en/oauth/consent?client_id=c&state=s&code_challenge=x#h`, la demande OAuth intacte ; de même `/fr/login?redirect=…&reauth=1`.
+   Test : R227.
+2. **La page 404 `/frogs` (sans préfixe), puis « English »** : aucune navigation, la langue d'interface, `localStorage`, `lang` et le
+   titre passent en anglais, le bouton EN porte `aria-current`. Test : R227.
+3. **Le conteneur exporte une vraie clé sous `ANTHROPIC_API_KEY`, `SCALEWAY_AI_*` ou `CONTACT_*`** : le noyau des tests et chaque fils
+   lisent la valeur factice de `phpunit.dist.xml`. Test : R226.
+4. **`ps e$$`, `ps -p $$ e1`, `"ps" e -p $$`, `'ps' e`** : refusés par la garde ; `ps -p 1`, `"ps" -ef` passent ; `ps -auxe` n'est
+   jamais exécutée par la mesure. Test : R223.
+5. **Un corps de `smoke_data_file` retiré avant l'appel** : `-D <ce chemin>` et `--data-binary @<ce chemin>` sortent en 2, curl jamais
+   appelé. Test : R224.
+
+### Contraintes propres aux tâches R222 à R234
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent (« Contraintes propres aux tâches R209 à
+  R221 », reprises ici sauf ce qui suit). Exécution : **un agent par tâche, successifs dans l'ordre R222 → R234**, qui lit d'abord
+  `tasks/relectures-748/brief-commun-agents.md` (dans sa forme de R222), puis **cette section** en entier jusqu'à la première
+  tâche, `tasks/relectures-748/relecture-18-constats.md`, puis sa tâche.
+- **Tâches sensibles** (sécurité, garde `ps`, environnement des tests, flux OAuth) : **R223, R224, R225, R226, R227**, marquées
+  « *sensible* » dans leur titre ; le fil principal peut les confier à Opus.
+- Mutations, restauration et corps du commit : au format du brief (méthode, ligne `restauré :`, `git diff --exit-code`) ; **le corps
+  rend aussi le code de sortie de chaque vérification que la tâche nomme** (R222, Sp18-20 (v)). Un refactoring sans mutation
+  possible écrit son filet au même endroit (commande, code de sortie, nombre avant, nombre après).
+- **Le message de commit s'écrit dans un fichier** du scratchpad, `awk 'length>140'` y rend vide (hors ligne rouge citée entière,
+  dite), puis `git commit -F <fichier>` ; il ne contient jamais `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` ni
+  `[actions skip]`.
+- **Un correctif d'une classe de défaut s'applique à toutes les formes voisines du même mécanisme dans le périmètre** : la tâche les
+  cherche, les nomme dans son commit, et dit celles qu'elle laisse et pourquoi.
+- Rien ne se coche ; jamais `git commit --amend`, `git reset`, `git checkout`, `git switch`, `git stash`, `git restore`,
+  `git checkout-index`, `git add -N` ; mutations en place par `python3 -I`, restaurées depuis une copie vérifiée par `cmp`.
+- **« ≤ 140 » est la longueur d'une ligne, en caractères**, code compris (D5 (d)) ; tables Markdown, JSON et titres de tâche du plan
+  exceptés, dits au rendu.
+- Mesures : curl sur l'image épinglée (`curlimages/curl@sha256:08e46600…`, `--network none`) ; `ps` de procps, la version dite ;
+  bash du runner (5.2.21) ou de l'hôte (5.2.37), dit.
+- **Aucun vidage d'environnement dans la session** (brief, « Interdits ») : une forme qui imprime l'environnement ne se lance que
+  sous `env -i`, avec une seule variable factice, bornée au processus mesuré (D2) ; sa sortie lue par `values_found_in`.
+- Outillage (R223 à R225) : `Read` des scripts touchés et de `outillage-smoke.md` ; les 26 tests hors ligne
+  (`for t in tools/tests/*.test.sh; do bash "$t" >/dev/null 2>&1; echo "$t $?"; done`) ; shellcheck dans l'image épinglée du job
+  `tools-tests` (commande des contraintes de la quatorzième section) ; le nombre de `ok` de chaque test touché, avant et après, au
+  commit (départ : 1 115 en tout ; `smoke-http` 535, `smoke-mcp` 44, `audit-prod` 40, `smoke-login-throttling` 30,
+  `smoke-dead-session-cookie` 41).
+- Backend (R226) : `Read` d'un fichier de `backend/tests/Support/`, de `backend-outillage.md` et de `backend-conventions.md` ; ciblé
+  `docker compose exec -T -u dev backend php bin/phpunit <chemin>`, puis `make back-test`, `make back-quality`, `make back-style-fix`
+  (départ : 5 798 tests), **sans `-e`** dans le conteneur actuel ; cache vidé dans le conteneur après un changement de configuration.
+- Frontend (R227 à R233) : `Read` de `frontend.md`, `frontend-a11y.md`, `frontend-backoffice.md` (et `frontend-session-bandeau.md`
+  avant `LocaleSwitcher.vue` ou `AppHeader.vue`) ; ciblé `docker compose exec -T frontend npm test -- <chemins>`, puis
+  `make front-test`, `make front-lint`, `make front-build`, codes lus sans pipe (départ : 2 663 tests, 185 fichiers) ;
+  `docker compose restart frontend` après un fichier créé, supprimé ou déplacé.
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; tailles au départ (HEAD cd412c1a) : `outillage-smoke.md` 26 016,
+  `frontend.md` 21 669, `frontend-backoffice.md` 39 440, `frontend-session-bandeau.md` 12 973, **`backend-outillage.md` 46 050**
+  (St18-34 : R226 la laisse **à taille égale ou moindre**, en remplaçant), `.claude/CLAUDE.md` 35 014, **`security-user.md` 47 922**
+  et **`backoffice-api.md` 39 834** (non touchées). Une tâche qui modifie une règle la nomme dans ses fichiers et dans son rendu.
+- **#753 n'est pas traité ici** (D4 de la seizième relecture) : une tâche qui croise une ligne de sa liste la laisse, et le dit.
+
+### Fichiers (tâches R222 à R234)
+
+Chaque tâche donne ses fichiers exacts dans son bloc « Files » ; ici, la responsabilité de chacune, pour l'ordre (lignes de liste
+plutôt qu'une table, pour tenir sous 140 caractères) :
+
+- **R222** — `tasks/relectures-748/brief-commun-agents.md` : la série lue, deux lignes recollées, une taille, les codes de sortie.
+- **R223** — `tools/tests/smoke-http.test.sh` (la garde des vidages, sa mesure), `tools/tests/lib/smoke-cases.sh`
+  (`write_value_patterns`), `outillage-smoke.md` (garde) : `ps` collé ou cité, rien de non borné exécuté, blancs refusés.
+- **R224** — `tools/lib/smoke-http.sh`, `smoke-http.test.sh`, `smoke-cases.sh` (`CASE_WRITE_REFUSAL`), `outillage-smoke.md`
+  (`-D`, `--data-binary`) : nom et texte vrais, corps retiré refusé, limite de curl à 8.5.0.
+- **R225** — `smoke-cases.sh`, les tests des trois smokes et de l'audit, `smoke-http.test.sh` : blocs partagés, code rendu par le
+  lanceur, détails d'échec filtrés, libellés.
+- **R226** — `backend/phpunit.dist.xml`, `backend/tests/Support/{ChildPhpProcess,PhpSources}.php`, quatre tests de
+  `backend/tests/Shared/`, `backend-outillage.md`, `.claude/CLAUDE.md` : D1, la couche `force`, docblocks, lignes.
+- **R227** — `LocaleSwitcher.vue`, `presentation/router/{useRouteLocale,interfaceLocale,index}.ts`, les six lecteurs, leurs specs,
+  `frontend.md`, `frontend-session-bandeau.md` : D4, `useRouteLocale()`, `pageLocale`.
+- **R228** — la garde de source (renommée), `useCurrentLocale.ts` et son spec, `OAuthConsentPage.spec.ts`, les specs des huit
+  composables de contenu, `frontend.md` : formes de cast, récits, composables sous `de`.
+- **R229** — `supportedLocale.ts`, les neuf dépôts d'admin, `AdminAboutMeCard.ts`, leurs specs et celles de six pages,
+  `frontend-backoffice.md` : message partagé, catégorie jugée, doublon dit.
+- **R230** — `qualityEntrySection.ts`, `AdminQualityEntrySection.vue`, `AdminQualityPage.vue`, leur spec : types dérivés, noms.
+- **R231** — `tests/support/` (`renderedMessage`, `catalogKey`, `accessRefusalTexts`, `accountMenuTexts`, `adminButtonTexts`,
+  `buttonLabelled`), leurs lecteurs, `frontend.md` : une façon de lire le catalogue.
+- **R232** — les specs d'admin du relevé déséchappé, `adminButtonTexts.ts`, `useUnsavedOrderGuard.ts` : D3 (1/2), Sp18-16.
+- **R233** — les autres specs du relevé : D3 (2/2).
+- **R234** — `.claude/rules/*`, fichiers désignés, cette section du plan : balayage.
+
+---
+
+### Task R222 : Le brief commun — la dix-huitième section lue, deux lignes recollées, les codes de sortie au corps
+
+Constats : D5 (e) ; Sp18-11 ; Sp18-20 (v) et Sp18-8 (pour l'avenir).
+
+**Exception au brief** : cette tâche écrit dans `tasks/relectures-748/brief-commun-agents.md`, rien d'autre ; elle ne touche ni au
+plan ni au code.
+
+**Files :**
+- Modify : `tasks/relectures-748/brief-commun-agents.md`
+
+- [ ] **Step 1 : lecture préalable** — la puce nomme, pour **R222 et suivantes**, la section « Corrections de la dix-huitième
+  relecture (2026-11-03) » et `relecture-18-constats.md` ; R209–R221 (et R216b, R219b, R219c, R220b) passent dans la liste des séries
+  passées (« … dix-septième relecture », `relecture-17-constats.md`). **Remplacer**, ne pas ajouter. Les deux lignes courtes (l. 16,
+  « R168–R181, R173b : « … quatorzième », et l. 23, « R168–R181 : `relecture-14-constats.md` ; ») sont recollées à leur voisine,
+  aucun mot changé (`diff` des suites de mots, `tr -s '[:space:]' '\n'`, vide).
+- [ ] **Step 2 : taille** (Sp18-11) — « `security-user.md` en fait 47 914 » → 47 922 (`wc -c`, mesuré au commit).
+- [ ] **Step 3 : corps du commit** (Sp18-20 (v), Sp18-8) — dans « Commit », le paragraphe du corps rend aussi **la commande et le code
+  de sortie** de chaque vérification que la tâche nomme (cibles `make`, tests hors ligne, shellcheck, `check-claude-rules`) ; un filet
+  lancé hors cible `make` ou sans code de sortie n'en est pas un.
+- [ ] **Step 4 : exception du balayage** — « Interdits » : l'exception devient « R234 écrit la sous-section « Ce que la dix-neuvième
+  série a réellement fait » du plan ».
+- [ ] **Step 5 : vérifier** — `awk 'length>140' tasks/relectures-748/brief-commun-agents.md` : vide ;
+  `awk 'length<=45 && NF' tasks/relectures-748/brief-commun-agents.md` : chaque ligne restante est une fin de paragraphe ou un
+  titre, dit au commit ; `git diff --stat` : ce seul fichier.
+- [ ] **Step 6 : commit** — `docs: le brief commun de #748 lit la dix-huitième section et rend les codes de sortie`.
+
+---
+
+### Task R223 : Outillage, *sensible* — `ps` collé à des chiffres ou cité est vu ; rien de non borné n'est exécuté
+
+Constats : C18-1 ; C18-2 ; C18-4 = D2 ; choix 1 à 3.
+
+**Files :**
+- Test : `tools/tests/smoke-http.test.sh` (`ps_lists_environment` l. ~1475, `dump_printing`, la boucle de mesure l. ~1611,
+  `dump_forbidden`, `dump_allowed`, l'en-tête de la garde l. ~1444-1474)
+- Modify : `tools/tests/lib/smoke-cases.sh` (`write_value_patterns` et son docblock)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (la phrase de `ps`, l. ~169-174 ; la mesure, l. ~180-184)
+
+- [ ] **Step 1 : filet** — les 26 tests hors ligne à 0, nombre de `ok` de chacun noté.
+- [ ] **Step 2 : tests, rouges** (Review Focus 4) —
+  - `dump_forbidden` gagne `ps e$$`, `ps -p $$ e1`, `ps -p $$ e9999999`, `ps e${pid}`, `"ps" e -p $$`, `'ps' e`, `"ps" e`,
+    `ps -auxe` et `ps -eaux` (sorties de `dump_printing`, D2) ; `dump_allowed` gagne `ps -p 1`, `ps -p 1 -o comm=`, `"ps" -ef` ;
+  - `dump_printing` gagne `"ps" e -p $$` et `ps e$$` (bornées au processus mesuré, D2), et perd `ps -auxe`, `ps -eaux` ;
+  - le cas « formes bornées » (choix 3), avant la boucle : chaque ligne de `dump_printing` refusée par `ps_lists_environment` porte
+    `$$` et ni `-A`, ni `-e`, ni `a` ou `x` dans une grappe BSD ; un `fail` nommé sinon, et la ligne est sautée par la boucle ;
+  - `write_value_patterns ' '` et `write_value_patterns $'\t'`, lancées dans un sous-shell : sortie 2.
+  Run : `bash tools/tests/smoke-http.test.sh; echo "exit=$?"`. Expected : FAIL (`ps e$$`, `"ps" e`… admis ; les blancs écrivent un
+  motif).
+- [ ] **Step 3 : implémenter** les choix 1 à 3 ; l'en-tête de la garde dit les deux formes et la limite (`"$(command -v ps)" e`,
+  `p=ps; $p e`) ; le docblock de `measure_dump_output` dit que seules les formes bornées sont lancées (D2). La garde relue sur la
+  bibliothèque, l'audit et les trois smokes : aucune fausse alerte.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le retrait des non-lettres ôté (le jeton jugé
+  tel quel) → `ps e$$`, `ps -p $$ e1` rougissent ; (b) les guillemets optionnels ôtés de `ps_word` → `"ps" e -p $$`, `'ps' e`
+  rougissent ; (c) le refus des blancs ôté de `write_value_patterns` → les deux cas de blancs rougissent ; (d) `'ps -auxe'` remis
+  dans `dump_printing` → le cas « formes bornées » rougit **et la ligne n'est pas exécutée** (le compteur de la boucle le montre, la
+  sortie mesurée n'a pas de fichier pour elle) ; restaurées ; **dans le corps du commit**. Aucune mutation ne retire le saut de la
+  boucle : elle exécuterait une forme non bornée (D2).
+- [ ] **Step 5 : règle** — la phrase de `ps` dit les chiffres et `$` collés (C18-1) et le mot entre guillemets (C18-2) ; la mesure
+  dit que la valeur factice est un argument de l'`env -i` qui la pose et de rien d'autre (D2, l. ~182), que `ps -auxe` et
+  `ps -eaux` sont jugées sans être exécutées, et que `write_value_patterns` refuse aussi les blancs seuls. **Remplacer**, lignes
+  ≤ 140, les quatre recherches de moignons du brief, taille notée.
+- [ ] **Step 6 : verts** — les 26 tests à 0 (`smoke-http` : 535 + les cas du Step 2), shellcheck (image épinglée),
+  `tools/check-claude-rules.sh; echo "exit=$?"`, codes au corps.
+- [ ] **Step 7 : commit** — `test(tools): la garde des vidages voit ps collé ou cité, rien de non borné n'est mesuré (#748)`.
+
+---
+
+### Task R224 : Outillage, *sensible* — `-D` et `--data-binary` : nom et texte vrais, corps retiré refusé, curl mesuré
+
+Constats : St18-20 ≈ Sp18-17 ; St18-21 ; St18-22 ; C18-5 ; C18-6 ; St18-5 (`smoke-http.sh:378`, `smoke-cases.sh:334-335`) ;
+D5 (f) ; Q2 ; choix 4 et 5.
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh` (`_smoke_writes_in_auth_dir` → `_smoke_writes_on_call_file`, son docblock ; le `--data-binary`
+  de `_smoke_value_touches_file` ; `_smoke_judge` l. ~526 ; les docblocks l. ~453, ~520, ~592-597 ; l. 378, sans décompte)
+- Test : `tools/tests/smoke-http.test.sh` (cas `refuse_write_args`, `refuse_write_curl_opts`, `refuse_file_args` ; le commentaire
+  l. ~826), `tools/tests/lib/smoke-cases.sh` (`WRITE_REFUSAL` → `CASE_WRITE_REFUSAL`, son docblock sans décompte)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (l. ~71-110 : `-D`, `--data-binary`, la mesure de curl, la limite C18-6, le
+  message)
+
+- [ ] **Step 1 : filet et mesure** — les 26 tests à 0, `ok` notés ; sur l'image épinglée 8.5.0 (`--network none`) : rejouer les
+  trois mesures de R221 (`-D <corps>` après une connexion refusée : sortie 7, 0 octet ; `-D <dossier>` : 23 ;
+  `-D <d>/absent/../cfg` : 23, fichier intact) et mesurer C18-6 (`-D "<fichier>/"`, `-D "<dossier>/neuf/"` : sortie, fichier
+  intact) ; commandes et sorties au commit.
+- [ ] **Step 2 : tests, rouges** (Review Focus 5) — avec la Basic Auth, après `smoke_data_file` puis `rm` du corps :
+  `-D "<ce chemin>"` → sortie 2, texte `writes` ; `--data-binary "@<ce chemin>"` → sortie 2, texte `reads` ; le même lot dans
+  `SMOKE_CURL_OPTS`. Le texte attendu de chaque cas `writes` est `CASE_WRITE_REFUSAL`, au texte de Q2 (A). Expected : FAIL (le corps
+  retiré admis ; l'ancien texte).
+- [ ] **Step 3 : implémenter** les choix 4 et 5 ; `grep -rn '_smoke_writes_in_auth_dir\|WRITE_REFUSAL' tools .claude` ne rend plus
+  que les nouveaux noms ; le texte de `writes` n'est plus écrit qu'au code, dans la règle et dans `CASE_WRITE_REFUSAL`
+  (`grep -rnF 'écrire sur un fichier de la Basic Auth' tools .claude` : ces trois endroits, dit au commit). Chaque fonction
+  ≤ 25 lignes (`awk` des longueurs **au corps**, Sp18-5).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) l'égalité de chaîne contre
+  `SMOKE_AUTH_DATA_FILES` ôtée → `-D <corps retiré>` rougit ; (b) le `-f` de `--data-binary` ôté → `--data-binary @<corps retiré>`
+  rougit ; (c) l'ancien texte remis dans `_smoke_judge` → les cas `writes` rougissent (nombre au commit) ; restaurées ; **dans le
+  corps du commit**.
+- [ ] **Step 5 : règle** — la phrase de mesure dit 8.5.0 pour les trois mesures rejouées et l'hôte (8.14.1) pour la quatrième, les en-
+  têtes après un succès (aucun serveur sous `--network none`) (D5 (f)) ; la limite C18-6 et sa mesure ; le corps retiré ; le nom et
+  le texte nouveaux. **Remplacer** ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 6 : verts** — les 26 tests à 0, shellcheck, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -n 'onze endroits\|eleven' tools/lib/smoke-http.sh` : vide ; codes au corps.
+- [ ] **Step 7 : commit** — `fix(tools): avec la Basic Auth, un corps retiré est refusé, le refus writes dit vrai (#748)`.
+
+---
+
+### Task R225 : Outillage, *sensible* — les blocs de préparation partagés, le code rendu par le lanceur, des sorties filtrées
+
+Constats : Sp18-4 ; C18-8 ; St18-23 ; St18-33 ; refactoring (sauf C18-8).
+
+**Files :**
+- Test : `tools/tests/lib/smoke-cases.sh` (Sp18-4 : un cas partagé par bloc recopié — témoin des fils, `CDPATH`, racine — ou la
+  différence dite ; St18-23 : `check_hollow_basic_auth_values` lit le code que **rend** `$CASE_RUNNER`, plus de `rc` global ; C18-8 :
+  le détail d'échec passe `CASE_CALLS` par `lines_without_values` comme `CASE_ERR`, et le docblock de `values_found_in` dit qu'une
+  valeur à plusieurs lignes est « trouvée » dès qu'une de ses lignes l'est, sûr pour une recherche d'absence, et qu'aucune recherche
+  de présence n'en passe), `smoke-login-throttling.test.sh:~226-244`, `smoke-mcp.test.sh:~355-382`,
+  `smoke-dead-session-cookie.test.sh` (les blocs), `audit-prod.test.sh` si sa forme est la même (formes voisines : converties, ou la
+  différence dite), `smoke-http.test.sh` (St18-33 : les libellés de `$'\nabc'` et `$'abc\n'` distincts, par `printf %q` ;
+  `check_option_lists` ne compte plus deux fois)
+- Modify (règle) : `.claude/rules/outillage-smoke.md` (la phrase des cas partagés, l. ~207-209, si elle change)
+
+- [ ] **Step 1 : filet** — les 26 tests à 0, `ok` de chacun noté.
+- [ ] **Step 2 : test, rouge** (C18-8) — un cas où le fichier des appels porte une valeur générée et où le cas creux échoue :
+  le détail imprimé ne la porte pas (`values_found_in` : absente). Expected : FAIL (`$(cat "$CASE_CALLS")` l'imprime).
+- [ ] **Step 3 : implémenter** C18-8, puis **refactorer** Sp18-4, St18-23, St18-33.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) le filtre de `CASE_CALLS` ôté → le cas du
+  Step 2 rougit ; (b) le lanceur d'un test qui rend toujours 0 → le cas creux de ce test rougit (le code est lu, non le `rc`
+  global) ; (c) dans un cas partagé de Sp18-4, la vérification qu'il porte inversée → chaque test qui l'appelle rougit (nombre au
+  commit) ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : verts** — mêmes nombres de `ok` (plus le cas du Step 2, moins les cas fusionnés, dits), shellcheck,
+  `tools/check-claude-rules.sh` ; `grep -n '"\$rc"' tools/tests/lib/smoke-cases.sh` : chaque ligne restante dite ; codes au corps.
+- [ ] **Step 6 : commit** — `test(tools): les blocs de préparation partagés, des détails d'échec filtrés (#748)`.
+
+---
+
+### Task R226 : Backend, *sensible* — les valeurs de test forcées par `<env force>`, prouvées par empreinte
+
+Constats : C18-3 = D1 ; Q1 ; Sp18-13 ; C18-7 ; St18-6 ; St18-28 ; St18-29 ; St18-34 ; St18-5 (`ChildPhpProcess.php:88`) ;
+St18-19 / D5 (b) (`ChildPhpProcess.php`, « répondait 400 ») ; St18-3 / D5 (d) (`ChildProcessHarnessTest.php:274, 279, 283`) ;
+choix 6.
+
+**Files :**
+- Modify : `backend/phpunit.dist.xml` (`<env … force="true">` après chaque `<server>` de `CONTACT_*`, `ANTHROPIC_API_KEY`,
+  `SCALEWAY_AI_*`, et d'`APP_ENV` selon **Q1 (A)** ; les commentaires disent ce qui est vrai : `<server>` pour ce qui lit
+  `$_SERVER`, `<env force>` parce que Symfony lit `$_ENV` d'abord), `backend/tests/Support/ChildPhpProcess.php` (choix 6 ; le docblock
+  au présent, sans « répondait », sans appelant nommé), `backend/tests/Support/PhpSources.php` (St18-6 : la l. 124 dit le contrat de
+  `NotASingleCharacterException` ; St18-29 : `isAnyChar` ne juge qu'une fois)
+- Create : `backend/tests/Shared/ForcedTestValuesProbeTest.php` (la sonde : pour chaque nom forcé, `hash('sha256', …)` de la valeur
+  que lit le noyau du parent — par le conteneur de test, le mécanisme choisi et justifié au commit — et de celle que lit un fils
+  `ChildPhpProcess::inTestEnvironment()` égalent l'empreinte de la valeur de `phpunit.dist.xml`), `backend/tests/Shared/
+  ForcedTestValuesWinOverTheShellTest.php` (relance `bin/phpunit --filter ForcedTestValuesProbeTest` avec, pour chaque nom, une
+  valeur factice aléatoire exportée (`bin2hex(random_bytes(16))`), exige la sortie 0 ; jamais une valeur imprimée)
+- Test : `backend/tests/Shared/ChildProcessHarnessTest.php` (l'entrée `OWN_ENVIRONMENT` du lanceur nouveau, avec sa raison ; un cas
+  « un `<env>` sans `force` n'est pas recouvert » ; St18-29 : `$serverBefore` distingue « absente » par `array_key_exists`, sans
+  `null` sentinelle ; les l. 274, 279, 283 ≤ 140), `backend/tests/Shared/PhpSourcesTest.php` (St18-28 : le commentaire l. 47, un seul
+  des deux cas qui prouvent la même chose, l'indice nommé)
+- Modify (règles) : `.claude/rules/backend-outillage.md` (l. 162-170 : les deux couches, la seconde à `force`, C18-7 ; **taille
+  égale ou moindre**, St18-34), `.claude/CLAUDE.md` (« with a dummy forced value in test » : par `<server>` et `<env force>`)
+
+**Interfaces :**
+- Produces : `ForcedTestValuesProbeTest` (sa liste de noms est la seule ; le test du shell la lit).
+
+- [ ] **Step 1 : filet** — `make back-test; echo "exit=$?"`, nombre noté (5 798).
+- [ ] **Step 2 : tests, rouges** (Review Focus 3) — la sonde et le test du shell, plus le cas « `<env>` sans `force` ». Run :
+  `docker compose exec -T -u dev backend php bin/phpunit tests/Shared/ForcedTestValuesWinOverTheShellTest.php; echo "exit=$?"`.
+  Expected : FAIL (le noyau du parent lit la valeur exportée, `$_ENV` d'abord ; la ligne d'empreinte qui diffère, sans valeur) ; la
+  sonde seule, dans la suite ordinaire, est verte (le dire).
+- [ ] **Step 3 : implémenter** D1 (et Q1 (A)) dans `phpunit.dist.xml`, le choix 6 dans `ChildPhpProcess.php`, St18-6, St18-28,
+  St18-29 ; `docker compose exec -u dev backend rm -rf var/cache/test` ; `make back-style-fix`.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) l'`<env force>` d'`ANTHROPIC_API_KEY` retiré →
+  le test du shell rougit (nom dit, empreinte seule) ; (b) le filtre `force()` ôté de la seconde couche → le cas « `<env>` sans
+  `force` » rougit ; (c) l'`<env force>` de `CONTACT_SENDER_EMAIL` retiré → le test du shell rougit ; restaurées ; **dans le corps
+  du commit**.
+- [ ] **Step 5 : règles** — `backend-outillage.md` l. 162-170 réécrites (les deux couches, `force` seul, la limite d'un
+  `phpunit.xml` local), **taille avant et après au commit, après ≤ 46 050** ; `.claude/CLAUDE.md` (la phrase) ; moignons relus.
+- [ ] **Step 6 : verts** — `make back-test; echo "exit=$?"` (5 798 + les cas nouveaux), `make back-quality; echo "exit=$?"`,
+  `make back-style-fix` (puis `git status`), `tools/check-claude-rules.sh; echo "exit=$?"` ; `awk 'length>140'` sur les fichiers
+  PHP touchés : vide ; codes au corps.
+- [ ] **Step 7 : commit** — `fix(tests): les valeurs de test forcées l'emportent sur le shell, chez le parent et le fils (#748)`.
+
+---
+
+### Task R227 : Frontend, *sensible* — le sélecteur garde query et hash, change la langue sans naviguer hors préfixe ; `useRouteLocale()`
+
+Constats : CR18-1 ; CR18-2 ≈ Sp18-12 = D4 ; St18-12 ; St18-13 ; Q4 ; St18-7 ; Sp18-2 (`AppHeader`, `AppFooter`, `LocaleSwitcher`,
+`ContactPage`, `LoginPage`, `SetPasswordPage`) ; choix 7.
+
+**Files :**
+- Create : `frontend/src/presentation/router/useRouteLocale.ts`, `frontend/src/presentation/router/interfaceLocale.ts`, leurs specs
+  (`frontend/tests/presentation/router/`)
+- Modify : `presentation/ui/LocaleSwitcher.vue` (D4), `presentation/router/index.ts` (`syncLocale` → `applyInterfaceLocale`),
+  `AppHeader.vue`, `AppFooter.vue`, `ContactPage.vue`, `LoginPage.vue`, `SetPasswordPage.vue` (`pageLocale = useRouteLocale()`)
+- Test : `LocaleSwitcher.spec.ts`, et les specs des cinq autres lecteurs (Sp18-2)
+- Modify (règles) : `.claude/rules/frontend.md` (i18n : le sélecteur sur la 404, `useRouteLocale()`), `frontend-session-bandeau.md`
+  (l. 66-69 : l'énumération des lecteurs remplacée par `useRouteLocale()`, St18-7)
+
+**Interfaces :**
+- Produces : `useRouteLocale(): ComputedRef<Locale>` ; `applyInterfaceLocale(locale: Locale): void`.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** (Review Focus 1, 2) — `LocaleSwitcher.spec.ts` : `"garde la query et le hash en changeant de langue
+  (#748, R227)"` (`/fr/oauth/consent?client_id=c&state=s&code_challenge=x#h` → `/en/oauth/consent?…#h`, query égale) ; le même pour
+  `/fr/login?redirect=%2Ffr%2Fadmin&reauth=1` ; `"sur une page sans préfixe, change la langue sans naviguer (#748, R227)"`
+  (`/frogs` → aucun `push`, langue d'interface `en`, `localStorage` `en`, `document.documentElement.lang` `en`, titre en anglais,
+  EN `aria-current`) ; `/fr/frogs` → `/en/frogs`. Sp18-2 : chaque lecteur monté sous `setUnsupportedLocale(i18n, 'de')` ne construit
+  aucune adresse `/de/` (sur une route à `:locale`, la langue de la route ; sur la 404, `fr`). `useRouteLocale.spec.ts` : route
+  `en` → `en` ; sans `:locale` sous `de` → `fr`. Expected : FAIL (query perdue ; `/frogs` poussé ; modules absents).
+- [ ] **Step 3 : implémenter** (choix 7, Q4 (A)) ; `docker compose restart frontend` (fichiers créés) ;
+  `grep -rn 'routeLocale(route' frontend/src` : seuls `useRouteLocale.ts` et `loginLocation.ts`, dit ;
+  `grep -rn 'currentLocale' frontend/src` : chaque ligne restante désigne la langue d'interface.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `query: route.query` retiré du `push` → les deux
+  cas de query rougissent ; (b) la branche sans préfixe qui pousse le chemin tel quel → le cas `/frogs` rougit ; (c)
+  `applySeoMeta(route)` retiré → l'assertion du titre rougit ; (d) le repli de `useRouteLocale` qui rend la langue d'interface
+  brute → les cas sous `de` rougissent ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règles** ; lignes ≤ 140, moignons relus ; tailles notées.
+- [ ] **Step 6 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`, codes au corps.
+- [ ] **Step 7 : commit** — `fix(frontend): le sélecteur de langue garde query et hash, change la langue sans préfixe (#748)`.
+
+---
+
+### Task R228 : Frontend — la garde de source voit chaque forme de cast, sous un nom qui dit ses deux gardes ; les récits au présent
+
+Constats : CR18-8 ; St18-17 ; St18-18 ; St18-19 / D5 (b) (`noLocaleCast.spec.ts:13`, le nom l. 72, `useCurrentLocale.ts:9-12`,
+`useCurrentLocale.spec.ts:10`) ; St18-5 (`useCurrentLocale.ts:9, 12, 14`) ; Sp18-1 / D5 (a) (`useCurrentLocale.ts:6, 12`) ;
+St18-30 ; St18-27 ; Sp18-2 (les huit composables de contenu) ; choix 8.
+
+**Files :**
+- Move : `frontend/tests/presentation/noLocaleCast.spec.ts` → `frontend/tests/presentation/localeSourceGuards.spec.ts` (`git mv`)
+- Modify : `frontend/src/application/shared/useCurrentLocale.ts` (docblock : présent, sans décompte ni appelant, numéros avec leur
+  série et la section de `frontend.md`), `frontend/tests/application/shared/useCurrentLocale.spec.ts` (St18-30 : `currentLocaleOf(…):
+  ComputedRef<Locale>` ; le docblock au présent), `OAuthConsentPage.spec.ts` (St18-27 : `withoutRouteLocale` ne change que la route,
+  une option `interfaceLocale?: string` pose la langue ; les cas qui veulent les deux posent les deux), les specs des huit composables
+  de contenu (Sp18-2 : sous `setUnsupportedLocale(i18n, 'de')`, le dépôt est appelé avec `fr`)
+- Modify (règle) : `.claude/rules/frontend.md` (le nom du fichier de la garde ; chaque citation : `grep -rn noLocaleCast frontend .claude`)
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** — le cas du détecteur lit `LOCALE_CASTS` et gagne `const l = <Locale>x`, `x as 'fr' | 'en'`,
+  `x as typeof DEFAULT_LOCALE`, `x as (typeof SUPPORTED_LOCALES)[number]` (vrais) et `ComputedRef<Locale>`, `computed<Locale>(() =>
+  x)`, `ref<Locale>('fr')`, `Map<string, Locale>`, `x as LocaleKey` (faux) ; les cas Sp18-2 des composables. Expected : FAIL (les
+  quatre formes non vues ; les composables qui appellent leur dépôt avec `de`, s'il y en a — sinon vert d'emblée, prouvé au Step 4).
+- [ ] **Step 3 : refactorer** (choix 8) et corriger la liste ; `docker compose restart frontend` (fichier déplacé) ; le nom du test
+  l. 72 devient « aucun fichier de src/ ne convertit une chaîne en Locale par une assertion » (D5 (b)).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `const l = x as typeof DEFAULT_LOCALE` ajouté
+  à `NotFoundPage.vue` → la garde rougit en le nommant ; (b) l'entrée `<Locale>` retirée de `LOCALE_CASTS` → le cas du détecteur
+  rougit (la constante est lue par les deux) ; (c) dans un composable de contenu, `useCurrentLocale()` remplacé par une langue lue
+  brute → son cas Sp18-2 rougit ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : verts** — `make front-test` (filet + les cas nouveaux), `make front-lint`, `make front-build`,
+  `tools/check-claude-rules.sh` ; `grep -rn 'noLocaleCast\|REMAINING_LOCALE_CASTS\|depuis R214' frontend .claude/rules` : vide ;
+  codes au corps.
+- [ ] **Step 6 : commit** — `test(frontend): la garde de la langue voit chaque forme de cast, sous un nom juste (#748)`.
+
+---
+
+### Task R229 : Frontend — la frontière des dépôts d'admin : un message partagé, la catégorie jugée, le doublon dit, la page sous `de`
+
+Constats : St18-8 = CR18-5 = St18-10 = Sp18-21 ; St18-9 ; CR18-3 = C18-9 ; CR18-4 = St18-11 ; Sp18-3 ; Sp18-1 / D5 (a) et St18-32
+(`supportedLocale.ts:4`, les neuf « #748, R214, Q1 (A) ») ; St18-5 (les neuf `unsupportedLocale()`) ; choix 9.
+
+**Files :**
+- Modify : `frontend/src/infrastructure/admin/shared/supportedLocale.ts` (choix 9 ; le docblock dit aussi qu'un nouvel essai après une
+  écriture refusée crée un doublon, que la personne retire à la main ; « Q1 (A) » devient « Q1 (A) de la dix-septième relecture »,
+  avec la section de `frontend-backoffice.md`), les neuf dépôts (`unsupportedLocaleError()`, sans docblock recopié),
+  `domain/admin/about/entities/AdminAboutMeCard.ts` (`isAdminAboutMeCardCategory`), `HttpAdminAboutMeCardRepository.ts` (CR18-4)
+- Test : `supportedLocale.spec.ts` (le message partagé), `HttpAdminAboutMeCardRepository.spec.ts` (une catégorie inconnue en liste et
+  en écriture → l'erreur, raison `unknown`), les specs des six pages d'admin de contenu (Sp18-3 : une liste répondue avec une entrée
+  `locale: 'de'` → l'alerte de chargement de la page, aucun formulaire ouvert)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (l. 212-218 : le doublon d'un nouvel essai ; la catégorie jugée)
+
+**Interfaces :**
+- Produces : `UNSUPPORTED_LOCALE_MESSAGE: string` ; `supportedLocaleOf(value: string, unsupported: () => Error): Locale` ;
+  `isAdminAboutMeCardCategory(value: string): value is AdminAboutMeCardCategory`.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** — la catégorie inconnue (deux cas) ; les six pages (Sp18-3) ; `supportedLocale.spec.ts` lit
+  `UNSUPPORTED_LOCALE_MESSAGE`. Expected : FAIL (la catégorie passe ; constante absente ; les pages : vert d'emblée possible, prouvé
+  au Step 4).
+- [ ] **Step 3 : implémenter** (choix 9) ; formes voisines : `grep -rnE ' as Admin[A-Za-z]*(Category|Kind|Status|Reason)\b'
+  frontend/src/infrastructure` et toute autre conversion d'un champ fermé de réponse par `as` dans les dépôts d'admin, nommées au
+  commit (corrigées de même, ou la raison) ; `grep -rn "'Unsupported locale in response'" frontend/src` : une ligne.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `isAdminAboutMeCardCategory` qui rend toujours
+  vrai → les deux cas de catégorie rougissent ; (b) `supportedLocaleOf` qui ne juge plus → les cas de dépôt et les six cas de page
+  rougissent (nombre au commit) ; restaurées ; **dans le corps du commit**. La signature `() => Error` se juge à la relecture
+  (aucune mutation ne la fait rougir : un paramètre ignoré compile).
+- [ ] **Step 5 : règle** ; lignes ≤ 140, moignons relus ; taille notée.
+- [ ] **Step 6 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` ;
+  `grep -rn 'R214, Q1 (A)' frontend/src` : vide ; codes au corps.
+- [ ] **Step 7 : commit** — `fix(frontend): les dépôts d'admin jugent la catégorie, un message de langue partagé (#748)`.
+
+---
+
+### Task R230 : Qualité — les types de champs dérivés des records, un vocabulaire, des docblocks sans redite
+
+Constats : CR18-6 = St18-14 ; St18-15 ; St18-16 ; Sp18-1 / D5 (a) (`qualityEntrySection.ts:15, 20`) ; St18-5
+(`qualityEntrySection.ts:134`, `AdminQualityEntrySection.vue:52`) ; refactoring ; choix 10.
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/qualityEntrySection.ts` (choix 10 ; `QualityPrincipleField = keyof typeof
+  QUALITY_PRINCIPLE_FIELD_OPTIONS` et `QualityTraitField` exportés ; St18-16 : l. ~173 sans redire la prose, l. ~49 « la seule
+  assertion de ce module » ; l. 15, 20 : chaque numéro avec sa série et sa règle ; l. ~134 sans appelant nommé),
+  `AdminQualityEntrySection.vue` (l. ~52, sans appelant nommé ; les noms du choix 10), `AdminQualityPage.vue` (l. 78, 91 :
+  `QualityEntryInput<QualityPrincipleField>`, `QualityEntryInput<QualityTraitField>`)
+- Test : `frontend/tests/presentation/pages/admin/qualityEntrySection.spec.ts` (les noms ; aucun cas retiré)
+
+- [ ] **Step 1 : filet** — `docker compose exec -T frontend npm test -- tests/presentation/pages/admin --reporter=verbose` (noms et
+  verdicts dans un fichier du scratchpad), puis `make front-test; echo "exit=$?"`, nombres notés.
+- [ ] **Step 2 : refactorer** ; `grep -rn "'title' | 'description' | 'iconKey'" frontend/src` : seule la déclaration du record, ou
+  vide ; `grep -rnw 'entryField\|EntryFieldOptions\|entryFieldsOf' frontend` : vide.
+- [ ] **Step 3 : rouge vu à la compilation** (Python, copie vérifiée par `cmp`) : la clé `iconKey` retirée de
+  `QUALITY_PRINCIPLE_FIELD_OPTIONS` → `make front-build` échoue **dans `AdminQualityPage.vue`** aussi (ligne TS au commit : le type
+  de la page suit le record) ; restauré ; **dans le corps du commit**.
+- [ ] **Step 4 : verts** — mêmes noms et verdicts (`cmp`, aux renommages près, dits), `make front-test` (même nombre),
+  `make front-lint`, `make front-build`, codes au corps.
+- [ ] **Step 5 : commit** — `refactor(frontend): les champs de Qualité typés par leur record, un vocabulaire (#748)`.
+
+---
+
+### Task R231 : Les specs lisent le catalogue d'une seule façon par cas, écrite une fois
+
+Constats : St18-24 ; St18-26 ; CR18-10 ≈ St18-25 ; D5 (c) (`accessRefusalTexts.ts:29`, `adminButtonTexts.ts:62`) ; St18-5
+(`accessRefusalTexts.ts:6, 24`, `accountMenuTexts.ts:7, 11`, `adminButtonTexts.ts:17, 46`, `buttonLabelled.ts:8`) ; St18-3 / D5 (d)
+(`OrderHandle.spec.ts:18`, `adminButtonTexts.ts:14`) ; refactoring ; choix 11.
+
+**Files :**
+- Create : `frontend/tests/support/catalogKey.ts` (`type CatalogKey`, les chemins de `fr.json`)
+- Modify : `frontend/tests/support/renderedMessage.ts` (choix 11), `accessRefusalTexts.ts` (`accessRefusalTexts(locale: Locale)`, les
+  paires et leurs docblocks retirés), `adminButtonTexts.ts` (St18-26 : `ORDER_TEXTS` sans docblock qui redit ses clés ;
+  `entryFormTexts` et `entryTitleTexts` remplacés par la lecture directe des records exportés s'ils ne font que les relayer ;
+  `AdminEntrySection` sans `watch` si aucune spec ne lit `entryFormTexts('watch')`, sinon la raison ; l. 14, 17, 46, 62),
+  `accountMenuTexts.ts` (l. 7, 11), `buttonLabelled.ts` (l. 8), leurs lecteurs, `OrderHandle.spec.ts:18` et
+  `AssistantPage.spec.ts:221` (par `renderedMessage`), `AppHeader.spec.ts` (une seule source pour le menu), `OAuthConsentPage.spec.ts`
+  (`accessRefusalTexts('fr')`)
+- Modify (règle) : `.claude/rules/frontend.md` (« Tests read the catalogue », une phrase, choix 11)
+
+**Interfaces :**
+- Produces : `renderedMessage(locale: Locale, key: CatalogKey, named?: Record<string, string | number>, plural?: number): string` ;
+  `accessRefusalTexts(locale: Locale): { readonly earlierSaveRefused: string; readonly accessRefused: string; readonly
+  switchAccount: string }`. R232 et R233 les lisent.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté ; le temps et la sortie de `make front-build` notés.
+- [ ] **Step 2 : rouge vu à la compilation** — `renderedMessage('fr', 'admin.order.nexistepas')` écrit dans un spec de
+  `tests/support/` → `make front-build` échoue (ligne TS) une fois `CatalogKey` en place ; le cas retiré après la preuve, dit. Si
+  `vue-tsc` manque de mémoire ou dépasse le double du temps du filet avec `CatalogKey` (R202), l'agent s'arrête et rend la question.
+- [ ] **Step 3 : refactorer** la liste ; `grep -rn 'createAppI18n().global.t' frontend/tests` : seulement `renderedMessage.ts` et
+  `adminButtonTexts.ts` s'il garde une interpolation, dit ; `grep -rnE '_(FR|EN)\b' frontend/tests/support` : chaque ligne restante
+  dite.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `accessRefusalTexts` qui rend les textes FR
+  pour `en` → les cas EN qui la lisent rougissent (nombre au commit) ; (b) `renderedMessage` qui ignore `locale` (l'instance
+  partagée en `fr`) → les cas EN qui l'appellent rougissent ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : règle** ; ligne ≤ 140 ; taille notée.
+- [ ] **Step 6 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` ;
+  `awk 'length>140'` sur `OrderHandle.spec.ts` et `adminButtonTexts.ts` : vide ; codes au corps.
+- [ ] **Step 7 : commit** — `test(frontend): une façon de lire le catalogue dans les specs, écrite une fois (#748)`.
+
+---
+
+### Task R232 : Les extraits du catalogue (1/2) — le relevé déséchappé, les specs d'admin
+
+Constats : D3 ; St18-1 ; St18-2 (les extraits d'admin) ; Sp18-16 ; St18-3 / D5 (d) (`AdminAboutPage.spec.ts:1148, 1155`) ;
+refactoring.
+
+**Files :**
+- Test : `frontend/tests/presentation/layout/AdminLayout.spec.ts` (l. 226), les sept specs qui portent « La liste a changé
+  entre-temps », chaque spec d'admin que le relevé désigne, les six specs de pages d'admin (Sp18-16 : « écrits une fois pour chaque
+  formulaire par entrée » → « écrits une fois, pour tous les formulaires par entrée ») ; `tests/support/adminButtonTexts.ts`
+  (`ORDER_TEXTS` gagne les erreurs de `admin.order.errors` que deux specs ou plus lisent)
+- Modify : `frontend/src/application/admin/shared/useUnsavedOrderGuard.ts:11` (Sp18-16 : « Un seul composable, partagé par les
+  pages ordonnées »)
+
+**Interfaces :**
+- Consumes : `ORDER_TEXTS`, `renderedMessage`, `accessRefusalTexts` (R231).
+
+- [ ] **Step 1 : relevé** — les scripts de R219b/R219c (`releve19b.py`, `releve19b-en.py`, scratchpad) étendus : (1) le littéral
+  **déséchappé** (`\'`, `\"`, `\\`) avant la comparaison ; (2) les arguments de `includes`, `toContain`, `startsWith`, `toMatch`
+  comparés comme **extraits** d'une valeur de `fr.json` / `en.json` ; rejoués sur `frontend/tests` entier : commande, nombres FR et
+  EN, égalités et extraits séparés, liste par fichier **au corps** (la part d'admin est le périmètre de cette tâche, le reste est
+  rendu à R233).
+- [ ] **Step 2 : rouges avant** — une mutation de `fr.json` (puis `en.json`) par clé relevée dans le périmètre, « ~# » après le
+  premier caractère : les clés qui rougissent sont converties (clé entière ou constante partagée), les autres gardées avec leur raison.
+- [ ] **Step 3 : convertir**, puis prouver la lecture par une mutation des constantes créées ou étendues (`ORDER_TEXTS`…).
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; `git diff --exit-code` sur
+  `fr.json` et `en.json` ; le relevé final du périmètre, chaque ligne restante dite avec sa raison ; `awk 'length>140'` sur
+  `AdminAboutPage.spec.ts` : aucune ligne écrite par la série (`git blame`) ; codes au corps.
+- [ ] **Step 5 : commit** — `test(frontend): les extraits du catalogue des specs d'admin lus du catalogue (#748)`.
+
+---
+
+### Task R233 : Les extraits du catalogue (2/2) — les specs hors admin
+
+Constats : D3 ; St18-2 (le reste : `OAuthConsentPage`, `LoginPage`, la prose, `McpConnectionsPage.spec.ts:395`) ; St18-3 / D5 (d)
+(`OAuthConsentPage.spec.ts:271, 297, 702`) ; refactoring.
+
+**Files :**
+- Test : les specs hors admin que le relevé de R232 désigne ; `tests/support/` pour une constante partagée par deux specs ou plus.
+
+**Interfaces :**
+- Consumes : le relevé de R232 (scripts du scratchpad), `renderedMessage`, `accessRefusalTexts` (R231).
+
+- [ ] **Step 1 : relevé** — les scripts de R232 rejoués : commande, nombres, liste par fichier hors admin au corps.
+- [ ] **Step 2 : rouges avant** — une mutation par clé relevée, « ~# » après le premier caractère, FR puis EN.
+- [ ] **Step 3 : convertir** les clés rouges ; `startsWith('Révoquer')` de `McpConnectionsPage.spec.ts:395` jugé au même critère
+  (la mutation de `revokeAria` le fait-elle rougir ?) ; puis une mutation des constantes créées.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; `git diff --exit-code` sur les
+  deux catalogues ; le relevé final, par fichier, chaque ligne restante dite avec sa raison ; `awk 'length>140'` sur
+  `OAuthConsentPage.spec.ts` : aucune ligne écrite par la série ; codes au corps.
+- [ ] **Step 5 : commit** — `test(frontend): les extraits du catalogue des specs hors admin lus du catalogue (#748)`.
+
+---
+
+### Task R234 : Balayage documentaire de la dix-huitième relecture — commandes et nombres dans le plan
+
+Constats : D5 (g) (cité) ; C17-7 (cité) ; les écarts réels de R222 à R233.
+
+**Exception au brief** : cette tâche écrit dans `tasks/plan-748.md`, et seulement la sous-section « Ce que la dix-neuvième série a
+réellement fait » à la fin de cette section (avant « ### Task 11 »), sans cocher de case ni toucher au reste. **Elle ne refactore
+rien** : ce qu'elle trouve à restructurer se rend en question.
+
+**Files :** ceux que le balayage désigne (texte seulement) ; `tasks/plan-748.md` (la sous-section).
+
+- [ ] **Step 1 : recherches** (`X`, `P` comme R221 ; `B=$(git log --grep='le plan de la dix-neuvième série' -1 --format=%H)`). Pour
+  **chaque** recherche : la commande exacte, le nombre de lignes, la raison de chaque ligne gardée, écrits dans la sous-section ;
+  chaque manque déclaré vérifié par une mutation ou un `grep` cité :
+  1. Noms disparus : `grep -rn "${X[@]}" -e _smoke_writes_in_auth_dir -e 'WRITE_REFUSAL=' -e REMAINING_LOCALE_CASTS -e noLocaleCast
+     -e 'function unsupportedLocale(' -e entryFieldsOf -e EntryFieldOptions -e syncLocale "${P[@]}"`.
+  2. Décomptes et appelants nommés dans les docblocks et les règles touchés par la série (la recherche 2 de R221, rejouée sur
+     `git diff --name-only "$B"...HEAD`) : chaque ligne qui est un décompte d'appelants dite (question, pas correction).
+  3. Identifiants de constat dans les noms de tests : la recherche 3 de R221, rejouée.
+  4. Récits au passé : les deux expressions de la recherche 4 de R221, sur `git diff --name-only "$B"...HEAD`.
+  5. Longueurs : `awk 'length>140'` sur chaque fichier de `git diff --name-only "$B"...HEAD` (lignes écrites par la série, par
+     `git blame`), code compris (D5 (d)) ; et les corps de commit (la boucle `git rev-list` de R221).
+  6. Moignons et coupes dans chaque règle touchée par la série : les quatre recherches du brief, commandes écrites.
+  7. Règles relues avec `Read` (`outillage-smoke.md`, `backend-outillage.md`, `frontend.md`, `frontend-backoffice.md`,
+     `frontend-session-bandeau.md`, `.claude/CLAUDE.md`) : toute phrase fausse sur HEAD **remplacée** ; une règle modifiée sans
+     déclaration, dite.
+  8. Docblocks qui ne font que redire le membre, dans les fichiers modifiés par R222 à R233 : dits (question, pas correction).
+  9. Numéros de tâche dans `src/` : `grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l` (318 à d0b896c1) et `git blame` des lignes
+     écrites dans `"$B"..HEAD` qui citent `R[0-9]+` sans sa série (0 attendu, D5 (a)).
+  10. Mutations : `git log --format='%h %s%n%b' "$B"..HEAD` ; chaque mutation annoncée lue au corps (méthode, commande, rouge,
+      `restauré :`), et **le code de sortie de chaque vérification** (R222) ; une mutation ou une vérification absente est « non
+      attestée ».
+  11. D2 : `grep -n 'ps -auxe\|ps -eaux' tools/tests/smoke-http.test.sh` — chaque ligne est dans `dump_forbidden` ou un commentaire,
+      aucune dans `dump_printing` (dit).
+- [ ] **Step 2 : plan tenu à jour** — la sous-section « Ce que la dix-neuvième série a réellement fait *(écrit par R234 le …)* » :
+  les commits ; pour chaque tâche R222 à R233, « conforme » ou l'écart réel (déclaré **et** lisible dans le diff) ; les réponses à
+  Q1 à Q4 et leur suite ; les onze recherches ; les nombres de tests (`make front-test`, `make back-test`, `ok` des 26 tests hors
+  ligne) ; la taille de chaque règle touchée et la sortie de `tools/check-claude-rules.sh` ; C17-7 : « rotation du jeton à la charge
+  de l'auteur, à confirmer par lui seul » ; les questions ouvertes, en fin de sous-section. Aucune autre ligne du plan ne change.
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; toutes les règles < 50 000, `backend-outillage.md`
+  ≤ 46 050, `backoffice-api.md` à 39 834 et `security-user.md` à 47 922 ; `make front-test` / `make back-test` / tests hors ligne
+  selon les fichiers changés, codes lus sans pipe.
+- [ ] **Step 4 : commit** — `docs: le balayage de la dix-huitième relecture de #748`.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| CR18-1 | R227 (query et hash gardés, D4) |
+| CR18-2 ≈ Sp18-12 | R227 (D4 : sans préfixe, la langue change sans navigation) |
+| CR18-3 = C18-9 | R229 (le doublon dit au docblock et à la règle ; Q1 (A) de la dix-septième tient) |
+| CR18-4 = St18-11 | R229 (`isAdminAboutMeCardCategory`, formes voisines cherchées) |
+| St18-8 = CR18-5 = St18-10 = Sp18-21 | R229 (choix 9) |
+| St18-9 | R229 (`unsupportedLocaleError()`) |
+| CR18-6 = St18-14 | R230 (types dérivés du record) |
+| CR18-7 | Q3 : écarté si (A), la décision f0a3b889 de R216b tient ; (B) : une ligne de renvoi par formulaire, dans R230 |
+| CR18-8 | R228 (choix 8) |
+| CR18-9 | écarté (voir plus bas) |
+| CR18-10 ≈ St18-25 | R231 (choix 11) |
+| C18-1 | R223 (choix 1) |
+| C18-2 | R223 (choix 2) |
+| C18-3 | R226 (D1 ; Q1 pour `APP_ENV`) |
+| C18-4 | R223 (D2, choix 3) |
+| C18-5 | R224 (choix 5) |
+| C18-6 | R224 (limite écrite, mesurée) |
+| C18-7 | R226 (choix 6 : la seconde couche à `force` seule) |
+| C18-8 | R225 |
+| St18-1 | R232 (relevé déséchappé, D3) |
+| St18-2 | R232, R233 (D3) |
+| St18-3 = Sp18-9 | D5 (d) : R226, R231, R232, R233 |
+| St18-4 = Sp18-10 | rectifié ci-dessus (D5 (g)) |
+| St18-5 | R224, R226, R228, R229, R230, R231 (chacun ses fichiers) ; R234 (recherche 2) |
+| St18-6 | R226 |
+| St18-7 | R227 |
+| St18-12 | R227 (Q4) |
+| St18-13 | R227 (Q4 (A) ; écarté si (B), le choix 1 de la dix-septième tient) |
+| St18-15 | R230 (choix 10) |
+| St18-16 | R230 |
+| St18-17 | R228 (`LOCALE_CASTS`) |
+| St18-18 | R228 (le nom, la liste vide, `expectExactly`) |
+| St18-19 | D5 (b) : R226, R228 |
+| St18-20 ≈ Sp18-17 | R224 (choix 4, Q2) |
+| St18-21 | R224 (trois endroits : code, règle, oracle) |
+| St18-22 | R224 (`CASE_WRITE_REFUSAL`) |
+| St18-23 | R225 |
+| St18-24 | R231 |
+| St18-26 | R231 |
+| St18-27 | R228 |
+| St18-28 | R226 |
+| St18-29 | R226 |
+| St18-30 | R228 |
+| St18-31 | écarté (voir plus bas) |
+| St18-32 | R229 (« Q1 (A) de la dix-septième relecture ») |
+| St18-33 | R225 |
+| St18-34 | R226 (règle à taille égale ou moindre) ; R234 (taille vérifiée) |
+| Sp18-1 | D5 (a) : R228, R229, R230 ; R234 (recherche 9) |
+| Sp18-2 | R227 (six lecteurs), R228 (huit composables) |
+| Sp18-3 | R229 (six pages) |
+| Sp18-4 | R225 |
+| Sp18-5, Sp18-6, Sp18-7, Sp18-8 | rectifiés ci-dessus ; R222 (codes de sortie au corps, pour l'avenir) |
+| Sp18-11 | R222 |
+| Sp18-13 | R226 (choix 6) |
+| Sp18-14 | écarté (voir plus bas) |
+| Sp18-15 | rectifié ci-dessus |
+| Sp18-16 | R232 |
+| Sp18-18, Sp18-19 | rectifiés ci-dessus |
+| Sp18-20 | rectifié ci-dessus, (i) à (vi) ; R222 pour (v) |
+| D5 (a) à (g) | (a) R228–R230 ; (b) R226, R228 ; (c) R231 ; (d) R226, R231–R233 ; (e) R222 ; (f) R224 ; (g) rectifié ci-dessus |
+| C17-7 | hors dépôt : rotation à la charge de l'auteur ; citée par R234 |
+
+### Constats écartés, avec leur raison
+
+Aucun n'est réfuté sur le code. **CR18-9** (l'invariant tenu à l'écriture plutôt qu'un accesseur) : D2 de la dix-septième relecture
+a choisi l'accesseur unique, décision de l'auteur ; une garde à l'écriture ne verrait pas une langue posée par un test ou une
+extension sur l'instance de vue-i18n, ce que l'accesseur couvre. **Sp18-14** : l'inversion des trois comparaisons de `StackPage.vue`
+est déclarée au commit de R217 **et** au bilan de R221 (« Écarts déclarés : `StackPage.vue` gagne aussi… ») : rien n'est caché.
+**St18-31** : le `toContain('devDependencies')` retiré de `vueCompilerAlignment.spec.ts` est la demande de Sp17-20, faite par R217 ;
+la relecture le note sans y voir de défaut. **CR18-7** et **St18-13** : selon les réponses à Q3 et Q4.
+
+---
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
