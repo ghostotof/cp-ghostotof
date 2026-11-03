@@ -84,11 +84,10 @@ interface Options {
   query?: string
   describeRequest?: ReturnType<typeof vi.fn>
   decide?: ReturnType<typeof vi.fn>
-  /**
-   * Vrai : la demande arrive sur une route sans segment `:locale`, sous une langue d'interface hors du site (`de`) ; les
-   * liens vers la connexion ne peuvent plus lire leur langue que de l'interface (#748, R213).
-   */
+  /** Vrai : la demande arrive sur une route sans segment `:locale` ; les liens vers la connexion lisent leur langue de l'interface. */
   withoutRouteLocale?: boolean
+  /** Une langue d'interface que le site ne porte pas (`de`), posée à la place de `locale` (`setUnsupportedLocale`). */
+  interfaceLocale?: string
   /**
    * Faux : la page n'a pas encore été visible et active le délai voulu, les
    * boutons restent inactifs (protection contre le double-clickjacking). Vrai
@@ -109,8 +108,8 @@ async function mountPage(options: Options = {}): Promise<Harness> {
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
-  if (true === options.withoutRouteLocale) {
-    setUnsupportedLocale(i18n, 'de')
+  if (undefined !== options.interfaceLocale) {
+    setUnsupportedLocale(i18n, options.interfaceLocale)
   }
   const consentMeta = { ...appRouter.resolve({ name: 'oauth-consent', params: { locale: 'fr' } }).meta }
   const router = createRouter({
@@ -284,7 +283,7 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   })
 
   it("langue d'interface hors du site, route sans langue : « Changer de compte » mène à /fr/login (#748, R213)", async () => {
-    const { wrapper } = await mountPage({ withoutRouteLocale: true })
+    const { wrapper } = await mountPage({ withoutRouteLocale: true, interfaceLocale: 'de' })
 
     const href = wrapper.find('[data-testid="consent-switch-account"]').attributes('href') ?? ''
     expect(href).toMatch(/^\/fr\/login\?/)

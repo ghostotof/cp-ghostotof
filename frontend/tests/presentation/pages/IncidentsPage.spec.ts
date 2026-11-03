@@ -6,6 +6,7 @@ import type { IncidentRepository } from '../../../src/domain/incidents/repositor
 import type { Incident } from '../../../src/domain/incidents/entities/Incident'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 const INCIDENT: Incident = {
   title: 'RabbitMQ en CrashLoopBackOff après un durcissement de sécurité',
@@ -24,10 +25,10 @@ function createStubRepository(overrides: Partial<IncidentRepository> = {}): Inci
   }
 }
 
-function mountPage(repository: IncidentRepository = createStubRepository()) {
+function mountPage(repository: IncidentRepository = createStubRepository(), i18n = createAppI18n()) {
   return mount(IncidentsPage, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [i18n],
       provide: { [INCIDENT_REPOSITORY as symbol]: repository },
     },
   })
@@ -125,6 +126,19 @@ describe('IncidentsPage', () => {
 
     expect(wrapper.text()).toContain('Aucun incident publié')
     expect(wrapper.find('article').exists()).toBe(false)
+  })
+
+  // `useIncidents` n'a pas de spec propre : la page est son seul lecteur.
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const repository = createStubRepository()
+
+    mountPage(repository, i18n)
+    await flushPromises()
+
+    expect(repository.list).toHaveBeenCalledWith('fr')
+    expect(repository.list).not.toHaveBeenCalledWith('de')
   })
 
   /**

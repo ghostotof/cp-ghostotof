@@ -146,10 +146,11 @@ a path with no locale prefix (the 404 `/frogs`) it navigates nowhere: it calls `
 vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
 carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A page's language is
 `useRouteLocale()` (`presentation/router/useRouteLocale.ts`, variable `pageLocale`): the route's, else the interface's (the 404
-page). `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/` and any other
-read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`, `i18n.global.locale`; the write in
-`applyInterfaceLocale` is not a read); a test that needs such a language sets it with `setUnsupportedLocale()`
-(`tests/support/unsupportedLocale.ts`), not `'de' as never`.
+page). `tests/presentation/localeSourceGuards.spec.ts` holds two guards: no assertion to a language in `src/` (`as Locale`,
+`<Locale>x`, `as 'fr' | 'en'`, `as typeof DEFAULT_LOCALE`, `as (typeof SUPPORTED_LOCALES)[number]`, listed once in
+`LOCALE_CASTS`) and no other read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`,
+`i18n.global.locale`; the write in `applyInterfaceLocale` is not a read); a test that needs such a language sets it with
+`setUnsupportedLocale()` (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
 
 Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
 meaningful (see Lint below):

@@ -5,6 +5,7 @@ import { CASE_STUDY_REPOSITORY, useCaseStudies } from '../../../src/application/
 import type { CaseStudyRepository } from '../../../src/domain/caseStudies/repositories/CaseStudyRepository'
 import { CaseStudiesAccessNotGrantedError } from '../../../src/domain/caseStudies/errors/CaseStudiesAccessNotGrantedError'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import { authState, markBaseAccessGranted } from '../../../src/application/auth/useAuth'
 
 const CASE_STUDY = {
@@ -22,7 +23,7 @@ function createStubRepository(overrides: Partial<CaseStudyRepository> = {}): Cas
   }
 }
 
-function mountWithComposable(repository: CaseStudyRepository) {
+function mountWithComposable(repository: CaseStudyRepository, i18n = createAppI18n()) {
   let captured: ReturnType<typeof useCaseStudies> | undefined
 
   const Host = defineComponent({
@@ -32,7 +33,6 @@ function mountWithComposable(repository: CaseStudyRepository) {
     },
   })
 
-  const i18n = createAppI18n()
   mount(Host, {
     global: {
       plugins: [i18n],
@@ -133,5 +133,17 @@ describe('useCaseStudies', () => {
     })
 
     expect(() => mount(Host, { global: { plugins: [createAppI18n()] } })).toThrow(/CaseStudyRepository/)
+  })
+
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const repository = createStubRepository()
+
+    mountWithComposable(repository, i18n)
+    await flushPromises()
+
+    expect(repository.list).toHaveBeenCalledWith('fr')
+    expect(repository.list).not.toHaveBeenCalledWith('de')
   })
 })

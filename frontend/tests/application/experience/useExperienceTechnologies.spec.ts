@@ -7,6 +7,7 @@ import {
 } from '../../../src/application/experience/useExperienceTechnologies'
 import type { ExperienceTechnologyRepository } from '../../../src/domain/experience/repositories/ExperienceTechnologyRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 function createStubRepository(overrides: Partial<ExperienceTechnologyRepository> = {}): ExperienceTechnologyRepository {
   return {
@@ -15,7 +16,7 @@ function createStubRepository(overrides: Partial<ExperienceTechnologyRepository>
   }
 }
 
-function mountWithComposable(repository: ExperienceTechnologyRepository) {
+function mountWithComposable(repository: ExperienceTechnologyRepository, i18n = createAppI18n()) {
   let captured: ReturnType<typeof useExperienceTechnologies> | undefined
 
   const Probe = defineComponent({
@@ -27,7 +28,7 @@ function mountWithComposable(repository: ExperienceTechnologyRepository) {
 
   mount(Probe, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [i18n],
       provide: { [EXPERIENCE_TECHNOLOGY_REPOSITORY as symbol]: repository },
     },
   })
@@ -76,5 +77,17 @@ describe('useExperienceTechnologies', () => {
 
     expect(hasError.value).toBe(true)
     expect(isLoading.value).toBe(false)
+  })
+
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const repository = createStubRepository()
+
+    mountWithComposable(repository, i18n)
+    await flushPromises()
+
+    expect(repository.list).toHaveBeenCalledWith('fr')
+    expect(repository.list).not.toHaveBeenCalledWith('de')
   })
 })

@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { QUALITY_CONTENT_REPOSITORY, useQualityContent } from '../../../src/application/quality/useQualityContent'
 import type { QualityContentRepository } from '../../../src/domain/quality/repositories/QualityContentRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 const STUB_CONTENT = {
   principles: [{ title: 'DDD', description: 'Description', iconKey: 'boxes' }],
@@ -17,7 +18,7 @@ function createStubRepository(overrides: Partial<QualityContentRepository> = {})
   }
 }
 
-function mountWithComposable(repository: QualityContentRepository) {
+function mountWithComposable(repository: QualityContentRepository, i18n = createAppI18n()) {
   let captured: ReturnType<typeof useQualityContent> | undefined
 
   const Probe = defineComponent({
@@ -29,7 +30,7 @@ function mountWithComposable(repository: QualityContentRepository) {
 
   mount(Probe, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [i18n],
       provide: { [QUALITY_CONTENT_REPOSITORY as symbol]: repository },
     },
   })
@@ -79,5 +80,17 @@ describe('useQualityContent', () => {
 
     expect(hasError.value).toBe(true)
     expect(isLoading.value).toBe(false)
+  })
+
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const repository = createStubRepository()
+
+    mountWithComposable(repository, i18n)
+    await flushPromises()
+
+    expect(repository.get).toHaveBeenCalledWith('fr')
+    expect(repository.get).not.toHaveBeenCalledWith('de')
   })
 })

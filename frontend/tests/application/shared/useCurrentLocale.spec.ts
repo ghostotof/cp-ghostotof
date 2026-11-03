@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent, nextTick, type ComputedRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useCurrentLocale } from '../../../src/application/shared/useCurrentLocale'
+import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 /**
- * La langue courante de l'interface, typée `Locale` (#748, R213, D2) : `useI18n().locale` est une `string`, et ses
- * lecteurs la convertissaient chacun par `locale.value as Locale`. Le composable est monté dans un composant, car
- * `useI18n()` exige une instance.
+ * La langue courante de l'interface, typée `Locale` : `useI18n().locale` est une `string`, `useCurrentLocale()` la juge
+ * (`isSupportedLocale`) au lieu de l'asserter. Le composable est monté dans un composant, car `useI18n()` exige une instance.
  */
-function currentLocaleOf(i18n: ReturnType<typeof createAppI18n>) {
-  let current: ReturnType<typeof useCurrentLocale> | undefined
+function currentLocaleOf(i18n: ReturnType<typeof createAppI18n>): ComputedRef<Locale> {
+  let current: ComputedRef<Locale> | undefined
   mount(
     defineComponent({
       setup() {
