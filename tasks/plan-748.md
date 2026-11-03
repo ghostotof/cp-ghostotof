@@ -14671,6 +14671,67 @@ Constats : St17-28 = CR17-6 ; St17-29 ; CR17-8 ; Sp17-12 ; Sp17-13 ; St17-30 ; S
 
 ---
 
+### Task R220b : Le harnais des processus fils transmet les valeurs que phpunit force ; `isChar()` lève
+
+Décisions de l'auteur, 2026-11-02 (questions rendues par R220, bef7d560). Exécutée **après R220**, avant R219b.
+
+**Le défaut (mesuré par R220 et par le fil principal).** `docker-compose.override.yml:14` pose dans le conteneur
+`APP_PUBLIC_API_BASE_URL=http://localhost:${HTTP_PORT}` (depuis #647, 67255b86, 2026-10-23) ; `backend/phpunit.dist.xml:43` la force
+à vide par `<env … force="true">`, qui ne touche pas `$_SERVER` ; `backend/tests/Support/ChildPhpProcess.php` (`testEnvironment()`,
+l. ~57-80) recopie `$_SERVER` au fils, qui lit donc `http://localhost:8080` quand le parent lit vide : chaque fils reçoit
+`400 invalid_target`. Cinq échecs dans un conteneur créé après #647 : `AccountWideRevocationDeadlockTest` (deux jeux de données) et
+`TokenEndpointConcurrencyTest` (trois tests). `docker compose exec -T -u dev -e APP_PUBLIC_API_BASE_URL= backend php bin/phpunit`
+rend 5 796 verts ; sans le `-e`, 5 échecs. Le conteneur des séries précédentes datait d'avant #647 (recréé par `make up` le
+2026-11-02 13:07), d'où des suites vertes. La CI n'est pas touchée (aucun Compose), mais tout poste au conteneur récent l'est.
+
+**Files :** `backend/tests/Support/ChildPhpProcess.php` (et son test s'il en a un, sinon un cas dans le test du harnais le plus
+proche), `backend/tests/Support/PhpSources.php` (`isChar()`), `backend/tests/Shared/PhpSourcesTest.php` ; règle de
+`backend-outillage.md` ou `backend-conventions.md` seulement si une phrase y décrit l'environnement des fils (la lire, `grep`).
+
+- [ ] **Step 1 : rouge** — `timeout 900 make back-test; echo "exit=$?"` dans le conteneur actuel : les cinq échecs nommés, cause
+  `invalid_target` lue dans la sortie. Puis un cas du harnais, indépendant du conteneur : une variable que `phpunit.dist.xml` force
+  par `<env force>` et qui diffère dans `$_SERVER` (posée par le cas, restaurée en `tearDown`) arrive au fils avec la valeur forcée.
+  Expected : FAIL (le fils lit `$_SERVER`).
+- [ ] **Step 2 : corriger** — le fils reçoit, pour chaque nom que phpunit force par `<env force>`, la valeur forcée (lue par
+  `getenv()`/`$_ENV`, ou de la configuration de phpunit : le mécanisme le plus simple qui ne dépend pas du conteneur, choisi et
+  justifié au commit) ; ce que le test ne pose que dans `$_SERVER` passe toujours (le docblock l. ~57-68 le garantit : ne pas le
+  casser, le réécrire s'il change). Formes voisines : toutes les variables `<env force>` de `phpunit.dist.xml`
+  (`CONTACT_*`, `ANTHROPIC_API_KEY`…), et tout autre lanceur de fils de `backend/tests/` qui recopie `$_SERVER` : nommés au commit.
+- [ ] **Step 3 : `isChar()`** (St17-31, décision de l'auteur) — `\assert(1 === \strlen($char))` remplacé par une exception nommée
+  (classe de `backend/tests/Support/`, ou une existante qui dit « argument hors contrat », selon `backend-conventions.md`), levée
+  si l'argument ne fait pas un caractère ; le cas de `PhpSourcesTest` attend cette exception **sans `markTestSkipped`** : il tourne
+  sous `zend.assertions=-1` comme en dev. `isAnyChar` : même contrat si elle reçoit des caractères, dit au commit.
+- [ ] **Step 4 : mutations** (Python, copie vérifiée par `cmp`) : (a) le correctif du harnais retiré → le cas du Step 1 et les cinq
+  tests rougissent ; (b) la levée de `isChar()` retirée → le cas de `PhpSourcesTest` rougit ; restaurées ; **dans le corps du commit**.
+- [ ] **Step 5 : verts** — `make back-test` (exit 0 dans le conteneur actuel, **sans** `-e`), `make back-quality`,
+  `make back-style-fix` (puis `git status`), `tools/check-claude-rules.sh` si une règle change.
+- [ ] **Step 6 : commit** — `fix(tests): les processus fils reçoivent les valeurs que phpunit force (#748)`.
+
+---
+
+### Task R219b : Les libellés hors `admin.*` lus du catalogue, au critère de R219
+
+Décision de l'auteur, 2026-11-02 (questions rendues par R219, f47804d8). Exécutée **après R220b**, avant R221.
+
+**Le critère de R219 est validé par l'auteur** : un littéral se lit du catalogue si la mutation de sa clé fait rougir son spec ;
+sinon (donnée de test, `label` passé en prop à un `Base*`, texte qu'une autre clé de même valeur rend), il reste, avec sa raison.
+
+**Files :** les specs d'`AppHeader`, `AccountMenu`, `AssistantPage`, `McpConnectionsPage`, `SignInAgainLink` (littéraux de
+`common.*`, `nav.*` et des espaces de noms qu'ils rendent : « Administration », « Se reconnecter (s'ouvre dans un nouvel onglet) »
+composé de deux clés, comme `SessionEndedBanner.spec.ts` après R219) ; `frontend/tests/support/` si une constante partagée sert à
+deux specs ou plus (dans `adminButtonTexts.ts` si elle est d'admin, sinon un module voisin au nom juste).
+
+- [ ] **Step 1 : relevé** — `releve.py` de R219 (scratchpad) étendu aux espaces de noms visés, rejoué sur ces cinq specs : commande
+  et nombre au commit.
+- [ ] **Step 2 : rouges avant** — une mutation de `fr.json` par clé relevée (forme « ~# » après le premier caractère de R219) ;
+  les clés qui rougissent sont converties, les autres gardées avec leur raison.
+- [ ] **Step 3 : convertir**, puis prouver la lecture par une mutation des constantes (forme M98–M109 de R219).
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; `git diff --exit-code` sur
+  `fr.json`. Formes voisines hors de ces cinq specs : dites, non converties (le périmètre est celui-ci).
+- [ ] **Step 5 : commit** — `test(frontend): les libellés hors admin lus du catalogue, au critère de R219 (#748)`.
+
+---
+
 ### Task R221 : Balayage documentaire de la dix-septième relecture — commandes et nombres dans le plan
 
 Constats : St17-32 = Sp17-1 ; Sp17-2 ; Sp17-14 ; Sp17-22 ; C17-7 (cité) ; les écarts réels de R209 à R220.
