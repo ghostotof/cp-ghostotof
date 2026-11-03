@@ -14890,6 +14890,459 @@ Aucun n'est réfuté sur le code. **Sp17-17** n'est pas un constat (la relecture
 raisons, et le 429 reste couvert ailleurs). **C17-7** est une action hors du dépôt, à la charge de l'auteur : aucune tâche ne la
 fait, R221 la cite. St17-9 est recompté à 28 lignes (la relecture en disait 30) ; la différence ne change rien au traitement.
 
+### Ce que la dix-huitième série a réellement fait *(écrit par R221 le 2026-11-03)*
+
+Cette sous-section couvre **R209 à R220** et les quatre tâches que le fil principal a ajoutées en cours de série (**R216b**,
+**R220b**, **R219b**, **R219c**) : la série que l'utilisateur nomme la dix-huitième (la section garde son titre « dix-septième
+relecture »). Elle est écrite par R221 sur HEAD 3f7baa81, après lecture de chaque commit (`git log`, `git show --stat`) et rejeu des
+mesures : un écart n'y figure que s'il se lit dans le diff ou dans le message du commit, hors les mesures de R221, dites comme telles.
+Les sections passées restent des archives. Base de la série : `B=08e6d8af` (`git log --grep='le plan de la dix-huitième série' -1`) ;
+réponses de l'auteur au plan : 16aa56f5. **R221 ne refactore rien** : ce qu'il voit à restructurer se rend en question, en fin de
+sous-section.
+
+**Commits** (ordre réel). Brief R209 e4c9e626 ; R210 7f0de888 ; R211 a4b4192a (décisions de l'auteur 3af9b8f5) ; R212 68d2a54d ; R213
+f149381e (décision e1d49e58) ; R214 b2fae12b ; R215 b97f80db (décision bed012ee) ; R216 07a0c66f (plan de R216b f0a3b889) ; R217
+34e9b187 ; R216b 79cba7ad (décision 14e6fe21) ; R218 2a47817c ; R219 f47804d8 ; R220 bef7d560 (plan de R220b et R219b 4f33b9ba) ;
+R220b ddf40ed8 ; R219b deb60e90 (plan de R219c et décisions bddf40b9) ; R219c 2f9b6391 (décision 3f7baa81) ; R221 : le commit de ce
+balayage (`docs`, texte seulement). 16 commits de tâche, 9 commits `docs` du fil principal, 155 fichiers touchés
+(`git diff --name-only B...HEAD`, `tasks/` compris), 2 727 lignes ajoutées et 1 237 retirées.
+
+#### Chaque tâche, conforme ou son écart réel
+
+- **R209** (e4c9e626) : conforme, un fichier (le brief), les Steps 1 à 5 lisibles dans le diff, `awk 'length>140'` du brief : vide.
+  Deux écarts. Hors plan, déclaré au message : la ligne 82 (175 caractères) recoupée en deux et la phrase « Chaque mutation s'écrit… »
+  recollée. **Non déclaré** : le remplacement de la puce « Lecture préalable » laisse deux lignes courtes, écrites par e4c9e626
+  (`git blame`) : la ligne 16, « R168–R181, R173b : « … quatorzième » (36 caractères, deux espaces en tête), et la ligne 23, «
+  R168–R181 : `relecture-14-constats.md` ; » (42). Le brief n'est pas une règle (aucune des quatre recherches de moignons ne le vise),
+  mais sa propre consigne les compte pour des moignons (`awk 'length<=45 && NF'`) ; R221 n'écrit pas dans le brief : question (e).
+- **R210** (7f0de888) : conforme, écarts lisibles. 15 cas ajoutés (le plan en listait 13 : « un cas de mesure sans héritage » devient
+  trois mesures) ; mutations M1 à M4 = (a) à (d) du plan, toutes attestées. Le message ne rend ni shellcheck, ni les 26 tests hors
+  ligne, ni `check-claude-rules` (Step 6) : rejoués par R221 (26 à 0, shellcheck 0, `check-claude-rules` 0), et le `grep` du Step 6
+  rend 0 ligne à HEAD. `smoke-http` 493 → 508 `ok`. Règle `outillage-smoke.md` 22 478 → 23 270 octets.
+- **R211** (a4b4192a) : conforme, trois écarts. (1) La mesure du Step 1 est faite sur le curl 8.14.1 de l'hôte, non sur l'image
+  épinglée 8.5.0 (« pas sur cette machine »), dit au message et écrit dans la règle comme limite ; R221 a rejoué sur l'image épinglée
+  (désormais présente) : `-D <corps>` après une connexion refusée : sortie 7, 0 octet ; `-D <dossier>` : sortie 23 ;
+  `-D <d>/absent/../cfg` : sortie 23, le fichier intact ; la quatrième mesure (les en-têtes écrits après un succès) n'est pas rejouée
+  (aucun serveur sous `--network none`) ; la règle n'est pas modifiée, question (f). (2) Le message ne rend pas la sortie du
+  `grep -nE '\b(nine|five|twelve)\b'` du Step 6 (« chaque ligne restante dite ») : 0 ligne à HEAD, dans le test et dans la règle. (3)
+  Le plan dit « onze points » : fait ; mutations M1 à M5 = (a) à (e), attestées. `smoke-http` 508 → 529 (+21 : 12 refus de `"$@"`, 5
+  de `SMOKE_CURL_OPTS`, 4 admis). Règle 23 270 → 25 358.
+- **R212** (68d2a54d) : conforme, écarts déclarés. Préfixe `fix(tools):` (permis par l'ajout, dit au message) ; le cas partagé de «
+  vide » est appelé par **quatre** tests (le plan en disait trois : l'audit l'appelle aussi), la mutation (b) rougit 3 cas dans chacun
+  ; le bloc « base `http://` sans Basic Auth » est converti par un second cas partagé (le plan disait « un cas partagé » pour les cinq
+  blocs) ; la boucle `for hollow` de `smoke-http.test.sh` est laissée avec sa raison (`grep -c 'for hollow' tools/tests/*.test.sh` :
+  1, ce fichier). L'ajout (un seul texte `writes` vrai pour le `-K`, son dossier et un corps) est fait, mutation M4 comprise (28
+  échecs). `smoke-http` 529 → 535 (+6) ; les quatre autres inchangés. Règle 25 358 → 26 016.
+- **R213** (f149381e) : conforme, écarts déclarés. 25 fichiers de `src/` (dont un créé) pour les 22 sites et `AccessRefusedNotice.vue`
+  du plan : `CookieNotice.vue` et `TechnologiesSection.vue` (des adresses `/${locale}/…` construites d'une lecture brute, sans `as`,
+  hors de la garde) sont corrigées avec un cas chacune, vu rouge ; `LocaleSwitcher.vue` change de comportement sur la page 404 (seul
+  le premier segment est remplacé : `/frogs` ne devient plus `/engs`), cas ajouté. Règles `frontend.md` (20 882 → 21 497) et
+  `frontend-session-bandeau.md` (12 871 → 12 973), nommées au message ; `frontend-session-refus.md` : aucune phrase à changer, dit.
+  **Non dit** : le Step 3 attend `grep -rn ' as Locale' frontend/src/presentation frontend/src/application` vide ; une ligne reste, le
+  docblock de `useCurrentLocale.ts` qui cite l'ancienne forme (le message de R214 dit « la source n'a plus aucun `as Locale` » : la
+  garde ignore les commentaires). Mutations M1, M2 = (a), (b) ; M3 en plus. Tests 2 642 → 2 653 (182 → 184 fichiers).
+- **R214** (b2fae12b) : conforme, Q1 (A) et Q3 (A) suivies. `supportedLocaleOf` est appelée par les neuf dépôts ; les entités et les
+  `…Input` des quatre contextes passent à `locale: Locale` ; les quatre gardes de page et `startEditThroughSetup.ts` disparaissent
+  (`grep` des Steps 6 : `isSupportedLocale` des quatre pages 0, `startEditThroughSetup` 0). La mutation (a) rougit **11** tests (les
+  neuf cas de dépôt et deux des trois de `supportedLocale.spec.ts`), (b) `HttpAdminIncidentRepository.ts(101,7): error TS2322`, (c) la
+  garde de source. Règle `frontend-backoffice.md` 38 926 → 39 449. Tests 2 653 → 2 661 (185 fichiers) = −4 +3 +9.
+- **R215** (b97f80db) : conforme à D1 et à Q2 (A) ;
+  `grep -nE ' as ' qualityEntrySection.ts AdminQualityEntrySection.vue AdminQualityPage.vue` rejoué à HEAD : une seule assertion
+  (`qualityEntrySection.ts:64`, `as Record<F, string>`) et trois `as const`. Trois écarts, tous dits au message. (1) La mutation (c)
+  du plan (`...principleReading` remis dans la source) **reste verte** (`make front-build` sort 0 : un spread n'est pas contrôlé par
+  la vérification des propriétés en trop) : M3' « rouge : aucune » ; M3 (un membre écrit en trop, `TS2353`) tient le rôle. (2) Le plan
+  écrit « même nombre − 9 + les cas » : les trois fonctions retirées avaient **six** cas
+  (`git show b97f80db -- qualityEntrySection.spec.ts`), les neuf étaient le total du fichier ; 2 661 → 2 659 = −6 +4. (3) La ligne
+  rouge de M1 fait 302 caractères, citée entière, dite. `AdminQualityPage.spec.ts` inchangé (90 avant, 90 après, noms et verdicts
+  identiques par `cmp`). Aucune règle.
+- **R216** (07a0c66f) : conforme, avec l'ajout de l'auteur (`proseFields: readonly F[]`, rétabli par `NoInfer<F>` ; `vue-tsc` accepte
+  la forme, sans manque de mémoire). `grep -rn "huit formulaires" frontend/src` : 0 ; la mesure `git blame` du Step 2 (6 sur 11 avant,
+  0 sur 11 après) ne compte que les lignes de la dix-septième série : recherche 9. Les commentaires recopiés dans les sept formulaires
+  sont laissés (dit) : R216b. Mutations M1, M1b, M2 (l'ajout), M3. Tests 2 659 → 2 661. Aucune règle.
+- **R217** (34e9b187) : conforme, avec l'ajout (garde étendue à la lecture brute de la langue d'interface ; `IncidentsPage.vue` et
+  `StackPage.vue` passent à `useCurrentLocale()`). Écarts déclarés : `StackPage.vue` gagne aussi ses trois `=== null` / `!== null`
+  inversés (Sp17-21, fichier déjà modifié) ; le fichier de la garde garde son nom ; `frontend.md` 21 497 → 21 669. Le `grep` du Step 4
+  ne rend que les quatre constantes (rejoué). Mutations (a) = M1, (b) = M2, l'ajout = M3, M4 en plus. Tests 2 661 → 2 663.
+- **R216b** (79cba7ad) : conforme. Quatorze copies retirées (sept formulaires × deux commentaires), aucune ligne gardée : les sept
+  `identity` ont le même corps ; le `grep` du Step « Files » passe de 16 lignes à 2 (les deux docblocks sources). Règle
+  `frontend-backoffice.md` 39 449 → 39 440 (« what the nine forms share » → « what every form shares » ; « on the eight forms » → « on
+  each form », forme voisine dite) ; `grep -nE '\b(seven|eight|nine)\b'` sur la règle : 0. « Mutations : aucune (commentaires seuls)
+  », filet 2 663 / 2 663. Laissés, dits : `useUnsavedOrderGuard.ts:11` (l'ajout de R221) et « the four others » (une partition).
+- **R218** (2a47817c) : conforme, écarts déclarés. Les seize mutations de clé du Step 1 sont écrites avant → après (8, 0, 28, 0, 1, 1,
+  1, 1, puis 0 pour les huit dernières ; 0 partout après) ; **dix clés ne rougissent pas avant** (`admin.order.cancel`,
+  `proposeVersion`, `cancel` et `deleteAction` des quatre sections) parce que les constantes locales lisaient déjà le catalogue, dit ;
+  M17 à M19 (la lecture des constantes écrites une fois) sont en plus. `proposeVersionLabel` est créé sans site (R219 le lit). La
+  forme de la mutation est « ~M » en fin de valeur ; R219 a montré qu'elle laisse passer un `toContain` sur « Mot de passe… » et l'a
+  remplacée par « ~# » après le premier caractère : les seize mutations de R218 ne sont **pas rejouées** sous la seconde forme (les
+  counts « avant » pourraient être sous-estimés, non testable sans l'état d'avant ; l'état après est tenu par le relevé de R219, qui
+  rend 0 littéral dans les quatre specs, rejoué par R221). Tests 2 663 / 185, avant et après.
+- **R219** (f47804d8) : conforme au critère, quatre écarts. (1) Le titre dit « relevé à zéro » ; le relevé rejoué en rend **79 lignes
+  gardées avec leur raison** (la mutation de leur clé ne fait rien rougir : donnée de test, `label` passé en prop, texte d'une autre
+  clé de même valeur) ; ce n'est pas zéro. (2) Le plan nommait cinq specs et « ce que le relevé désigne » : 17 fichiers sont modifiés
+  ; `adminButtonTexts.ts` gagne `entryTitleTexts` et `orderMovedLabel`. (3) Le Step 1 attend la liste (fichier, ligne, clé) au corps :
+  le message la donne par fichier, avec les nombres (225 → 79), non ligne par ligne. (4) Les mutations sont écrites avant → après pour
+  les clés qui rougissent ; les 43 autres sont dites « 0 → 0 » en bloc. Le relevé se limitait à `admin.*` (le plan) : R219b et R219c
+  l'ont étendu. Mutations M1 à M97 (clés à paramètre comprises) et M98 à M109 (constantes). Tests 2 663 / 185.
+- **R220** (bef7d560) : conforme, avec une réserve. Mutations (a) à (e) = M1, M3, M5, M6, M7 (M2 et M4 en plus) ; M5 « rouge : aucune
+  » (la lecture est inatteignable, prévue). `PhpSourcesTest` créé avec un `markTestSkipped` sous `zend.assertions` ≠ 1 : remplacé par
+  R220b (décision). Le message donne le filet de `phpunit` direct (5 788 → 5 796) et **ne rend ni `make back-test`, ni
+  `make back-quality`, ni `make back-style-fix`** (Steps 3 et 5) : rejoués par R221 (`make back-test` sortie 0, OK 5 798 tests ;
+  `make back-quality` sortie 0). Aucune règle (grep dit).
+- **R220b** (ddf40ed8) : conforme, trois points à dire. (1) Le mécanisme est `PHPUnit\TextUI\Configuration\Registry::get()` (classe
+  `@internal`) : choix justifié au message, limite acceptée par l'auteur (bddf40b9), reprise ci-dessous. (2) **Une ligne de 151
+  caractères** au corps, qui n'est pas une ligne rouge (l'en-tête de M1, « - M1 backend/tests/Support/ChildPhpProcess.php:106 (104 au
+  moment de la mutation, avant un docblock) : … ») ; le message ne la déclare pas. (3) Le trailer est « Claude Opus 5.5 », non «
+  Sonnet 5.5 » comme les autres commits. `NotASingleCharacterException` remplace l'`\assert` ; `isAnyChar` juge chaque argument ; vert
+  sous `-d zend.assertions=-1` (mesuré au message). Mutations (a) = M1 (6 échecs), (b) = M2, M3 en plus. Règle `backend-outillage.md`
+  45 688 → 46 050. `make back-test` 5 796 (5 échecs) → 5 798 verts ; `back-quality` et `back-style-fix` non rendus au message
+  (`back-quality` rejoué : 0).
+- **R219b** (deb60e90) : conforme au critère validé. Cinq specs, deux modules de support (`accountMenuTexts.ts`,
+  `accessRefusalTexts.ts`) ; relevé FR 156 → 38, EN 41 → 3, gardés avec raison ; extension EN gardée par l'auteur (bddf40b9) ;
+  mutations M1 (66 clés FR, 33 rouges avant), M2 (31 clés EN, 19 rouges), M3 à M9 (`accountMenuTexts`), M10 et M11
+  (`accessRefusalTexts`) ; `fr.json` et `en.json` inchangés (`git diff --exit-code`). Formes voisines hors des cinq specs (114 lignes)
+  : dites, converties par R219c. Tests 2 663 / 185, lint et build 0.
+- **R219c** (2f9b6391) : conforme au critère. 17 specs et `renderedMessage.ts` ; relevé FR 152 → 99, EN 54 → 26, chaque ligne restante
+  dite avec sa raison (rejoué par R221 : **99 et 26**, aucune dans les quatre specs de pages par entrée) ; mutations M1 (77 clés, 44
+  rouges avant), M2 (47 clés, 26 rouges), M3 à M8 (constantes). **Écart déclaré par décision (3f7baa81)** : trois lignes que R219
+  avait gardées (`TechnologiesSection.spec.ts:77`, « À propos » et « CV sans identité » de `StaticPortfolioContentRepository.spec.ts`)
+  sont **converties** : R219 ne mutait que `admin.*`, leurs clés hors `admin` les font rougir. Une conversion (le `h1` de
+  `ConnectAssistantPage`) est défaite parce que la clé ne le fait pas rougir. Tests 2 663 / 185, lint et build 0.
+
+#### Décisions de l'auteur en cours de série et réponse suivie
+
+Écrites au plan par le fil principal avant que la tâche concernée parte (Sp15-3), toutes suivies : **16aa56f5**, réponses au plan (Q1
+(A), Q2 (A), Q3 (A) ; choix 3 : neuf dépôts, les `…Input` des quatre contextes en `Locale`) ; **3af9b8f5** (questions de R211) : le
+message `writes` devient un seul texte vrai (ajout de R212) et un `TMPDIR` qui porte `..` fait refuser le `-D "$headers_file"` des
+smokes, limite acceptée telle que R211 l'a écrite ; **e1d49e58** (question de R213) : la garde de source s'étend à la lecture brute de
+la langue d'interface (ajout de R217) ; **bed012ee** (écart 3 de R215) : `proseFields: readonly F[]` rétabli (ajout de R216) ;
+**f0a3b889** (questions de R216) : la tâche R216b ; **14e6fe21** (question de R216b) : `useUnsavedOrderGuard.ts:11` et la recherche 2
+élargie (ajout de R221, fait ici) ; **4f33b9ba** (questions de R220 et R219) : R220b (le harnais des fils et `isChar()` qui lève) et
+R219b ; **bddf40b9** (questions de R220b et R219b) : `Registry` `@internal` acceptée (une montée de PHPUnit qui la renomme fait
+échouer chaque test à processus fils, jamais en silence), l'extension aux lignes anglaises gardée, la tâche R219c ; **3f7baa81**
+(question de R219c) : les trois lignes de R219 restent converties.
+
+**Questions Q1 à Q3 et réponse suivie.** Q1 (A) : le dépôt lève l'erreur métier de son contexte, raison `unknown` (« Unsupported
+locale in response »), en liste comme en réponse d'écriture, dans les neuf dépôts (R214) ; Q2 (A) : `fieldRecord` porte la seule
+assertion (`qualityEntrySection.ts:64`, R215) ; Q3 (A) : les quatre cas « …le sélecteur garde la précédente » sont retirés, remplacés
+par neuf cas de dépôt et trois cas de `supportedLocale.spec.ts` (R214).
+
+**Lignes de plus de 140 caractères.** *Corps de commit* :
+`for c in $(git rev-list "$B"..HEAD); do git log -1 --format=%B "$c" | awk -v c="$c" 'length>140 {print c": "length}'; done` rend **2
+lignes** : b97f80db (302, la ligne rouge de M1 citée entière, déclarée) et ddf40ed8 (**151**, l'en-tête de M1 de R220b, qui n'est pas
+une ligne rouge ; non déclarée au message). Les trois commits de la dix-septième série :
+`git log -1 --format=%B <sha> | awk 'length>140' | wc -l` rend 13 (b366e1a2, dont 6 hors lignes rouges : 142, 168, 156, 167, 152,
+150), 2 (d5e29e05, dont une de 141) et 1 (30334c3f, 144) : **déclarés** ici (St17-32 = Sp17-1) ; les messages ne se réécrivent pas
+(`--amend` interdit). *Fichiers* : les fichiers touchés hors `tasks/` portent 196 lignes de plus de 140 caractères, **dont 10 écrites
+par la série** (`git blame` ; la configuration du frontend n'impose aucune longueur : ni `max-len` ni `printWidth`) :
+`ChildProcessHarnessTest.php:274, 279, 283` (148, 148, 152 ; R220b), `OAuthConsentPage.spec.ts:271, 297, 702` (154, 154, 152 ; R219c),
+`AdminAboutPage.spec.ts:1148, 1155` (142 ; R219), `OrderHandle.spec.ts:18` (142 ; R219), `adminButtonTexts.ts:14` (142, un docblock ;
+R219) : laissées, question (d). *Plan* : dans cette section (l. 13903-14892, avant l'ajout de cette sous-section), **13** lignes de
+plus de 140, toutes des lignes de table (« Fichiers (tâches R209 à R221) ») ; aucun titre de tâche n'en a. Le brief : 0. Les cinq
+règles touchées : `frontend.md` 1, `frontend-backoffice.md` 4, `backend-outillage.md` 7, toutes antérieures (même nombre à la base,
+aucune écrite par la série).
+
+#### Les recherches de R221
+
+```bash
+X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=var)
+P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)
+B=$(git log --grep='le plan de la dix-huitième série' -1 --format=%H)   # 08e6d8af
+```
+
+**1. Noms disparus** : **7** lignes ; aucune ne désigne un nom disparu hors de ses gardes.
+
+```bash
+grep -rn "${X[@]}" -e requireEveryField -e fieldsFrom -e MissingEntryFieldError -e hasEveryField -e startEditThroughSetup \
+  -e 'export MEASURED_VARIABLE' -e ' as Locale' "${P[@]}"
+```
+
+Gardées : `frontend.md:143` (la règle cite la forme interdite) ; `noLocaleCast.spec.ts:66, 69` (les deux cas du détecteur : la forme
+qu'il voit, la forme voisine qu'il ne voit pas) ; `OAuthConsentPage.spec.ts:895` et `ConnectAssistantPage.spec.ts:229`
+(`route.params.locale as Locale` dans un spec, du 2026-10-23 et du 2026-10-20, hors de la garde, qui ne lit que `src/`) ;
+`useCurrentLocale.ts:9` et `useCurrentLocale.spec.ts:10` (deux docblocks de R213 qui racontent l'ancienne forme : question (b)).
+Manques vérifiés, un `grep -rnF` par nom dans `P` : `requireEveryField` 0, `fieldsFrom` 0, `MissingEntryFieldError` 0, `hasEveryField`
+0, `startEditThroughSetup` 0, `export MEASURED_VARIABLE` 0 ; ` as Locale` 7 (dont 1 dans `frontend/src`).
+
+**2. Vocabulaire**, avec l'élargissement de l'ajout : **280** lignes après les corrections de R221 (290 avant : −10, voir ci-dessous).
+
+```bash
+grep -rn "${X[@]}" -e 'huit formulaires' -e 'jamais un fichier lu' -e 'jugée pour cinq' -e '\bnine\b' -e '\bfive\b' \
+  -e '\bsept\b' -e '\bhuit\b' -e '\bneuf\b' -e '\bseven\b' -e '\beight\b' "${P[@]}"
+```
+
+Les cinq expressions d'origine rendent 37 lignes (33 après) : `jamais un fichier lu` 0, `jugée pour cinq` 0, `huit formulaires` 4
+lignes, dans les specs de pages (corrigées, voir plus bas), et 33 lignes de `\bnine\b` ou `\bfive\b` dans des règles, des archives et
+le backend (un nombre du domaine, une mesure ou une partition : cinq révocations, cinq verrous PostgreSQL, neuf zones de limitation…).
+L'ajout élargit à `sept`, `huit`, `neuf`, `seven`, `eight` : 261 lignes avant les corrections, 251 après, dont **163 lignes « neuf
+»**, presque toutes au sens de « nouveau » (« contenu neuf », « onglet neuf », « checkout neuf »). **Remplacés par R221** (texte
+seul), les décomptes d'appelants : `useUnsavedOrderGuard.ts:11-12` (« les sept pages ordonnées », « recopié sept fois », « les six
+autres » → « chaque page ordonnée », « recopié dans chaque page », « les autres ») et `useUnsavedOrderGuard.spec.ts:40` (« dans sept
+pages » → « dans chaque page ordonnée ») ; les six commentaires « écrits une fois pour les huit formulaires dans
+`tests/support/entryFormLock.ts` » de `AdminCaseStudiesPage`, `AdminIncidentsPage`, `AdminContributionsPage`, `AdminAnonymousCvPage`,
+`AdminQualityPage` et `AdminAboutPage` (`.spec.ts`) → « pour chaque formulaire par entrée » ; `orderProblems.ts:10` (« neuf copies
+auraient divergé » → « une copie par dépôt aurait divergé », un décompte de dépôts). **Gardées, avec leur raison** : `.claude/rules`
+61 lignes (`frontend-backoffice.md:293` « all five fields » : les cinq champs d'un contenu ; `frontend-session-retour.md:75-76` « five
+did » : le récit d'un état passé ; les 58 autres : des nombres du domaine ou des mesures des règles du backend, des migrations et du
+déploiement — les huit tables ordonnées, les sept en-têtes de sécurité, les cinq révocations —, dans des règles que la série ne touche
+pas) ; `backend/src` 58 et `backend/tests` 87 (« les huit contextes » localisés, les neuf ressources d'ordre, les sept produits suivis
+: le domaine, énoncé de même dans les règles ; des données de test) ; `frontend/src` 21 et `frontend/tests` 13 : tous « neuf » au sens
+de « nouveau », sauf `AdminAboutMeCardRepository.ts:43` (« la seule des neuf ressources d'ordre » : le nombre du domaine, comme les
+quatre docblocks du backend), `AppHeader.spec.ts:381`, `StaticPortfolioContentRepository.ts:46` et son spec :76 (« neuf entrées » de
+navigation : la mesure de l'issue #70), et deux données de test (`conversationWindow.spec.ts:47` « sept échanges »,
+`passwordLength.spec.ts:27` « huit emojis ») ; `tools` 4 (« neuf » = nouveau, et un nom de fichier) ; les archives de spec gelées 21 +
+1, `docs/adr` 7, `docs/releases` 4, `.claude/CLAUDE.md` 3 : archives ou énoncés du domaine. Le total passe de 290 à 280 : −3
+(`useUnsavedOrderGuard.ts` et son spec), −6 (les six commentaires de specs), −1 (`orderProblems.ts`).
+
+**3. Identifiants de constat dans les noms de tests** (la recherche de R135, rejouée avec les commandes de la recherche 3 de R195) :
+**17** lignes, **aucune écrite par la série** (`git blame` : 0), les mêmes que celles de R195 et de R208 (`audit A7`,
+`#650, S2/F5/F-I1`, `#647, F1`, `A1`, `E000`, `E0041`, `S256` et les deux faux positifs `%E0`).
+
+```bash
+RE='\b(CR|St|Sp|C|A|F|S|B|E|I|M)[0-9]+(-[0-9]+)?[a-z]?\b'
+RE="$RE|\bB/F[0-9]+\b|\bF-I[0-9]+\b"
+grep -rnP "\b(it|describe|test)(\.each\([^)]*\))?\(\s*['\"\x60].*($RE)" frontend/tests
+grep -rnP "function test\w*\(|yield ['\"]" backend/tests | grep -P "$RE"
+grep -rnP "\b(pass|fail) ['\"].*($RE)" tools/tests
+```
+
+**4. Récits au passé** : `git diff --name-only $B...HEAD -- frontend backend tools .claude` rend **153** fichiers (dont un supprimé,
+`startEditThroughSetup.ts`, que `grep` signale) ; la première expression rend **113** lignes, dont **13** écrites par la série
+(`git blame`) ; la seconde (lignes ajoutées de `git diff -U0 $B`) rend **16** lignes. Aucune n'est corrigée par R221 (un balayage ne
+réécrit pas un docblock). Les 13 : **2 vrais récits**, `noLocaleCast.spec.ts:13` (« Vide depuis R214, qui valide… ») et son nom de
+test :72 (« …, vide depuis R214 »), la forme que R208 avait reformulée pour « depuis R204 » : question (b) ; 5 faux positifs
+(`PhpSourcesTest.php:15` « plus longue », `qualityEntrySection.ts:39` « plus une chaîne », `useTranslatedForm.ts:82` « plus tard »,
+`noLocaleCast.spec.ts:11` « de plus », `smoke-http.sh:232` « non plus ») ; 6 états présents ou conditionnels
+(`ChildProcessHarnessTest.php:274`, `ChildPhpProcess.php:82`, `AdminQualityEntrySection.vue:130`, `OAuthConsentPage.spec.ts:89`,
+`qualityEntrySection.spec.ts:32`, `translatedFormDeclarationOrder.spec.ts:295`). Les 16 de la seconde : 6 contiennent « surplus, »
+(faux positif), 2 sont le « depuis R214 », 8 décrivent un état présent ou un conditionnel (« aurait levée », « ne reconnaît plus », «
+a été appelé » d'une phrase conditionnelle…). Aucune des deux expressions ne voit `useCurrentLocale.ts:9-10` (« Vingt-deux lecteurs la
+convertissaient chacun », de R213), un récit au passé tout de même : question (b).
+
+```bash
+git diff --name-only $B...HEAD -- frontend backend tools .claude | xargs grep -nE \
+  "(depuis R[0-9]+|n'est plus|n'a plus|ne .* plus |restait|recopiait|autrefois|voyait|lisait|a été supprimé|il permettait|\
+l'ancien|used to|no longer)"
+git diff -U0 $B -- frontend backend tools .claude | grep -E '^\+' \
+  | grep -E "plus[.,;:)]|ôtaient|était |a été |avait |was |had |used to|no longer|avant R[0-9]|depuis R[0-9]|supprimé|retiré "
+```
+
+**5. Longueurs** : voir plus haut (2 corps de commit, 10 lignes de fichiers écrites par la série, 13 lignes de table au plan).
+
+```bash
+git diff --name-only $B...HEAD | grep -v '^tasks/' | while read f; do [ -f "$f" ] && awk -v F="$f" 'length>140 {print F":"FNR}' "$f"; done
+git diff -U0 $B...HEAD -- . ':!tasks' | grep -E '^\+[^+]' | awk 'length>141' | wc -l      # 10
+for c in $(git rev-list "$B"..HEAD); do git log -1 --format=%B "$c" | awk -v c="$c" 'length>140 {print c": "length}'; done
+```
+
+(Le balayage de `tasks/` par `git blame` ligne à ligne n'est pas fait : le plan porte plus de 1 100 lignes longues antérieures ; la
+section de cette série est mesurée par `awk 'NR>=13903 && NR<=14892 && length>140'`.)
+
+**6. Moignons et coupes**, les cinq règles touchées (`outillage-smoke.md`, `frontend.md`, `frontend-backoffice.md`,
+`frontend-session-bandeau.md`, `backend-outillage.md`) : les quatre recherches du brief rendent, pour chacune, ponctuation de tête
+**0**, guillemets orphelins **0**, accents graves impairs **0** (`backend-outillage.md` : 8, **antérieurs** : même nombre à la base).
+Les lignes de 45 caractères ou moins, de plus de 140 et les accents graves impairs sont, pour les cinq règles, **au même nombre qu'à
+la base** (12, 22, 19, 8, 16 courtes ; 0, 1, 4, 0, 7 longues), et `git blame` n'en désigne qu'**une** écrite par la série :
+`outillage-smoke.md:109` (« directory and a body file). », 27 caractères, la queue d'une parenthèse de R212 au milieu d'un paragraphe,
+donc un moignon). **Recollée** par R221 : la parenthèse « (R212: one text for the `-K`, its directory and a body file). » est entière
+sur la ligne 109, la ligne 108 s'arrêtant avant elle ; aucun mot changé
+(`diff <(git show HEAD:… | tr -s '[:space:]' '\n') <(tr -s '[:space:]' '\n' < …)` : vide), taille inchangée (26 016).
+
+```bash
+for r in outillage-smoke frontend frontend-backoffice frontend-session-bandeau backend-outillage; do f=.claude/rules/$r.md
+  awk 'length<=45 && NF' $f ; grep -nE '^[[:space:]]*[,;:.)»]' $f ; perl -ne 'print "$.\n" if (() = /\x60/g) % 2' $f
+  grep -nE '«[[:space:]]*$|^[[:space:]]*»' $f ; awk 'length>140' $f ; done          # puis les mêmes mesures sur git show $B:$f
+```
+
+**7. Règles relues avec `Read`** : `outillage-smoke.md` en entier, `frontend.md` l. 128-157, `frontend-session-bandeau.md` l. 60-79,
+`backend-outillage.md` l. 150-189 ; `frontend-backoffice.md` et `frontend-a11y.md` chargées par la lecture des specs de la zone
+(relues en entier) ; `frontend-session-refus.md` n'est pas touchée. Contre le code de HEAD : **aucune phrase fausse**. Vérifiés : les
+116 identifiants entre accents graves d'`outillage-smoke.md` existent dans `tools/` (sauf `curl_ssl_backend` et `qlogdir`, des noms de
+la page de manuel de curl, cités comme tels) ; `ps_lists_environment` a la liste `-o|-p`, `-e|-f|-ef|-aux`, `-*)` que la règle écrit ;
+neuf options admises et cinq jugées (le cas de cohérence est vert) ; `supportedLocaleOf` est appelée par les neuf dépôts (dix fichiers
+avec sa définition) ; `routeLocale(route, interfaceLocale.value)` est la forme des six appelants ; `AppHeader`, `LocaleSwitcher` et
+`AppFooter` l'utilisent. Règles modifiées par la série : cinq, **chacune nommée au message de chaque commit qui la touche** (R210 à
+R212, R213, R214, R216b, R217, R220b) ; aucune modification non déclarée. Le plan de R213 nommait `frontend-session-bandeau.md` :
+fait.
+
+**8. Docblocks** : dans les fichiers de `frontend/src`, `frontend/tests/support`, `backend/tests/Support` et `tools/` modifiés par
+R209 à R220, les commentaires et docblocks de trois lignes au plus que la série a écrits : **39**, lus un à un (script `docblocks.py`
+du scratchpad : les blocs `/** … */`, les suites de `//` et de `#` dont une ligne est ajoutée par `B...HEAD`). **Deux** ne font que
+redire le membre : `tests/support/accessRefusalTexts.ts:29` (« /** common.switchAccount, en anglais. */ » sur
+`SWITCH_ACCOUNT_EN = en.common.switchAccount`) et `tests/support/adminButtonTexts.ts:62` (« Les boutons du formulaire d'une entrée et
+de sa ligne : enregistrer, annuler, supprimer. », qui redit `EntryFormTexts` et le nom de `entryFormTexts`). Les 37 autres disent une
+provenance, une contrainte ou un usage. **Rendus en question** (c). Aucun docblock rétabli par une tâche de la série
+(`CompiledNestedReading.php` n'est pas touché) n'est réécrit.
+
+**9. Numéros de tâche dans `src/`** : `grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l` rend **318** lignes (304 à 69e26ecf) ;
+`git blame` : **17** écrites dans `B..HEAD` (toutes dans `frontend/src` ; `backend/src` : 0). **3** portent le nom de la règle ou du
+fichier de règle dans leur bloc (`AdminAboutSettingsForm.vue:140`, `useTranslatedForm.ts:82, 86`, les numéros de R216) ; **14 citent
+un numéro de tâche seul**, non 0 : `useCurrentLocale.ts:6, 12` (R213, R204), `supportedLocale.ts:4` et les neuf dépôts
+(`…Repository.ts`, « #748, R214, Q1 (A) ; `supportedLocaleOf` ») de R214, `qualityEntrySection.ts:15, 20` (R215, R202). Q9 (A) de la
+seizième relecture ne visait que sa série : **rendu en question** (a).
+
+```bash
+grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l          # 318
+# puis git blame -L <ligne>,<ligne> --porcelain de chacune, git merge-base --is-ancestor <commit> $B : 17 hors de B
+```
+
+**10. Mutations** (`git log --format='%h %s%n%b' "$B"..HEAD`) : lues dans le corps de chaque commit de tâche. **Aucune mutation que le
+plan annonce n'est « non attestée »**, et chacune porte sa méthode (`python3 -I`, copie, `cmp` ou `git diff --exit-code`) et sa ligne
+`restauré :`. Le fichier muté que la tâche ne modifie pas est restauré par `git diff --exit-code` (R216 M2, R217 M1 et M4, R219
+`fr.json`, R219c M3 et M4, R220 M5), celui qu'elle modifie par `cmp` contre une copie d'après sa modification (le fichier créé par la
+tâche aussi). Détail (échecs entre parenthèses) :
+
+- **R210** : M1 `-*) return 0 ;;` → `-*) ;;` (4) ; M2 `-aux` retiré (1) ; M3 `pat_environ` en minuscules (2) ; M4 `env -i PATH=…`
+  retiré de la mesure (3) = (a) à (d).
+- **R211** : M1 le `-ef` de `SMOKE_AUTH_DATA_FILES` (6) ; M2 le refus de `..` (7) ; M3 le `-ef` du dossier (3) ; M4 « 5 » → « 6 » dans
+  la règle (1) ; M5 `-b` retiré du docblock (1) = (a) à (e).
+- **R212** : M1 le filtre des lignes vides (3) ; M2 `-eq 2` → `-ne 2` du cas partagé (3 par test, quatre tests) ; M3 le
+  `! grep -q ' -K '` du cas `http://` (1 par test, trois tests) ; M4 l'ancien texte `writes` rétabli (28) = (a), (b), l'ajout ; M3 en
+  plus.
+- **R213** : M1 `as Locale` dans `NotFoundPage.vue` (1) ; M2 le repli remplacé par `locale.value as Locale` (5) = (a), (b) ; M3
+  `startsWithLocale` forcé à vrai (1), en plus.
+- **R214** : M1 `supportedLocaleOf` ne juge plus (11) ; M2 retirée du dépôt d'incidents (`TS2322`, build 2, et 1 cas) ; M3 `as Locale`
+  remis dans `groupByTranslationGroup.ts` (1) = (a) à (c).
+- **R215** : M1 clé `iconKey` retirée (`TS1360`, build 2) ; M2 `copiedToNewVersion` par défaut vrai (9) ; M3 membre en trop dans la
+  source (`TS2353`) ; **M3' « rouge : aucune »** (le spread n'est pas contrôlé), la mutation (c) du plan.
+- **R216** : M1 `NoInfer<F>` → `string` (`TS2578`) ; M1b → `F` sans `NoInfer` (`TS2344`) ; M2 un nom hors du record passé à la prop
+  (`TS2741`) = l'ajout ; M3 `locale: string` dans `EntryFormPlacement` (`TS2322`) = le Step 3.
+- **R217** : M1 un site qui ne lit plus qu'une option (1) ; M2 `onDeactivated` retiré de `DEFERRED_HOOKS` (1) ; M3
+  `const { t, locale } = useI18n()` remis (1) = l'ajout ; M4 la pose du routeur devenue lecture (1), en plus.
+- **R216b** : aucune (commentaires seuls), filet 2 663 / 2 663.
+- **R218** : M1 à M16, une par clé de `fr.json`, avant → après ; M17 à M19 (constantes de `adminButtonTexts.ts`, 8, 28 et 16).
+- **R219** : M1 à M97 (une par clé, « ~# » après le premier caractère, avant → après, 0 partout après) et M98 à M109 (les constantes :
+  27, 13, 10, 9, 1, 1, 2, 12, 32, 2, 20, 12 échecs).
+- **R220** : M1 `isChar($token, ',')` → `->is(',')` (3) ; M2 idem pour `$` (3) ; M3 `opensBrace` sans `{` (99) ; M4 (1) ; **M5 « rouge
+  : aucune »** (`UnsortedImports.php:81`, inatteignable : comme R207) ; M6 l'`\assert` retiré (2) ; M7 le témoin remis dans le
+  `foreach` (clé en double, 5 tests) = (a) à (e), M2 et M4 en plus.
+- **R220b** : M1 la seconde couche du harnais retirée (6) ; M2 l'appel de `requireASingleCharacter` retiré d'`isChar` (1) ; M3 la
+  boucle de jugement d'`isAnyChar` retirée (1) = (a), (b), M3 en plus.
+- **R219b** : M1 66 clés FR (33 rouges avant) ; M2 31 clés EN (19 rouges) ; M3 à M9 (`accountMenuTexts.ts`, 8, 10, 5, 8, 16, 4, 2) ;
+  M10 et M11 (`accessRefusalTexts.ts`, 2 chacune).
+- **R219c** : M1 77 clés FR (44 rouges avant) ; M2 47 clés EN (26 rouges) ; M3 à M8 (`accessRefusalTexts.ts` 6 et 3,
+  `renderedMessage.ts` 3, 2, 4, 9).
+
+Au total, **188 entrées de mutation** dans les corps (les entrées de clés de `fr.json` et d'`en.json` des tâches de libellés couvrent
+chacune une exécution par clé). « Rouge : aucune » écrit au corps : R215 M3', R220 M5, les dix clés de R218 dont les constantes
+locales lisaient déjà le catalogue, et les clés à 0 de R219, R219b, R219c (dites « 0 → 0 » avec leur raison). R209 et R216b n'ont pas
+de mutation (documentation, commentaires).
+
+**11. Sp17-2 : le relevé motif × délimiteur de R197, rejoué sur la garde de HEAD (après R210)** : les deux fonctions
+(`ps_lists_environment`, `env_dump_lines`) sont extraites de `tools/tests/smoke-http.test.sh` par
+`awk '/^ps_lists_environment\(\) \{/,/^}/'` (idem `env_dump_lines`) et sourcées sous `env -i` ; pour chaque motif, une ligne
+`<délimiteur><mot><arguments>` (avant) ou `x <mot><arguments><délimiteur>` (après) est écrite dans un fichier, et `env_dump_lines` dit
+si elle est refusée. Le tableau :
+
+**Délimiteur collé avant le mot** (`v` : la ligne est refusée ; `·` : non vue) :
+
+| motif | blanc | `;` | `&` | pipe | `(` | `)` | `<` | `>` | apostrophe | guillemet | accent grave | antislash | `{` | `}` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `declare nu` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `typeset nu` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `local nu` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `readonly nu` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `export nu` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `declare -p` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `export -p` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `declare -n` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `compgen -v` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `set` | v | v | v | v | v | · | · | · | v | v | v | v | v | · |
+| `eval` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `printenv` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `env` | v | v | v | v | v | v | v | v | v | v | v | v | · | v |
+| `ps e` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `${!` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `environ` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+
+**Délimiteur collé après le mot** (`v` : la ligne est refusée ; `·` : non vue) :
+
+| motif | blanc | fin | antislash final | `;` | `&` | pipe | `)` | `<` | `>` | apostrophe | guillemet | accent grave | `{` | `}` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `declare nu` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `typeset nu` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `local nu` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `readonly nu` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `export nu` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `declare -p` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `export -p` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `declare -n` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `compgen -v` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `set` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `eval` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `printenv` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `env` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `ps e` | v | v | v | v | v | v | v | v | v | v | v | v | · | · |
+| `${!` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+| `environ` | v | v | v | v | v | v | v | v | v | v | v | v | v | v |
+
+Les cellules « non vues » sont toutes des constructions que bash n'exécute pas comme le mot : `)set`, `<set`, `>set` (une parenthèse
+fermante, une redirection), `}set` et `{env` (le mot collé à une accolade n'est pas la commande), et `declare{`, `set}`, `ps e{`… (un
+mot plus long). Les motifs `printenv`, `env`, `eval`, `compgen`, `declare -p`, `declare -n`, `${!` et `environ` voient tout, comme
+R197 l'avait dit ; le motif `ps e`, qui est maintenant une liste d'autorisation, voit tout hormis `{` et `}` collés après le mot.
+**Sp17-22** : la méthode de mutation d'après le corps des commits de la dix-septième série — R199 (6fc0e42c), R201 (abffe853), R202
+(edd013c2), R203 (d86788ad), R204 (b2128166), R207 (2002906a) : **inconnue**, la « commande » n'est que le test lancé ; R205
+(1e275966) : un script Python (`python3 -I mutate_fr.py`), copie non dite ; R197 (80a7b746) : « python3 -I (remplacement en place) ».
+Taille d'`outillage-smoke.md` après R197 : `git show 80a7b746:.claude/rules/outillage-smoke.md | wc -c` rend **20 872** octets (19 745
+avant).
+
+#### Nombres de tests, taille des règles
+
+**Tests** (après `docker compose restart frontend`, codes lus sans pipe) : `make front-test` sortie 0, **2 663** tests dans **185**
+fichiers (2 642 / 182 au départ : +11 R213, +8 R214 [−4 +3 +9], −2 R215, +2 R216, +2 R217, 0 ensuite) ; `make front-lint` 0 ;
+`make front-build` 0 ; `make back-test` 0, **OK (5 798 tests, 115 978 assertions)** (5 788 au départ : +8 R220, +2 R220b) ;
+`make back-quality` 0. Les 26 `tools/tests/*.test.sh` à 0, **1 115** `ok` (1 073 à la fin de la série précédente) : `smoke-http`
+**535** (493 → 508 R210, 529 R211, 535 R212), `smoke-mcp` **44**, `audit-prod` **40**, `smoke-login-throttling` **30**,
+`smoke-dead-session-cookie` **41** inchangés ; shellcheck `-x --severity=warning` dans l'image `rhysd/actionlint@sha256:b1934ee5…` sur
+les sept fichiers de `tools/` touchés : sortie 0, aucune ligne.
+
+**Tailles des règles touchées** (octets ; base de la série → HEAD) : `outillage-smoke.md` 22 478 → **26 016** (R210 23 270, R211 25
+358, R212 26 016 ; la coupe de R221 laisse la taille), `frontend.md` 20 882 → **21 669** (R213 21 497, R217 21 669),
+`frontend-backoffice.md` 38 926 → **39 440** (R214 39 449, R216b 39 440), `frontend-session-bandeau.md` 12 871 → **12 973** (R213),
+`backend-outillage.md` 45 688 → **46 050** (R220b ; 3 950 octets sous les 50 000). Non touchées : `backoffice-api.md` 39 834,
+`security-user.md` 47 922, `frontend-session-refus.md` 17 270, `backend-conventions.md` 27 023, `.claude/CLAUDE.md` 35 014.
+`tools/check-claude-rules.sh` : « Règles .claude/ conformes. », sortie 0.
+
+#### Incident d'environnement découvert pendant R220 (faits seulement)
+
+Le conteneur `backend`, recréé par `make up` le 2026-11-02 à 13:07:55 (UTC, `docker inspect`), portait `APP_PUBLIC_API_BASE_URL` :
+`docker-compose.override.yml:14` la pose à `"http://localhost:${HTTP_PORT}"` depuis #647 (67255b86, 2026-10-23).
+`backend/phpunit.dist.xml:43` la force à vide par `<env … force="true">`, qui réécrit `$_ENV` et `getenv()` et jamais `$_SERVER`.
+`ChildPhpProcess::testEnvironment()` recopiait `$_SERVER` au processus fils, qui lisait donc `http://localhost:8080` quand le parent
+lisait vide : chaque échange au point de jeton répondait `400 invalid_target`. `make back-test` sans `-e` : « Tests: 5796, Assertions:
+115891, Failures: 5 » (`AccountWideRevocationDeadlockTest`, deux jeux de données, et `TokenEndpointConcurrencyTest`, trois tests) ;
+avec `exec -e APP_PUBLIC_API_BASE_URL=`, 5 796 verts. Les séries précédentes tournaient dans un conteneur d'avant #647. La CI n'est
+pas touchée (aucun Compose). Corrigé par R220b (ddf40ed8) ; rejoué par R221 dans ce conteneur, sans `-e` : OK, 5 798 tests.
+
+#### C17-7, rotation du jeton
+
+C17-7 est cité tel que le plan le dit : la rotation du jeton exposé par l'incident de R197 est **à la charge de l'auteur** (« Je gère
+», 2026-11-01), hors session ; rien dans ce plan ni dans cette série ne la fait ni ne la vérifie. **À confirmer par lui seul.**
+
+#### Ce que R221 a modifié (texte seulement)
+
+Onze fichiers : cette sous-section ; `.claude/rules/outillage-smoke.md` (le moignon de la ligne 109, taille inchangée, nommée ici et
+au message) ; `frontend/src/application/admin/shared/useUnsavedOrderGuard.ts` et son spec (décompte d'appelants, ajout de l'auteur) ;
+`frontend/src/infrastructure/admin/shared/orderProblems.ts` (« neuf copies » → « une copie par dépôt ») ; six specs de pages d'admin
+(le commentaire « les huit formulaires »). Aucun test, aucune assertion, aucun nom de test ne change, aucun fichier de `backend/` ni
+de `tools/` : `make front-test` 2 663 / 185, `make front-lint` et `make front-build` à 0 après les modifications.
+
+#### Questions ouvertes (rendues, non décidées)
+
+- (a) Les **14 numéros de tâche seuls** des lignes de `frontend/src` écrites par R213, R214 et R215 (recherche 9) : leur donner le nom
+  de la règle et de sa section, comme Q9 (A) l'a fait pour la seizième série ? (Les neuf dépôts répètent la même phrase.)
+- (b) Les **récits au passé** : `noLocaleCast.spec.ts:13` et le nom de test :72 (« vide depuis R214 »), `useCurrentLocale.ts:9-10` et
+  `useCurrentLocale.spec.ts:10` (« Vingt-deux lecteurs la convertissaient chacun par `locale.value as Locale` ») : les reformuler au
+  présent, comme R208 l'avait fait pour « depuis R204 » ? Le nom d'un test se renomme-t-il dans un balayage ?
+- (c) Les **deux docblocks qui redisent le membre** : `accessRefusalTexts.ts:29` et `adminButtonTexts.ts:62` : les retirer ?
+- (d) Les **10 lignes de code de plus de 140 caractères** écrites par la série (recherche 5) : les couper, ou le plafond ne vaut-il
+  que pour les messages, les règles et le plan ?
+- (e) Les **deux lignes courtes du brief** (l. 16 et 23, de e4c9e626) : les recoller ?
+- (f) La **limite de R211** (curl 8.14.1 de l'hôte) : trois des quatre mesures de `-D` sont confirmées sur l'image 8.5.0 épinglée
+  (sortie 7 et 0 octet pour un corps après un refus, 23 pour le dossier, 23 pour `<d>/absent/../cfg` avec le fichier intact) ; la
+  phrase de la règle (« limit: … not an 8.5.0 measure ») peut-elle dire 8.5.0 pour ces trois, la quatrième restant celle de l'hôte ?
+- (g) Le **message de R220b** porte une ligne de 151 caractères non déclarée, et le trailer « Claude Opus 5.5 » : à noter pour la
+  prochaine série (les messages ne se réécrivent pas).
+
 ---
 
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**

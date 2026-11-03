@@ -105,8 +105,8 @@ The message gives the **rank** of the argument, never its text (a glued value co
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
 « argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth »; for a `-D` that overwrites a file of the call:
-« argument n° N : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée » (R212: one text for the `-K`, its
-directory and a body file).
+« argument n° N : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée »
+(R212: one text for the `-K`, its directory and a body file).
 Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
 To admit a new option, **eleven places** (St16-25, St17-24), written here once; the docblock of `_smoke_option_arity` points here:
 (1) a line of its `case`, with the arity; (2) the list of that docblock; (3) the sentence « It admits <n> options » above, its number, in

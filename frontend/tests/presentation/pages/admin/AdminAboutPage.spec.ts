@@ -1080,8 +1080,8 @@ describe('AdminAboutPage', () => {
     let siteCardUnderLock = createSiteCardRepository()
     let meCardUnderLock = createMeCardRepository()
 
-    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
-    // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour chaque
+    // formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
     describeEntryFormLock({
       name: 'carte « site »',

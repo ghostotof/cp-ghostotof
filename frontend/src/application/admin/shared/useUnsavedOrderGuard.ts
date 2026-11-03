@@ -8,9 +8,9 @@ import { onBeforeRouteLeave } from 'vue-router'
  * de l'onglet passe par `beforeunload`, que le navigateur traduit en sa propre
  * boîte de dialogue.
  *
- * Un seul composable pour les sept pages ordonnées (#170 F5) — même argument
- * que pour `RichText.vue` : recopié sept fois, un correctif appliqué à une
- * copie laisserait silencieusement les six autres en arrière. L'écouteur est
+ * Un seul composable pour chaque page ordonnée (#170 F5) — même argument
+ * que pour `RichText.vue` : recopié dans chaque page, un correctif appliqué à
+ * une copie laisserait silencieusement les autres en arrière. L'écouteur est
  * retiré au démontage, sans quoi la page suivante hériterait d'un
  * avertissement fantôme.
  *

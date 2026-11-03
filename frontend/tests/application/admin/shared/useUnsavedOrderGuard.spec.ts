@@ -37,7 +37,7 @@ async function mountGuarded() {
 
 /**
  * Issue #170 F5 : la garde « quitter la page » était recopiée à l'identique
- * dans sept pages. Une seule implémentation, testée ici une fois — les pages
+ * dans chaque page ordonnée. Une seule implémentation, testée ici une fois — les pages
  * n'ont plus qu'à la brancher sur leur `isDirty`.
  */
 describe('useUnsavedOrderGuard', () => {

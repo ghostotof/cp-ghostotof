@@ -701,8 +701,8 @@ describe('AdminQualityPage', () => {
     let principleUnderLock = createPrincipleRepository()
     let traitUnderLock = createTraitRepository()
 
-    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
-    // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour chaque
+    // formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
     describeEntryFormLock({
       name: 'principe',

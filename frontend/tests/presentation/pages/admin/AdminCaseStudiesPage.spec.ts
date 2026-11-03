@@ -482,8 +482,8 @@ describe('AdminCaseStudiesPage', () => {
   // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
   let repositoryUnderLock = createStubRepository()
 
-  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
-  // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour
+  // chaque formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91).
   describeEntryFormLock({
     name: '',
     createTranslation: () => createTranslationRepository(),

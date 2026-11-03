@@ -7,6 +7,6 @@
  *
  * Partagé par les repositories admin plutôt que recopié dans chacun : ces deux
  * slugs viennent des exceptions de `Portfolio/Shared`, une seule et même règle
- * côté serveur, et neuf copies auraient divergé au premier renommage.
+ * côté serveur, et une copie par dépôt aurait divergé au premier renommage.
  */
 export const STALE_ORDER_PROBLEM_TYPES = ['unknown-order-entry', 'incomplete-order'] as const
