@@ -5,6 +5,8 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import SignInAgainLink from '../../../src/presentation/ui/SignInAgainLink.vue'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 /**
  * Le lien de reconnexion unique (#748, R6, Std3 et Std7) : un nouvel onglet qui ramène à la page courante, dit au
@@ -51,13 +53,13 @@ describe('SignInAgainLink', () => {
   it("dit l'ouverture dans un nouvel onglet au texte, en français", async () => {
     const wrapper = await mountLink('/fr/mcp-connections', 'fr')
 
-    expect(wrapper.get('a').text()).toBe("Se reconnecter (s'ouvre dans un nouvel onglet)")
+    expect(wrapper.get('a').text()).toBe(`Se reconnecter ${fr.common.opensInNewTab}`)
   })
 
   it("dit l'ouverture dans un nouvel onglet au texte, en anglais, et porte la langue de la route", async () => {
     const wrapper = await mountLink('/en/mcp-connections', 'en')
 
-    expect(wrapper.get('a').text()).toBe('Sign in again (opens in a new tab)')
+    expect(wrapper.get('a').text()).toBe(`Sign in again ${en.common.opensInNewTab}`)
     expect(wrapper.get('a').attributes('href')).toMatch(/^\/en\/login\?/)
   })
 

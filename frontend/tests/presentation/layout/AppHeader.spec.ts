@@ -14,12 +14,21 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { BaseAccessRepository } from '../../../src/domain/baseAccess/repositories/BaseAccessRepository'
 import { BaseAccessError } from '../../../src/domain/baseAccess/errors/BaseAccessError'
 import { sessionFor } from '../../support/authSession'
+import { accountMenuTexts } from '../../support/accountMenuTexts'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
 import type { NavigationEntry } from '../../../src/domain/portfolio/entities/NavigationEntry'
 import { router as appRouter } from '../../../src/presentation/router'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
+
+// Les textes que la barre rend, lus du catalogue : un libellé retouché ne fait pas rougir des dizaines de sites (#748, R219b).
+// Les libellés des liens de navigation (« Parcours », « Retours d'expérience »…) restent littéraux : ce sont ceux des données
+// `navigationLinks` ci-dessous, que le test passe à l'en-tête, non des clés du catalogue.
+const MENU = accountMenuTexts('fr')
+const MENU_EN = accountMenuTexts('en')
 
 const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 
@@ -206,8 +215,8 @@ describe('AppHeader', () => {
     await primeAuthState(null)
     const { wrapper } = await mountHeader()
 
-    expect(wrapper.get('a[href="/fr/login"]').text()).toBe('Connexion')
-    expect(wrapper.text()).not.toContain('Déconnexion')
+    expect(wrapper.get('a[href="/fr/login"]').text()).toBe(fr.common.login)
+    expect(wrapper.text()).not.toContain(MENU.logout)
   })
 
   it('palier de confiance : le CV et la déconnexion sont dans le menu du compte, plus de lien de connexion', async () => {
@@ -217,13 +226,13 @@ describe('AppHeader', () => {
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(false)
     // Plus d'action à plat dans la barre : tout est derrière « Mon compte » (masqué fermé).
     expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
-    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Télécharger mon CV')
-    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Déconnexion')
+    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain(MENU.downloadCv)
+    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain(MENU.logout)
 
     await openDesktopAccountMenu(wrapper)
 
-    expect(wrapper.get('#account-menu-desktop').text()).toContain('Télécharger mon CV')
-    const logoutButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Déconnexion' === button.text())
+    expect(wrapper.get('#account-menu-desktop').text()).toContain(MENU.downloadCv)
+    const logoutButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => MENU.logout === button.text())
     expect(logoutButton).toBeDefined()
   })
 
@@ -234,7 +243,7 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader('/fr', undefined, cvRepository)
 
     await openDesktopAccountMenu(wrapper)
-    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes(MENU.downloadCv))
     await downloadButton?.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -251,11 +260,11 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader('/fr', undefined, cvRepository)
 
     await openDesktopAccountMenu(wrapper)
-    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes(MENU.downloadCv))
     await downloadButton?.trigger('click')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Le téléchargement du CV a échoué. Réessayez plus tard.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.common.downloadCvError)
 
     vi.unstubAllGlobals()
   })
@@ -303,11 +312,11 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader()
 
     const desktopNav = wrapper.get('nav.d-none.d-md-flex')
-    expect(desktopNav.attributes('aria-label')).toBe('Navigation principale')
+    expect(desktopNav.attributes('aria-label')).toBe(fr.common.mainNavigation)
 
     await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
     const mobileNav = wrapper.get('#mobile-nav')
-    expect(mobileNav.attributes('aria-label')).toBe('Navigation mobile')
+    expect(mobileNav.attributes('aria-label')).toBe(fr.common.mobileNavigation)
   })
 
   it('marque le lien À propos comme actif sur la page /fr/about', async () => {
@@ -355,10 +364,10 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader()
     await openDesktopAccountMenu(wrapper)
 
-    expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe('Administration')
-    expect(wrapper.text()).not.toContain('Télécharger mon CV')
-    expect(wrapper.find('button[aria-label="Télécharger mon CV"]').exists()).toBe(false)
-    expect(wrapper.get('#account-menu-desktop').findAll('button').map((button) => button.text())).toContain('Déconnexion')
+    expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe(MENU.administration)
+    expect(wrapper.text()).not.toContain(MENU.downloadCv)
+    expect(wrapper.find(`button[aria-label="${MENU.downloadCv}"]`).exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').findAll('button').map((button) => button.text())).toContain(MENU.logout)
   })
 
   it('palier de confiance sans ROLE_SUPER : pas de lien Administration', async () => {
@@ -523,9 +532,9 @@ describe('AppHeader', () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
       expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(true)
-      expect(wrapper.text()).not.toContain('Accès de base')
+      expect(wrapper.text()).not.toContain(fr.common.baseAccessBadge)
     })
 
     it('anonyme : le CTA obtient l\'accès, l\'en-tête passe au palier de base et mène aux études de cas', async () => {
@@ -533,12 +542,12 @@ describe('AppHeader', () => {
       const baseAccessRepository = createStubBaseAccessRepository()
       const { wrapper, router } = await mountHeader('/fr/about', undefined, undefined, baseAccessRepository)
 
-      await findButton(wrapper, 'Accès instantané')?.trigger('click')
+      await findButton(wrapper, fr.common.instantAccess)?.trigger('click')
       await flushPromises()
 
       expect(baseAccessRepository.grant).toHaveBeenCalled()
-      expect(wrapper.text()).toContain('Accès de base')
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+      expect(wrapper.text()).toContain(fr.common.baseAccessBadge)
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
       expect(router.currentRoute.value.path).toBe('/fr/case-studies')
     })
 
@@ -549,11 +558,11 @@ describe('AppHeader', () => {
       })
       const { wrapper, router } = await mountHeader('/fr', undefined, undefined, baseAccessRepository)
 
-      await findButton(wrapper, 'Accès instantané')?.trigger('click')
+      await findButton(wrapper, fr.common.instantAccess)?.trigger('click')
       await flushPromises()
 
-      expect(wrapper.get('[role="alert"]').text()).toBe('Trop de tentatives depuis cette adresse. Réessayez plus tard.')
-      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(wrapper.get('[role="alert"]').text()).toBe(fr.common.instantAccessRateLimited)
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
       expect(router.currentRoute.value.path).toBe('/fr')
     })
 
@@ -564,21 +573,21 @@ describe('AppHeader', () => {
       })
       const { wrapper } = await mountHeader('/fr', undefined, undefined, baseAccessRepository)
 
-      await findButton(wrapper, 'Accès instantané')?.trigger('click')
+      await findButton(wrapper, fr.common.instantAccess)?.trigger('click')
       await flushPromises()
 
-      expect(wrapper.get('[role="alert"]').text()).toBe("L'accès n'a pas pu être obtenu. Réessayez plus tard.")
+      expect(wrapper.get('[role="alert"]').text()).toBe(fr.common.instantAccessError)
     })
 
     it('palier de base : badge « Accès de base », lien de connexion conservé, ni CTA, ni CV, ni déconnexion', async () => {
       await primeBaseAccessState()
       const { wrapper } = await mountHeader()
 
-      expect(wrapper.text()).toContain('Accès de base')
+      expect(wrapper.text()).toContain(fr.common.baseAccessBadge)
       expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(true)
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
-      expect(wrapper.text()).not.toContain('Télécharger mon CV')
-      expect(wrapper.text()).not.toContain('Déconnexion')
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
+      expect(wrapper.text()).not.toContain(MENU.downloadCv)
+      expect(wrapper.text()).not.toContain(MENU.logout)
       expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
     })
 
@@ -591,8 +600,8 @@ describe('AppHeader', () => {
       await primeBaseAccessState()
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, 'Terminer cet accès')).toBeDefined()
-      expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
+      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeDefined()
+      expect(findButton(wrapper, MENU.logout)).toBeUndefined()
     })
 
     it('palier de base : « Terminer cet accès » expire le jeton, l\'état retombe à anonyme et mène à l\'accueil', async () => {
@@ -600,43 +609,43 @@ describe('AppHeader', () => {
       const authRepository = createStubAuthRepository(null)
       const { wrapper, router } = await mountHeader('/fr/case-studies', authRepository)
 
-      await findButton(wrapper, 'Terminer cet accès')?.trigger('click')
+      await findButton(wrapper, fr.common.endBaseAccess)?.trigger('click')
       await flushPromises()
 
       expect(authRepository.logout).toHaveBeenCalledOnce()
-      expect(wrapper.text()).not.toContain('Accès de base')
-      expect(findButton(wrapper, 'Terminer cet accès')).toBeUndefined()
-      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(wrapper.text()).not.toContain(fr.common.baseAccessBadge)
+      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeUndefined()
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
       expect(router.currentRoute.value.path).toBe('/fr')
     })
 
     it('anonyme comme au palier de confiance : pas de « Terminer cet accès » (les comptes gardent « Déconnexion »)', async () => {
       await primeAuthState(null)
-      expect(findButton((await mountHeader()).wrapper, 'Terminer cet accès')).toBeUndefined()
+      expect(findButton((await mountHeader()).wrapper, fr.common.endBaseAccess)).toBeUndefined()
 
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
-      expect(findButton(wrapper, 'Terminer cet accès')).toBeUndefined()
+      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeUndefined()
       await openDesktopAccountMenu(wrapper)
-      expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
+      expect(findButton(wrapper, MENU.logout)).toBeDefined()
     })
 
     it('en anglais : le libellé est « End this access », pas « Logout »', async () => {
       await primeBaseAccessState()
       const { wrapper } = await mountHeader('/en', undefined, undefined, undefined, 'en')
 
-      expect(findButton(wrapper, 'End this access')).toBeDefined()
-      expect(findButton(wrapper, 'Logout')).toBeUndefined()
+      expect(findButton(wrapper, en.common.endBaseAccess)).toBeDefined()
+      expect(findButton(wrapper, MENU_EN.logout)).toBeUndefined()
     })
 
     it('palier de confiance : ni CTA, ni badge (rien ne change pour ROLE_SUPER non plus)', async () => {
       await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
-      expect(wrapper.text()).not.toContain('Accès de base')
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
+      expect(wrapper.text()).not.toContain(fr.common.baseAccessBadge)
       await openDesktopAccountMenu(wrapper)
-      expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe('Administration')
+      expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe(MENU.administration)
     })
 
     it('anonyme comme au palier de base : aucune violation d\'accessibilité détectable (CTA icône seule nommé)', async () => {
@@ -677,7 +686,7 @@ describe('AppHeader', () => {
       expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&expired=1')
       expect(link.attributes('target')).toBe('_blank')
       expect(link.attributes('rel')).toBe('noopener')
-      expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
+      expect(link.text()).toContain(fr.common.opensInNewTab)
       expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
     })
 
@@ -693,8 +702,8 @@ describe('AppHeader', () => {
       expect(link.attributes('href')).toBe(`/fr/login?redirect=${path}&expired=1`)
       expect(link.attributes('target')).toBe('_blank')
       expect(link.attributes('rel')).toBe('noopener')
-      expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+      expect(link.text()).toContain(fr.common.opensInNewTab)
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
     })
 
     // F7 (#748, R16) : le consentement est une étape d'un flux OAuth qui finit par `location.replace` vers le client ;
@@ -707,9 +716,9 @@ describe('AppHeader', () => {
       expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/oauth/consent&expired=1')
       expect(link.attributes('target')).toBeUndefined()
       expect(link.attributes('rel')).toBeUndefined()
-      expect(link.text()).toBe('Connexion')
+      expect(link.text()).toBe(fr.common.login)
       expect(link.find('svg').exists()).toBe(false)
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
     })
 
     it("la relecture de la session au retour ne retire pas le groupe de droite de l'en-tête (pas de clignotement)", async () => {
@@ -745,8 +754,8 @@ describe('AppHeader', () => {
     it("pas d'« Accès instantané » : il remplacerait le cookie et mènerait ailleurs que la saisie", async () => {
       const { wrapper } = await mountEnded(PROTECTED)
 
-      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
-      expect(wrapper.find('button[aria-label="Accès instantané"]').exists()).toBe(false)
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
+      expect(wrapper.find(`button[aria-label="${fr.common.instantAccess}"]`).exists()).toBe(false)
     })
 
     it('en anglais : le lien dit « opens in a new tab » et porte la locale', async () => {
@@ -754,7 +763,7 @@ describe('AppHeader', () => {
 
       const link = wrapper.get('a[href*="/login"]')
       expect(link.attributes('href')).toBe('/en/login?redirect=/en/admin/case-studies&expired=1')
-      expect(link.text()).toContain('(opens in a new tab)')
+      expect(link.text()).toContain(en.common.opensInNewTab)
     })
 
     it('session finie sur une page publique : la connexion habituelle, et le CTA reste', async () => {
@@ -762,7 +771,7 @@ describe('AppHeader', () => {
 
       const link = wrapper.get('a[href="/fr/login"]')
       expect(link.attributes('target')).toBeUndefined()
-      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
     })
 
     it('session active sur une page protégée : rien ne change', async () => {
@@ -770,7 +779,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader(PROTECTED)
 
       expect(wrapper.get('a[href="/fr/login"]').attributes('target')).toBeUndefined()
-      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
     })
 
     it("aucune violation d'accessibilité détectable", async () => {
@@ -855,10 +864,10 @@ describe('AppHeader', () => {
       expect(wrapper.get('#account-menu-desktop').find(TARGET).isVisible()).toBe(false)
 
       await openDesktopAccountMenu(wrapper)
-      expect(wrapper.get('#account-menu-desktop').find(TARGET).text()).toBe('Assistant')
+      expect(wrapper.get('#account-menu-desktop').find(TARGET).text()).toBe(MENU.assistant)
 
       await openAccountMenu(wrapper)
-      expect(wrapper.get('#account-menu').find(TARGET).text()).toBe('Assistant')
+      expect(wrapper.get('#account-menu').find(TARGET).text()).toBe(MENU.assistant)
     })
 
     it('super-admin : le lien est présent aussi, contrairement au bouton CV', async () => {
@@ -906,7 +915,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
 
       const toggle = wrapper.get(TOGGLE)
-      expect(toggle.attributes('aria-label')).toBe('Menu du compte')
+      expect(toggle.attributes('aria-label')).toBe(fr.common.accountMenu)
       expect(toggle.attributes('aria-haspopup')).toBe('true')
       expect(toggle.attributes('aria-expanded')).toBe('false')
       expect(toggle.get('svg').attributes('aria-hidden')).toBe('true')
@@ -918,11 +927,11 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Déconnexion')
+      expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain(MENU.logout)
       await openAccountMenu(wrapper)
 
       expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('true')
-      expect(menuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Mes connexions MCP', 'Déconnexion'])
+      expect(menuItems(wrapper)).toEqual([MENU.assistant, MENU.downloadCv, MENU.mcpConnections, MENU.logout])
     })
 
     it('super-admin : Assistant, Administration, Mes connexions MCP et Déconnexion, pas de CV', async () => {
@@ -932,7 +941,7 @@ describe('AppHeader', () => {
       expect(outsideDesktopMenu(wrapper, 'a[href="/fr/admin"]')).toHaveLength(0)
       await openAccountMenu(wrapper)
 
-      expect(menuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
+      expect(menuItems(wrapper)).toEqual([MENU.assistant, MENU.administration, MENU.mcpConnections, MENU.logout])
     })
 
     it('palier de base : l\'intitulé du palier, « Terminer cet accès » et la connexion', async () => {
@@ -942,8 +951,8 @@ describe('AppHeader', () => {
       expect(wrapper.get('.badge').classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
       await openAccountMenu(wrapper)
 
-      expect(wrapper.get('#account-menu .dropdown-header').text()).toBe('Accès de base')
-      expect(menuItems(wrapper)).toEqual(['Terminer cet accès', 'Connexion'])
+      expect(wrapper.get('#account-menu .dropdown-header').text()).toBe(fr.common.baseAccessBadge)
+      expect(menuItems(wrapper)).toEqual([fr.common.endBaseAccess, fr.common.login])
     })
 
     it('« Déconnexion » du menu déconnecte et referme le menu', async () => {
@@ -952,7 +961,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader('/fr', authRepository)
 
       await openAccountMenu(wrapper)
-      const logout = wrapper.get('#account-menu').findAll('button').find((button) => 'Déconnexion' === button.text())
+      const logout = wrapper.get('#account-menu').findAll('button').find((button) => MENU.logout === button.text())
       await logout?.trigger('click')
       await flushPromises()
 
@@ -969,7 +978,7 @@ describe('AppHeader', () => {
       const { wrapper, router } = await mountHeader('/fr', authRepository)
 
       await openAccountMenu(wrapper)
-      const logout = wrapper.get('#account-menu').findAll('button').find((button) => 'Déconnexion' === button.text())
+      const logout = wrapper.get('#account-menu').findAll('button').find((button) => MENU.logout === button.text())
       await logout?.trigger('click')
       await flushPromises()
 
@@ -1012,7 +1021,7 @@ describe('AppHeader', () => {
 
       expect(wrapper.find(DESKTOP_TOGGLE).exists()).toBe(false)
       // « Terminer cet accès » et « Connexion » restent à plat : il n'y a pas de compte à ranger.
-      expect(findButton(wrapper, 'Terminer cet accès')?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      expect(findButton(wrapper, fr.common.endBaseAccess)?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
       await openAccountMenu(wrapper)
       expect(wrapper.find(LINK).exists()).toBe(false)
     })
@@ -1022,7 +1031,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
 
       const toggle = wrapper.get(DESKTOP_TOGGLE)
-      expect(toggle.text()).toBe('Mon compte')
+      expect(toggle.text()).toBe(MENU.myAccount)
       expect(toggle.attributes('aria-expanded')).toBe('false')
       // La classe est posée sur la racine du composant, qui contient le bouton.
       expect(toggle.element.closest('.d-none.d-md-block')).not.toBeNull()
@@ -1036,11 +1045,11 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
 
       await openDesktopAccountMenu(wrapper)
-      expect(wrapper.get('#account-menu-desktop').get(LINK).text()).toBe('Mes connexions MCP')
-      expect(desktopMenuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Mes connexions MCP', 'Déconnexion'])
+      expect(wrapper.get('#account-menu-desktop').get(LINK).text()).toBe(MENU.mcpConnections)
+      expect(desktopMenuItems(wrapper)).toEqual([MENU.assistant, MENU.downloadCv, MENU.mcpConnections, MENU.logout])
 
       await openAccountMenu(wrapper)
-      expect(wrapper.get('#account-menu').get(LINK).text()).toBe('Mes connexions MCP')
+      expect(wrapper.get('#account-menu').get(LINK).text()).toBe(MENU.mcpConnections)
     })
 
     it('ROLE_SUPER : le lien est présent aussi, aux deux endroits', async () => {
@@ -1048,7 +1057,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
 
       await openDesktopAccountMenu(wrapper)
-      expect(desktopMenuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
+      expect(desktopMenuItems(wrapper)).toEqual([MENU.assistant, MENU.administration, MENU.mcpConnections, MENU.logout])
       await openAccountMenu(wrapper)
       expect(wrapper.get('#account-menu').find(LINK).exists()).toBe(true)
     })
@@ -1059,8 +1068,8 @@ describe('AppHeader', () => {
 
       await openDesktopAccountMenu(wrapper)
 
-      expect(wrapper.get('#account-menu-desktop a[href="/en/mcp-connections"]').text()).toBe('My MCP connections')
-      expect(wrapper.get(DESKTOP_TOGGLE).text()).toBe('My account')
+      expect(wrapper.get('#account-menu-desktop a[href="/en/mcp-connections"]').text()).toBe(MENU_EN.mcpConnections)
+      expect(wrapper.get(DESKTOP_TOGGLE).text()).toBe(MENU_EN.myAccount)
     })
 
     it('« Déconnexion » du menu déconnecte et mène à l\'accueil', async () => {
@@ -1069,7 +1078,7 @@ describe('AppHeader', () => {
       const { wrapper, router } = await mountHeader('/fr/about', authRepository)
 
       await openDesktopAccountMenu(wrapper)
-      await wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Déconnexion' === button.text())?.trigger('click')
+      await wrapper.get('#account-menu-desktop').findAll('button').find((button) => MENU.logout === button.text())?.trigger('click')
       await flushPromises()
 
       expect(authRepository.logout).toHaveBeenCalledOnce()

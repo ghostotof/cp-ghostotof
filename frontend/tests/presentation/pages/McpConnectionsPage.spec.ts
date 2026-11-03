@@ -20,7 +20,9 @@ import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
 import { signInAgain } from '../../support/signInAgain'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 // Seuls `setTimeout`/`clearTimeout` sont simulés : `flushPromises` s'appuie sur `setImmediate`,
 // qui doit rester réel. Le délai d'annonce (focus d'abord, annonce ensuite) est ainsi piloté
@@ -183,7 +185,7 @@ describe('McpConnectionsPage', () => {
   it('liste les connexions en français : client, dates à l\'heure de Paris, état', async () => {
     const { wrapper } = await mountPage()
 
-    expect(wrapper.get('h1').text()).toBe('Mes connexions MCP')
+    expect(wrapper.get('h1').text()).toBe(fr.mcpConnections.title)
     expect(rows(wrapper)).toHaveLength(4)
 
     const active = normalized(rowOf(wrapper, 'Claude Code').text())
@@ -191,46 +193,46 @@ describe('McpConnectionsPage', () => {
     expect(active).toContain('09:00')
     expect(active).toContain('10:30')
     expect(active).toContain('27 nov. 2026')
-    expect(active).toContain('Active')
+    expect(active).toContain(fr.mcpConnections.states.active)
 
     // Échangée mais pas encore rafraîchie : « jamais utilisée » serait faux (#650, R5a).
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Pas encore renouvelée')
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain(fr.mcpConnections.notRenewedYet)
     expect(rowOf(wrapper, 'Autre Client').text()).not.toContain('Jamais')
-    expect(rowOf(wrapper, 'Client Échu').text()).toContain('Échue')
+    expect(rowOf(wrapper, 'Client Échu').text()).toContain(fr.mcpConnections.states.expired)
   })
 
   it('liste les connexions en anglais', async () => {
     const { wrapper } = await mountPage({ locale: 'en' })
 
-    expect(wrapper.get('h1').text()).toBe('My MCP connections')
+    expect(wrapper.get('h1').text()).toBe(en.mcpConnections.title)
     const active = normalized(rowOf(wrapper, 'Claude Code').text())
     expect(active).toContain('Oct 28, 2026')
     expect(active).toContain('9:00 AM')
-    expect(active).toContain('Active')
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Not renewed yet')
-    expect(rowOf(wrapper, 'Client Échu').text()).toContain('Expired')
-    expect(rowOf(wrapper, 'Client Révoqué').text()).toContain('Revoked by you')
+    expect(active).toContain(en.mcpConnections.states.active)
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain(en.mcpConnections.notRenewedYet)
+    expect(rowOf(wrapper, 'Client Échu').text()).toContain(en.mcpConnections.states.expired)
+    expect(rowOf(wrapper, 'Client Révoqué').text()).toContain(en.mcpConnections.causes.person)
   })
 
   it('distingue un accord abandonné (code jamais échangé) d\'une connexion échangée pas encore rafraîchie', async () => {
     const list = vi.fn(async () => listOf([ABANDONED, NEVER_USED, ACTIVE]))
     const { wrapper } = await mountPage({ list })
 
-    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain('Jamais aboutie')
-    expect(rowOf(wrapper, 'Client Abandonné').text()).not.toContain('Pas encore renouvelée')
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Pas encore renouvelée')
-    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain('Jamais aboutie')
+    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain(fr.mcpConnections.neverCompleted)
+    expect(rowOf(wrapper, 'Client Abandonné').text()).not.toContain(fr.mcpConnections.notRenewedYet)
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain(fr.mcpConnections.notRenewedYet)
+    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain(fr.mcpConnections.neverCompleted)
     // Utilisée : la date, ni l'un ni l'autre.
-    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain('Jamais aboutie')
-    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain('Pas encore renouvelée')
+    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain(fr.mcpConnections.neverCompleted)
+    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain(fr.mcpConnections.notRenewedYet)
   })
 
   it('distingue les deux cas en anglais', async () => {
     const list = vi.fn(async () => listOf([ABANDONED, NEVER_USED]))
     const { wrapper } = await mountPage({ locale: 'en', list })
 
-    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain('Never completed')
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Not renewed yet')
+    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain(en.mcpConnections.neverCompleted)
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain(en.mcpConnections.notRenewedYet)
   })
 
   it("n'affiche aucune échéance pour une connexion révoquée, et dit pourquoi la case est vide", async () => {
@@ -239,7 +241,7 @@ describe('McpConnectionsPage', () => {
     const revoked = rowOf(wrapper, 'Client Révoqué')
     const expiryCell = revoked.findAll('td')[2]
     expect(expiryCell?.find('time').exists()).toBe(false)
-    expect(expiryCell?.text()).toContain('Sans échéance')
+    expect(expiryCell?.text()).toContain(fr.mcpConnections.noExpiry)
     // Les autres lignes gardent la leur.
     expect(rowOf(wrapper, 'Claude Code').findAll('td')[2]?.find('time').exists()).toBe(true)
     expect(rowOf(wrapper, 'Client Échu').findAll('td')[2]?.find('time').exists()).toBe(true)
@@ -248,7 +250,7 @@ describe('McpConnectionsPage', () => {
   it("dit « No expiry » en anglais pour une connexion révoquée", async () => {
     const { wrapper } = await mountPage({ locale: 'en' })
 
-    expect(rowOf(wrapper, 'Client Révoqué').findAll('td')[2]?.text()).toContain('No expiry')
+    expect(rowOf(wrapper, 'Client Révoqué').findAll('td')[2]?.text()).toContain(en.mcpConnections.noExpiry)
   })
 
   it('est un vrai tableau : légende, en-têtes de colonne portant scope', async () => {
@@ -266,17 +268,17 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage()
 
     const text = normalized(rowOf(wrapper, 'Client Révoqué').text())
-    expect(text).toContain('Révoquée par vous')
+    expect(text).toContain(fr.mcpConnections.causes.person)
     expect(text).toContain('28 oct. 2026')
     expect(text).toContain('11:00')
   })
 
   it.each([
-    ['client', 'Révoquée par le client'],
+    ['client', fr.mcpConnections.causes.client],
     ['refresh-token-reuse', 'jeton de rafraîchissement'],
     ['code-replay', 'code d\'autorisation'],
     ['superseded', 'plus récente'],
-    ['expired', 'Échue'],
+    ['expired', fr.mcpConnections.causes.expired],
     ['password-changed', 'mot de passe'],
     ['trusted-tier-withdrawn', 'palier de confiance'],
   ])('a un libellé pour la cause connue « %s »', async (cause, expected) => {
@@ -305,7 +307,7 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage({ list })
 
     const note = wrapper.get('[data-testid="terminated-truncated"]')
-    expect(note.text()).toBe("L'historique est limité : seules les dernières connexions terminées sont affichées.")
+    expect(note.text()).toBe(fr.mcpConnections.terminatedTruncated)
     expect(rows(wrapper)).toHaveLength(2)
   })
 
@@ -313,7 +315,7 @@ describe('McpConnectionsPage', () => {
     const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
     const { wrapper } = await mountPage({ locale: 'en', list })
 
-    expect(wrapper.get('[data-testid="terminated-truncated"]').text()).toBe('History is limited: only the most recent ended connections are shown.')
+    expect(wrapper.get('[data-testid="terminated-truncated"]').text()).toBe(en.mcpConnections.terminatedTruncated)
   })
 
   it("n'affiche aucune mention quand l'historique n'est pas coupé", async () => {
@@ -378,7 +380,7 @@ describe('McpConnectionsPage', () => {
     expect(wrapper.find('table').exists()).toBe(false)
     expect(wrapper.text()).toContain('Aucune connexion')
     const link = wrapper.get('a[href="/fr/connect-your-assistant"]')
-    expect(link.text()).toBe('Brancher votre assistant')
+    expect(link.text()).toBe(fr.common.connectAssistantLink)
   })
 
   it('propose « Révoquer » sur les seules connexions actives, nommé par le client et la date', async () => {
@@ -393,7 +395,7 @@ describe('McpConnectionsPage', () => {
     expect(label.startsWith('Révoquer')).toBe(true)
     expect(label).toContain('Claude Code')
     expect(label).toContain('28 oct. 2026')
-    expect(rowOf(wrapper, 'Claude Code').get('button').text()).toBe('Révoquer')
+    expect(rowOf(wrapper, 'Claude Code').get('button').text()).toBe(fr.mcpConnections.revoke)
   })
 
   it('confirmation acceptée : révoque, relit la liste et l\'annonce dans la région role="status"', async () => {
@@ -794,7 +796,7 @@ describe('McpConnectionsPage', () => {
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('Votre session a pris fin')
       const link = alert.get('a')
-      expect(link.text()).toContain('Se reconnecter')
+      expect(link.text()).toContain(fr.mcpConnections.errors.signInAgain)
       const href = link.attributes('href') ?? ''
       expect(href.startsWith('/fr/login?')).toBe(true)
       const query = new URLSearchParams(href.split('?')[1])
@@ -814,7 +816,7 @@ describe('McpConnectionsPage', () => {
       const link = wrapper.get('[role="alert"] a')
       expect(link.attributes('target')).toBe('_blank')
       expect(link.attributes('rel')).toBe('noopener')
-      expect(link.text()).toBe("Se reconnecter (s'ouvre dans un nouvel onglet)")
+      expect(link.text()).toBe(`${fr.mcpConnections.errors.signInAgain} ${fr.common.opensInNewTab}`)
       expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
       expect(new URLSearchParams((link.attributes('href') ?? '').split('?')[1]).get('redirect')).toBe('/fr/mcp-connections')
     })
@@ -825,7 +827,7 @@ describe('McpConnectionsPage', () => {
 
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('Your session has ended')
-      expect(alert.get('a').text()).toBe('Sign in again (opens in a new tab)')
+      expect(alert.get('a').text()).toBe(`${en.mcpConnections.errors.signInAgain} ${en.common.opensInNewTab}`)
       expect(alert.get('a').attributes('href')).toMatch(/^\/en\/login\?/)
     })
 
@@ -911,7 +913,7 @@ describe('McpConnectionsPage', () => {
         expect(wrapper.text()).not.toContain('could not be loaded')
         expect(alert.find('button').exists()).toBe(false)
         const link = alert.get('a')
-        expect(link.text()).toBe('fr' === locale ? 'Changer de compte' : 'Switch account')
+        expect(link.text()).toBe('fr' === locale ? SWITCH_ACCOUNT_FR : SWITCH_ACCOUNT_EN)
         // Même onglet : la conversation, la saisie d'une autre page ne sont pas ici en jeu, le flux est un changement de compte.
         expect(link.attributes('target')).toBeUndefined()
         const href = link.attributes('href') ?? ''
@@ -961,10 +963,10 @@ describe('McpConnectionsPage', () => {
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('Votre session a pris fin')
       const link = alert.get('a')
-      expect(link.text()).toContain('Se reconnecter')
+      expect(link.text()).toContain(fr.mcpConnections.errors.signInAgain)
       expect(link.attributes('target')).toBe('_blank')
       expect(new URLSearchParams((link.attributes('href') ?? '').split('?')[1]).get('reauth')).toBeNull()
-      expect(wrapper.text()).not.toContain('Changer de compte')
+      expect(wrapper.text()).not.toContain(SWITCH_ACCOUNT_FR)
 
       // Rétablit la session partagée pour les tests suivants. Le retour relit la liste (toujours refusée) : `/api/me`
       // répond désormais le palier de base, sans quoi cette relecture finirait la session une seconde fois.

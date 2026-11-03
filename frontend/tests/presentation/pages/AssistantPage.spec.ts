@@ -17,7 +17,9 @@ import { StaticPortfolioContentRepository } from '../../../src/infrastructure/po
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 /** Un appel au repository dont le test pilote les fragments et l'issue. */
@@ -303,8 +305,8 @@ describe('AssistantPage', () => {
   // Session finie (401, ou 403 sans jeton CSRF) : le lien s'ouvre, la route `login` accueille un anonyme.
   // Un nouvel onglet (#748, R6) : dans le même, la question tapée serait perdue ; `redirect` ramène l'autre onglet ici.
   it.each<['fr' | 'en', string, string]>([
-    ['fr', 'Votre session a expiré.', "Se reconnecter (s'ouvre dans un nouvel onglet)"],
-    ['en', 'Your session has expired.', 'Sign in again (opens in a new tab)'],
+    ['fr', fr.assistant.errors.unauthenticated, `${fr.assistant.errors.relogin} ${fr.common.opensInNewTab}`],
+    ['en', en.assistant.errors.unauthenticated, `${en.assistant.errors.relogin} ${en.common.opensInNewTab}`],
   ])("session finie (%s) : « Se reconnecter » : nouvel onglet, expired=1, retour à l'assistant", async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()
     const wrapper = mountPage(repository, undefined, locale)
@@ -332,12 +334,12 @@ describe('AssistantPage', () => {
     [
       'fr',
       ACCESS_REFUSED_FR,
-      'Changer de compte',
+      SWITCH_ACCOUNT_FR,
     ],
     [
       'en',
       ACCESS_REFUSED_EN,
-      'Switch account',
+      SWITCH_ACCOUNT_EN,
     ],
   ])('refus (%s) : message neutre et « Changer de compte » (reauth=1, retour à l\'assistant)', async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()

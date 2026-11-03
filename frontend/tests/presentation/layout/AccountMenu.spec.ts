@@ -4,6 +4,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountMenu from '../../../src/presentation/layout/AccountMenu.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { accountMenuTexts } from '../../support/accountMenuTexts'
+
+const MENU = accountMenuTexts('fr')
+const MENU_EN = accountMenuTexts('en')
 
 const StubPage = { template: '<div />' }
 
@@ -67,7 +71,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     const { wrapper, cleanup } = await mountMenu()
 
     const toggle = wrapper.get(TOGGLE)
-    expect(toggle.text()).toBe('Mon compte')
+    expect(toggle.text()).toBe(MENU.myAccount)
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(toggle.attributes('aria-controls')).toBe('account-menu-desktop')
     // La cible d'aria-controls existe toujours (#650, R5a) : une référence vers un
@@ -107,9 +111,9 @@ describe('AccountMenu (menu du compte, écran large)', () => {
 
     await wrapper.get(TOGGLE).trigger('click')
 
-    expect(items(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Mes connexions MCP', 'Déconnexion'])
-    expect(wrapper.get('#account-menu-desktop a[href="/fr/assistant"]').text()).toBe('Assistant')
-    expect(wrapper.get('#account-menu-desktop a[href="/fr/mcp-connections"]').text()).toBe('Mes connexions MCP')
+    expect(items(wrapper)).toEqual([MENU.assistant, MENU.downloadCv, MENU.mcpConnections, MENU.logout])
+    expect(wrapper.get('#account-menu-desktop a[href="/fr/assistant"]').text()).toBe(MENU.assistant)
+    expect(wrapper.get('#account-menu-desktop a[href="/fr/mcp-connections"]').text()).toBe(MENU.mcpConnections)
     cleanup()
   })
 
@@ -118,18 +122,18 @@ describe('AccountMenu (menu du compte, écran large)', () => {
 
     await wrapper.get(TOGGLE).trigger('click')
 
-    expect(items(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
-    expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe('Administration')
+    expect(items(wrapper)).toEqual([MENU.assistant, MENU.administration, MENU.mcpConnections, MENU.logout])
+    expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe(MENU.administration)
     cleanup()
   })
 
   it('en anglais, les libellés suivent la langue et les liens gardent le préfixe /en', async () => {
     const { wrapper, cleanup } = await mountMenu({ locale: 'en' })
 
-    expect(wrapper.get(TOGGLE).text()).toBe('My account')
+    expect(wrapper.get(TOGGLE).text()).toBe(MENU_EN.myAccount)
     await wrapper.get(TOGGLE).trigger('click')
 
-    expect(items(wrapper)).toEqual(['Assistant', 'Download my CV', 'My MCP connections', 'Logout'])
+    expect(items(wrapper)).toEqual([MENU_EN.assistant, MENU_EN.downloadCv, MENU_EN.mcpConnections, MENU_EN.logout])
     expect(wrapper.find('#account-menu-desktop a[href="/en/mcp-connections"]').exists()).toBe(true)
     cleanup()
   })
@@ -139,7 +143,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
 
     await wrapper.get(TOGGLE).trigger('click')
 
-    const cv = wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Télécharger mon CV' === button.text())
+    const cv = wrapper.get('#account-menu-desktop').findAll('button').find((button) => MENU.downloadCv === button.text())
     expect(cv?.attributes('disabled')).toBeDefined()
     cleanup()
   })
@@ -351,12 +355,12 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     await wrapper.get(TOGGLE).trigger('click')
 
     const buttons = wrapper.get('#account-menu-desktop').findAll('button')
-    await buttons.find((button) => 'Déconnexion' === button.text())?.trigger('click')
+    await buttons.find((button) => MENU.logout === button.text())?.trigger('click')
     expect(wrapper.emitted('logout')).toHaveLength(1)
     expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
 
     await wrapper.get(TOGGLE).trigger('click')
-    await wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Télécharger mon CV' === button.text())?.trigger('click')
+    await wrapper.get('#account-menu-desktop').findAll('button').find((button) => MENU.downloadCv === button.text())?.trigger('click')
     expect(wrapper.emitted('downloadCv')).toHaveLength(1)
     expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()

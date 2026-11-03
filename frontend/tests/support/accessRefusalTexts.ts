@@ -19,3 +19,12 @@ export const EARLIER_SAVE_REFUSED_EN: string = en.common.earlierSaveRefused
 
 /** `common.accessRefused`, en anglais. */
 export const ACCESS_REFUSED_EN: string = en.common.accessRefused
+
+/**
+ * `common.switchAccount` : le lien « Changer de compte » de l'alerte d'un refus réel (`AssistantPage`, `McpConnectionsPage`),
+ * qui ouvre la connexion dans le même onglet. Lu du catalogue, comme les textes ci-dessus.
+ */
+export const SWITCH_ACCOUNT_FR: string = fr.common.switchAccount
+
+/** `common.switchAccount`, en anglais. */
+export const SWITCH_ACCOUNT_EN: string = en.common.switchAccount
