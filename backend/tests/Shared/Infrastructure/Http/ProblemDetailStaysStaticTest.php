@@ -522,12 +522,13 @@ final class ProblemDetailStaysStaticTest extends TestCase
             1,
         ];
         $thirdParameter = $forwarding('parent::__construct($m);', 'string $a, string $b, string $m');
+        // Le témoin est le même pour toutes les formes : produit une fois, hors de la boucle, sa clé ne se répète pas.
+        yield 'le même argument, sans la virgule : le témoin' => [$thirdParameter.$thrower('"$x", \'L\', "x$c"'), 1];
         foreach (InterpolatedStrings::COMMAS as $label => $string) {
             yield 'une virgule dans une chaîne interpolée en argument : '.$label => [
                 $thirdParameter.$thrower($string.", 'L', \"x\$c\""),
                 1,
             ];
-            yield 'le même argument, sans la virgule : le témoin' => [$thirdParameter.$thrower('"$x", \'L\', "x$c"'), 1];
         }
         foreach (InterpolatedStrings::DOLLARS as $label => $string) {
             yield 'un dollar final dans une chaîne ne réaffecte rien : '.$label => [
@@ -539,6 +540,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
         // un code que PHP accepte (une constante n'interpole pas) : le modèle lit des jetons, il ne l'exécute pas.
         yield 'site, constante dont la valeur porte un crochet fermant interpolé' => [
             $namespace.$siteIn('    const A = ['.InterpolatedStrings::CLOSING_BRACKET."], M = 'Vide.';\n", 'self::M'),
+            0,
+        ];
+        // PHP 8.5 admet une fermeture statique dans une expression constante : ses accolades et son `;` ne terminent pas la
+        // déclaration, la constante qui la suit (`M`) reste lue et littérale.
+        yield 'site, constante qui suit une constante dont la valeur est une fermeture' => [
+            $namespace.$siteIn("    const A = static function (): string { return 'x'; }, M = 'Vide.';\n", 'self::M'),
             0,
         ];
         yield 'site composé dont le premier argument porte un crochet fermant interpolé' => [

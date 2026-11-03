@@ -45,11 +45,13 @@ final class InterpolatedStrings
     /** @var array<string, string> libellé => chaîne dont un fragment est une virgule */
     public const array COMMAS = [
         'une virgule après une variable' => '"$x,"',
+        'une virgule après une interpolation {$x}' => '"{$x},"',
     ];
 
     /** @var array<string, string> libellé => chaîne dont un fragment est un dollar : `"$x$"` n'ouvre aucune variable */
     public const array DOLLARS = [
         'un dollar après une variable' => '"$x$"',
+        'un dollar après une interpolation {$x}' => '"{$x}$"',
     ];
 
     /**

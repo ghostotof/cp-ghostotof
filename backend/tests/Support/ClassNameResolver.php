@@ -152,14 +152,14 @@ final class ClassNameResolver
     }
 
     /**
-     * Chaque jeton du code avec l'espace de noms et les imports qui valent à
-     * cet endroit : la boucle que partagent les recenseurs de sites. Les
-     * jetons `namespace` et `use` eux-mêmes ne sont pas rendus ; les imports repartent de zéro à chaque
-     * `namespace`, et à la fin d'un bloc `namespace X { … }`. Seul un `use` de
-     * l'espace de noms importe : celui d'un corps de classe est un trait, celui
-     * d'une fonction anonyme une capture. Les accolades se comptent par
-     * l'identifiant du jeton ({@see PhpSources::opensBrace()}), non par son
-     * texte : le fragment `}` d'une chaîne interpolée n'en ferme aucune.
+     * Chaque jeton du code avec l'espace de noms et les imports qui valent à cet
+     * endroit : la boucle que partagent les recenseurs de sites. Les jetons
+     * `namespace` et `use` eux-mêmes ne sont pas rendus ; les imports repartent
+     * de zéro à chaque `namespace`, et à la fin d'un bloc `namespace X { … }`.
+     * Seul un `use` de l'espace de noms importe : celui d'un corps de classe est
+     * un trait, celui d'une fonction anonyme une capture. Les accolades se
+     * comptent par l'identifiant du jeton ({@see PhpSources::opensBrace()}), non
+     * par son texte : le fragment `}` d'une chaîne interpolée n'en ferme aucune.
      *
      * @param list<PhpToken> $tokens
      *

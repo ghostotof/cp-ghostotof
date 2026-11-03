@@ -121,10 +121,13 @@ final class PhpSources
      * identifiants propres (`T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG` et
      * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG`), jamais le sien.
      *
-     * @param non-empty-string $char un seul caractère
+     * @param non-empty-string $char un seul caractère, que `\assert()` vérifie : seul le premier octet est lu, `'(('`
+     *                               passerait pour `'('`
      */
     public static function isChar(PhpToken $token, string $char): bool
     {
+        \assert(1 === \strlen($char));
+
         return \ord($char[0]) === $token->id;
     }
 
