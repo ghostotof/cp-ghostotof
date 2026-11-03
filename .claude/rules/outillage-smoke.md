@@ -73,22 +73,26 @@ C17-3, C17-4 and CR17-7), whose content would go to the host, or whose overwriti
 `-H @…`, `-d @…` and `-b @…` (a value starting with `@`: `@f`, `@-`) exit 2; **`-b '@a=b'` too**, whatever follows the `@`: curl 8.5.0
 reads the cookie file « a=b » (`CURLOPT_COOKIEFILE`, measured on 2026-11-01 on the pinned image, `--libcurl -`, `--network none`).
 So does `--data-binary @<path>` unless `<path>` is, **in full**, a file `smoke_data_file` created (a string equality: no `..`, no prefix,
-never the `-K` file nor another file of its directory); and so does `-b` with no « = », which curl reads as a cookie file (`-b ''` too).
-So does `-D` with a value that makes curl overwrite a file the call relies on (C16-4, Q1 of the sixteenth review, then C17-4, CR17-7):
-the `-K` file, its directory, a file of that directory, a file `smoke_data_file` created (the same message, `writes`), or any value with
-a `..` component. Curl writes the response headers there. The `-K` is truncated to 0 bytes (measured, the transfer failing as well),
-which the next call reads as an empty configuration, with no Basic Auth; a body file is replaced by the headers, `Set-Cookie` included,
-which a later `--data-binary @…` would send. Measured on 2026-11-02 on the host's curl 8.14.1 (the pinned 8.5.0 image is not on this
-machine and nothing else is pulled; limit: the behaviour is curl's old `-D` writing, not an 8.5.0 measure), against `127.0.0.1:9` and a
-local server: `-D <body file>` leaves 0 bytes after a refused connection and the headers after a success; `-D <directory>` exits 23, the
-`-K` intact; `-D <directory>/absent/../curl-auth.conf` exits 23 too (curl cannot open a path through a missing component).
-The test is bash's `-ef` (same device, same inode: it follows links, with no process and no path computation), against the `-K` file,
-the directory, each element of `SMOKE_AUTH_DATA_FILES`, then the value's directory (`${2%/*}`, `/` for a file of the root, `.` for a
-name with no `/`, judged from the current directory) and the Basic Auth's. `-ef` follows `..` only through existing components, so a
-value with `..` as a whole component is refused without computing it (`[[ "/$1/" == */../* ]]`): `a..b` and `...` are names, they pass.
-`-D -` (the standard output) passes. Limits: a link to a file of that directory that does not exist yet is not seen; a relative value is
-judged from the current directory, which curl reads too, since `smoke_fetch` changes none between the judgment and the call (CR17-10):
-a `cd` placed between them would break that equivalence. A `TMPDIR` with a `..` component would get the smokes' own
+never the `-K` file nor another file of its directory) that still exists (`-f`, C18-5: a body removed before the call is refused);
+and so does `-b` with no « = », which curl reads as a cookie file (`-b ''` too).
+So does `-D` with a value on which curl can write a file the call relies on (`_smoke_writes_on_call_file`, reason `writes`; C16-4, Q1
+of the sixteenth review, then C17-4, CR17-7, C18-5): the `-K` file, its directory, a file of that directory, a file `smoke_data_file`
+created, removed since or not, or, as a precaution, any value with a `..` component. Curl writes the response headers there. The `-K`
+is truncated to 0 bytes, which the next call reads as an empty configuration, with no Basic Auth; a body file is replaced by the
+headers, `Set-Cookie` included, which a later `--data-binary @…` would send. Measured on 2026-11-03 on the pinned image (curl 8.5.0,
+`--network none`, against `127.0.0.1:9`): `-D <body file>` and `-D <the -K>` leave 0 bytes after a refused connection (exit 7);
+`-D <directory>` exits 23, the `-K` intact; `-D <directory>/absent/../curl-auth.conf` exits 23 too (curl cannot open a path through a
+missing component). The headers written after a success were measured on the host's curl 8.14.1 only (2026-11-02, a local server): no
+server answers under `--network none`. The test is, against the `-K` file, the directory and each element of `SMOKE_AUTH_DATA_FILES`,
+the string equality (a removed file is still seen, and curl would create it again), then bash's `-ef` (same device, same inode: it
+follows links, with no process and no path computation); then `-ef` of the value's directory (`${2%/*}`, `/` for a file of the root,
+`.` for a name with no `/`, judged from the current directory) and the Basic Auth's. `-ef` follows `..` only through existing
+components, so a value with `..` as a whole component is refused without computing it (`[[ "/$1/" == */../* ]]`): `a..b` and `...` are
+names, they pass. `-D -` (the standard output) passes. Limits: a link to a file of that directory that does not exist yet is not seen,
+nor a removed body written otherwise than its recorded path; `-D "<file>/"` and `-D "<directory>/new/"` pass the judgment (C18-6: no
+file is there for `-ef`), and curl 8.5.0 exits 23 on writing, the `-K` and the bodies intact (measured on 2026-11-03, same image); a
+relative value is judged from the current directory, which curl reads too, since `smoke_fetch` changes none between the judgment and the
+call (CR17-10): a `cd` placed between them would break that equivalence. A `TMPDIR` with a `..` component would get the smokes' own
 `-D "$headers_file"` refused: exit 2, said, never silent.
 A blank before the `@` changes nothing for `-H` and `-d`, measured on 2026-11-01: ` @f` is a header or a body, neither reads a file.
 For `-b`, ` @a=b` is a cookie, but ` @f` has no « = »: curl reads the cookie file « ␣@f » (C17-3, measured in the seventeenth review),
@@ -104,9 +108,9 @@ call would be read by curl as the body file, unseen. Only the smoke's own user c
 The message gives the **rank** of the argument, never its text (a glued value could be a secret):
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
-« argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth »; for a `-D` that overwrites a file of the call:
-« argument n° N : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée »
-(R212: one text for the `-K`, its directory and a body file).
+« argument n° N : une valeur qui lit un fichier local est refusée avec la Basic Auth »; for a `-D` that can write on a file of the call:
+« argument n° N : une valeur qui peut écrire sur un fichier de la Basic Auth ou de son corps est refusée »
+(Q2 of the eighteenth review: one text for every `writes` refusal, the `..` one included; the test's oracle is `CASE_WRITE_REFUSAL`).
 Without a `-K` nothing is judged: no identifier, nothing to leak, and production keeps its freedom.
 To admit a new option, **eleven places** (St16-25, St17-24), written here once; the docblock of `_smoke_option_arity` points here:
 (1) a line of its `case`, with the arity; (2) the list of that docblock; (3) the sentence « It admits <n> options » above, its number, in

@@ -375,7 +375,7 @@ smoke_excerpt() {
 # `--verbose`, `--trace`, `--trace-ascii`, `--libcurl` (qui imprime l'identifiant, mesuré), une seconde URL, `-x`, `--proxy`,
 # `--cacert`, `--proto-default`, une option future.
 #
-# Pour ajouter une option : la procédure, **onze endroits**, est écrite une seule fois, dans .claude/rules/outillage-smoke.md (St17-24).
+# Pour ajouter une option : la procédure est écrite une seule fois, dans .claude/rules/outillage-smoke.md (St17-24, St18-5).
 _smoke_arity=0
 _smoke_option_arity() {
   case "${1-}" in
@@ -402,24 +402,27 @@ _smoke_is_data_file() {
   return 1
 }
 
-# _smoke_writes_in_auth_dir <valeur de -D>
+# _smoke_writes_on_call_file <valeur de -D>
 #
-# Vrai si le fichier que `-D <valeur>` fait écrire à curl est le fichier `-K`, le dossier de la Basic Auth ou un fichier de ce dossier,
-# ou un fichier de smoke_data_file (C16-4, C17-4, CR17-7). Curl écrase le fichier visé avec les en-têtes de la réponse (mesuré le
-# 2026-11-02, curl 8.14.1 de l'hôte : à 0 octet quand le transfert échoue, aux en-têtes quand il réussit) : le `-K` écrasé serait relu
-# au prochain appel comme une configuration vide, donc sans Basic Auth, et un corps de smoke_data_file écrasé partirait en
-# `--data-binary @…` avec les en-têtes de réponse, `Set-Cookie` compris. Les jugements, dans l'ordre :
+# Vrai si `-D <valeur>` peut faire écrire curl sur un fichier dont l'appel dépend : le fichier `-K`, le dossier de la Basic Auth ou un
+# fichier de ce dossier, un fichier de smoke_data_file (C16-4, C17-4, CR17-7, C18-5), ou, par précaution, tout chemin à composant `..`.
+# Curl écrase le fichier visé avec les en-têtes de la réponse (curl 8.5.0, mesuré le 2026-11-03 : à 0 octet quand la connexion est
+# refusée ; aux en-têtes après un succès, mesuré sur le curl 8.14.1 de l'hôte seul) : le `-K` écrasé serait relu au prochain appel
+# comme une configuration vide, donc sans Basic Auth, et un corps écrasé partirait en `--data-binary @…` avec les en-têtes de réponse,
+# `Set-Cookie` compris. La raison rendue est `writes`, dont le texte est écrit dans _smoke_say_refused_arg seule. Les jugements :
 #   - `-` est la sortie standard : faux ;
 #   - une valeur dont un composant est `..` : vrai, sans autre calcul. `-ef` ne suit `..` qu'à travers des composants existants,
 #     `<dossier>/absent/../curl-auth.conf` lui échappe (curl sort alors en 23, le `-K` intact, mesuré, mais le jugement ne s'en remet
 #     pas à curl) ; `a..b` et `...` ne sont pas un composant `..` ;
-#   - `-ef` de bash (même périphérique, même inode : il suit les liens, sans processus ni calcul de chemin) contre le fichier `-K`, le
-#     dossier lui-même, puis chaque fichier de smoke_data_file ;
+#   - contre le fichier `-K`, le dossier lui-même, puis chaque fichier de smoke_data_file : l'égalité de chaîne avec le chemin retenu,
+#     qui voit encore un fichier retiré (C18-5 : `-ef` exige qu'il existe, et curl le recréerait), puis `-ef` de bash (même
+#     périphérique, même inode : il suit les liens, sans processus ni calcul de chemin) ;
 #   - `-ef` du dossier de la valeur (`${1%/*}`, `/` pour un fichier de la racine, `.` pour un nom sans `/`) contre celui de la Basic Auth.
-# Limites : un lien qui pointe vers un fichier du dossier qui n'existe pas encore n'est pas vu (le test lit l'inode du lien) ; une
-# valeur relative est jugée depuis le dossier courant, que curl lit aussi, puisque smoke_fetch n'en change pas entre le jugement et
-# l'appel (CR17-10) : un `cd` placé entre les deux casserait cette équivalence.
-_smoke_writes_in_auth_dir() {
+# Limites : un lien qui pointe vers un fichier du dossier qui n'existe pas encore n'est pas vu (le test lit l'inode du lien), ni un
+# fichier retiré écrit autrement que son chemin retenu ; `<fichier>/` et `<dossier>/neuf/` passent (C18-6 : aucun fichier n'est là pour
+# `-ef`), curl 8.5.0 sort alors en 23 sans rien écrire (mesuré le 2026-11-03) ; une valeur relative est jugée depuis le dossier courant,
+# que curl lit aussi, puisque smoke_fetch n'en change pas entre le jugement et l'appel (CR17-10) : un `cd` entre les deux la casserait.
+_smoke_writes_on_call_file() {
   local _smoke_dir _smoke_known
   if [[ "$1" == - ]]; then
     return 1
@@ -428,7 +431,7 @@ _smoke_writes_in_auth_dir() {
     return 0
   fi
   for _smoke_known in "$SMOKE_AUTH_CONFIG" "$SMOKE_AUTH_DIR" "${SMOKE_AUTH_DATA_FILES[@]}"; do
-    if [[ "$1" -ef "$_smoke_known" ]]; then
+    if [[ "$1" == "$_smoke_known" || "$1" -ef "$_smoke_known" ]]; then
       return 0
     fi
   done
@@ -445,12 +448,11 @@ _smoke_writes_in_auth_dir() {
 # relecture et C16-1, C16-4 : le contenu d'un fichier de l'appelant partirait chez l'hôte, ou le fichier `-K` qui porte l'identifiant
 # serait lu ou écrasé). Elle pose alors `_smoke_refused_reason` à `reads` ou `writes` :
 #   - `-H` et `-d` : une valeur qui commence par `@` (`-H @f` lit des en-têtes, `-d @f` un corps, `@-` l'entrée standard) ;
-#   - `--data-binary` : `@<chemin>`, sauf le chemin d'un fichier de smoke_data_file (_smoke_is_data_file) ; sans `@`, la valeur
-#     est le corps lui-même ;
+#   - `--data-binary` : `@<chemin>`, sauf le chemin d'un fichier de smoke_data_file (_smoke_is_data_file) qui existe encore (`-f`,
+#     C18-5 : un corps retiré n'est plus un fichier que le smoke tient) ; sans `@`, la valeur est le corps lui-même ;
 #   - `-b` : une valeur qui commence par `@` (curl 8.5.0 en lit alors un fichier de cookies, `=` ou non : `-b '@a=b'` lit « a=b »,
 #     mesuré), ou sans « = » (un fichier de cookies aussi, `-b ''` comprise) ; `-b 'nom=valeur'` est un cookie ;
-#   - `-D` : une valeur qui désigne le fichier `-K`, son dossier, un fichier de ce dossier ou de smoke_data_file, ou qui porte un
-#     composant `..` (_smoke_writes_in_auth_dir), qu'il écrit.
+#   - `-D` : une valeur sur laquelle curl peut écrire un fichier de l'appel (_smoke_writes_on_call_file), raison `writes`.
 # Un blanc avant le `@` n'y change rien pour `-H` et `-d` : mesuré sur curl 8.5.0 (`--libcurl -`), ` @f` est un en-tête ou un corps,
 # jamais un fichier. Pour `-b`, ` @a=b` est un cookie, mais ` @f` sans « = » est le fichier de cookies « ␣@f » (mesuré) : le refus du
 # « = » manquant le couvre. Les autres options à une valeur (`--connect-timeout`, `--max-time`, `-X`) n'en touchent aucun : faux.
@@ -459,9 +461,9 @@ _smoke_refused_reason=option
 _smoke_value_touches_file() {
   case "$1" in
     -H | -d) [[ "$2" == @* ]] && _smoke_refused_reason=reads ;;
-    --data-binary) [[ "$2" == @* ]] && ! _smoke_is_data_file "${2#@}" && _smoke_refused_reason=reads ;;
+    --data-binary) [[ "$2" == @* ]] && ! { _smoke_is_data_file "${2#@}" && [[ -f "${2#@}" ]]; } && _smoke_refused_reason=reads ;;
     -b) [[ "$2" == @* || "$2" != *=* ]] && _smoke_refused_reason=reads ;;
-    -D) _smoke_writes_in_auth_dir "$2" && _smoke_refused_reason=writes ;;
+    -D) _smoke_writes_on_call_file "$2" && _smoke_refused_reason=writes ;;
     *) return 1 ;;
   esac
 }
@@ -517,13 +519,14 @@ _smoke_judge_args() {
 # Dit sur stderr le refus que _smoke_judge_args vient de rendre, selon `_smoke_refused_reason` : « <libellé> : <d'où> n° <rang> hors
 # des options admises avec la Basic Auth — rien de vérifié » pour une option hors de la liste (`option`), « … n° <rang> : une valeur
 # qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié » pour la valeur d'une option admise qui en lit un
-# (`reads`), « … n° <rang> : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée — rien de vérifié » pour
-# celle qui écrit sur le `-K`, son dossier ou un fichier de smoke_data_file (`writes`). Le rang, jamais le texte.
+# (`reads`), et pour une valeur de `-D` que _smoke_writes_on_call_file refuse (`writes`), le texte de la ligne `writes` du `case`
+# ci-dessous, le seul endroit de la bibliothèque qui l'écrit (St18-21). Le rang, jamais le texte de la valeur.
 _smoke_say_refused_arg() {
   local _smoke_what
   case "$_smoke_refused_reason" in
     reads) _smoke_what="n° $_smoke_refused_rank : une valeur qui lit un fichier local est refusée avec la Basic Auth" ;;
-    writes) _smoke_what="n° $_smoke_refused_rank : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée" ;;
+    writes)
+      _smoke_what="n° $_smoke_refused_rank : une valeur qui peut écrire sur un fichier de la Basic Auth ou de son corps est refusée" ;;
     *) _smoke_what="n° $_smoke_refused_rank hors des options admises avec la Basic Auth" ;;
   esac
   echo "$1 : $2 $_smoke_what — rien de vérifié" >&2
@@ -586,16 +589,13 @@ _smoke_judge_auth_call() {
 #     en fait partie : la seule URL est celle que cette fonction juge) : « <libellé> : argument n° <rang> hors des options
 #     admises avec la Basic Auth — rien de vérifié » (le rang dans `"$@"`, de 1 à n, jamais le texte) ;
 #   - SMOKE_AUTH_CONFIG posé et la valeur d'une option admise qui lit un fichier local (_smoke_value_touches_file : `-H @f`, `-d @f`,
-#     `--data-binary @<autre que smoke_data_file>`, `-b @f` ou `-b` sans « = ») : « <libellé> : argument n° <rang> : une valeur qui
-#     lit un fichier local est refusée avec la Basic Auth — rien de vérifié » (le rang de la valeur, jamais son texte) ;
-#   - SMOKE_AUTH_CONFIG posé et la valeur de `-D` qui désigne le fichier `-K`, son dossier, un fichier de son dossier ou de
-#     smoke_data_file, ou qui porte un composant `..` (_smoke_writes_in_auth_dir) :
-#     « <libellé> : argument n° <rang> : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée — rien de
-#     vérifié » (le même texte pour le `-K`, son dossier et un fichier de smoke_data_file) ;
+#     `--data-binary @<autre qu'un fichier présent de smoke_data_file>`, `-b @f` ou `-b` sans « = ») : « <libellé> : argument n° <rang> :
+#     une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié » (le rang de la valeur, jamais son texte) ;
+#   - SMOKE_AUTH_CONFIG posé et une valeur de `-D` que _smoke_writes_on_call_file refuse : « <libellé> : argument n° <rang> : <texte de
+#     la raison `writes`, voir _smoke_say_refused_arg> — rien de vérifié » ;
 #   - SMOKE_AUTH_CONFIG posé et un élément de SMOKE_CURL_OPTS hors de la même liste, ou valeur qui lit ou écrit un fichier : « <libellé> :
 #     SMOKE_CURL_OPTS, élément n° <rang> hors des options admises avec la Basic Auth — rien de vérifié » (ou « … : une valeur qui
-#     lit un fichier local est refusée … », ou « … : une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est
-#     refusée … »). Il part avec le `-K` comme `"$@"` ;
+#     lit un fichier local est refusée … », ou le texte de `writes`). Il part avec le `-K` comme `"$@"` ;
 #   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
 #     Basic Auth absent — rien de vérifié » (sans `-K`, curl lirait le 401 de la préprod comme un résultat).
 # Sans Basic Auth, rien de tout cela n'est jugé (la prod garde sa liberté : sans identifiant, rien ne fuit).

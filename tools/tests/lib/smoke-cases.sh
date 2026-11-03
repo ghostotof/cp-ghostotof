@@ -332,29 +332,29 @@ check_curl_opts_file_refused() {
     " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : une valeur qui lit un fichier local est refusée avec la Basic Auth — rien de vérifié\$"
 }
 
-# Le texte du refus d'un `-D` qui écrit sur un fichier de la Basic Auth ou de son corps, le même pour le `-K`, son dossier et le fichier
-# de smoke_data_file (R212) : les deux cas qui suivent le lisent.
-WRITE_REFUSAL="une valeur qui écrit sur un fichier de la Basic Auth ou de son corps est refusée"
+# L'oracle du refus `writes` de la bibliothèque (_smoke_say_refused_arg), lu par les deux cas qui suivent (St18-22 : préfixé `CASE_`
+# comme les variables des cas). Un seul texte pour toutes les valeurs de `-D` que _smoke_writes_on_call_file refuse (Q2 (A) de la
+# dix-huitième relecture).
+CASE_WRITE_REFUSAL="une valeur qui peut écrire sur un fichier de la Basic Auth ou de son corps est refusée"
 
 # check_args_write_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Une Basic Auth et, dans les arguments de smoke_fetch, la valeur de `-D` qui désigne le fichier `-K`, le dossier de la Basic Auth, un
-# fichier de ce dossier ou le fichier de corps de smoke_data_file (C16-4, R211) : curl l'y écrirait, et le `-K` écrasé serait relu au
-# prochain appel comme une configuration vide. Sortie 2 avant tout appel de curl, « argument n° <rang> : une valeur qui écrit sur un
-# fichier de la Basic Auth ou de son corps est refusée — rien de vérifié » en queue du message, le même texte pour les deux cas
-# (R212 ; le rang de la valeur, jamais son texte), la valeur de la Basic Auth nulle part.
+# Une Basic Auth et, dans les arguments de smoke_fetch, une valeur de `-D` refusée pour la raison `writes` (_smoke_writes_on_call_file,
+# C16-4, R211, C18-5) : curl pourrait y écrire, et le `-K` écrasé serait relu au prochain appel comme une configuration vide. Sortie 2
+# avant tout appel de curl, « argument n° <rang> : <CASE_WRITE_REFUSAL> — rien de vérifié » en queue du message (le rang de la valeur,
+# jamais son texte), la valeur de la Basic Auth nulle part.
 check_args_write_refused() {
   _case_incomplete CASE_RANK && return 0
-  _check_value_refused " : argument n° $CASE_RANK : $WRITE_REFUSAL — rien de vérifié\$"
+  _check_value_refused " : argument n° $CASE_RANK : $CASE_WRITE_REFUSAL — rien de vérifié\$"
 }
 
 # check_curl_opts_write_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE, CASE_RANK)
 #
-# Le même refus pour un élément de SMOKE_CURL_OPTS : « SMOKE_CURL_OPTS, élément n° <rang> : une valeur qui écrit sur un fichier de la
-# Basic Auth ou de son corps est refusée — rien de vérifié » en queue du message.
+# Le même refus pour un élément de SMOKE_CURL_OPTS : « SMOKE_CURL_OPTS, élément n° <rang> : <CASE_WRITE_REFUSAL> — rien de vérifié »
+# en queue du message.
 check_curl_opts_write_refused() {
   _case_incomplete CASE_RANK && return 0
-  _check_value_refused " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : $WRITE_REFUSAL — rien de vérifié\$"
+  _check_value_refused " : SMOKE_CURL_OPTS, élément n° $CASE_RANK : $CASE_WRITE_REFUSAL — rien de vérifié\$"
 }
 
 # check_http_base_served_without_basic_auth  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_ARGS)

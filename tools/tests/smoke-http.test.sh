@@ -823,8 +823,8 @@ refuse_curl_opts_file 3 -sS -b '@a=b'
 # curl l'écraserait (mesuré sur l'image épinglée : `-D <le -K>` le laisse à 0 octet, même quand le transfert échoue) et le
 # prochain appel lirait un `-K` vide, donc sans Basic Auth. Le jugement est un test de bash, `-ef` (même périphérique, même inode),
 # qui suit `..` et les liens sans processus : refus de sortie 2, curl jamais appelé, le rang de la valeur, jamais son texte, et le
-# message propre « une valeur qui écrit sur un fichier de la Basic Auth ou de son corps » (R212 : le même pour le `-K`, son dossier
-# et le corps).
+# message de la raison `writes`, un seul pour toutes ces valeurs (Q2 (A) de la dix-huitième relecture), dont l'oracle est
+# CASE_WRITE_REFUSAL (smoke-cases.sh).
 refuse_write_args() { _refuse_in_args check_args_write_refused valeur "$@"; }
 refuse_write_curl_opts() { _refuse_in_curl_opts check_curl_opts_write_refused valeur "$@"; }
 write_dir_name="${SMOKE_AUTH_DIR##*/}"
@@ -871,8 +871,18 @@ accept_args "-D a..b (deux points dans un nom ne sont pas un composant ..)" "-D 
 accept_args "-D ... (trois points sont un nom de fichier)" "-D ..." -D ...
 accept_args "-D <dossier>/a..b" "-D $TMP/a..b" -D "$TMP/a..b"
 accept_args "-D <fichier du dossier de l'en-tête, jamais celui de la Basic Auth ni le corps>" "-D $TMP/h2" -D "$TMP/h2"
+# R224 (C18-5) : un corps de smoke_data_file retiré avant l'appel. `-ef` exige que le fichier existe : seule l'égalité de chaîne avec
+# le chemin retenu voit encore `-D <ce chemin>`, qui recréerait le corps avec les en-têtes de réponse ; `--data-binary @<ce chemin>`
+# exige en plus que le fichier existe (`-f`), sinon c'est un fichier que le smoke ne tient plus. Sortie 2, curl jamais appelé.
+smoke_data_file
+gone_data_file="$SMOKE_AUTH_DATA_FILE"
+rm -f -- "$gone_data_file"
+refuse_write_args 4 -D "$gone_data_file"
+refuse_file_args 4 --data-binary "@$gone_data_file"
+refuse_write_curl_opts 3 -sS -D "$gone_data_file"
+refuse_curl_opts_file 3 -sS --data-binary "@$gone_data_file"
 rm -f "$TMP/lien-vers-le-k" "$TMP/lien-vers-le-corps"
-unset write_dir_name
+unset write_dir_name gone_data_file
 
 # --- R196 (St16-25, Q3 (A)), R211 (St17-24, St17-25) : les listes d'options que la procédure de la règle dit de tenir ensemble sont
 # égales, et le nombre que dit la règle, **écrit en chiffres**, est celui de sa liste (aucune table de mots anglais à borner). Deux
