@@ -146,14 +146,16 @@ It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, 
 still exported there, and no process may start before the library unsets it. The call is `CDPATH='' cd --` (an inherited `CDPATH` would
 make `cd` print the directory it found and break the `source`), and a script at the root, whose directory is empty, reads `/` (C14-11).
 The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31). The four tests share both checks:
-`check_finds_library_under_cdpath` (a decoy `CDPATH`, a relative path) and `check_root_script_dir_is_slash`, which re-reads the block
+`check_finds_library_under_cdpath` (it makes a decoy `CDPATH` and has the test's runner launch the script by a relative path, with a
+generated Basic Auth, without which the audit reads no library) and `check_root_script_dir_is_slash`, which re-reads the block
 of the script between its two marks, `<name>="${BASH_SOURCE[0]}"` and the `# shellcheck source=` line, runs it with `/script.sh` and
 requires `/` (Sp15-22): keep the marks where they are, or the case fails naming the missing block.
-Each offline test but `smoke-http.test.sh` runs its script behind fake `dirname`, `mktemp`, `date`, `openssl` and `rm` that record their
-environment (`write_env_noting`; a tool it cannot find is a named `fail`, never a fake that runs `exec ""`, CR15-7). The audit's own fake
-`dig`, `openssl` and `curl` record theirs in the same file, and its test requires a `== curl` line (St15-25). The shared case
-`check_no_child_sees_basic_auth` requires that the record is not empty, that the script returned the expected code and that no line
-carries the variable; a failure names the tools that received it.
+Each offline test but `smoke-http.test.sh` calls the shared case `check_no_child_sees_basic_auth`, which writes fake `dirname`,
+`mktemp`, `date`, `openssl` and `rm` that record their environment (`write_env_noting`; a tool it cannot find is a named `fail`,
+never a fake that runs `exec ""`, CR15-7) and has the runner launch the script behind them with a generated Basic Auth. The
+audit's own fake `dig`, `openssl` and `curl` record theirs in the same file, and its test requires a `== curl` line (St15-25).
+The case requires that the record is not empty, that the runner returned the expected code and that no line carries the
+variable; a failure names the tools that received it.
 Of the audit, the smokes and the library, the library's header is the only file that describes the variable
 and lists every refused value. This rule names it too; the `Env :` headers of the audit and the three smokes point to it.
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
@@ -224,14 +226,18 @@ is not exported, so no process a case starts receives it (a local keeps the expo
 removes). What it does not guarantee (CR15-1): a name the caller already exported still reaches a child, with the caller's value, never
 the case's. Measured on the host's bash 5.2.37; the runner's, 5.2.21, cannot be run offline, so there only the last case of
 `smoke-http.test.sh` stands for it: it marks every value it gives `run_case` with a generated token and requires that no child sees one.
-The names a call may give are the array `CASE_NAMES`. A variable a case needs that the call leaves out is a named `fail`, never an exit
-of the test; a case that reads no exit code takes `-` for `<rc>` (`CASE_RC` stays empty), never a dummy `0`.
+The names a call may give are the array `CASE_NAMES`. A variable a case needs that the call leaves out is a named `fail`, never an
+exit of the test; a case that reads no exit code from the call (a runner's case reads the code the runner returns) takes `-` for
+`<rc>` (`CASE_RC` stays empty), never a dummy `0`.
 `case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are
 written once. A generated value is never an argument of a process (`ps` would show it): `values_found_in <value>… -- <file>…` searches it
 through a mode-600 pattern file (`grep -F -f`), one pattern per line that is not blanks alone (a value with a leading, trailing or
 doubled line break would write an empty pattern, which matches every line, and a line of blanks one that matches every line carrying a
 blank; a value that is empty or only blanks, line breaks, spaces or tabs, exits 2, CR17-5, C18-4), and
 `call_carrying <file> <rank> <fragment>…` finds a fake curl call by what it carries, never by its line number.
-`check_hollow_basic_auth_values` (R212) runs the script itself, for the three hollow values (`:`, `<token>:`, `:<token>`): the call names
-`CASE_RUNNER`, a function of the test that launches the script with `AUDIT_BASIC_AUTH` set to its first argument and leaves the exit
-code in `rc`, as each test's `run` does; `check_http_base_served_without_basic_auth` is the case of an `http://` base without a Basic Auth.
+`check_hollow_basic_auth_values` (R212) runs the script itself, for the three hollow values (`:`, `<token>:`, `:<token>`). Like the
+two cases above, the call names `CASE_RUNNER`, a function of the test called as `<runner> <name>` (`witness`, `cdpath`, `creuse`)
+that launches the script with its nominal responses, under the environment the case sets before the call (`AUDIT_BASIC_AUTH`,
+`PATH`, `CDPATH`, `RUN_SCRIPT`), and **returns** its exit code: the case reads that code, never a global `rc` (St18-23). A failure
+shows the calls without the generated value, as it shows the stderr (C18-8). `check_http_base_served_without_basic_auth` is the
+case of an `http://` base without a Basic Auth.

@@ -934,7 +934,7 @@ options_problems=""
 # check_option_lists <nom de l'ensemble> <nombre que dit la règle> <liste du case> <liste de la docblock> <liste de la règle> : ajoute à
 # options_problems chaque liste introuvable, chaque option qui n'est pas dans les trois, et un nombre qui n'est pas celui du case.
 check_option_lists() {
-  local set_name="$1" said="$2" reference="$3" other only_reference only_other
+  local set_name="$1" said="$2" reference="$3" other only_reference only_other counted
   shift 3
   for other in "$reference" "$@"; do
     if [ -z "${!other}" ]; then options_problems+="$set_name : la liste « $other » est introuvable ; "; fi
@@ -946,8 +946,9 @@ check_option_lists() {
       options_problems+="$set_name : $reference seule : ${only_reference:-aucune} ; $other seule : ${only_other:-aucune} ; "
     fi
   done
-  if [ "$said" != "$(printf '%s\n' "${!reference}" | grep -c .)" ]; then
-    options_problems+="$set_name : la règle dit « ${said:-?} options » pour $(printf '%s\n' "${!reference}" | grep -c .) options du case ; "
+  counted="$(printf '%s\n' "${!reference}" | grep -c .)"
+  if [ "$said" != "$counted" ]; then
+    options_problems+="$set_name : la règle dit « ${said:-?} options » pour $counted options du case ; "
   fi
 }
 check_option_lists "options admises" "$rule_count" case_options docblock_options rule_options
@@ -2081,7 +2082,7 @@ for newline_value in $'\nabc' $'abc\n' $'a\n\nb' $'\n\nabc\n\n'; do
   empty_lines="$(grep -c '^$' "$TMP/value-patterns" || true)"
   rm -f -- "$TMP/value-patterns"
   if [ "$rc_absent" -eq 1 ] && [ "$rc_present" -eq 0 ] && [ "$empty_lines" -eq 0 ]; then
-    pass "values_found_in : sauts de ligne en tête, en fin ou doublés (${#newline_value} caractères) : absente (1), présente (0)"
+    pass "values_found_in : sauts de ligne en tête, en fin ou doublés ($(printf '%q' "$newline_value")) : absente (1), présente (0)"
   else
     fail "values_found_in : valeur à sauts de ligne" \
       "absente : $rc_absent (attendu 1) ; présente : $rc_present ; lignes vides du fichier de motifs : $empty_lines (attendu 0)"
@@ -2165,17 +2166,44 @@ else
 fi
 
 # --- R199 (St16-33) : un cas qui ne lit aucun code de sortie reçoit `-` à la place du code, jamais un `0` factice : CASE_RC reste
-# vide, et un cas qui exige le code (`check_finds_library_under_cdpath`) le dit par un `fail` nommé au lieu de juger sur un zéro.
+# vide, et un cas qui exige le code (`check_empty_basic_auth`) le dit par un `fail` nommé au lieu de juger sur un zéro.
 check_probe_rc() { printf '[%s]' "${CASE_RC-absente}"; }
 seen_rc="$(run_case check_probe_rc "sonde" -)"
 refused_out="$(fail() { printf 'FAIL %s | %s\n' "$1" "$2"; }
-  run_case check_finds_library_under_cdpath "sans code" - CASE_ERR=e CASE_CALLS=c CASE_EXPECTED_RC=0 2>&1)"
+  run_case check_empty_basic_auth "sans code" - CASE_ERR=e CASE_CALLS=c CASE_OUT=o 2>&1)"
 if [ "$seen_rc" = "[]" ] && [[ "$refused_out" == *"CASE_RC n'est pas posée"* ]]; then
   pass "run_case : « - » laisse CASE_RC vide, et un cas qui exige le code refuse (fail nommé), jamais un zéro factice"
 else
   fail "run_case : pas de code de sortie" "CASE_RC : $seen_rc ; cas qui l'exige : $refused_out"
 fi
 unset seen_rc refused_out
+
+# --- R225 (C18-8) : le détail d'un échec de check_hollow_basic_auth_values montre le fichier des appels sans le repère qu'il porte,
+# comme le stderr. Un lanceur factice écrit chaque valeur creuse (AUDIT_BASIC_AUTH, que le cas pose devant lui) dans ce fichier, note
+# son repère (la valeur sans « : ») à part et rend 0 : les trois valeurs échouent (0, non 2), et le détail capté par un `fail` du
+# sous-shell ne porte pas le repère.
+hollow_probe() {
+  printf '%s\n' "$AUDIT_BASIC_AUTH" >> "$TMP/hollow-probe.calls"
+  if [ -n "${AUDIT_BASIC_AUTH//:/}" ]; then printf '%s\n' "${AUDIT_BASIC_AUTH//:/}" >> "$TMP/hollow-probe.tokens"; fi
+  return 0
+}
+for probe_file in calls tokens err out; do : > "$TMP/hollow-probe.$probe_file"; done
+probe_rc=0
+( fail() { printf 'FAIL %s | %s\n' "$1" "$2"; }; pass() { :; }
+  run_case check_hollow_basic_auth_values "sonde" - CASE_RUNNER=hollow_probe CASE_ERR="$TMP/hollow-probe.err" \
+    CASE_OUT="$TMP/hollow-probe.out" CASE_CALLS="$TMP/hollow-probe.calls" ) > "$TMP/hollow-probe.detail" 2>&1 || probe_rc=$?
+probe_token="$(head -1 "$TMP/hollow-probe.tokens")"
+probe_failures="$(grep -c '^FAIL' "$TMP/hollow-probe.detail" || true)"
+if [ "$probe_rc" -eq 0 ] && [ "$probe_failures" -eq 3 ] && [ -n "$probe_token" ] \
+   && values_found_in "$probe_token" -- "$TMP/hollow-probe.calls" && ! values_found_in "$probe_token" -- "$TMP/hollow-probe.detail"; then
+  pass "check_hollow_basic_auth_values : le détail d'un échec montre les appels sans le repère qu'ils portent"
+else
+  probe_detail="$(lines_without_values "$TMP/hollow-probe.detail" "${probe_token:-x}" | tr '\n' ' ')"
+  fail "check_hollow_basic_auth_values : repère dans le détail d'un échec" \
+    "sortie : $probe_rc ; échecs : $probe_failures (attendu 3) ; détail, lignes sans le repère : $probe_detail"
+fi
+unset -f hollow_probe
+unset probe_file probe_rc probe_token probe_failures probe_detail
 
 # --- C14-7, CR15-1 : les valeurs que pose `run_case` n'atteignent jamais un fils, même quand l'appelant exporte déjà ces noms.
 # Une locale de bash garde l'attribut d'export de la variable globale qu'elle masque : sans `local +x`, un processus lancé par un

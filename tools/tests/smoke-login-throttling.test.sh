@@ -22,7 +22,7 @@ fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1));
 
 # run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth, check_finds_library_under_cdpath,
 # check_root_script_dir_is_slash, check_http_base_served_without_basic_auth, check_hollow_basic_auth_values),
-# generated_basic_auth, write_env_noting : communs aux smokes.
+# generated_basic_auth : communs aux smokes (write_env_noting est appelé par le cas des fils, plus d'ici).
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -222,23 +222,17 @@ run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
   "${CASE_VARS[@]}"
 
-# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable (check_no_child_sees_basic_auth, write_env_noting).
-write_env_noting "$TMP/witness-bin" dirname mktemp date openssl rm
-: > "$TMP/witness-env.txt"
-AUDIT_BASIC_AUTH="$(generated_basic_auth)" FAKE_TOOL_ENV="$TMP/witness-env.txt" PATH="$TMP/witness-bin:$PATH" \
-  run witness "$toomany"
-run_case check_no_child_sees_basic_auth \
-  "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" "$rc" \
-  CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
+# Le lanceur des trois cas qui lancent le smoke (CASE_RUNNER, smoke-cases.sh) : ses réponses nominales sous le nom que le cas
+# donne, le code de sortie du smoke rendu (St18-23), jamais lu dans `rc` par le cas.
+run_nominal() { run "$1" "$toomany"; return "$rc"; }
+
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable (check_no_child_sees_basic_auth).
+run_case check_no_child_sees_basic_auth "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" - \
+  CASE_RUNNER=run_nominal CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
 
 # --- C14-11 : un CDPATH piégé et un chemin relatif (check_finds_library_under_cdpath).
-mkdir -p "$TMP/cdpath-decoy/tools"
-here="$PWD"
-cd "$(dirname "$SCRIPT")/.."
-CDPATH="$TMP/cdpath-decoy" RUN_SCRIPT=tools/smoke-login-throttling.sh run cdpath "$toomany"
-cd "$here"
-run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" "$rc" \
-  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
+run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" - \
+  CASE_RUNNER=run_nominal CASE_SCRIPT="$SCRIPT" CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
 # Sp15-22 : un script à la racine (check_root_script_dir_is_slash).
 run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" - \
   CASE_SCRIPT="$SCRIPT"
@@ -257,9 +251,7 @@ run_case check_http_base_served_without_basic_auth "sans Basic Auth, une base ht
 
 # --- C11-8 : un utilisateur ou un mot de passe vide n'est pas une Basic Auth : sortie 2 avant tout
 # appel, « sans utilisateur ou sans mot de passe », la valeur jamais citée.
-# Le lanceur du cas : le script avec la valeur creuse que le cas donne, le code de sortie dans $rc (par `run`).
-run_hollow() { AUDIT_BASIC_AUTH="$1" run creuse "$toomany"; }
-run_case check_hollow_basic_auth_values "AUDIT_BASIC_AUTH à côté vide" - CASE_RUNNER=run_hollow \
+run_case check_hollow_basic_auth_values "AUDIT_BASIC_AUTH à côté vide" - CASE_RUNNER=run_nominal \
   CASE_ERR="$TMP/err" CASE_OUT="$TMP/out" CASE_CALLS="$TMP/creuse.calls" CASE_ARGS="$TMP/creuse.args"
 
 # --- CR5-10 étendu : un curl en échec (réseau, DNS, délai) sort du contrat
