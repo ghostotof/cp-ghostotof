@@ -14720,6 +14720,13 @@ rien** : ce qu'elle trouve à restructurer se rend en question.
   codes lus sans pipe.
 - [ ] **Step 4 : commit** — `docs: le balayage de la dix-septième relecture de #748`.
 
+**Ajout à R221 (décision de l'auteur, 2026-11-02, question rendue par R216b).** Le docblock de
+`frontend/src/application/admin/shared/useUnsavedOrderGuard.ts:11` dit « les sept pages ordonnées », un décompte d'appelants
+(classe de St17-11, laissé par R216b hors de son périmètre). R221 le **remplace** par une formule sans décompte (par exemple
+« chaque page ordonnée »), texte seulement. La recherche 2 gagne `-e '\bsept\b' -e '\bhuit\b' -e '\bneuf\b' -e '\bseven\b'
+-e '\beight\b'` : chaque ligne qui est un décompte d'appelants dans un docblock ou une règle est remplacée de même, les autres
+dites avec leur raison (une partition, une mesure, un nombre du domaine), la commande et le nombre écrits.
+
 ### Traçabilité des constats
 
 | Constat | Traitement |
