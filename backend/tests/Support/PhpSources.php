@@ -121,24 +121,44 @@ final class PhpSources
      * identifiants propres (`T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG` et
      * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG`), jamais le sien.
      *
-     * @param non-empty-string $char un seul caractère, que `\assert()` vérifie : seul le premier octet est lu, `'(('`
-     *                               passerait pour `'('`
+     * @param non-empty-string $char un seul caractère : seul le premier octet est lu, `'(('` passerait pour `'('`
+     *
+     * @throws NotASingleCharacterException si l'argument fait plus d'un octet, quel que soit `zend.assertions`
      */
     public static function isChar(PhpToken $token, string $char): bool
     {
-        \assert(1 === \strlen($char));
+        self::requireASingleCharacter($char);
 
         return \ord($char[0]) === $token->id;
     }
 
     /**
      * Le jeton est-il l'un de ces caractères du code ? Lu par l'identifiant,
-     * comme {@see self::isChar()}.
+     * comme {@see self::isChar()}, au même contrat : chaque argument est jugé
+     * avant la lecture, y compris ceux qu'`array_any` n'atteindrait pas après
+     * une correspondance.
      *
      * @param non-empty-string ...$chars un seul caractère chacun
+     *
+     * @throws NotASingleCharacterException si l'un d'eux fait plus d'un octet
      */
     public static function isAnyChar(PhpToken $token, string ...$chars): bool
     {
+        foreach ($chars as $char) {
+            self::requireASingleCharacter($char);
+        }
+
         return array_any($chars, static fn (string $char): bool => self::isChar($token, $char));
+    }
+
+    /**
+     * Une exception, non un `\assert()` : `zend.assertions=-1` (le
+     * `php.ini-production` de la CI) retirerait la vérification du code.
+     */
+    private static function requireASingleCharacter(string $char): void
+    {
+        if (1 !== \strlen($char)) {
+            throw NotASingleCharacterException::forArgument($char);
+        }
     }
 }

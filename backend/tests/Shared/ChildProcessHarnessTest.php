@@ -58,6 +58,12 @@ final class ChildProcessHarnessTest extends TestCase
     /** Une variable que phpunit.dist.xml force à une valeur factice, et que le .env laisse vide. */
     private const string FORCED_VARIABLE = 'ANTHROPIC_API_KEY';
 
+    /** Une variable que phpunit.dist.xml force par `<env force="true">`, qui réécrit `$_ENV` et getenv(), jamais `$_SERVER`. */
+    private const string ENV_FORCED_VARIABLE = 'APP_PUBLIC_API_BASE_URL';
+
+    /** Une valeur qu'aucune configuration ne pose : celle que le cas met dans `$_SERVER` seul. */
+    private const string DIVERGING_SERVER_VALUE = 'http://child-process-harness.invalid';
+
     /**
      * Les seuls tests qui construisent un Process sur ChildPhpProcess::command()
      * sans passer par inTestEnvironment(), chacun pour une raison écrite.
@@ -67,6 +73,28 @@ final class ChildProcessHarnessTest extends TestCase
         // celui de PHPUnit, qui fausserait chaque comparaison.
         'Shared/Infrastructure/Dotenv/CompiledDotenvNeverMasksPodVariablesTest.php',
     ];
+
+    /**
+     * Les entrées de `$_SERVER` qu'un cas a changées, rétablies par tearDown() :
+     * nom => valeur d'avant, null si la clé n'existait pas.
+     *
+     * @var array<string, mixed>
+     */
+    private array $serverBefore = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->serverBefore as $name => $value) {
+            if (null === $value) {
+                unset($_SERVER[$name]);
+            } else {
+                $_SERVER[$name] = $value;
+            }
+        }
+        $this->serverBefore = [];
+
+        parent::tearDown();
+    }
 
     public function testAChildWaitsAtTheBarrierUntilTheTestReleasesIt(): void
     {
@@ -204,7 +232,7 @@ final class ChildProcessHarnessTest extends TestCase
     }
 
     /**
-     * Les variables que phpunit.dist.xml force ne vivent que dans `$_SERVER` :
+     * Les variables que phpunit.dist.xml force par `<server>` ne vivent que dans `$_SERVER` :
      * le fils les reçoit, et elles l'emportent sur celles du shell — une vraie
      * clé d'API exportée ne doit pas remplacer la valeur factice.
      */
@@ -227,6 +255,32 @@ final class ChildProcessHarnessTest extends TestCase
                 $_SERVER[self::PROBE_VARIABLE] = $previous;
             }
         }
+    }
+
+    /**
+     * Une variable que phpunit.dist.xml force par `<env force="true">` réécrit
+     * `$_ENV` et getenv(), jamais `$_SERVER` : quand l'environnement du
+     * processus la porte déjà (le conteneur de dev pose APP_PUBLIC_API_BASE_URL,
+     * #647), `$_SERVER` garde la valeur du conteneur, que le noyau du parent ne
+     * lit pas (Symfony lit `$_ENV` d'abord). Le fils doit recevoir la valeur
+     * forcée : sinon il sert une autre base d'API que le test, et chaque
+     * échange au point de jeton répond 400 `invalid_target` (#748, R220b). Le
+     * cas pose lui-même la valeur divergente dans `$_SERVER` : il ne dépend
+     * pas de l'environnement du conteneur.
+     */
+    public function testAChildReceivesTheValueThatPhpunitForcesByEnvOverTheServerCopy(): void
+    {
+        $forced = $_ENV[self::ENV_FORCED_VARIABLE] ?? null;
+        self::assertIsString($forced, 'phpunit.dist.xml ne force plus '.self::ENV_FORCED_VARIABLE.' par <env force> : choisir une autre variable.');
+        self::assertNotSame(self::DIVERGING_SERVER_VALUE, $forced);
+        $this->serverBefore[self::ENV_FORCED_VARIABLE] = $_SERVER[self::ENV_FORCED_VARIABLE] ?? null;
+        $_SERVER[self::ENV_FORCED_VARIABLE] = self::DIVERGING_SERVER_VALUE;
+
+        $child = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, '-r', 'echo var_export(getenv("'.self::ENV_FORCED_VARIABLE.'"), true);');
+        $child->mustRun();
+
+        // var_export : une variable absente (false) ne se confond pas avec une valeur vide.
+        self::assertSame(var_export($forced, true), $child->getOutput(), 'Le fils ne reçoit pas la valeur que phpunit.dist.xml force par <env force>.');
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use PHPUnit\TextUI\Configuration\Registry;
 use Symfony\Component\Process\Process;
 
 /**
@@ -54,18 +55,37 @@ final class ChildPhpProcess
     }
 
     /**
-     * L'environnement du test, tel que `$_SERVER` le porte : les variables
-     * que phpunit.dist.xml force par `<server force="true">` (APP_ENV, clés
-     * d'API factices…) et celles que Dotenv a chargées. Une vraie
-     * ANTHROPIC_API_KEY exportée dans le shell ne doit pas parvenir au fils à
-     * la place de la valeur factice : Process ajoute ces variables à celles
-     * qu'il hérite déjà, et elles l'emportent.
+     * L'environnement du test, en deux couches. D'abord `$_SERVER` : les
+     * variables que phpunit.dist.xml force par `<server force="true">`
+     * (APP_ENV, clés d'API factices…) et celles que Dotenv a chargées. Une
+     * vraie ANTHROPIC_API_KEY exportée dans le shell ne doit pas parvenir au
+     * fils à la place de la valeur factice : Process ajoute ces variables à
+     * celles qu'il hérite déjà, et elles l'emportent. Process hérite aussi, de
+     * lui-même, de `$_ENV`, où les valeurs forcées figurent également sous
+     * PHPUnit (mesuré le 2026-10-12) : la copie de `$_SERVER` est ce qui ne
+     * dépend pas de ce détail, et c'est elle qui fait passer une valeur que le
+     * test ne pose que dans `$_SERVER`, ou qui y diffère de `$_ENV`.
      *
-     * Process hérite aussi, de lui-même, de `$_ENV`, où les valeurs forcées
-     * figurent également sous PHPUnit (mesuré le 2026-10-12) : la copie de
-     * `$_SERVER` est ce qui ne dépend pas de ce détail, et c'est elle qui fait
-     * passer une valeur que le test ne pose que dans `$_SERVER`, ou qui y
-     * diffère de `$_ENV`.
+     * Puis, par-dessus, chaque `<env>` de la configuration que PHPUnit a
+     * chargée, avec la valeur que PHPUnit a retenue dans `$_ENV` (#748,
+     * R220b). `<env force="true">` réécrit `$_ENV` et getenv(), jamais
+     * `$_SERVER` : quand l'environnement du processus porte déjà la variable
+     * (le conteneur de dev pose APP_PUBLIC_API_BASE_URL, #647), `$_SERVER`
+     * garde la valeur du conteneur, que le noyau du parent ne lit pas
+     * (Symfony lit `$_ENV` d'abord), et la copie la donnait au fils : chaque
+     * échange au point de jeton y répondait 400 `invalid_target`. Pour un
+     * `<env>` sans `force`, la valeur retenue est celle du processus s'il en
+     * porte une, celle de la configuration sinon : la même que le fils
+     * recevait déjà. Les noms viennent de la configuration chargée (un
+     * `phpunit.xml` local compris), non d'une liste : un `<env force>` ajouté
+     * demain est transmis sans rien écrire ici. Une valeur que le test ne pose
+     * que dans `$_SERVER` sous l'un de ces noms ne passe donc plus : le fils
+     * voit ce que voit le noyau du parent.
+     *
+     * La configuration se lit par {@see Registry}, `@internal` à PHPUnit : une
+     * montée de version qui la renomme fait échouer à grand bruit chaque test
+     * qui lance un fils (classe ou méthode introuvable), jamais en silence.
+     * ChildProcessHarnessTest pince le résultat.
      *
      * Écrit ici seul (issue #403) : une variable à ne pas transmettre, par
      * exemple, s'exclurait ici pour tous les fils à la fois.
@@ -78,6 +98,12 @@ final class ChildPhpProcess
         foreach ($_SERVER as $name => $value) {
             if (\is_string($name) && \is_string($value)) {
                 $environment[$name] = $value;
+            }
+        }
+        foreach (Registry::get()->php()->envVariables() as $variable) {
+            $retained = $_ENV[$variable->name()] ?? null;
+            if (\is_string($retained)) {
+                $environment[$variable->name()] = $retained;
             }
         }
 

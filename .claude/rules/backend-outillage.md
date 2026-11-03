@@ -164,7 +164,11 @@ child's `Process`: its command line (above) and a copy of the test's `$_SERVER`,
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
 child) — a variable not to pass on is excluded there, for every child at once. Process also inherits `$_ENV`
 on its own, which holds the forced values too under PHPUnit (measured 2026-10-12): the copy is what does not
-depend on that. `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
+depend on that. Over that copy, each `<env>` of the configuration PHPUnit loaded (its `@internal`
+`Registry`) gets the value PHPUnit retained in `$_ENV` (#748, R220b): `<env force>` rewrites `$_ENV` and
+`getenv()`, never `$_SERVER`, so the copy handed the child the dev container's `APP_PUBLIC_API_BASE_URL`
+(#647), and every token exchange there answered 400 `invalid_target`. `ChildPhpProcess::SETUP_FAILED` (2) is
+the exit code of a child that could not set itself up.
 `tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
 the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
 then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps

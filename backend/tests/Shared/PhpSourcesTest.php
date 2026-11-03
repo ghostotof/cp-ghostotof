@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Support\NotASingleCharacterException;
 use App\Tests\Support\PhpSources;
-use AssertionError;
 use PhpToken;
 use PHPUnit\Framework\TestCase;
 
@@ -13,7 +13,9 @@ use PHPUnit\Framework\TestCase;
  * La lecture d'un caractère du code par l'identifiant du jeton, que partagent
  * les recenseurs de `tests/Support` : `isChar()` et `isAnyChar()` ne lisent que
  * le premier octet de leur argument, et une chaîne plus longue ne doit pas
- * passer pour le caractère qu'elle commence.
+ * passer pour le caractère qu'elle commence. Le refus est une exception
+ * nommée, non un `\assert()` : ces cas tournent sous `zend.assertions=-1` (la
+ * CI) comme sous 1 (le conteneur de dev), sans saut (#748, R220b).
  */
 final class PhpSourcesTest extends TestCase
 {
@@ -33,32 +35,33 @@ final class PhpSourcesTest extends TestCase
 
     public function testACharacterOfSeveralBytesIsRefusedByIsChar(): void
     {
-        $this->requireAssertions();
         $token = PhpSources::significantTokens('<?php (')[1];
 
-        $this->expectException(AssertionError::class);
+        $this->expectException(NotASingleCharacterException::class);
+        $this->expectExceptionMessage("reçu 2 octet(s) : '(('");
         PhpSources::isChar($token, '((');
     }
 
     public function testACharacterOfSeveralBytesIsRefusedByIsAnyChar(): void
     {
-        $this->requireAssertions();
         // Un `)` : aucun des deux ne le reconnaît, `array_any` va jusqu'au second argument.
         $token = PhpSources::significantTokens('<?php )')[1];
 
-        $this->expectException(AssertionError::class);
+        $this->expectException(NotASingleCharacterException::class);
         PhpSources::isAnyChar($token, '(', '[[');
     }
 
     /**
-     * `\assert()` est compilé hors du code quand `zend.assertions` vaut -1 (le `php.ini-production` de la CI) : le cas ne
-     * peut rien affirmer là, et le dit au lieu de rester vert à tort.
+     * Le contrat ne dépend pas du jeton lu : un argument hors contrat placé
+     * après celui qui reconnaît le jeton est refusé aussi, au lieu d'attendre
+     * le jour où un autre jeton ferait aller `array_any` jusqu'à lui.
      */
-    private function requireAssertions(): void
+    public function testIsAnyCharRefusesAnArgumentOfSeveralBytesEvenAfterAMatch(): void
     {
-        if ('1' !== \ini_get('zend.assertions')) {
-            self::markTestSkipped('zend.assertions n\'est pas à 1 : \assert() de PhpSources::isChar() n\'est pas exécuté.');
-        }
+        $token = PhpSources::significantTokens('<?php (')[1];
+
+        $this->expectException(NotASingleCharacterException::class);
+        PhpSources::isAnyChar($token, '(', '[[');
     }
 
     /**
