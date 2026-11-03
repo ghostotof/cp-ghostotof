@@ -14730,6 +14730,35 @@ deux specs ou plus (dans `adminButtonTexts.ts` si elle est d'admin, sinon un mod
   `fr.json`. Formes voisines hors de ces cinq specs : dites, non converties (le périmètre est celui-ci).
 - [ ] **Step 5 : commit** — `test(frontend): les libellés hors admin lus du catalogue, au critère de R219 (#748)`.
 
+**Décisions de l'auteur, 2026-11-02 (questions rendues par R220b et R219b)** :
+- R220b (ddf40ed8) lit la configuration chargée par `PHPUnit\TextUI\Configuration\Registry::get()`, classe `@internal` : **limite
+  acceptée** (comme `ErrorHandler` pour `ApiPlatformDeprecations`) ; une montée de PHPUnit qui la renomme fait échouer chaque test à
+  processus fils, jamais en silence. R221 la reprend au bilan.
+- R219b (deb60e90) a aussi lu les lignes anglaises des `it.each` bilingues de `en.json`, au même critère : **extension gardée**.
+
+---
+
+### Task R219c : Les libellés lus du catalogue dans les specs hors du diff, au critère de R219
+
+Décision de l'auteur, 2026-11-02 (question rendue par R219b). Exécutée **après R219b**, avant R221.
+
+**Périmètre** : les specs de `frontend/tests` que le relevé de R219b (`releve19b.py`, `releve19b-en.py`, scratchpad) désigne hors des
+cinq specs de R219b et des specs déjà converties par R218/R219 : 114 lignes à deb60e90 (OAuthConsentPage 10, LoginPage 5,
+SetPasswordPage 3, AppFooter 3, ContactPage, StackPage, CookieNotice, ExperiencePage, ConnectAssistantPage, AdminLayout… ; les lignes
+que R219 et R219b ont **gardées** avec leur raison ne sont pas rouvertes). Même critère (validé par l'auteur) : un littéral se lit
+du catalogue, FR comme EN, si la mutation de sa clé fait rougir son spec ; sinon il reste, avec sa raison.
+
+**Files :** les specs désignées ; `frontend/tests/support/` pour une constante partagée par deux specs ou plus (module au nom juste,
+ou un module existant : `adminButtonTexts.ts`, `accessRefusalTexts.ts`, `accountMenuTexts.ts`).
+
+- [ ] **Step 1 : relevé** — les scripts de R219b rejoués sur `frontend/tests` entier : commande, nombre FR et EN, liste par fichier
+  au commit.
+- [ ] **Step 2 : rouges avant** — une mutation de `fr.json` (puis `en.json`) par clé relevée, « ~# » après le premier caractère.
+- [ ] **Step 3 : convertir** les clés rouges, puis prouver la lecture par une mutation des constantes créées.
+- [ ] **Step 4 : verts** — `make front-test` (même nombre), `make front-lint`, `make front-build` ; `git diff --exit-code` sur
+  `fr.json` et `en.json` ; le relevé final, chaque ligne restante dite avec sa raison (par fichier, regroupée).
+- [ ] **Step 5 : commit** — `test(frontend): les libellés de toutes les specs lus du catalogue, au critère de R219 (#748)`.
+
 ---
 
 ### Task R221 : Balayage documentaire de la dix-septième relecture — commandes et nombres dans le plan
