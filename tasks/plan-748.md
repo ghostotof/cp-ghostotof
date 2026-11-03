@@ -15525,6 +15525,10 @@ Le plan suit la recommandation de chaque question ; une autre réponse ne change
 
 Le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée.
 
+**Réponses de l'auteur (2026-11-03) : (A) aux quatre questions.** Q1 : `APP_ENV` reçoit le même traitement que D1 dans
+R226. Q2 : un seul texte de refus, « peut écrire ». Q3 : CR18-7 est écarté, la décision f0a3b889 de R216b tient. Q4 :
+`useRouteLocale()` et `pageLocale` dans R227, St18-13 corrigé. Le plan, écrit pour ces recommandations, ne change pas.
+
 - **Q1 (R226), la forme voisine de D1 : `APP_ENV`.** `phpunit.dist.xml:22` le force par `<server>` seul, et `KernelTestCase` lit
   `$_ENV['APP_ENV']` avant `$_SERVER` : un `APP_ENV=dev` exporté dans le conteneur démarrerait le noyau de dev dans les tests.
   (A) recommandé : le même traitement que D1 (`<env name="APP_ENV" value="test" force="true" />` en plus, le même test par
@@ -16154,7 +16158,8 @@ a choisi l'accesseur unique, décision de l'auteur ; une garde à l'écriture ne
 extension sur l'instance de vue-i18n, ce que l'accesseur couvre. **Sp18-14** : l'inversion des trois comparaisons de `StackPage.vue`
 est déclarée au commit de R217 **et** au bilan de R221 (« Écarts déclarés : `StackPage.vue` gagne aussi… ») : rien n'est caché.
 **St18-31** : le `toContain('devDependencies')` retiré de `vueCompilerAlignment.spec.ts` est la demande de Sp17-20, faite par R217 ;
-la relecture le note sans y voir de défaut. **CR18-7** et **St18-13** : selon les réponses à Q3 et Q4.
+la relecture le note sans y voir de défaut. **CR18-7** : écarté (Q3 (A), réponse du 2026-11-03) ; **St18-13** : corrigé
+par R227 (Q4 (A)).
 
 ---
 
