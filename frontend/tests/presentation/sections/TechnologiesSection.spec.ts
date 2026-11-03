@@ -5,6 +5,7 @@ import TechnologiesSection from '../../../src/presentation/sections/Technologies
 import type { Technology } from '../../../src/domain/portfolio/entities/Technology'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const featuredTechnologies: readonly Technology[] = [
   { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },
@@ -74,7 +75,7 @@ describe('TechnologiesSection', () => {
   it('expose le titre de section comme un h2 (navigation par titres)', () => {
     const wrapper = mountSection()
 
-    expect(wrapper.get('h2').text()).toContain('Technologies')
+    expect(wrapper.get('h2').text()).toContain(fr.technologies.sectionTitle)
   })
 
   it('rend une carte par technologie phare', () => {

@@ -21,9 +21,12 @@ import { router as appRouter } from '../../../src/presentation/router'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { sessionFor } from '../../support/authSession'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import { renderedMessage } from '../../support/renderedMessage'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -213,9 +216,9 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     const { wrapper } = await mountPage()
     const text = wrapper.text()
 
-    expect(wrapper.find('h1').text()).toBe('Autoriser une connexion MCP')
+    expect(wrapper.find('h1').text()).toBe(fr.oauthConsent.title)
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
-    expect(text).toContain('Nom du client')
+    expect(text).toContain(fr.oauthConsent.client.nameLabel)
     expect(text).toContain("Le nom sous lequel l'administrateur du site a enregistré ce client")
     // Un client pré-enregistré ne s'est pas nommé lui-même : rien ne le dit « déclaré ».
     expect(text).not.toContain('Nom déclaré')
@@ -226,8 +229,8 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(text).toContain('corpus nominatif')
     expect(text).toContain('en lecture seule')
     expect(text).toContain("fournisseur d'IA de ce client")
-    expect(button(wrapper, 'approve').text()).toBe('Autoriser')
-    expect(button(wrapper, 'deny').text()).toBe('Refuser')
+    expect(button(wrapper, 'approve').text()).toBe(fr.oauthConsent.approve)
+    expect(button(wrapper, 'deny').text()).toBe(fr.oauthConsent.deny)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
@@ -235,9 +238,9 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     const { wrapper } = await mountPage({ locale: 'en' })
     const text = wrapper.text()
 
-    expect(wrapper.find('h1').text()).toBe('Authorize an MCP connection')
+    expect(wrapper.find('h1').text()).toBe(en.oauthConsent.title)
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
-    expect(text).toContain('Client name')
+    expect(text).toContain(en.oauthConsent.client.nameLabel)
     expect(text).toContain('The name under which the site’s administrator registered this client')
     expect(text).not.toContain('Name declared')
     expect(text).not.toContain('supplied by the client')
@@ -247,8 +250,8 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(text).toContain('nominative corpus')
     expect(text).toContain('read-only')
     expect(text).toContain('this client’s AI provider')
-    expect(button(wrapper, 'approve').text()).toBe('Authorize')
-    expect(button(wrapper, 'deny').text()).toBe('Deny')
+    expect(button(wrapper, 'approve').text()).toBe(en.oauthConsent.approve)
+    expect(button(wrapper, 'deny').text()).toBe(en.oauthConsent.deny)
   })
 
   it('rend un nom contenant du HTML en texte, jamais en éléments', async () => {
@@ -265,9 +268,9 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   it('dit quel compte accorde, en français, avec un lien « Changer de compte » vers la connexion', async () => {
     const { wrapper, router } = await mountPage()
 
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('Vous accordez cet accès en tant que trusted')
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'trusted' }))
     const link = wrapper.find('[data-testid="consent-switch-account"]')
-    expect(link.text()).toBe('Changer de compte')
+    expect(link.text()).toBe(SWITCH_ACCOUNT_FR)
     // Hors de la zone des boutons de décision : un clic sur ce lien n'est pas une décision.
     expect(link.element.closest('[data-testid="consent-decision"]')).toBeNull()
     const target = router.resolve(link.attributes('href') ?? '')
@@ -291,9 +294,9 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   it('en anglais : le compte et « Switch account »', async () => {
     const { wrapper, router } = await mountPage({ locale: 'en' })
 
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('You are granting this access as trusted')
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('en', 'oauthConsent.account.grantingAs', { username: 'trusted' }))
     const link = wrapper.find('[data-testid="consent-switch-account"]')
-    expect(link.text()).toBe('Switch account')
+    expect(link.text()).toBe(SWITCH_ACCOUNT_EN)
     expect(router.resolve(link.attributes('href') ?? '').params.locale).toBe('en')
   })
 
@@ -508,7 +511,7 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"] a').text()).toBe('Sign in again')
+    expect(wrapper.find('[role="alert"] a').text()).toBe(en.oauthConsent.errors.relogin)
   })
 
   it('401/403 à la décision : session marquée expirée, aucune navigation', async () => {
@@ -541,7 +544,7 @@ describe('OAuthConsentPage — session', () => {
     expect(alert.text()).toContain(ACCESS_REFUSED_FR)
     expect(me).toHaveBeenCalledOnce()
     const link = alert.find('a')
-    expect(link.text()).toBe('Changer de compte')
+    expect(link.text()).toBe(SWITCH_ACCOUNT_FR)
     const target = router.resolve(link.attributes('href') ?? '')
     expect(target.name).toBe('login')
     // Le drapeau que la route de connexion honore pour une personne déjà connectée.
@@ -564,7 +567,7 @@ describe('OAuthConsentPage — session', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
-    expect(wrapper.find('[role="alert"] a').text()).toBe('Changer de compte')
+    expect(wrapper.find('[role="alert"] a').text()).toBe(SWITCH_ACCOUNT_FR)
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
     expect(navigate).not.toHaveBeenCalled()
@@ -579,7 +582,7 @@ describe('OAuthConsentPage — session', () => {
     })
 
     expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_EN)
-    expect(wrapper.find('[role="alert"] a').text()).toBe('Switch account')
+    expect(wrapper.find('[role="alert"] a').text()).toBe(SWITCH_ACCOUNT_EN)
   })
 
   it("session expirée : le message ne parle plus d'un compte qui ne pourrait pas autoriser", async () => {
@@ -589,7 +592,7 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre session a expiré.')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.sessionEnded)
     expect(wrapper.find('[role="alert"]').text()).not.toContain('ne permet pas')
   })
 
@@ -623,7 +626,7 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
     const alert = wrapper.find('[role="alert"]')
     expect(alert.text()).toContain('reconnectez-vous')
     const link = alert.find('a')
-    expect(link.text()).toBe('Me reconnecter pour autoriser')
+    expect(link.text()).toBe(fr.oauthConsent.errors.reauthenticate)
     const target = router.resolve(link.attributes('href') ?? '')
     expect(target.name).toBe('login')
     // Le drapeau que la route de connexion honore pour une personne déjà connectée.
@@ -646,7 +649,7 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('sign in again')
-    expect(wrapper.find('[role="alert"] a').text()).toBe('Sign in again to authorize')
+    expect(wrapper.find('[role="alert"] a').text()).toBe(en.oauthConsent.errors.reauthenticate)
   })
 })
 
@@ -678,7 +681,7 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
       expect(navigate).not.toHaveBeenCalled()
       const alert = wrapper.find('[role="alert"]')
       expect(alert.text()).toContain('compte connecté a changé')
-      expect(alert.find('[data-testid="consent-reload"]').text()).toBe('Relire la demande')
+      expect(alert.find('[data-testid="consent-reload"]').text()).toBe(fr.oauthConsent.errors.reload)
       // Plus de boutons de décision tant que la demande n'est pas relue : ils porteraient l'ancien compte.
       expect(wrapper.findAll('button').filter((b) => b.attributes('data-testid') !== 'consent-reload')).toHaveLength(0)
       expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
@@ -696,7 +699,7 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
 
     expect(describeRequest).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('Vous accordez cet accès en tant que autre')
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'autre' }))
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
     expect(decide).toHaveBeenLastCalledWith(PARAMS, true, OTHER_SUMMARY.account.id)
@@ -710,7 +713,7 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('signed-in account has changed')
-    expect(wrapper.find('[data-testid="consent-reload"]').text()).toBe('Reload the request')
+    expect(wrapper.find('[data-testid="consent-reload"]').text()).toBe(en.oauthConsent.errors.reload)
   })
 
   it.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', async (locale) => {
@@ -903,7 +906,7 @@ describe('OAuthConsentPage — SEO', () => {
     applySeoFor(`/fr/oauth/consent?${QUERY}`)
 
     expect(appRouter.resolve('/fr/oauth/consent').name).toBe('oauth-consent')
-    expect(document.title).toBe('CP-Ghostotof — Autoriser une connexion MCP')
+    expect(document.title).toBe(`CP-Ghostotof — ${fr.seo.oauthConsent.title}`)
     expect(description()).toBeTruthy()
     expect(robots()).toBe('noindex, nofollow')
   })
@@ -911,7 +914,7 @@ describe('OAuthConsentPage — SEO', () => {
   it('titre en anglais, non indexée', () => {
     applySeoFor('/en/oauth/consent')
 
-    expect(document.title).toBe('CP-Ghostotof — Authorize an MCP connection')
+    expect(document.title).toBe(`CP-Ghostotof — ${en.seo.oauthConsent.title}`)
     expect(robots()).toBe('noindex, nofollow')
   })
 

@@ -3,6 +3,8 @@ import { StaticPortfolioContentRepository } from '../../../src/infrastructure/po
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { isNavigationGroup } from '../../../src/domain/portfolio/entities/NavigationEntry'
 import type { NavigationLink } from '../../../src/domain/portfolio/entities/NavigationLink'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 describe('StaticPortfolioContentRepository', () => {
   const repository = new StaticPortfolioContentRepository()
@@ -60,7 +62,7 @@ describe('StaticPortfolioContentRepository', () => {
 
       expect(stackLink?.isEnabled).toBe(true)
       expect(stackLink?.to).toBe(`/${locale}/stack`)
-      expect(stackLink?.label).toBe('fr' === locale ? 'Ma stack' : 'My stack')
+      expect(stackLink?.label).toBe('fr' === locale ? fr.nav.stack : en.nav.stack)
     },
   )
 
@@ -85,8 +87,8 @@ describe('StaticPortfolioContentRepository', () => {
 
     expect(entries.map((entry) => entry.label)).toEqual(
       'fr' === locale
-        ? ['Accueil', 'Ma stack', 'Parcours', "Retours d'expérience", 'Contact', 'À propos']
-        : ['Home', 'My stack', 'Career', 'Lessons learned', 'Contact', 'About'],
+        ? [fr.nav.home, fr.nav.stack, fr.nav.career, fr.nav.lessonsLearned, fr.nav.contact, fr.nav.about]
+        : [en.nav.home, en.nav.stack, en.nav.career, en.nav.lessonsLearned, en.nav.contact, en.nav.about],
     )
     expect(groups[0]?.links.map((link) => link.to)).toEqual([`/${locale}/anonymous-cv`, `/${locale}/experience`])
     expect(groups[1]?.links.map((link) => link.to)).toEqual([
@@ -104,7 +106,7 @@ describe('StaticPortfolioContentRepository', () => {
   it.each(SUPPORTED_LOCALES)('nomme le CV sans identité comme sa page, pas « CV anonyme » (%s)', (locale) => {
     const link = flatLinks(locale).find((entry) => entry.to.endsWith('/anonymous-cv'))
 
-    expect(link?.label).toBe('fr' === locale ? 'CV sans identité' : 'CV without identity')
+    expect(link?.label).toBe('fr' === locale ? fr.nav.anonymousCv : en.nav.anonymousCv)
   })
 
   it.each(SUPPORTED_LOCALES)(

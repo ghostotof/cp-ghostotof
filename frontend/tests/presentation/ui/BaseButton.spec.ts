@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import BaseButton from '../../../src/presentation/ui/BaseButton.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 type BaseButtonProps = InstanceType<typeof BaseButton>['$props']
 
@@ -119,7 +120,7 @@ describe('BaseButton', () => {
       const wrapper = mountButton({ href: 'https://example.com', isExternal: true })
 
       const hint = wrapper.get('.visually-hidden')
-      expect(hint.text()).toBe("(s'ouvre dans un nouvel onglet)")
+      expect(hint.text()).toBe(fr.common.opensInNewTab)
     })
   })
 })

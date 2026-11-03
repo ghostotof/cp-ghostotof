@@ -11,6 +11,9 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { sessionFor } from '../../support/authSession'
+import { renderedMessage } from '../../support/renderedMessage'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const StubPage = { template: '<div />' }
 
@@ -101,12 +104,12 @@ describe('LoginPage', () => {
   })
 
   it.each([
-    ['fr', null, 'Trop de tentatives de connexion. Réessayez dans quelques minutes.'],
-    ['en', null, 'Too many login attempts. Please try again in a few minutes.'],
-    ['fr', 900, 'Trop de tentatives de connexion. Réessayez dans 15 minutes.'],
-    ['en', 900, 'Too many login attempts. Please try again in 15 minutes.'],
-    ['fr', 30, 'Trop de tentatives de connexion. Réessayez dans 1 minute.'],
-    ['en', 30, 'Too many login attempts. Please try again in 1 minute.'],
+    ['fr', null, fr.auth.rateLimited],
+    ['en', null, en.auth.rateLimited],
+    ['fr', 900, renderedMessage('fr', 'auth.rateLimitedIn', { minutes: 15 }, 15)],
+    ['en', 900, renderedMessage('en', 'auth.rateLimitedIn', { minutes: 15 }, 15)],
+    ['fr', 30, renderedMessage('fr', 'auth.rateLimitedIn', { minutes: 1 }, 1)],
+    ['en', 30, renderedMessage('en', 'auth.rateLimitedIn', { minutes: 1 }, 1)],
   ])('affiche un message dédié au throttling du login (%s, Retry-After %s, issue #399)', async (locale, retryAfterSeconds, message) => {
     const repository = createStubRepository({ login: vi.fn(async () => Promise.reject(new LoginRateLimitedError(retryAfterSeconds))) })
     const { wrapper } = await mountLoginPage(repository, locale)
@@ -121,8 +124,8 @@ describe('LoginPage', () => {
 
   describe('session finie (`expired`, posé par la redirection d\'une page à laquelle l\'API a refusé la session, #650 R5a)', () => {
     it.each([
-      ['fr', 'Votre session a pris fin, reconnectez-vous.'],
-      ['en', 'Your session has ended, please sign in again.'],
+      ['fr', fr.auth.sessionEnded],
+      ['en', en.auth.sessionEnded],
     ])('annonce que la session a pris fin, dans une région role="status" (%s)', async (locale, notice) => {
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
 
@@ -149,8 +152,8 @@ describe('LoginPage', () => {
       // Le lien `expired=1` s'ouvre dans un nouvel onglet, où `authState.sessionEnded` est faux : le critère est
       // « un compte est affiché », comme pour `reauth=1`, et la page dit alors la même chose neutre.
       it.each([
-        ['fr', 'Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.'],
-        ['en', 'Confirm your identity or sign in with another account: you will then return to the page you left.'],
+        ['fr', fr.auth.reauthNotice],
+        ['en', en.auth.reauthNotice],
       ])("connectée, expired=1 : l'annonce neutre, pas « session finie » (%s)", async (locale, notice) => {
         await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
         const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
@@ -193,7 +196,7 @@ describe('LoginPage', () => {
         await primeSession(null)
         const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/admin/users' })
 
-        expect(wrapper.get('[data-testid="login-session-ended-notice"]').text()).toBe('Votre session a pris fin, reconnectez-vous.')
+        expect(wrapper.get('[data-testid="login-session-ended-notice"]').text()).toBe(fr.auth.sessionEnded)
         expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
       })
     })
@@ -234,8 +237,8 @@ describe('LoginPage', () => {
     // L'annonce est neutre (#748, R7) : `reauth=1` s'ouvre aussi depuis « Changer de compte » (un refus, une
     // page MCP ou l'assistant), plus seulement pour l'authentification de plus de dix minutes du consentement.
     it.each([
-      ['fr', 'Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.'],
-      ['en', 'Confirm your identity or sign in with another account: you will then return to the page you left.'],
+      ['fr', fr.auth.reauthNotice],
+      ['en', en.auth.reauthNotice],
     ])('dit pourquoi la page de connexion s’ouvre à une personne connectée, sans parler de dix minutes (%s)', async (locale, notice) => {
       await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })

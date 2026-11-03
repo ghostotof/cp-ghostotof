@@ -7,6 +7,7 @@ import { EXPERIENCE_TECHNOLOGY_REPOSITORY } from '../../../src/application/exper
 import type { ExperienceTechnologyRepository } from '../../../src/domain/experience/repositories/ExperienceTechnologyRepository'
 import type { ExperienceTechnology } from '../../../src/domain/experience/entities/ExperienceTechnology'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const STUB_TECHNOLOGIES: readonly ExperienceTechnology[] = [
   { name: 'PHP', years: 13.5, duration: '~13,5 ans', iconKey: 'php', isSecondary: false },
@@ -88,7 +89,7 @@ describe('ExperiencePage', () => {
 
       // Le cœur de la décision : « Python — ~6 mois » annonce publiquement
       // l'endroit où l'on débute. Le nom doit apparaître, la durée jamais.
-      expect(wrapper.text()).toContain('Également pratiqués au fil du parcours :')
+      expect(wrapper.text()).toContain(fr.experience.alsoPractised)
       expect(wrapper.text()).toContain('OCaml, Python')
       expect(wrapper.text()).not.toContain('~6 mois')
       expect(wrapper.text()).not.toContain('~2 ans')
@@ -101,7 +102,7 @@ describe('ExperiencePage', () => {
       const wrapper = mountExperiencePage(repository)
       await flushPromises()
 
-      expect(wrapper.text()).not.toContain('Également pratiqués au fil du parcours :')
+      expect(wrapper.text()).not.toContain(fr.experience.alsoPractised)
     })
 
     it('calcule les barres de proportion sur le seul classement', async () => {

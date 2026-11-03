@@ -4,6 +4,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import AppFooter from '../../../src/presentation/layout/AppFooter.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 const StubPage = { template: '<div />' }
@@ -61,8 +63,8 @@ describe('AppFooter', () => {
    * pied de page, dans la langue de la route courante.
    */
   it.each([
-    ['fr', 'Brancher votre assistant'],
-    ['en', 'Connect your assistant'],
+    ['fr', fr.common.connectAssistantLink],
+    ['en', en.common.connectAssistantLink],
   ])('lie la page « Brancher votre assistant » dans la langue de la route (%s)', async (locale, label) => {
     const wrapper = await mountFooter(`/${locale}`)
     const link = wrapper.find(`a[href="/${locale}/connect-your-assistant"]`)
@@ -79,7 +81,7 @@ describe('AppFooter', () => {
   it('nomme la navigation du pied de page sans la dire légale', async () => {
     const wrapper = await mountFooter()
 
-    expect(wrapper.find('footer nav').attributes('aria-label')).toBe('Navigation du pied de page')
+    expect(wrapper.find('footer nav').attributes('aria-label')).toBe(fr.common.footerNavigation)
   })
 
   it('affiche le copyright avec le nom de marque fourni', async () => {
@@ -107,7 +109,7 @@ describe('AppFooter', () => {
       expect(link.attributes('title')).toContain('2c86b65')
       // Lien externe : même annonce que BaseButton pour les lecteurs d'écran.
       expect(link.attributes('target')).toBe('_blank')
-      expect(link.find('.visually-hidden').text()).toBe("(s'ouvre dans un nouvel onglet)")
+      expect(link.find('.visually-hidden').text()).toBe(fr.common.opensInNewTab)
     })
 
     it("affiche un build local (tag = SHA) en texte, sans lien : il n'a pas de release", async () => {

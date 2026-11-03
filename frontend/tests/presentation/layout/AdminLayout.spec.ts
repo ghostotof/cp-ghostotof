@@ -178,7 +178,7 @@ describe('AdminLayout', () => {
    */
   describe('téléchargement du CV (ROLE_SUPER)', () => {
     function downloadButton(wrapper: Awaited<ReturnType<typeof mountLayout>>) {
-      return wrapper.findAll('nav button').find((button) => button.text().includes('Télécharger mon CV'))
+      return wrapper.findAll('nav button').find((button) => button.text().includes(fr.common.downloadCv))
     }
 
     it("propose « Télécharger mon CV » dans la navigation d'administration", async () => {
@@ -212,7 +212,7 @@ describe('AdminLayout', () => {
       await downloadButton(wrapper)?.trigger('click')
       await nextTick()
 
-      expect(wrapper.get('[role="alert"]').text()).toBe('Le téléchargement du CV a échoué. Réessayez plus tard.')
+      expect(wrapper.get('[role="alert"]').text()).toBe(fr.common.downloadCvError)
 
       wrapper.unmount()
     })

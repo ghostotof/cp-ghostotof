@@ -9,6 +9,7 @@ import type { ContactRepository } from '../../../src/domain/contact/repositories
 import { ContactRateLimitedError } from '../../../src/domain/contact/errors/ContactRateLimitedError'
 import { ContactValidationError } from '../../../src/domain/contact/errors/ContactValidationError'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const StubPage = { template: '<div />' }
 
@@ -211,9 +212,9 @@ describe('ContactPage', () => {
     // permanence au champ par aria-describedby.
     const wrapper = await mountContactPage()
 
-    expect(wrapper.find('#contact-name-hint').text()).toContain('2 caractères minimum')
+    expect(wrapper.find('#contact-name-hint').text()).toContain(fr.contact.form.hints.name)
     expect(wrapper.find('#contact-name').attributes('aria-describedby')).toBe('contact-name-hint')
-    expect(wrapper.find('#contact-message-hint').text()).toContain('10 caractères minimum')
+    expect(wrapper.find('#contact-message-hint').text()).toContain(fr.contact.form.hints.message)
     expect(wrapper.find('#contact-message').attributes('aria-describedby')).toBe('contact-message-hint')
   })
 

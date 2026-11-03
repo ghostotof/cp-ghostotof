@@ -5,7 +5,9 @@ import { WATCH_REPOSITORY } from '../../../src/application/watch/useWatch'
 import type { WatchRepository } from '../../../src/domain/watch/repositories/WatchRepository'
 import type { WatchContent, WatchedProduct } from '../../../src/domain/watch/entities/WatchContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { renderedMessage } from '../../support/renderedMessage'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const PHP: WatchedProduct = {
   slug: 'php',
@@ -81,7 +83,7 @@ describe('StackPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.find('tbody .badge').text()).toBe('Supporté')
+    expect(wrapper.find('tbody .badge').text()).toBe(fr.stack.status.supported)
   })
 
   /**
@@ -107,9 +109,9 @@ describe('StackPage', () => {
 
     const badges = wrapper.findAll('tbody .badge').map((badge) => badge.text())
 
-    expect(badges).toContain('Fin de vie')
-    expect(badges).toContain('Sécurité uniquement')
-    expect(badges).toContain('Inconnu')
+    expect(badges).toContain(fr.stack.status.eol)
+    expect(badges).toContain(fr.stack.status.securityOnly)
+    expect(badges).toContain(fr.stack.status.unknown)
   })
 
   /**
@@ -249,7 +251,7 @@ describe('StackPage', () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Aucune vulnérabilité connue sur les 99 paquets')
+      expect(wrapper.text()).toContain(renderedMessage('fr', 'stack.vulnerabilities.healthy', { scanned: 99 }))
     })
 
     it('signale les vulnérabilités trouvées dans une région annoncée', async () => {

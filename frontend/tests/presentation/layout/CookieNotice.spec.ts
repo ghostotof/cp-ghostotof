@@ -6,6 +6,7 @@ import { COOKIE_NOTICE_STORAGE_KEY } from '../../../src/application/cookieNotice
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const Stub = { template: '<div />' }
 
@@ -38,7 +39,7 @@ describe('CookieNotice', () => {
     const wrapper = await mountNotice()
 
     const region = wrapper.get('section')
-    expect(region.attributes('aria-label')).toBe('Information sur les cookies')
+    expect(region.attributes('aria-label')).toBe(fr.cookieNotice.label)
   })
 
   it('links to the privacy policy of the active locale', async () => {
@@ -60,7 +61,7 @@ describe('CookieNotice', () => {
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(1)
     expect(buttons[0].attributes('type')).toBe('button')
-    expect(buttons[0].text()).toBe('Compris')
+    expect(buttons[0].text()).toBe(fr.cookieNotice.dismiss)
   })
 
   it('disappears once dismissed and stays gone on the next visit', async () => {

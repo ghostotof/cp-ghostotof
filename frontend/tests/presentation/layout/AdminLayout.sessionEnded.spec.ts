@@ -29,7 +29,13 @@ import type { AdminTranslationRepository } from '../../../src/domain/admin/trans
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_FR } from '../../support/accessRefusalTexts'
+import {
+  ACCESS_REFUSED_EN,
+  ACCESS_REFUSED_FR,
+  EARLIER_SAVE_REFUSED_FR,
+  SWITCH_ACCOUNT_EN,
+  SWITCH_ACCOUNT_FR,
+} from '../../support/accessRefusalTexts'
 import { defineComponent, h, type Component } from 'vue'
 
 const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
@@ -370,12 +376,12 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     [
       'fr',
       ACCESS_REFUSED_FR,
-      'Changer de compte',
+      SWITCH_ACCOUNT_FR,
     ],
     [
       'en',
       ACCESS_REFUSED_EN,
-      'Switch account',
+      SWITCH_ACCOUNT_EN,
     ],
   ] as const)(
     "refus réel à l'enregistrement (%s) : alerte, « Changer de compte » vers la connexion même onglet, saisie gardée, palier relu une fois",

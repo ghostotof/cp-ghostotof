@@ -4,10 +4,13 @@ import { createRouter, createWebHistory, type Router } from 'vue-router'
 import SetPasswordPage from '../../../src/presentation/pages/SetPasswordPage.vue'
 import { ACCOUNT_REPOSITORY } from '../../../src/application/account/useAccountPasswordSetup'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { renderedMessage } from '../../support/renderedMessage'
 import type { AccountRepository } from '../../../src/domain/account/repositories/AccountRepository'
 import { PasswordSetupLinkError } from '../../../src/domain/account/errors/PasswordSetupLinkError'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const StubPage = { template: '<div />' }
 
@@ -228,9 +231,9 @@ describe('SetPasswordPage', () => {
     })
     const { wrapper } = await mountPage(repository)
 
-    expect(wrapper.text()).toContain('Vous avez déjà défini votre mot de passe ?')
+    expect(wrapper.text()).toContain(fr.account.setPassword.alreadySet)
     const loginLink = wrapper.get('a[href="/fr/login"]')
-    expect(loginLink.text()).toBe('Se connecter')
+    expect(loginLink.text()).toBe(fr.account.setPassword.logIn)
     // Hors de la région `alert` : le message s'annonce seul, le lien se
     // trouve au clavier.
     expect(wrapper.get('[role="alert"]').find('a').exists()).toBe(false)
@@ -243,7 +246,7 @@ describe('SetPasswordPage', () => {
     const { wrapper } = await mountPage(repository, '/en/set-password#tok123')
 
     expect(wrapper.get('[role="alert"]').text()).toContain('incomplete, expired or already used')
-    expect(wrapper.get('a[href="/en/login"]').text()).toBe('Log in')
+    expect(wrapper.get('a[href="/en/login"]').text()).toBe(en.account.setPassword.logIn)
   })
 
   it('lien inutilisable : aucune violation axe', async () => {
@@ -278,7 +281,7 @@ describe('SetPasswordPage', () => {
     const { wrapper } = await mountPage(repository)
 
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
-    const retryButton = wrapper.findAll('button').find((b) => b.text().includes('Réessayer'))
+    const retryButton = wrapper.findAll('button').find((b) => b.text().includes(fr.account.setPassword.retry))
     expect(retryButton).toBeDefined()
 
     await retryButton?.trigger('click')
@@ -342,9 +345,9 @@ describe('SetPasswordPage', () => {
 
     const passwordInput = wrapper.get('#set-password-password')
     const describedBy = (): string[] => (passwordInput.attributes('aria-describedby') ?? '').split(' ').filter(Boolean)
-    // Avant toute saisie : l'indication « Au moins 8 caractères » seule.
+    // Avant toute saisie : l'indication de longueur minimale seule.
     expect(describedBy()).toHaveLength(1)
-    expect(wrapper.get(`#${describedBy()[0]}`).text()).toContain('Au moins 8 caractères')
+    expect(wrapper.get(`#${describedBy()[0]}`).text()).toContain(renderedMessage('fr', 'account.setPassword.hint', { min: 8 }))
 
     await passwordInput.setValue('🔑🔑🔑🔑')
     await wrapper.get('#set-password-confirmation').setValue('🔑🔑🔑🔑')

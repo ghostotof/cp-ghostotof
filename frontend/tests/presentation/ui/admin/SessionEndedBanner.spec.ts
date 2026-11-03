@@ -10,6 +10,7 @@ import type { AuthSession } from '../../../../src/domain/auth/entities/AuthSessi
 import { sessionFor } from '../../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../../src/infrastructure/i18n/locales/en.json'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -237,7 +238,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
 
     await recheck(repository)
 
-    expect(wrapper.get('[role="status"]').text()).toBe('Session restored, you can save again.')
+    expect(wrapper.get('[role="status"]').text()).toBe(en.admin.sessionEnded.restored)
     wrapper.unmount()
   })
 

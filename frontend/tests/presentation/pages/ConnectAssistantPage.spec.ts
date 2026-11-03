@@ -19,6 +19,8 @@ import { ANNOUNCEMENT_DELAY_MS } from '../../../src/presentation/ui/CopyableCode
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const SERVER_URL = 'https://site.example.test/api/mcp'
 const StubPage = { template: '<div />' }
@@ -193,7 +195,7 @@ describe('ConnectAssistantPage', () => {
     }
 
     expect(writeText).toHaveBeenCalledWith(`claude mcp add --transport http cp-ghostotof ${SERVER_URL}`)
-    expect(block.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
+    expect(block.find('[role="status"]').text()).toBe(fr.common.copied)
   })
 
   it('ne saute aucun niveau de titre (h1 → h2 → h3)', async () => {
@@ -240,7 +242,7 @@ describe('ConnectAssistantPage — SEO', () => {
     applySeoFor('/fr/connect-your-assistant')
 
     expect(appRouter.resolve('/fr/connect-your-assistant').name).toBe('connect-assistant')
-    expect(document.title).toBe('CP-Ghostotof — Brancher votre assistant')
+    expect(document.title).toBe(`CP-Ghostotof — ${fr.seo.connectAssistant.title}`)
     expect(description()).toContain('MCP')
     expect(robots()).toBe('index, follow')
   })
@@ -248,7 +250,7 @@ describe('ConnectAssistantPage — SEO', () => {
   it('pose un titre et une description en anglais, page indexable', () => {
     applySeoFor('/en/connect-your-assistant')
 
-    expect(document.title).toBe('CP-Ghostotof — Connect your assistant')
+    expect(document.title).toBe(`CP-Ghostotof — ${en.seo.connectAssistant.title}`)
     expect(description()).toContain('MCP')
     expect(robots()).toBe('index, follow')
   })

@@ -19,7 +19,7 @@ import { sessionForUser } from '../../../../src/domain/auth/services/sessionForU
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { setUnsupportedLocale } from '../../../support/unsupportedLocale'
-import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_EN, EARLIER_SAVE_REFUSED_FR } from '../../../support/accessRefusalTexts'
+import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_EN, EARLIER_SAVE_REFUSED_FR, SWITCH_ACCOUNT_FR } from '../../../support/accessRefusalTexts'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -124,7 +124,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     const alert = wrapper.get('[role="alert"]')
     expect(alert.get('span').text()).toBe(ACCESS_REFUSED_FR)
     const link = alert.get('a')
-    expect(link.text()).toBe('Changer de compte')
+    expect(link.text()).toBe(SWITCH_ACCOUNT_FR)
     expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&reauth=1')
     expect(link.attributes('target')).toBeUndefined()
     await expectNoAccessibilityViolation(wrapper)
@@ -277,7 +277,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       const alert = wrapper.get('[data-testid="admin-access-refused"]')
       expect(alert.attributes('role')).toBe('alert')
       expect(alert.get('span').text()).toBe(EARLIER_SAVE_REFUSED_FR)
-      expect(alert.get('a').text()).toBe('Changer de compte')
+      expect(alert.get('a').text()).toBe(SWITCH_ACCOUNT_FR)
       wrapper.unmount()
     })
 
