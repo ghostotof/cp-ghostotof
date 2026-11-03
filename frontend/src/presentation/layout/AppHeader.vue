@@ -6,14 +6,13 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { NavigationGroup } from '../../domain/portfolio/entities/NavigationGroup'
 import { isNavigationGroup, type NavigationEntry } from '../../domain/portfolio/entities/NavigationEntry'
-import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import AccountMenu from './AccountMenu.vue'
 import { usePublishedHeight } from './usePublishedHeight'
-import { routeLocale } from '../router/routeLocale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
@@ -122,7 +121,7 @@ function handleAccountMenuCvDownload(): void {
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const interfaceLocale = useCurrentLocale()
+const pageLocale = useRouteLocale()
 const { tier, isChecking, isSuperAdmin, logout, hasSessionEnded } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
@@ -183,11 +182,10 @@ const baseAccessErrorMessage = computed(() => {
 })
 
 /**
- * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
- * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
- * `/:pathMatch(.*)*` sans segment `:locale`).
+ * L'accueil dans la langue de la page (`useRouteLocale()`) : celle de la route, sinon, sur la page 404
+ * (`/:pathMatch(.*)*`, sans segment `:locale`), la langue d'interface.
  */
-const homeLink = computed(() => `/${routeLocale(route, interfaceLocale.value)}`)
+const homeLink = computed(() => `/${pageLocale.value}`)
 
 /**
  * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance

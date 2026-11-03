@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
-import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
-import { routeLocale } from '../router/routeLocale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import { getAppVersion } from '../../infrastructure/config/getAppVersion'
 import IconDisc3 from '~icons/lucide/disc-3'
 import IconTag from '~icons/lucide/tag'
@@ -14,8 +12,6 @@ defineProps<{
 }>()
 
 const { t } = useI18n()
-const interfaceLocale = useCurrentLocale()
-const route = useRoute()
 const year = new Date().getFullYear()
 
 /**
@@ -29,8 +25,8 @@ const versionTitle = computed(() =>
   appVersion?.build ? t('common.footerVersionBuild', { build: appVersion.build }) : t('common.footerVersionTitle'),
 )
 
-/** Même repli route → i18n que AppHeader.homeLink, pour rester correct sur la page 404. */
-const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
+/** La langue de la page (`useRouteLocale()`), correcte aussi sur la page 404, sans segment `:locale`. */
+const pageLocale = useRouteLocale()
 </script>
 
 <template>
@@ -82,7 +78,7 @@ const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
         <ul class="list-unstyled d-flex flex-wrap align-items-center justify-content-center gap-3 mb-0">
           <li>
             <RouterLink
-              :to="`/${currentLocale}/connect-your-assistant`"
+              :to="`/${pageLocale}/connect-your-assistant`"
               class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.connectAssistantLink') }}
@@ -90,7 +86,7 @@ const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
           </li>
           <li>
             <RouterLink
-              :to="`/${currentLocale}/legal-notice`"
+              :to="`/${pageLocale}/legal-notice`"
               class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.legalNoticeLink') }}
@@ -98,7 +94,7 @@ const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
           </li>
           <li>
             <RouterLink
-              :to="`/${currentLocale}/privacy-policy`"
+              :to="`/${pageLocale}/privacy-policy`"
               class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.privacyPolicyLink') }}

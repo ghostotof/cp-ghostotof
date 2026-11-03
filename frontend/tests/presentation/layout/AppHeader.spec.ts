@@ -7,6 +7,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import AppHeader from '../../../src/presentation/layout/AppHeader.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { isSupportedLocale } from '../../../src/domain/portfolio/entities/Locale'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import { AUTH_REPOSITORY, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
@@ -120,7 +122,7 @@ async function mountHeader(
   authRepository?: AuthRepository,
   cvRepository?: CvRepository,
   baseAccessRepository?: BaseAccessRepository,
-  i18nLocale: 'fr' | 'en' = 'fr',
+  i18nLocale: string = 'fr',
 ) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -137,6 +139,8 @@ async function mountHeader(
       { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage, meta: appMeta('assistant') },
       { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage, meta: appMeta('mcp-connections') },
       { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage, meta: appMeta('oauth-consent') },
+      // Comme la page 404 de l'application : aucun segment `:locale`.
+      { path: '/:pathMatch(.*)*', name: 'not-found', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -144,9 +148,13 @@ async function mountHeader(
 
   // La locale i18n est synchronisée depuis l'URL par le garde du routeur
   // applicatif (presentation/router/index.ts), absent de ce routeur de test :
-  // on la fixe donc explicitement quand un cas a besoin de l'anglais.
+  // on la fixe donc explicitement quand un cas a besoin de l'anglais, ou d'une langue hors du site (`setUnsupportedLocale`).
   const i18n = createAppI18n()
-  i18n.global.locale.value = i18nLocale
+  if (isSupportedLocale(i18nLocale)) {
+    i18n.global.locale.value = i18nLocale
+  } else {
+    setUnsupportedLocale(i18n, i18nLocale)
+  }
 
   const wrapper = mount(AppHeader, {
     props: { siteIdentity, navigationLinks },
@@ -517,6 +525,19 @@ describe('AppHeader', () => {
 
       await expectNoAccessibilityViolation(wrapper)
     })
+  })
+
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse.
+  it.each([
+    ['/en', 'en'],
+    ['/frogs', 'fr'],
+  ])('sous une langue hors du site, sur %s, l’accueil et la connexion sont en `%s`, aucun `/de/` (#748, R227)', async (path, expected) => {
+    await primeAuthState(null)
+    const { wrapper } = await mountHeader(path, undefined, undefined, undefined, 'de')
+
+    const hrefs = wrapper.findAll('a[href^="/"]').map((link) => link.attributes('href'))
+    expect(hrefs).toEqual(expect.arrayContaining([`/${expected}`, `/${expected}/login`]))
+    expect(hrefs.filter((href) => href?.startsWith('/de'))).toEqual([])
   })
 
   it('rend un sélecteur de langue avec FR et EN', async () => {

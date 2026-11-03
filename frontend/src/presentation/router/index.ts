@@ -1,8 +1,8 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
-import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
-import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
+import { resolvePreferredLocale } from './preferredLocale'
+import { applyInterfaceLocale } from './interfaceLocale'
 import { isReauthentication } from './reauthentication'
 import { isSessionEnded } from './sessionEnded'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
@@ -340,12 +340,6 @@ export const router = createRouter({
   ],
 })
 
-function syncLocale(locale: Locale): void {
-  i18n.global.locale.value = locale
-  localStorage.setItem(LOCALE_STORAGE_KEY, locale)
-  document.documentElement.lang = locale
-}
-
 /**
  * Locale à utiliser pour construire une redirection depuis un garde : les
  * routes protégées (/admin/*) sont toutes nichées sous `/:locale(fr|en)`, le
@@ -379,7 +373,7 @@ router.beforeEach(async (to) => {
 router.beforeEach((to) => {
   const routeLocale = to.params.locale
   if (typeof routeLocale === 'string' && isSupportedLocale(routeLocale)) {
-    syncLocale(routeLocale)
+    applyInterfaceLocale(routeLocale)
     return
   }
 
@@ -388,7 +382,7 @@ router.beforeEach((to) => {
   // on le respecte pour que la page 404 elle-même reste dans la bonne langue.
   const firstSegment = to.path.split('/')[1]
   if (isSupportedLocale(firstSegment)) {
-    syncLocale(firstSegment)
+    applyInterfaceLocale(firstSegment)
   }
 })
 

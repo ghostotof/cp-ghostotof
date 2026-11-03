@@ -132,18 +132,23 @@ backend is deployed first**: its summary only adds a field, which an old fronten
 #### i18n (French/English)
 
 Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —
-`presentation/router/index.ts`'s `beforeEach` syncs `i18n.global.locale` from `to.params.locale` on every
-navigation (also handled for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard
-falls back to parsing the URL's first path segment so the 404 page itself stays in the right language).
+`presentation/router/index.ts`'s `beforeEach` sets it from `to.params.locale` on every navigation with
+`applyInterfaceLocale()` (`presentation/router/interfaceLocale.ts`: vue-i18n, `localStorage`, `<html lang>`), also
+for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard falls back to parsing the URL's
+first path segment so the 404 page itself stays in the right language.
 `/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
-to `fr`.
+to `fr`. **The language switcher** (`presentation/ui/LocaleSwitcher.vue`, #748, R227) replaces the first segment
+and keeps the query and the hash (a consent request's `client_id`/`state`/`code_challenge`, the login's flags); on
+a path with no locale prefix (the 404 `/frogs`) it navigates nowhere: it calls `applyInterfaceLocale()`, then
+`applySeoMeta(route)` for the title (D4).
 
 **The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
 vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
-carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A route's language is
-`routeLocale(route, interfaceLocale.value)`. `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/` and any other
-read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`, `i18n.global.locale`; the router's write in
-`syncLocale` is not a read); a test that needs such a language sets it with `setUnsupportedLocale()`
+carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A page's language is
+`useRouteLocale()` (`presentation/router/useRouteLocale.ts`, variable `pageLocale`): the route's, else the interface's (the 404
+page). `tests/presentation/noLocaleCast.spec.ts` forbids `as Locale` in `src/` and any other
+read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`, `i18n.global.locale`; the write in
+`applyInterfaceLocale` is not a read); a test that needs such a language sets it with `setUnsupportedLocale()`
 (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
 
 Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks

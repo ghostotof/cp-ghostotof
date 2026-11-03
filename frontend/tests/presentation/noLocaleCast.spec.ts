@@ -18,8 +18,8 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_FRAGMENTS } from '../support/srcSources'
  *
  * Ce que `readsInterfaceLocale` lit : `locale` pris d'un `useI18n(…)` par déstructuration ou par `.locale`, le compositeur lié
  * tout entier à un nom (`const i18n = useI18n()`, d'où `.locale` s'atteint), `$i18n` dans un gabarit, et `.global.locale` d'une
- * instance de vue-i18n ou sa déstructuration. L'**écriture** `….global.locale.value = x` n'est pas une lecture : le routeur la
- * pose à chaque navigation (`syncLocale`) et la garde la distingue par sa forme, sans fichier d'exception.
+ * instance de vue-i18n ou sa déstructuration. L'**écriture** `….global.locale.value = x` n'est pas une lecture : le routeur et
+ * le sélecteur la posent (`applyInterfaceLocale`) et la garde la distingue par sa forme, sans fichier d'exception.
  * Non vu, tenu par la relecture : `i18n.global` lié tout entier à un nom puis lu (`const g = i18n.global`) ; `locale` lu d'un
  * objet qui n'est ni un `useI18n(…)` ni un `.global` écrits tels quels (un compositeur reçu en paramètre) ; une langue lue de la
  * route ou du navigateur, qui n'est pas la langue d'interface.

@@ -4,6 +4,7 @@ import { createRouter, createWebHistory, type Router } from 'vue-router'
 import SetPasswordPage from '../../../src/presentation/pages/SetPasswordPage.vue'
 import { ACCOUNT_REPOSITORY } from '../../../src/application/account/useAccountPasswordSetup'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import { renderedMessage } from '../../support/renderedMessage'
 import type { AccountRepository } from '../../../src/domain/account/repositories/AccountRepository'
 import { PasswordSetupLinkError } from '../../../src/domain/account/errors/PasswordSetupLinkError'
@@ -43,7 +44,11 @@ function createTestRouter(): Router {
   })
 }
 
-async function mountPage(repository: AccountRepository = createStubRepository(), path = '/fr/set-password#tok123') {
+async function mountPage(
+  repository: AccountRepository = createStubRepository(),
+  path = '/fr/set-password#tok123',
+  unsupportedLocale?: string,
+) {
   // L'URL d'arrivée est celle du lien de l'e-mail : posée dans le navigateur
   // AVANT la création du routeur, comme lors d'un vrai chargement de page.
   window.history.replaceState(null, '', path)
@@ -57,6 +62,9 @@ async function mountPage(repository: AccountRepository = createStubRepository(),
   // l'application (presentation/router/index.ts), absent de ce routeur de test.
   const i18n = createAppI18n()
   i18n.global.locale.value = path.startsWith('/en/') ? 'en' : 'fr'
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   const wrapper = mount(SetPasswordPage, {
     global: { plugins: [router, i18n], provide: { [ACCOUNT_REPOSITORY as symbol]: repository } },
@@ -247,6 +255,18 @@ describe('SetPasswordPage', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('incomplete, expired or already used')
     expect(wrapper.get('a[href="/en/login"]').text()).toBe(en.account.setPassword.logIn)
+  })
+
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse ; la route donne la langue.
+  it('sous une langue hors du site, la connexion et l’URL nettoyée suivent la route, aucun `/de/` (#748, R227)', async () => {
+    const repository = createStubRepository({
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper, router } = await mountPage(repository, '/en/set-password#tok123', 'de')
+
+    expect(router.currentRoute.value.fullPath).toBe('/en/set-password')
+    expect(wrapper.find('a[href="/en/login"]').exists()).toBe(true)
+    expect(wrapper.find('a[href^="/de"]').exists()).toBe(false)
   })
 
   it('lien inutilisable : aucune violation axe', async () => {

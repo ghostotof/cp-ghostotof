@@ -6,15 +6,13 @@ import { useAuth } from '../../application/auth/useAuth'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
-import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { routeLocale } from '../router/routeLocale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import { isReauthentication } from '../router/reauthentication'
 import { isSessionEnded } from '../router/sessionEnded'
 import { internalRedirectTarget } from '../router/internalRedirect'
 
 const { t } = useI18n()
-const interfaceLocale = useCurrentLocale()
+const pageLocale = useRouteLocale()
 const route = useRoute()
 const router = useRouter()
 const { login, user, isAuthenticated } = useAuth()
@@ -51,10 +49,6 @@ const password = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 
-function currentLocale(): Locale {
-  return routeLocale(route, interfaceLocale.value)
-}
-
 /**
  * Posé par le garde d'authentification (presentation/router/index.ts) quand
  * une route protégée (ex. /admin) redirige ici faute de session : ramène
@@ -64,7 +58,7 @@ function currentLocale(): Locale {
  * paramètre d'URL.
  */
 function redirectTarget(): string {
-  return internalRedirectTarget(route.query.redirect) ?? `/${currentLocale()}`
+  return internalRedirectTarget(route.query.redirect) ?? `/${pageLocale.value}`
 }
 
 /** Un message par cause : ce que la personne doit faire n'est pas le même (corriger, attendre, réessayer). */

@@ -1,18 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import { useContactForm } from '../../application/contact/useContactForm'
-import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
-import { routeLocale } from '../router/routeLocale'
+import { useRouteLocale } from '../router/useRouteLocale'
 
 const { t } = useI18n()
-const interfaceLocale = useCurrentLocale()
-const route = useRoute()
 const { name, email, message, honeypot, isSubmitting, isSuccess, errorReason, fieldErrors, submit } = useContactForm()
 
-/** Même repli route → i18n que AppHeader.homeLink, pour construire le lien vers la politique de confidentialité. */
-const currentLocale = computed(() => routeLocale(route, interfaceLocale.value))
+/** La langue de la page (`useRouteLocale()`), celle du lien vers la politique de confidentialité. */
+const pageLocale = useRouteLocale()
 
 /** Les champs auxquels la page sait rattacher un libellé, sous le champ concerné. */
 const KNOWN_FIELDS = ['name', 'email', 'message'] as const
@@ -231,7 +227,7 @@ const globalErrorText = computed<string | null>(() => {
 
         <p class="text-body-secondary small mb-3">
           {{ t('contact.form.privacyNoticePrefix') }}
-          <RouterLink :to="`/${currentLocale}/privacy-policy`">
+          <RouterLink :to="`/${pageLocale}/privacy-policy`">
             {{ t('common.privacyPolicyLink') }}
           </RouterLink>
         </p>

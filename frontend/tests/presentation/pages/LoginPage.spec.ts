@@ -10,6 +10,7 @@ import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRate
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import { sessionFor } from '../../support/authSession'
 import { renderedMessage } from '../../support/renderedMessage'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
@@ -41,7 +42,12 @@ async function primeSession(user: AuthenticatedUser | null): Promise<void> {
   probe.unmount()
 }
 
-async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: Record<string, string> = {}) {
+async function mountLoginPage(
+  repository: AuthRepository,
+  locale = 'fr',
+  query: Record<string, string> = {},
+  unsupportedLocale?: string,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -55,6 +61,9 @@ async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: 
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale as typeof i18n.global.locale.value
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   const wrapper = mount(LoginPage, {
     global: {
@@ -89,6 +98,19 @@ describe('LoginPage', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/fr')
+  })
+
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse ; la route donne la langue.
+  it('sous une langue hors du site, le retour après la connexion suit la route, non `/de` (#748, R227)', async () => {
+    const repository = createStubRepository()
+    const { wrapper, router } = await mountLoginPage(repository, 'en', {}, 'de')
+
+    await wrapper.get('#login-username').setValue('jane')
+    await wrapper.get('#login-password').setValue('password123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/en')
   })
 
   it('affiche un message dédié en cas d\'identifiants invalides', async () => {

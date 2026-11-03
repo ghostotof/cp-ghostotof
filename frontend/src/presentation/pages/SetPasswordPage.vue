@@ -3,9 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAccountPasswordSetup } from '../../application/account/useAccountPasswordSetup'
-import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { routeLocale } from '../router/routeLocale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import {
   MAX_PASSWORD_BYTES,
   MIN_PASSWORD_LENGTH,
@@ -14,7 +12,7 @@ import {
 import BaseTextInput from '../ui/BaseTextInput.vue'
 
 const { t } = useI18n()
-const interfaceLocale = useCurrentLocale()
+const pageLocale = useRouteLocale()
 const route = useRoute()
 const router = useRouter()
 const { state, errorReason, validate, submit } = useAccountPasswordSetup()
@@ -59,7 +57,7 @@ async function takeTokenFromUrl(): Promise<string> {
 
   if ('' !== route.hash) {
     try {
-      await router.replace({ name: 'set-password', params: { locale: currentLocale() }, hash: '' })
+      await router.replace({ name: 'set-password', params: { locale: pageLocale.value }, hash: '' })
     } catch {
       // Un échec de navigation ne doit pas priver la personne de son
       // formulaire : le jeton est lu, on continue avec.
@@ -69,11 +67,7 @@ async function takeTokenFromUrl(): Promise<string> {
   return found
 }
 
-function currentLocale(): Locale {
-  return routeLocale(route, interfaceLocale.value)
-}
-
-const loginPath = computed(() => `/${currentLocale()}/login`)
+const loginPath = computed(() => `/${pageLocale.value}/login`)
 
 const showForm = computed(() => 'ready' === state.value || 'submitting' === state.value)
 

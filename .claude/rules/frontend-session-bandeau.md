@@ -66,7 +66,7 @@ paths:
   `SessionEndedBanner` and `McpConnectionsPage`, the language read from the route in one and from i18n in the others.
   - `routeLocale(route, fallback)` (`presentation/router/routeLocale.ts`): the route's `locale` param when it is a
     supported locale, else the fallback (`useCurrentLocale()`, the interface language, `fr` when the site does not carry it;
-    the 404 page has no `:locale`). `AppHeader`'s `homeLink`, `LocaleSwitcher` and `AppFooter` use it too.
+    the 404 page has no `:locale`). A component reads a page's language through `useRouteLocale()`, which calls it.
   - `loginLocation(route, fallback, flag)` (`presentation/router/loginLocation.ts`, R16) is the **only** builder of a link
     to the login: `login` in the route's language, the flag (`'session-ended'` → `expired=1`, `'reauthentication'` →
     `reauth=1`, the single value `1`), and `redirect` = the route's `fullPath` (the page the person comes back to)
