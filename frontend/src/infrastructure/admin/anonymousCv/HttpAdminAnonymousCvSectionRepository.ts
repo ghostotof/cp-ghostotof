@@ -11,7 +11,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
-import { supportedLocaleOf } from '../shared/supportedLocale'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAnonymousCvSectionApiResponse {
   id: string
@@ -26,12 +26,8 @@ interface BackofficeAnonymousCvSectionApiResponse {
 
 const BASE_PATH = '/api/backoffice/anonymous-cv'
 
-/**
- * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
- * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
- */
-function unsupportedLocale(): AdminAnonymousCvSectionError {
-  return new AdminAnonymousCvSectionError('unknown', 'Unsupported locale in response')
+function unsupportedLocaleError(): AdminAnonymousCvSectionError {
+  return new AdminAnonymousCvSectionError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
 
 /**
@@ -95,7 +91,7 @@ export class HttpAdminAnonymousCvSectionRepository implements AdminAnonymousCvSe
   private toEntity(section: BackofficeAnonymousCvSectionApiResponse): AdminAnonymousCvSection {
     return {
       id: section.id,
-      locale: supportedLocaleOf(section.locale, unsupportedLocale),
+      locale: supportedLocaleOf(section.locale, unsupportedLocaleError),
       translationGroup: section.translationGroup,
       title: section.title,
       skills: section.skills,

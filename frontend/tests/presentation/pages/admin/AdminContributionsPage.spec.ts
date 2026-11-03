@@ -18,6 +18,8 @@ import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/ad
 import { buttonLabelled } from '../../../support/buttonLabelled'
 import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import { HttpAdminContributionRepository } from '../../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
+import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -159,6 +161,19 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
 describe('AdminContributionsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // Le dépôt HTTP réel juge la langue de la réponse à la frontière : la page montre son alerte de chargement et l'entrée
+  // dans une langue que le site ne porte pas n'atteint ni le tableau ni un formulaire (#748, R229, Sp18-3).
+  it("une liste répondue avec une entrée en langue 'de' montre l'alerte de chargement, sans l'entrée (#748, R229)", async () => {
+    const unsupportedEntry = { ...FR_ONE, locale: 'de' }
+    stubBackofficeJson([unsupportedEntry])
+
+    const { wrapper } = await mountPage(new HttpAdminContributionRepository(BACKOFFICE_TEST_API_URL))
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.contributions.loadError)
+    expect(wrapper.text()).not.toContain(unsupportedEntry.title)
   })
 
   it('affiche une ligne par groupe, un badge par langue, et la traduction manquante', async () => {

@@ -211,11 +211,16 @@ and what to do with the proposal.
   `translationErrorText` and call `requestProposal` themselves.
   A form's `locale` is never set from an entry with `as Locale`, and `startEdit` carries no guard (#748, R214, D2): the entities of
   the backoffice and their `…Input` hold `locale: Locale`, and the repository judges the language of every response at the border,
-  `supportedLocaleOf(value, unsupported)` (`infrastructure/admin/shared/supportedLocale.ts`) in its `toEntity`. A language the
-  site does not carry (the backend only emits `fr` and `en`) raises the context's own error, reason `unknown`, « Unsupported
-  locale in response », on a list as on a write response: the page shows its usual loading or saving error, no form opens in
-  another language, and no translation key is needed. Accepted (Q1 (A)): one faulty entry fails the whole list, and a refused
-  write response arrives after the server wrote. A new repository of a localized content calls `supportedLocaleOf` in `toEntity`.
+  `supportedLocaleOf(value, unsupportedLocaleError)` (`infrastructure/admin/shared/supportedLocale.ts`) in its `toEntity`, where
+  `unsupportedLocaleError(): Admin…Error` is the repository's own function (its context's error, reason `unknown`, message
+  `UNSUPPORTED_LOCALE_MESSAGE`, written once in that module). A language the site does not carry (the backend only emits `fr` and
+  `en`) raises that error on a list as on a write response: the page shows its usual loading or saving error, no form opens in
+  another language, and no translation key is needed. The me-card **category** is judged the same way
+  (`isAdminAboutMeCardCategory`, next to `ME_CARD_CATEGORIES`; #748, R229): a value outside the three raises
+  `AdminAboutError('unknown', …)`, never an `as AdminAboutMeCardCategory`. Accepted (Q1 (A) of the seventeenth review): one faulty
+  entry fails the whole list, and a refused write response arrives after the server wrote, so the person who tries again creates
+  a duplicate, which they remove by hand. A new repository of a localized content calls `supportedLocaleOf` in `toEntity`, and a
+  closed field of a response (a category, a kind) is judged by a guard, never converted by `as`.
 - `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
   inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
   checkpoint as the response cannot slip between the judgment and the application. An exception of `accept` (of `switchForm`)

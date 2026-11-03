@@ -8,7 +8,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
-import { supportedLocaleOf } from '../shared/supportedLocale'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeQualityPrincipleApiResponse {
   id: string
@@ -22,12 +22,8 @@ interface BackofficeQualityPrincipleApiResponse {
 
 const BASE_PATH = '/api/backoffice/quality/principles'
 
-/**
- * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
- * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
- */
-function unsupportedLocale(): AdminQualityError {
-  return new AdminQualityError('unknown', 'Unsupported locale in response')
+function unsupportedLocaleError(): AdminQualityError {
+  return new AdminQualityError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
 
 /**
@@ -91,7 +87,7 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
   private toEntity(principle: BackofficeQualityPrincipleApiResponse): AdminQualityPrinciple {
     return {
       id: principle.id,
-      locale: supportedLocaleOf(principle.locale, unsupportedLocale),
+      locale: supportedLocaleOf(principle.locale, unsupportedLocaleError),
       translationGroup: principle.translationGroup,
       title: principle.title,
       description: principle.description,

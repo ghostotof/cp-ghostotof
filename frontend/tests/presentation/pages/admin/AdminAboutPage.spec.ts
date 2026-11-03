@@ -12,6 +12,8 @@ import { ADMIN_ABOUT_ME_CARD_REPOSITORY } from '../../../../src/application/admi
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import { HttpAdminAboutMeCardRepository } from '../../../../src/infrastructure/admin/about/HttpAdminAboutMeCardRepository'
+import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
@@ -355,6 +357,22 @@ async function dragRow(wrapper: VueWrapper, which: number, from: number, to: num
 describe('AdminAboutPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // Le dépôt HTTP réel juge la langue de la réponse à la frontière : la page montre son alerte de chargement et l'entrée
+  // dans une langue que le site ne porte pas n'atteint ni le tableau ni un formulaire (#748, R229, Sp18-3).
+  it("une liste répondue avec une entrée en langue 'de' montre l'alerte de chargement, sans l'entrée (#748, R229)", async () => {
+    const unsupportedEntry = {
+      id: '019968a0-0000-7000-8000-0000000000e1', locale: 'de', translationGroup: '019968b0-0000-7000-8000-0000000000e2',
+      category: 'technical', title: 'Dev senior', description: 'D', iconKey: null, position: 0,
+    }
+    stubBackofficeJson([unsupportedEntry])
+
+    const { wrapper } = await mountPage(undefined, undefined, new HttpAdminAboutMeCardRepository(BACKOFFICE_TEST_API_URL))
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.about.loadError)
+    expect(wrapper.text()).not.toContain(unsupportedEntry.title)
   })
 
   describe('tableaux toutes langues', () => {

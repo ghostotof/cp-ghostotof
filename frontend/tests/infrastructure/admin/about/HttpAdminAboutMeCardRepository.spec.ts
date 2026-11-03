@@ -286,4 +286,35 @@ describe('HttpAdminAboutMeCardRepository', () => {
       expect((error as AdminAboutError).message).toBe('Unsupported locale in response')
     }
   })
+
+  // La catégorie range la carte dans l'un des trois tableaux de la page : le dépôt la juge à la frontière, comme la langue,
+  // plutôt que de la laisser entrer dans une entité typée par une assertion (`as`) qui ne juge rien (#748, R229, CR18-4).
+  const UNKNOWN_CATEGORY_ENTRY = {
+    id: CARD_ID,
+    locale: 'fr',
+    translationGroup: GROUP_ONE,
+    category: 'unheard-of',
+    title: 'Dev senior',
+    description: 'D',
+    iconKey: 'code',
+    position: 0,
+  }
+
+  it("une catégorie que le site ne porte pas rend l'erreur 'unknown' en lecture (#748, R229)", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [UNKNOWN_CATEGORY_ENTRY])))
+
+    const error = await new HttpAdminAboutMeCardRepository(API_BASE_URL).list().catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AdminAboutError)
+    expect((error as AdminAboutError).reason).toBe('unknown')
+  })
+
+  it("une catégorie que le site ne porte pas rend l'erreur 'unknown' en réponse d'écriture (#748, R229)", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, UNKNOWN_CATEGORY_ENTRY)))
+
+    const error = await new HttpAdminAboutMeCardRepository(API_BASE_URL).create(INPUT).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AdminAboutError)
+    expect((error as AdminAboutError).reason).toBe('unknown')
+  })
 })

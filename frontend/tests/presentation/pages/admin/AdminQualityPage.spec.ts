@@ -8,6 +8,8 @@ import { ADMIN_QUALITY_TRAIT_REPOSITORY } from '../../../../src/application/admi
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import { HttpAdminQualityPrincipleRepository } from '../../../../src/infrastructure/admin/quality/HttpAdminQualityPrincipleRepository'
+import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
 import type { AdminQualityPrincipleRepository } from '../../../../src/domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import type { AdminQualityTraitRepository } from '../../../../src/domain/admin/quality/repositories/AdminQualityTraitRepository'
 import type { AdminQualityPrinciple } from '../../../../src/domain/admin/quality/entities/AdminQualityPrinciple'
@@ -217,6 +219,19 @@ async function dragRow(wrapper: VueWrapper, which: number, from: number, to: num
 describe('AdminQualityPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // Le dépôt HTTP réel juge la langue de la réponse à la frontière : la page montre son alerte de chargement et l'entrée
+  // dans une langue que le site ne porte pas n'atteint ni le tableau ni un formulaire (#748, R229, Sp18-3).
+  it("une liste répondue avec une entrée en langue 'de' montre l'alerte de chargement, sans l'entrée (#748, R229)", async () => {
+    const unsupportedEntry = { ...PRINCIPLE_FR_ONE, locale: 'de' }
+    stubBackofficeJson([unsupportedEntry])
+
+    const { wrapper } = await mountPage(new HttpAdminQualityPrincipleRepository(BACKOFFICE_TEST_API_URL))
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.quality.loadError)
+    expect(wrapper.text()).not.toContain(unsupportedEntry.title)
   })
 
   describe('tableaux toutes langues', () => {

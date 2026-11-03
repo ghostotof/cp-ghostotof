@@ -6,7 +6,7 @@ import type {
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { supportedLocaleOf } from '../shared/supportedLocale'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAboutSettingsApiResponse {
   locale: string
@@ -19,12 +19,8 @@ interface BackofficeAboutSettingsApiResponse {
 
 const BASE_PATH = '/api/backoffice/about/settings'
 
-/**
- * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
- * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
- */
-function unsupportedLocale(): AdminAboutError {
-  return new AdminAboutError('unknown', 'Unsupported locale in response')
+function unsupportedLocaleError(): AdminAboutError {
+  return new AdminAboutError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
 
 /**
@@ -61,7 +57,7 @@ export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepos
 
   private toEntity(settings: BackofficeAboutSettingsApiResponse): AdminAboutSettings {
     return {
-      locale: supportedLocaleOf(settings.locale, unsupportedLocale),
+      locale: supportedLocaleOf(settings.locale, unsupportedLocaleError),
       siteEyebrow: settings.siteEyebrow,
       meEyebrow: settings.meEyebrow,
       technicalSubtitle: settings.technicalSubtitle,

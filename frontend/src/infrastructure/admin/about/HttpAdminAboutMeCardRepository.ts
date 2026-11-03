@@ -1,4 +1,8 @@
-import type { AdminAboutMeCard, AdminAboutMeCardCategory } from '../../../domain/admin/about/entities/AdminAboutMeCard'
+import {
+  isAdminAboutMeCardCategory,
+  type AdminAboutMeCard,
+  type AdminAboutMeCardCategory,
+} from '../../../domain/admin/about/entities/AdminAboutMeCard'
 import type {
   AdminAboutMeCardInput,
   AdminAboutMeCardRepository,
@@ -8,7 +12,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
-import { supportedLocaleOf } from '../shared/supportedLocale'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAboutMeCardApiResponse {
   id: string
@@ -23,12 +27,8 @@ interface BackofficeAboutMeCardApiResponse {
 
 const BASE_PATH = '/api/backoffice/about/me-cards'
 
-/**
- * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
- * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
- */
-function unsupportedLocale(): AdminAboutError {
-  return new AdminAboutError('unknown', 'Unsupported locale in response')
+function unsupportedLocaleError(): AdminAboutError {
+  return new AdminAboutError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
 
 /**
@@ -94,11 +94,16 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
   }
 
   private toEntity(card: BackofficeAboutMeCardApiResponse): AdminAboutMeCard {
+    // La catégorie est jugée comme la langue, à la frontière : une valeur hors des trois est une rupture du contrat (CR18-4).
+    if (!isAdminAboutMeCardCategory(card.category)) {
+      throw new AdminAboutError('unknown', 'Unknown category in response')
+    }
+
     return {
       id: card.id,
-      locale: supportedLocaleOf(card.locale, unsupportedLocale),
+      locale: supportedLocaleOf(card.locale, unsupportedLocaleError),
       translationGroup: card.translationGroup,
-      category: card.category as AdminAboutMeCardCategory,
+      category: card.category,
       title: card.title,
       description: card.description,
       iconKey: card.iconKey ?? null,

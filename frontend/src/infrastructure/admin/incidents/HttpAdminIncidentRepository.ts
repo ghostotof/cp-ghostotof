@@ -11,7 +11,7 @@ import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderE
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { hasProblemType } from '../../http/problemJson'
 import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
-import { supportedLocaleOf } from '../shared/supportedLocale'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeIncidentApiResponse {
   id: string
@@ -29,12 +29,8 @@ interface BackofficeIncidentApiResponse {
 
 const BASE_PATH = '/api/backoffice/incidents'
 
-/**
- * Le backend n'émet que `fr` et `en` : une autre langue est une rupture du contrat de l'API, dite ici par la raison
- * `unknown` (#748, R214, Q1 (A) ; `supportedLocaleOf`), que la page montre comme son erreur habituelle.
- */
-function unsupportedLocale(): AdminIncidentError {
-  return new AdminIncidentError('unknown', 'Unsupported locale in response')
+function unsupportedLocaleError(): AdminIncidentError {
+  return new AdminIncidentError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
 
 /**
@@ -98,7 +94,7 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
   private toEntity(incident: BackofficeIncidentApiResponse): AdminIncident {
     return {
       id: incident.id,
-      locale: supportedLocaleOf(incident.locale, unsupportedLocale),
+      locale: supportedLocaleOf(incident.locale, unsupportedLocaleError),
       translationGroup: incident.translationGroup,
       title: incident.title,
       version: incident.version,
