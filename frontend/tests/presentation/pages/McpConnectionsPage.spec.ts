@@ -20,9 +20,12 @@ import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
 import { signInAgain } from '../../support/signInAgain'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import { accessRefusalTexts } from '../../support/accessRefusalTexts'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
+
+const REFUSAL = accessRefusalTexts('fr')
+const REFUSAL_EN = accessRefusalTexts('en')
 
 // Seuls `setTimeout`/`clearTimeout` sont simulés : `flushPromises` s'appuie sur `setImmediate`,
 // qui doit rester réel. Le délai d'annonce (focus d'abord, annonce ensuite) est ainsi piloté
@@ -898,8 +901,8 @@ describe('McpConnectionsPage', () => {
 
   describe('refus réel (403 qui ne finit pas la session, #748, R7)', () => {
     it.each<[Locale, string]>([
-      ['fr', ACCESS_REFUSED_FR],
-      ['en', ACCESS_REFUSED_EN],
+      ['fr', REFUSAL.accessRefused],
+      ['en', REFUSAL_EN.accessRefused],
     ])(
       '%s : message neutre, « Changer de compte » vers login?reauth=1&redirect=<ce chemin>, aucun « Réessayer »',
       async (locale, message) => {
@@ -913,7 +916,7 @@ describe('McpConnectionsPage', () => {
         expect(wrapper.text()).not.toContain('could not be loaded')
         expect(alert.find('button').exists()).toBe(false)
         const link = alert.get('a')
-        expect(link.text()).toBe('fr' === locale ? SWITCH_ACCOUNT_FR : SWITCH_ACCOUNT_EN)
+        expect(link.text()).toBe(accessRefusalTexts(locale).switchAccount)
         // Même onglet : la conversation, la saisie d'une autre page ne sont pas ici en jeu, le flux est un changement de compte.
         expect(link.attributes('target')).toBeUndefined()
         const href = link.attributes('href') ?? ''
@@ -946,7 +949,7 @@ describe('McpConnectionsPage', () => {
 
       const alerts = wrapper.findAll('[role="alert"]')
       expect(alerts).toHaveLength(1)
-      expect(normalized(alerts[0]?.text() ?? '')).toContain(ACCESS_REFUSED_FR)
+      expect(normalized(alerts[0]?.text() ?? '')).toContain(REFUSAL.accessRefused)
       expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
       expect(rows(wrapper)).toHaveLength(4)
       for (const revokeButton of wrapper.findAll('tbody button')) {
@@ -966,7 +969,7 @@ describe('McpConnectionsPage', () => {
       expect(link.text()).toContain(fr.mcpConnections.errors.signInAgain)
       expect(link.attributes('target')).toBe('_blank')
       expect(new URLSearchParams((link.attributes('href') ?? '').split('?')[1]).get('reauth')).toBeNull()
-      expect(wrapper.text()).not.toContain(SWITCH_ACCOUNT_FR)
+      expect(wrapper.text()).not.toContain(REFUSAL.switchAccount)
 
       // Rétablit la session partagée pour les tests suivants. Le retour relit la liste (toujours refusée) : `/api/me`
       // répond désormais le palier de base, sans quoi cette relecture finirait la session une seconde fois.

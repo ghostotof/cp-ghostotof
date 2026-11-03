@@ -169,6 +169,12 @@ meaningful (see Lint below):
 directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
 not depend on).
 
+**Tests read the catalogue** (#748, R231), one way per case, never a text copied: a message with no parameter is read as
+`fr.…` / `en.…` in the spec, or from a `tests/support/` module when two specs or more need it; a message with parameters
+by `renderedMessage(locale, key, named?, plural?)` alone (`key` is a `CatalogKey`, so a wrong path breaks `vue-tsc`), never a
+`createAppI18n().global.t(…)` in a spec; a module that serves both languages exposes one function taking the `Locale`
+(`accessRefusalTexts(locale)`, `accountMenuTexts(locale)`), not `_FR` / `_EN` pairs.
+
 #### SEO
 
 No SSR (plain SPA), so `presentation/router/seo.ts` (`applySeoMeta`, called from a `router.afterEach`) updates

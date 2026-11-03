@@ -17,10 +17,13 @@ import { StaticPortfolioContentRepository } from '../../../src/infrastructure/po
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import { accessRefusalTexts } from '../../support/accessRefusalTexts'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+
+const REFUSAL = accessRefusalTexts('fr')
+const REFUSAL_EN = accessRefusalTexts('en')
 
 /** Un appel au repository dont le test pilote les fragments et l'issue. */
 interface PendingCall {
@@ -218,7 +221,7 @@ describe('AssistantPage', () => {
     await wrapper.find('[data-testid="assistant-disclaimer"] button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(createAppI18n().global.t('common.downloadCvError'))
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.common.downloadCvError)
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
   })
 
@@ -333,13 +336,13 @@ describe('AssistantPage', () => {
   it.each<['fr' | 'en', string, string]>([
     [
       'fr',
-      ACCESS_REFUSED_FR,
-      SWITCH_ACCOUNT_FR,
+      REFUSAL.accessRefused,
+      REFUSAL.switchAccount,
     ],
     [
       'en',
-      ACCESS_REFUSED_EN,
-      SWITCH_ACCOUNT_EN,
+      REFUSAL_EN.accessRefused,
+      REFUSAL_EN.switchAccount,
     ],
   ])('refus (%s) : message neutre et « Changer de compte » (reauth=1, retour à l\'assistant)', async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()

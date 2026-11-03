@@ -60,7 +60,7 @@ import {
   TRANSLATION_UNAVAILABLE_FR,
 } from '../../../support/adminTranslationTexts'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { createVersionLabel, ENTRY_FORM_TEXTS, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 
 const SETTINGS: AdminAboutSettings = {
   locale: 'fr',
@@ -340,7 +340,7 @@ const editButton = editButtonFor(actionsForLine, (which) =>
 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
 // à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
-const FORM_TEXTS = entryFormTexts('about')
+const FORM_TEXTS = ENTRY_FORM_TEXTS.about
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const CREATE_FR_LABEL: string = createVersionLabel('fr')
 const SITE_CREATE: string = fr.admin.about.siteCard.create

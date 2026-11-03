@@ -23,7 +23,7 @@ import { describeEntryFormLock, emitTranslateRightAfterMove, translateEntryButto
 import { PROPOSE_VERSION_PREFIX_FR, QUALITY_LOCALE_HELP_FR } from '../../../support/entryFormLockTexts'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { createVersionLabel, ENTRY_FORM_TEXTS, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -205,7 +205,7 @@ const editButton = editButtonFor(actionsForLine, (which) =>
 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
 // à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
-const FORM_TEXTS = entryFormTexts('quality')
+const FORM_TEXTS = ENTRY_FORM_TEXTS.quality
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */

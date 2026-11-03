@@ -223,7 +223,7 @@ describe('AppHeader', () => {
     await primeAuthState(null)
     const { wrapper } = await mountHeader()
 
-    expect(wrapper.get('a[href="/fr/login"]').text()).toBe(fr.common.login)
+    expect(wrapper.get('a[href="/fr/login"]').text()).toBe(MENU.login)
     expect(wrapper.text()).not.toContain(MENU.logout)
   })
 
@@ -621,7 +621,7 @@ describe('AppHeader', () => {
       await primeBaseAccessState()
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeDefined()
+      expect(findButton(wrapper, MENU.endBaseAccess)).toBeDefined()
       expect(findButton(wrapper, MENU.logout)).toBeUndefined()
     })
 
@@ -630,23 +630,23 @@ describe('AppHeader', () => {
       const authRepository = createStubAuthRepository(null)
       const { wrapper, router } = await mountHeader('/fr/case-studies', authRepository)
 
-      await findButton(wrapper, fr.common.endBaseAccess)?.trigger('click')
+      await findButton(wrapper, MENU.endBaseAccess)?.trigger('click')
       await flushPromises()
 
       expect(authRepository.logout).toHaveBeenCalledOnce()
       expect(wrapper.text()).not.toContain(fr.common.baseAccessBadge)
-      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeUndefined()
+      expect(findButton(wrapper, MENU.endBaseAccess)).toBeUndefined()
       expect(findButton(wrapper, fr.common.instantAccess)).toBeDefined()
       expect(router.currentRoute.value.path).toBe('/fr')
     })
 
     it('anonyme comme au palier de confiance : pas de « Terminer cet accès » (les comptes gardent « Déconnexion »)', async () => {
       await primeAuthState(null)
-      expect(findButton((await mountHeader()).wrapper, fr.common.endBaseAccess)).toBeUndefined()
+      expect(findButton((await mountHeader()).wrapper, MENU.endBaseAccess)).toBeUndefined()
 
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
-      expect(findButton(wrapper, fr.common.endBaseAccess)).toBeUndefined()
+      expect(findButton(wrapper, MENU.endBaseAccess)).toBeUndefined()
       await openDesktopAccountMenu(wrapper)
       expect(findButton(wrapper, MENU.logout)).toBeDefined()
     })
@@ -655,7 +655,7 @@ describe('AppHeader', () => {
       await primeBaseAccessState()
       const { wrapper } = await mountHeader('/en', undefined, undefined, undefined, 'en')
 
-      expect(findButton(wrapper, en.common.endBaseAccess)).toBeDefined()
+      expect(findButton(wrapper, MENU_EN.endBaseAccess)).toBeDefined()
       expect(findButton(wrapper, MENU_EN.logout)).toBeUndefined()
     })
 
@@ -737,7 +737,7 @@ describe('AppHeader', () => {
       expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/oauth/consent&expired=1')
       expect(link.attributes('target')).toBeUndefined()
       expect(link.attributes('rel')).toBeUndefined()
-      expect(link.text()).toBe(fr.common.login)
+      expect(link.text()).toBe(MENU.login)
       expect(link.find('svg').exists()).toBe(false)
       expect(findButton(wrapper, fr.common.instantAccess)).toBeUndefined()
     })
@@ -936,7 +936,7 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
 
       const toggle = wrapper.get(TOGGLE)
-      expect(toggle.attributes('aria-label')).toBe(fr.common.accountMenu)
+      expect(toggle.attributes('aria-label')).toBe(MENU.accountMenu)
       expect(toggle.attributes('aria-haspopup')).toBe('true')
       expect(toggle.attributes('aria-expanded')).toBe('false')
       expect(toggle.get('svg').attributes('aria-hidden')).toBe('true')
@@ -973,7 +973,7 @@ describe('AppHeader', () => {
       await openAccountMenu(wrapper)
 
       expect(wrapper.get('#account-menu .dropdown-header').text()).toBe(fr.common.baseAccessBadge)
-      expect(menuItems(wrapper)).toEqual([fr.common.endBaseAccess, fr.common.login])
+      expect(menuItems(wrapper)).toEqual([MENU.endBaseAccess, MENU.login])
     })
 
     it('« Déconnexion » du menu déconnecte et referme le menu', async () => {
@@ -1042,7 +1042,7 @@ describe('AppHeader', () => {
 
       expect(wrapper.find(DESKTOP_TOGGLE).exists()).toBe(false)
       // « Terminer cet accès » et « Connexion » restent à plat : il n'y a pas de compte à ranger.
-      expect(findButton(wrapper, fr.common.endBaseAccess)?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      expect(findButton(wrapper, MENU.endBaseAccess)?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
       await openAccountMenu(wrapper)
       expect(wrapper.find(LINK).exists()).toBe(false)
     })

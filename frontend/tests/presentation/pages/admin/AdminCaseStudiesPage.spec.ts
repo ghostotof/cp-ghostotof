@@ -20,7 +20,7 @@ import { describeEntryFormLock, textsDescribing, translateEntryButton } from '..
 import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { createVersionLabel, entryFormTexts, entryTitleTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import { HttpAdminCaseStudyRepository } from '../../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
 import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
@@ -152,8 +152,8 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
 // de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
-const FORM_TEXTS = entryFormTexts('caseStudies')
-const TITLES = entryTitleTexts('caseStudies')
+const FORM_TEXTS = ENTRY_FORM_TEXTS.caseStudies
+const TITLES = ENTRY_TITLES.caseStudies
 const CREATE_EN_LABEL: string = createVersionLabel('en')
 const EDIT_FR: string = fr.admin.caseStudies.editAction
 

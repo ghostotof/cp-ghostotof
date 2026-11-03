@@ -1,30 +1,28 @@
 import en from '../../src/infrastructure/i18n/locales/en.json'
 import fr from '../../src/infrastructure/i18n/locales/fr.json'
+import type { Locale } from '../../src/domain/portfolio/entities/Locale'
+
+/** Les catalogues par langue, lus tels que les fichiers JSON les écrivent. */
+const CATALOGUES = { fr, en } as const satisfies Record<Locale, unknown>
+
+export interface AccessRefusalTexts {
+  readonly earlierSaveRefused: string
+  readonly accessRefused: string
+  readonly switchAccount: string
+}
 
 /**
- * Les textes FR et EN de l'alerte « accès refusé » du backoffice, lus de `fr.json` et `en.json` par leur clé et jamais
- * recopiés : un libellé retouché dans le catalogue ne fait pas rougir dix specs pour une virgule. Ils se comparent entiers
- * (le texte complet, jamais un extrait) : c'est l'identité du texte affiché (l'avis d'un enregistrement précédent, ou le refus
- * courant) que ces specs jugent, pas sa rédaction.
+ * Les textes de l'alerte « accès refusé » du backoffice dans `locale` (`common.earlierSaveRefused`, `common.accessRefused`,
+ * `common.switchAccount`), lus du catalogue par leur clé et jamais recopiés : un libellé retouché ne fait pas rougir les specs
+ * qui les lisent pour une virgule. Ils se comparent entiers (le texte complet, jamais un extrait) : ces specs jugent l'identité
+ * du texte affiché (l'avis d'un enregistrement précédent, ou le refus courant), non sa rédaction.
  */
+export function accessRefusalTexts(locale: Locale): AccessRefusalTexts {
+  const { common } = CATALOGUES[locale]
 
-/** `common.earlierSaveRefused` : un enregistrement refusé pendant que la personne avait quitté le backoffice. */
-export const EARLIER_SAVE_REFUSED_FR: string = fr.common.earlierSaveRefused
-
-/** `common.accessRefused` : le refus courant d'une lecture ou d'une écriture. */
-export const ACCESS_REFUSED_FR: string = fr.common.accessRefused
-
-/** `common.earlierSaveRefused`, en anglais. */
-export const EARLIER_SAVE_REFUSED_EN: string = en.common.earlierSaveRefused
-
-/** `common.accessRefused`, en anglais. */
-export const ACCESS_REFUSED_EN: string = en.common.accessRefused
-
-/**
- * `common.switchAccount` : le lien « Changer de compte » de l'alerte d'un refus réel (`AssistantPage`, `McpConnectionsPage`),
- * qui ouvre la connexion dans le même onglet. Lu du catalogue, comme les textes ci-dessus.
- */
-export const SWITCH_ACCOUNT_FR: string = fr.common.switchAccount
-
-/** `common.switchAccount`, en anglais. */
-export const SWITCH_ACCOUNT_EN: string = en.common.switchAccount
+  return {
+    earlierSaveRefused: common.earlierSaveRefused,
+    accessRefused: common.accessRefused,
+    switchAccount: common.switchAccount,
+  }
+}

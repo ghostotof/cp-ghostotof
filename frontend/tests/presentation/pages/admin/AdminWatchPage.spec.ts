@@ -21,7 +21,7 @@ import { createBackofficeSessionReaction } from '../../../../src/presentation/ro
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { buttonLabelled } from '../../../support/buttonLabelled'
-import { entryFormTexts, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { ENTRY_FORM_TEXTS, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const VULNERABILITY: AdminVulnerability = {
@@ -127,7 +127,7 @@ function rowContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
 
 // Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
 // à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
-const FORM_TEXTS = entryFormTexts('watch')
+const FORM_TEXTS = ENTRY_FORM_TEXTS.watch
 const EDIT_FR: string = fr.admin.watch.editAction
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */

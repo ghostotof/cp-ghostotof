@@ -3,13 +3,12 @@ import fr from '../../src/infrastructure/i18n/locales/fr.json'
 import type { Locale } from '../../src/domain/portfolio/entities/Locale'
 
 /**
- * Les entrées du menu du compte (`AccountMenu`, rendu aussi par `AppHeader`) et son bouton, **lus du catalogue** et jamais
- * recopiés : les deux specs jugent les mêmes entrées, dans le même ordre, et un libellé retouché dans `fr.json` ne doit pas
- * faire rougir des dizaines de sites répartis sur deux fichiers. La justesse des mots eux-mêmes se juge là où le texte est le
- * sujet du test, non dans ces constantes. Même principe que `adminButtonTexts.ts` (les libellés du backoffice).
+ * Le menu du compte (`AccountMenu`, rendu aussi par `AppHeader`) : son bouton, ses entrées et celles du palier de base, **lus
+ * du catalogue** et jamais recopiés. Les specs qui jugent le menu jugent les mêmes entrées, dans le même ordre ; un libellé
+ * retouché dans `fr.json` ne doit pas les faire rougir. La justesse des mots eux-mêmes se juge là où le texte est le sujet du
+ * test, non ici. Même principe que `adminButtonTexts.ts` (les libellés du backoffice).
  *
- * Six clés de deux espaces de noms, car l'application les a rangées ainsi : `nav.assistant` et `nav.mcpConnections` (les liens),
- * `common.downloadCv`, `common.administration`, `common.logout` et `common.myAccount` (les actions et le bouton).
+ * Les clés sont rangées par l'application dans `nav` (les liens) et `common` (les actions et le bouton).
  */
 const CATALOGUES = { fr, en } as const satisfies Record<Locale, unknown>
 
@@ -20,6 +19,10 @@ export interface AccountMenuTexts {
   readonly mcpConnections: string
   readonly logout: string
   readonly myAccount: string
+  /** Le nom du bouton qui ouvre le menu sur mobile (`aria-label`), distinct de `myAccount`, son libellé sur bureau. */
+  readonly accountMenu: string
+  readonly endBaseAccess: string
+  readonly login: string
 }
 
 export function accountMenuTexts(locale: Locale): AccountMenuTexts {
@@ -31,5 +34,8 @@ export function accountMenuTexts(locale: Locale): AccountMenuTexts {
     mcpConnections: catalogue.nav.mcpConnections,
     logout: catalogue.common.logout,
     myAccount: catalogue.common.myAccount,
+    accountMenu: catalogue.common.accountMenu,
+    endBaseAccess: catalogue.common.endBaseAccess,
+    login: catalogue.common.login,
   }
 }

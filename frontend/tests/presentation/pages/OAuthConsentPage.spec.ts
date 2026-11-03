@@ -21,12 +21,15 @@ import { router as appRouter } from '../../../src/presentation/router'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { sessionFor } from '../../support/authSession'
-import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR, SWITCH_ACCOUNT_EN, SWITCH_ACCOUNT_FR } from '../../support/accessRefusalTexts'
+import { accessRefusalTexts } from '../../support/accessRefusalTexts'
 import { renderedMessage } from '../../support/renderedMessage'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
+
+const REFUSAL = accessRefusalTexts('fr')
+const REFUSAL_EN = accessRefusalTexts('en')
 
 afterEach(() => {
   vi.useRealTimers()
@@ -267,9 +270,13 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   it('dit quel compte accorde, en français, avec un lien « Changer de compte » vers la connexion', async () => {
     const { wrapper, router } = await mountPage()
 
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'trusted' }))
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(
+
+      renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'trusted' }),
+
+    )
     const link = wrapper.find('[data-testid="consent-switch-account"]')
-    expect(link.text()).toBe(SWITCH_ACCOUNT_FR)
+    expect(link.text()).toBe(REFUSAL.switchAccount)
     // Hors de la zone des boutons de décision : un clic sur ce lien n'est pas une décision.
     expect(link.element.closest('[data-testid="consent-decision"]')).toBeNull()
     const target = router.resolve(link.attributes('href') ?? '')
@@ -293,9 +300,13 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   it('en anglais : le compte et « Switch account »', async () => {
     const { wrapper, router } = await mountPage({ locale: 'en' })
 
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('en', 'oauthConsent.account.grantingAs', { username: 'trusted' }))
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(
+
+      renderedMessage('en', 'oauthConsent.account.grantingAs', { username: 'trusted' }),
+
+    )
     const link = wrapper.find('[data-testid="consent-switch-account"]')
-    expect(link.text()).toBe(SWITCH_ACCOUNT_EN)
+    expect(link.text()).toBe(REFUSAL_EN.switchAccount)
     expect(router.resolve(link.attributes('href') ?? '').params.locale).toBe('en')
   })
 
@@ -540,10 +551,10 @@ describe('OAuthConsentPage — session', () => {
     // La session vaut toujours pour le reste du site : elle n'est pas marquée expirée.
     expect(authState.user).not.toBeNull()
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toContain(ACCESS_REFUSED_FR)
+    expect(alert.text()).toContain(REFUSAL.accessRefused)
     expect(me).toHaveBeenCalledOnce()
     const link = alert.find('a')
-    expect(link.text()).toBe(SWITCH_ACCOUNT_FR)
+    expect(link.text()).toBe(REFUSAL.switchAccount)
     const target = router.resolve(link.attributes('href') ?? '')
     expect(target.name).toBe('login')
     // Le drapeau que la route de connexion honore pour une personne déjà connectée.
@@ -565,8 +576,8 @@ describe('OAuthConsentPage — session', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
-    expect(wrapper.find('[role="alert"] a').text()).toBe(SWITCH_ACCOUNT_FR)
+    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL.accessRefused)
+    expect(wrapper.find('[role="alert"] a').text()).toBe(REFUSAL.switchAccount)
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
     expect(navigate).not.toHaveBeenCalled()
@@ -580,8 +591,8 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_EN)
-    expect(wrapper.find('[role="alert"] a').text()).toBe(SWITCH_ACCOUNT_EN)
+    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL_EN.accessRefused)
+    expect(wrapper.find('[role="alert"] a').text()).toBe(REFUSAL_EN.switchAccount)
   })
 
   it("session expirée : le message ne parle plus d'un compte qui ne pourrait pas autoriser", async () => {
@@ -698,7 +709,9 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
 
     expect(describeRequest).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'autre' }))
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe(
+      renderedMessage('fr', 'oauthConsent.account.grantingAs', { username: 'autre' }),
+    )
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
     expect(decide).toHaveBeenLastCalledWith(PARAMS, true, OTHER_SUMMARY.account.id)

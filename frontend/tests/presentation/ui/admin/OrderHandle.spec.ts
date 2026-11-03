@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import OrderHandle from '../../../../src/presentation/ui/admin/OrderHandle.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import { renderedMessage } from '../../../support/renderedMessage'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
@@ -15,7 +16,9 @@ describe('OrderHandle', () => {
   it('porte un aria-label nommant la ligne à déplacer', () => {
     const wrapper = mountHandle({ index: 0, count: 3, label: 'Panne réseau' })
 
-    expect(wrapper.get('button').attributes('aria-label')).toBe(createAppI18n().global.t('admin.order.moveHandle', { label: 'Panne réseau' }))
+    expect(wrapper.get('button').attributes('aria-label')).toBe(
+      renderedMessage('fr', 'admin.order.moveHandle', { label: 'Panne réseau' }),
+    )
   })
 
   it('ArrowDown émet un déplacement vers le bas', async () => {

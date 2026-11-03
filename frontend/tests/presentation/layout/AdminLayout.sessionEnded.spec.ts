@@ -29,14 +29,11 @@ import type { AdminTranslationRepository } from '../../../src/domain/admin/trans
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
-import {
-  ACCESS_REFUSED_EN,
-  ACCESS_REFUSED_FR,
-  EARLIER_SAVE_REFUSED_FR,
-  SWITCH_ACCOUNT_EN,
-  SWITCH_ACCOUNT_FR,
-} from '../../support/accessRefusalTexts'
+import { accessRefusalTexts } from '../../support/accessRefusalTexts'
 import { defineComponent, h, type Component } from 'vue'
+
+const REFUSAL = accessRefusalTexts('fr')
+const REFUSAL_EN = accessRefusalTexts('en')
 
 const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
 
@@ -324,7 +321,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
     expect(alerts.some((alert) => alert.text().includes('Votre session a pris fin'))).toBe(false)
     expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(false)
     expect(alerts).toHaveLength(1)
-    expect(alerts[0]?.text()).toContain(ACCESS_REFUSED_FR)
+    expect(alerts[0]?.text()).toContain(REFUSAL.accessRefused)
     wrapper.unmount()
   })
 })
@@ -375,13 +372,13 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
   it.each([
     [
       'fr',
-      ACCESS_REFUSED_FR,
-      SWITCH_ACCOUNT_FR,
+      REFUSAL.accessRefused,
+      REFUSAL.switchAccount,
     ],
     [
       'en',
-      ACCESS_REFUSED_EN,
-      SWITCH_ACCOUNT_EN,
+      REFUSAL_EN.accessRefused,
+      REFUSAL_EN.switchAccount,
     ],
   ] as const)(
     "refus réel à l'enregistrement (%s) : alerte, « Changer de compte » vers la connexion même onglet, saisie gardée, palier relu une fois",
@@ -414,7 +411,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
-    expect(alerts[0]?.text()).toContain(ACCESS_REFUSED_FR)
+    expect(alerts[0]?.text()).toContain(REFUSAL.accessRefused)
     expect(me).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
@@ -469,7 +466,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     // La personne a fait le geste : elle apprend que l'enregistrement a échoué, sur la page où elle est allée.
     expect(wrapper.text()).toContain('ailleurs')
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
-    expect(wrapper.get('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
+    expect(wrapper.get('[role="alert"]').text()).toContain(REFUSAL.accessRefused)
     expect(me).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
@@ -542,7 +539,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
-    expect(wrapper.get('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
+    expect(wrapper.get('[role="alert"]').text()).toContain(REFUSAL.accessRefused)
     expect(me).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
@@ -589,7 +586,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
       await flushPromises()
 
       expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
-      expect(wrapper.get('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
+      expect(wrapper.get('[role="alert"]').text()).toContain(REFUSAL.accessRefused)
       expect(me).toHaveBeenCalledTimes(1)
       wrapper.unmount()
     })
@@ -700,21 +697,21 @@ describe("AdminLayout — l'avis de l'enregistrement précédent sur une page à
 
       // L'alerte porte l'avis dès le montage : l'écriture seule est comptée.
       const atMount = noticeMessage(wrapper)
-      expect(atMount.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(atMount.text).toBe(REFUSAL.earlierSaveRefused)
       expect(backofficeAccessRefused.value).toBe(1)
 
       // Les deux lectures du chargement, parties avant le montage de l'alerte, sont refusées l'une après l'autre.
       principles.refuse()
       await flushPromises()
       const afterPrinciples = noticeMessage(wrapper)
-      expect(afterPrinciples.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(afterPrinciples.text).toBe(REFUSAL.earlierSaveRefused)
       expect(afterPrinciples.element).not.toBe(atMount.element)
       expect(backofficeAccessRefused.value).toBe(2)
 
       traits.refuse()
       await flushPromises()
       const afterTraits = noticeMessage(wrapper)
-      expect(afterTraits.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(afterTraits.text).toBe(REFUSAL.earlierSaveRefused)
       expect(afterTraits.element).not.toBe(afterPrinciples.element)
       expect(backofficeAccessRefused.value).toBe(3)
 
@@ -722,7 +719,7 @@ describe("AdminLayout — l'avis de l'enregistrement précédent sur une page à
       await createQualityPrinciple(wrapper)
 
       const afterRead = noticeMessage(wrapper)
-      expect(afterRead.text).toBe(ACCESS_REFUSED_FR)
+      expect(afterRead.text).toBe(REFUSAL.accessRefused)
       expect(afterRead.element).not.toBe(afterTraits.element)
       expect(backofficeAccessRefused.value).toBe(4)
       wrapper.unmount()
@@ -753,20 +750,20 @@ describe("AdminLayout — l'avis de l'enregistrement précédent sur une page à
     const wrapper = await mountAdminQuality(repository)
 
     // Les deux lectures du chargement sont parties avant le montage : l'une refusée, l'autre en attente. L'avis tient.
-    expect(noticeMessage(wrapper).text).toBe(EARLIER_SAVE_REFUSED_FR)
+    expect(noticeMessage(wrapper).text).toBe(REFUSAL.earlierSaveRefused)
     expect(backofficeAccessRefused.value).toBe(2)
 
     // Un principe créé : l'écriture, puis la relecture des principes, partie après le montage, sont servies.
     await createQualityPrinciple(wrapper)
     expect(principleReads).toBe(2)
-    expect(noticeMessage(wrapper).text).toBe(EARLIER_SAVE_REFUSED_FR)
+    expect(noticeMessage(wrapper).text).toBe(REFUSAL.earlierSaveRefused)
 
     // La lecture retenue du chargement répond enfin, refusée : le chargement est clos, c'est le texte courant.
     traits.refuse()
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(3)
-    expect(noticeMessage(wrapper).text).toBe(ACCESS_REFUSED_FR)
+    expect(noticeMessage(wrapper).text).toBe(REFUSAL.accessRefused)
     wrapper.unmount()
   })
 })
