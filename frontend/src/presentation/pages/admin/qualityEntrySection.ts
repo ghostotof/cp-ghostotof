@@ -4,21 +4,22 @@ import type { AdminQualityError } from '../../../domain/admin/quality/errors/Adm
 import type { EntryFormPlacement } from '../../ui/admin/proposedCreation'
 
 /**
- * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190 ; règle
- * `frontend-backoffice.md`, « Existing resources », `quality`) : la forme commune de leurs entrées, de leurs écritures, de la
- * lecture que la page lui passe, et les champs qui font toute la différence entre l'une et l'autre. Le gabarit n'a aucune
- * branche sur le genre d'entrée : chaque différence est une propriété d'un champ.
+ * Ce que `AdminQualityEntrySection` sait de ses deux instances, les principes et les traits de qualité (#748, R190 de la
+ * quinzième relecture ; règle `frontend-backoffice.md`, « Existing resources », `quality`) : la forme commune de leurs entrées, de
+ * leurs écritures, de la lecture que la page lui passe, et les champs qui font toute la différence entre l'une et l'autre. Le
+ * gabarit n'a aucune branche sur le genre d'entrée : chaque différence est une propriété d'un champ.
  *
- * `F` est l'union des noms de champs d'une instance (`'title' | 'description' | 'iconKey'`, ou `'label'`). Chaque instance
- * déclare ses champs par un **record** (`QUALITY_PRINCIPLE_FIELD_OPTIONS`, `as const satisfies Record<F, QualityFieldOptions>`),
- * dont les clés sont la liste des champs (`entryFieldsOf`) et dont `fieldRecord` construit le formulaire à blanc et le corps
- * d'écriture : il n'y a pas de liste à tenir à jour à côté du type, et pas de garde à l'exécution (R215, D1 de la dix-septième
- * relecture). Ce que le compilateur vérifie : que le record déclare un champ par nom de `F` (`satisfies`, un nom oublié ou en trop
- * est une erreur de compilation), que l'entrée (`QualityEntry<F>`) et l'écriture (`QualityEntryInput<F>`) portent un champ par nom
- * de `F`, que chaque nom de prose est un champ du record (`proseFields: readonly F[]` : un nom fautif ne serait pas ignoré en
- * silence) et que la page donne un libellé à chacun (`labels: Record<F, string>`). Ce qu'il ne vérifie pas : le formulaire est un
- * `EntryForm<string>` (écart accepté de R202 : `reactive` d'un type indexé par le `F` générique épuise la mémoire de `vue-tsc`),
- * si bien que `form.nimporteQuoi` compile.
+ * `F` est l'union des noms de champs d'une instance (`QualityPrincipleField`, `QualityTraitField`). Chaque instance déclare ses
+ * champs par un **record** (`QUALITY_PRINCIPLE_FIELD_OPTIONS`, `as const satisfies Record<F, QualityFieldOptions>`), dont les clés
+ * sont la liste des champs (`qualityEntryFieldsOf`) et dont `fieldRecord` construit le formulaire à blanc et le corps d'écriture :
+ * il n'y a pas de liste à tenir à jour à côté du type, et pas de garde à l'exécution (R215, D1 de la dix-septième relecture ;
+ * règle `frontend-backoffice.md`, « Existing resources », `quality`). Ce que le compilateur vérifie : que le record déclare un
+ * champ par nom de `F` (`satisfies`, un nom oublié ou en trop est une erreur de compilation), que l'entrée (`QualityEntry<F>`) et
+ * l'écriture (`QualityEntryInput<F>`) portent un champ par nom de `F`, que chaque nom de prose est un champ du record
+ * (`proseFields: readonly F[]` : un nom fautif ne serait pas ignoré en silence) et que la page donne un libellé à chacun
+ * (`labels: Record<F, string>`). Ce qu'il ne vérifie pas : le formulaire est un `EntryForm<string>` (écart accepté de R202, seizième
+ * relecture : `reactive` d'un type indexé par le `F` générique épuise la mémoire de `vue-tsc`), si bien que `form.nimporteQuoi`
+ * compile.
  */
 
 /** Une entrée lue : ce que partagent les deux contenus (clé, langue, groupe de traduction, position), plus ses champs. */
@@ -46,7 +47,7 @@ export type EntryForm<F extends string> = EntryFormPlacement & Record<F, string>
  * Un champ par clé de `options`, sa valeur lue par `valueOf` : le formulaire à blanc (`() => ''`), le corps d'écriture
  * (`(name) => form[name]`). Seules les clés de `options` sont lues, jamais ses valeurs.
  *
- * C'est **la seule assertion de ce fichier et de la section** (`as Record<F, string>`) : un objet bâti à l'exécution est indexé
+ * C'est **la seule assertion de ce module** (`as Record<F, string>`) : un objet bâti à l'exécution est indexé
  * par une chaîne quelconque, et TypeScript n'accepte pas un `{ [clé: string]: string }` comme `Record<F, string>`. Elle est sûre
  * parce que les clés de `options` sont `F` (`options: Record<F, …>`, exhaustif par le `satisfies` de chaque instance) et que la
  * fonction ne fait que les recopier, une valeur chacune.
@@ -66,7 +67,7 @@ export function fieldRecord<F extends string>(
 
 /**
  * Un champ du formulaire d'une section, **sans son libellé** : la liste des champs est dérivée d'une constante
- * (`entryFieldsOf`), les libellés traduits passent à part (`labels`, `Record<F, string>`, un `computed` de la page : ils suivent
+ * (`qualityEntryFieldsOf`), les libellés traduits passent à part (`labels`, `Record<F, string>`, un `computed` de la page : ils suivent
  * la langue de l'interface). Chaque propriété remplace ce qu'une branche sur le genre d'entrée aurait écrit :
  *
  * - `control` : le champ de saisie, une ligne (`text`) ou un paragraphe (`textarea`) ;
@@ -122,8 +123,8 @@ export interface QualityEntrySource<E, I> {
   readonly reorder: (keys: readonly string[]) => Promise<void>
 }
 
-/** Ce que la fabrique `entryField` lit, hors le nom : la prose est celle de la liste de `proseFields.ts`, jamais redite. */
-export interface EntryFieldOptions<F extends string> {
+/** Ce que la fabrique `qualityEntryField` lit, hors le nom : la prose est celle de la liste de `proseFields.ts`, jamais redite. */
+export interface ResolvedQualityFieldOptions<F extends string> {
   readonly control: 'text' | 'textarea'
   /** La liste des champs de prose de l'instance (`proseFields.ts`, la source) : `prose` est « le nom y figure ». */
   readonly proseFields: readonly F[]
@@ -131,8 +132,8 @@ export interface EntryFieldOptions<F extends string> {
   readonly column: boolean
 }
 
-/** Un champ de la liste d'une section (`entryFieldsOf` l'appelle) : sa prose se lit de la liste de `proseFields.ts`, jamais redite. */
-export function entryField<F extends string>(name: F, options: EntryFieldOptions<F>): QualityEntryField<F> {
+/** Un champ de la liste d'une section : sa prose se lit de la liste de `proseFields.ts`, jamais redite. */
+export function qualityEntryField<F extends string>(name: F, options: ResolvedQualityFieldOptions<F>): QualityEntryField<F> {
   const { proseFields, ...rest } = options
 
   return { name, ...rest, prose: proseFields.includes(name) }
@@ -155,7 +156,7 @@ export interface QualityFieldOptions {
  * `proseFields` (`proseFields.ts`), jamais redite dans le record. `F` vient du record seul (`NoInfer`) : une liste de prose
  * qui nomme moins de champs ne le rétrécit pas, et un nom que le record ne déclare pas est une erreur de compilation.
  */
-export function entryFieldsOf<F extends string>(
+export function qualityEntryFieldsOf<F extends string>(
   options: Readonly<Record<F, QualityFieldOptions>>,
   proseFields: readonly NoInfer<F>[],
 ): readonly QualityEntryField<F>[] {
@@ -164,13 +165,13 @@ export function entryFieldsOf<F extends string>(
   for (const name in options) {
     const { control, copiedToNewVersion = false, column = false } = options[name]
 
-    fields.push(entryField(name, { control, proseFields, copiedToNewVersion, column }))
+    fields.push(qualityEntryField(name, { control, proseFields, copiedToNewVersion, column }))
   }
 
   return fields
 }
 
-/** Principes : un titre et une description, traduits, et une clé d'icône, recopiée et affichée en colonne. */
+/** Principes : la clé d'icône est recopiée dans « Créer la version XX » et a sa colonne. */
 export const QUALITY_PRINCIPLE_FIELD_OPTIONS = {
   title: { control: 'text' },
   description: { control: 'textarea' },
@@ -181,3 +182,9 @@ export const QUALITY_PRINCIPLE_FIELD_OPTIONS = {
 export const QUALITY_TRAIT_FIELD_OPTIONS = {
   label: { control: 'text' },
 } as const satisfies Record<'label', QualityFieldOptions>
+
+/** Les noms de champs d'un principe, lus du record : une clé ajoutée ou retirée du record change ce type, et ses lecteurs avec. */
+export type QualityPrincipleField = keyof typeof QUALITY_PRINCIPLE_FIELD_OPTIONS
+
+/** Les noms de champs d'un trait, lus du record. */
+export type QualityTraitField = keyof typeof QUALITY_TRAIT_FIELD_OPTIONS

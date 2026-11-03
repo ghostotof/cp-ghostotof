@@ -12,6 +12,8 @@ import {
   QUALITY_PRINCIPLE_FIELD_OPTIONS,
   QUALITY_TRAIT_FIELD_OPTIONS,
   type QualityEntryInput,
+  type QualityPrincipleField,
+  type QualityTraitField,
   type QualityEntrySource,
   type QualityEntryTexts,
 } from './qualityEntrySection'
@@ -75,7 +77,7 @@ const LOCKED_HINT_ID = 'admin-order-locked-hint'
  * refs, la page ne les déballe pas, seule la section les lit. Chaque composable est appelé ici, une fois.
  */
 const principleReading = useAdminQualityPrinciples()
-const principleSource: QualityEntrySource<AdminQualityPrinciple, QualityEntryInput<'title' | 'description' | 'iconKey'>> = {
+const principleSource: QualityEntrySource<AdminQualityPrinciple, QualityEntryInput<QualityPrincipleField>> = {
   entries: principleReading.principles,
   isLoading: principleReading.isLoading,
   hasError: principleReading.hasError,
@@ -88,7 +90,7 @@ const principleSource: QualityEntrySource<AdminQualityPrinciple, QualityEntryInp
   reorder: principleReading.reorder,
 }
 const traitReading = useAdminQualityTraits()
-const traitSource: QualityEntrySource<AdminQualityTrait, QualityEntryInput<'label'>> = {
+const traitSource: QualityEntrySource<AdminQualityTrait, QualityEntryInput<QualityTraitField>> = {
   entries: traitReading.traits,
   isLoading: traitReading.isLoading,
   hasError: traitReading.hasError,

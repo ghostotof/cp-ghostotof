@@ -30,7 +30,7 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import {
-  entryFieldsOf,
+  qualityEntryFieldsOf,
   fieldRecord,
   type EntryForm,
   type QualityEntry,
@@ -47,10 +47,9 @@ import {
  * (`texts`, traduits par la page) et sa lecture (`source`) : aucune branche sur `kind`, qui ne sert qu'aux identifiants
  * `admin-quality-<kind>-*`.
  *
- * **`source` est une interface, `QualityEntrySource`, et non les deux composables** : la section dépend de ce qu'elle lit (la
- * liste, l'état de chargement, les écritures) et non de `useAdminQualityPrinciples` ni de `useAdminQualityTraits`, ni de leur
- * injection ; un test lui passe une fausse source. La page en écrit chaque membre, la liste des composables (`principles`,
- * `traits`) étant exposée sous `entries`.
+ * **`source` est une interface, `QualityEntrySource`, et non les deux composables de lecture** : la section dépend de ce
+ * qu'elle lit (la liste, l'état de chargement, les écritures) et non de leur injection ; une fausse source suffit à la construire.
+ * Chaque membre de l'interface est écrit à la main, la liste des composables étant exposée sous `entries`.
  *
  * **La langue est un champ de formulaire, pas un état de page**
  * (`form.locale`) : c'est la langue de l'entrée en cours d'édition ou
@@ -120,7 +119,7 @@ function fieldId(name: string): string {
 }
 
 /** Les champs, dans l'ordre des clés du record : le gabarit les écrit, « Modifier » et « Créer la version XX » les parcourent. */
-const fields = entryFieldsOf(props.fieldOptions, props.proseFields)
+const fields = qualityEntryFieldsOf(props.fieldOptions, props.proseFields)
 
 const CONTROLS = { text: BaseTextInput, textarea: BaseTextarea } as const
 
