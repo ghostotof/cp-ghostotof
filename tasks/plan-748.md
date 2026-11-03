@@ -14759,6 +14759,10 @@ ou un module existant : `adminButtonTexts.ts`, `accessRefusalTexts.ts`, `account
   `fr.json` et `en.json` ; le relevé final, chaque ligne restante dite avec sa raison (par fichier, regroupée).
 - [ ] **Step 5 : commit** — `test(frontend): les libellés de toutes les specs lus du catalogue, au critère de R219 (#748)`.
 
+**Décision de l'auteur, 2026-11-02 (question rendue par R219c, 2f9b6391)** : les trois lignes que R219 avait gardées et que R219c a
+converties (`TechnologiesSection.spec.ts:77` ; « À propos » et « CV sans identité » de `StaticPortfolioContentRepository.spec.ts`)
+**restent converties** : R219 n'avait muté que `admin.*`, et leurs clés hors admin les font rougir. R221 le dit comme écart déclaré.
+
 ---
 
 ### Task R221 : Balayage documentaire de la dix-septième relecture — commandes et nombres dans le plan
