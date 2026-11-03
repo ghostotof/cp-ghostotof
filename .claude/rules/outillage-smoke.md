@@ -163,13 +163,15 @@ with an `n` option in any cluster (a nameref reads a variable by name: `local -r
 `compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`) or a
 quote, a backtick or a backslash (`bash -c 'set'`, `` x=`set` ``, `\set`), bare or followed by a redirection, a pipe, `;`, `&&`, `||`, a
 quote, a backtick or a backslash (`set\`); `eval`; `printenv`; `env` as a command; `${!`; `ps` with the BSD option `e` in any position
-(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`) **or with any option in `-` outside an allow-list** (C17-1): `-o` and `-p`
+(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`), a word with no dash being judged on its letters alone (C18-1: `ps e$$`,
+`ps -p $$ e1` and `ps e${pid}` are refused, `ps -p 1` passes), **or with any option in `-` outside an allow-list** (C17-1): `-o` and `-p`
 (their value is skipped), `-e`, `-f`, `-ef` and `-aux` pass (every process, not its environment: `ps -ef`, `ps -aux` and
 `ps -p $$ -o comm=` pass), every other one refuses the line, the long ones too (`ps -auxe` and `ps -eaux`, which procps reads as the
-BSD options `aux` and `e` behind a dash, `ps -A e`, `ps -www`, `ps --cols 200`); a quote, a backtick or a backslash glued to a word is
-dropped first, and a final backslash refuses the line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, in any
-case (`ENVIRON` of awk, C17-2), prose included, however `/proc/<pid>/environ` is written (`cat /proc/self/environ`,
-`cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
+BSD options `aux` and `e` behind a dash, `ps -A e`, `ps -www`, `ps --cols 200`); the word `ps` is seen between quotes (C18-2: `"ps" e`
+and `'ps' e` are refused, `"ps" -ef` passes), but a backtick after it closes the command (the prose writes `` `ps` ``, followed by words
+that are not its options); a quote, a backtick or a backslash glued to a word is dropped first, and a final backslash refuses the
+line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, in any case (`ENVIRON` of awk, C17-2), prose included,
+however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
 French prose writes « à peu près » or « près de », never that word, in a comment of these files.
 Such a bare word ends its command at the end of the line, `;`, `&`, `|`, `)`, `#`, a redirection, a backslash (`declare\`: the next line
 carries on the command), or at a quote or a backtick **glued** to the word or to its last option (C16-2: `bash -c 'declare'`,
@@ -178,17 +180,23 @@ follows (`bash -c 'declare -x '`): `export -n -- "$n"` opens the name, it passes
 `export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
 `if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``,
 `bash -c 'export -n -- NAME'`, `x="${env}"` and `environment` pass.
-The forms of C16-2 and `ps -auxe` / `ps -eaux` that print are **measured** in `smoke-http.test.sh`: run by `bash -c` under `env -i` with
-the one dummy variable (a random value, never an argument of a process: the output goes through a pattern file, `grep -F -f`, and is read
-by `values_found_in`), each prints the value, and the same list is then refused by the guard. A witness variable the test itself exports
-must not appear in that output (C17-8): the measure inherits nothing. Never run such a form in a session outside `env -i` with a dummy.
+The forms of C16-2 and the `ps` forms bound to the measured process (`ps e -p $$`, `ps e$$`, `"ps" e -p $$`) that print are **measured**
+in `smoke-http.test.sh`: run by `bash -c` under `env -i` with the one dummy variable (a random value, an argument of the `env -i` that
+sets it and of nothing else: the output goes through a pattern file, `grep -F -f`, and is read by `values_found_in`), each prints the
+value, and the same list is then refused by the guard. Only a form whose every `ps` reads the measured process alone is run (D2 of the
+eighteenth review; `ps_bounded_to_self`, an allow-list: `-p $$`, `-o` and its value, a BSD cluster of `e` and `w`, glued to `$$` or
+not, and `$$` named): `ps -auxe` and `ps -eaux`, which would read the environment of every process of the user, are judged by the guard
+without being run, and a case before the measure fails naming any other line of the list, which the measure skips. A witness
+variable the test itself exports must not appear in that output (C17-8): the measure inherits nothing.
+Never run such a form in a session outside `env -i` with a dummy.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
 and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, a `set` alone between
 quotes: `echo 'set'`, `echo "declare"`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of
 patterns is never complete against a deliberate bypass, which the review of the diff stops: a word cut inside by a quote or a backslash
-(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`, perl's `%ENV` and PHP's `getenv()` and `$_ENV` (no guarded
-script runs either); « no line lists the environment » holds under that limit only.
+(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`, `ps` that the line does not write (`p=ps; $p e`,
+`"$(command -v ps)" e`), perl's `%ENV` and PHP's `getenv()` and `$_ENV` (no guarded script runs either);
+« no line lists the environment » holds under that limit only.
 Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
@@ -216,8 +224,9 @@ The names a call may give are the array `CASE_NAMES`. A variable a case needs th
 of the test; a case that reads no exit code takes `-` for `<rc>` (`CASE_RC` stays empty), never a dummy `0`.
 `case_vars_set <err> <calls> <out> [<value>]` sets the array `CASE_VARS` that most calls pass as `"${CASE_VARS[@]}"`, so the names are
 written once. A generated value is never an argument of a process (`ps` would show it): `values_found_in <value>… -- <file>…` searches it
-through a mode-600 pattern file (`grep -F -f`), one pattern per non-empty line (a value with a leading, trailing or doubled line break
-would write an empty pattern, which matches every line; a value that is empty or only line breaks exits 2, CR17-5), and
+through a mode-600 pattern file (`grep -F -f`), one pattern per line that is not blanks alone (a value with a leading, trailing or
+doubled line break would write an empty pattern, which matches every line, and a line of blanks one that matches every line carrying a
+blank; a value that is empty or only blanks, line breaks, spaces or tabs, exits 2, CR17-5, C18-4), and
 `call_carrying <file> <rank> <fragment>…` finds a fake curl call by what it carries, never by its line number.
 `check_hollow_basic_auth_values` (R212) runs the script itself, for the three hollow values (`:`, `<token>:`, `:<token>`): the call names
 `CASE_RUNNER`, a function of the test that launches the script with `AUDIT_BASIC_AUTH` set to its first argument and leaves the exit

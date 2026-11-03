@@ -1452,9 +1452,11 @@ done
 #     `time set`, `bash -c 'set'`, x=`set`, `\set`), seul ou suivi d'une redirection, d'un tube, de `;`, `&&`, `||`, d'un guillemet,
 #     d'un accent grave ou d'un antislash (`set\`) ; `set -o` passe ;
 #   - `eval`, `printenv`, `env` (la commande : `"${env}"` n'en est pas une), `${!…}` ;
-#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`, `bash -c 'ps e'`, un antislash final) et toute
-#     option à tiret hors de la liste d'autorisation `-o -p -e -f -ef -aux` (`ps -auxe`, `ps -eaux`, `ps -www`, `ps --cols`) ; `ps -ef`
-#     et `ps -aux` passent (voir ps_lists_environment) ;
+#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`, `bash -c 'ps e'`, un antislash final), collée à
+#     des chiffres ou à `$` (`ps e$$`, `ps -p $$ e1`, C18-1), le mot entre guillemets ou apostrophes (`"ps" e`, `'ps' e`, C18-2), et
+#     toute option à tiret hors de la liste d'autorisation `-o -p -e -f -ef -aux` (`ps -auxe`, `ps -eaux`, `ps -www`, `ps --cols`) ;
+#     `ps -ef`, `ps -aux`, `ps -p 1` et `"ps" -ef` passent (voir ps_lists_environment) ; limite écrite : le mot que la ligne ne porte
+#     pas, `"$(command -v ps)" e` ou `p=ps; $p e`, n'est pas vu ;
 #   - le mot `environ`, sans égard à la casse (`ENVIRON` d'awk), prose comprise (`/proc/<pid>/environ` écrit de toute façon :
 #     `cd /proc/self && cat environ`, `"$p/environ"`) ; la prose française écrit « à peu près » ; `environment` passe.
 # Chaque ligne est lue, commentaires et heredocs compris. Un motif ancré sur des limites de mot : `set -e`, `set +x` passent.
@@ -1466,15 +1468,18 @@ done
 # est arrêté par la relecture du diff, pas par ce test.
 # ps_lists_environment <ligne> : vrai si une commande `ps` de la ligne peut lister l'environnement : l'option BSD `e` (`ps e`,
 # `ps eww`, `ps auxe`) en toute position (`ps -p $$ e`, `ps -o args= -p $$ ewww`), ou une option à tiret hors de la liste
-# d'autorisation (C17-1). procps relit sous un tiret les options BSD (`-auxe`, `-eaux` : `aux` puis `e`), qu'aucune liste de refus
-# ne couvre (`-A e`, `-www`, `--cols`) : seules passent `-o` et `-p` (leur valeur est sautée : `-o etime=`, `-p $$`), `-e`, `-f`, `-ef`
-# et `-aux` ; toute autre option à tiret refuse la ligne, les longues (`--cols`) comprises. Ce sont les options que les cas admis
-# passent, plus `-aux` (BSD sans `e`) ; aucun script gardé n'appelle `ps`. La ligne est coupée aux séparateurs (`| ; & ( ) < > #`) :
-# `ps -p $$ | grep -q e` ne juge pas `grep`. Un guillemet, un accent grave ou un antislash collé à un mot est retiré avant le jugement,
-# et un antislash final (continuation) refuse la ligne.
+# d'autorisation (C17-1). Un jeton sans tiret se juge sur ses seules lettres (C18-1 : `e$$`, `e1`, `e${pid}` sont `e` ou `epid`), et
+# le mot `ps` entre guillemets ou apostrophes est vu (C18-2). procps relit sous un tiret les options BSD (`-auxe`, `-eaux` : `aux`
+# puis `e`), qu'aucune liste de refus ne couvre (`-A e`, `-www`, `--cols`) : seules passent `-o` et `-p` (leur valeur est sautée :
+# `-o etime=`, `-p $$`), `-e`, `-f`, `-ef` et `-aux` ; toute autre option à tiret refuse la ligne, les longues (`--cols`) comprises.
+# Ce sont les options que les cas admis passent, plus `-aux` (BSD sans `e`) ; aucun script gardé n'appelle `ps`. La ligne est coupée
+# aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`. Un guillemet, un accent grave ou un antislash collé
+# à un mot est retiré avant le jugement, et un antislash final (continuation) refuse la ligne.
 ps_lists_environment() {
   local segment token skip=0
-  local ps_word='(^|[^[:alnum:]_.-])ps([[:space:]]|$|\\)'
+  # Le mot peut être entre guillemets ou apostrophes (C18-2 : `"ps" e`, `'ps' e`), qui ne coupent pas la commande. Un accent grave
+  # avant le mot ouvre la commande (x=`ps e`) ; après lui, il la ferme : ce qui suit `ps` n'est plus une option (la prose écrit `ps`).
+  local ps_word='(^|[^[:alnum:]_.-])["'"'"'`]?ps["'"'"']?([[:space:]]|$|\\)'
   local -a tokens
   while IFS= read -r segment; do
     if ! [[ "$segment" =~ $ps_word ]]; then continue; fi
@@ -1493,7 +1498,8 @@ ps_lists_environment() {
         -o|-p) skip=1 ;;
         -e|-f|-ef|-aux) ;;
         -*) return 0 ;;
-        *) if [[ "$token" =~ ^[[:alpha:]]*e[[:alpha:]]*$ ]]; then return 0; fi ;;
+        # Jugé sur ses seules lettres (C18-1) : `e$$`, `e1`, `e${pid}` donnent `e` ou `epid` ; `1` n'en donne aucune, il passe.
+        *) if [[ "${token//[^[:alpha:]]/}" =~ ^[[:alpha:]]*e[[:alpha:]]*$ ]]; then return 0; fi ;;
       esac
     done
   done <<< "${1//[|;&()<>#]/$'\n'}"
@@ -1584,19 +1590,59 @@ dump_printing=(
   "bash -c 'ps e -p \$\$'"
   'x=`ps e -p $$`'
   'ps e -p $$ \'
-  # C17-1 : procps lit `-auxe` et `-eaux` comme les options BSD `aux` et `e` malgré le tiret : elles impriment l'environnement.
-  'ps -auxe'
-  'ps -eaux'
+  # C18-2, C18-1 : le mot entre guillemets, et l'option `e` collée au numéro du processus (procps lit `e12345` comme `e` et ce
+  # numéro). Bornées au processus mesuré (D2 de la dix-huitième relecture) : `ps -auxe` et `ps -eaux`, qui liraient tous les
+  # processus de l'utilisateur, sont jugées dans dump_forbidden sans être exécutées.
+  '"ps" e -p $$'
+  'ps e$$'
 )
 measured_value="valeur-factice-$RANDOM$RANDOM"
+# ps_bounded_to_self <ligne> : vrai si chaque commande `ps` de la ligne ne lit que le processus mesuré (D2 de la dix-huitième
+# relecture) : `env -i` ne vide que l'environnement de ce processus, `ps -auxe` lirait celui de tous les processus de l'utilisateur,
+# jetons de la session comprise. Une liste d'autorisation, comme pour la garde (C17-1) : procps a trop de sélecteurs (`-A`, `-e`, `a`,
+# `x`, `-N`, `U`, `T`, `-u`…) pour qu'une liste de refus soit complète. Chaque jeton est `-p` suivi de `$$`, `-o` suivi de sa valeur, ou
+# une grappe BSD de `e` et de `w` (`e`, `eww`), éventuellement collée à `$$` (`e$$`) ; et la commande nomme `$$`, par `-p` ou collé.
+# Le mot `ps` se cherche ici par un motif large, à part de celui de ps_lists_environment : une garde affaiblie (une mutation, une faute)
+# ne doit jamais faire exécuter une forme non bornée. Les guillemets, accents graves et antislashs collés sont retirés comme là-bas.
+ps_bounded_to_self() {
+  local segment token skip bound
+  local any_ps='(^|[^[:alnum:]_])ps([^[:alnum:]_]|$)'
+  local -a tokens
+  while IFS= read -r segment; do
+    if ! [[ "$segment" =~ $any_ps ]]; then continue; fi
+    segment="${segment#*"${BASH_REMATCH[0]}"}"
+    read -r -a tokens <<< "$segment"
+    skip=""; bound=0
+    for token in "${tokens[@]}"; do
+      token="${token//[\'\"\`\\]/}"
+      if [ "$skip" = o ]; then skip=""; continue; fi
+      if [ "$skip" = p ]; then
+        skip=""
+        if [ "$token" != '$$' ]; then return 1; fi
+        bound=1; continue
+      fi
+      case "$token" in
+        '') ;;
+        -o) skip=o ;;
+        -p) skip=p ;;
+        *)
+          if ! [[ "$token" =~ ^[ew]+(\$\$)?$ ]]; then return 1; fi
+          if [[ "$token" == *'$$' ]]; then bound=1; fi ;;
+      esac
+    done
+    if [ -n "$skip" ] || [ "$bound" -eq 0 ]; then return 1; fi
+  done <<< "${1//[|;&()<>#]/$'\n'}"
+  return 0
+}
 # measure_dump_output <ligne> <fichier> [<valeur>…] : exécute la ligne dans un bash lancé sous `env -i`, avec la seule variable factice
-# (C17-8, St17-22 : un `bash -c` qui hérite de l'environnement du test y lirait celui de la session). La sortie ne passe que par un
-# `grep -F -f` sur un fichier de motifs (la valeur factice et les valeurs en plus, jamais en argument) : seules les lignes qui portent
-# une de ces valeurs arrivent dans le fichier de sortie (600), qu'on lit par `values_found_in` ; `ps -auxe` liste l'environnement de
-# tous les processus de l'utilisateur, dont aucune ligne ne doit toucher le disque.
+# (C17-8, St17-22 : un `bash -c` qui hérite de l'environnement du test y lirait celui de la session). Seule une ligne dont chaque `ps`
+# est bornée au processus mesuré est lancée (ps_bounded_to_self, D2) : une autre rend 1 sans rien exécuter ni écrire. La sortie ne
+# passe que par un `grep -F -f` sur un fichier de motifs (la valeur factice et les valeurs en plus, jamais en argument) : seules les
+# lignes qui portent une de ces valeurs arrivent dans le fichier de sortie (600), qu'on lit par `values_found_in`.
 measure_dump_output() {
   local line="$1" out="$2"
   shift 2
+  if ! ps_bounded_to_self "$line"; then return 1; fi
   write_value_patterns "$measured_value" "$@"
   (
     umask 077
@@ -1605,14 +1651,45 @@ measure_dump_output() {
   )
   rm -f -- "$TMP/value-patterns"
 }
+# D2 : avant la mesure, chaque ligne de dump_printing qui porte le mot `ps` est bornée au processus mesuré ; une ligne qui ne l'est
+# pas est un `fail` nommé, et la boucle qui suit ne l'exécute pas (measure_dump_output la saute).
+unbounded_printing=()
 for line in "${dump_printing[@]}"; do
-  measure_dump_output "$line" "$TMP/measured-output.txt"
-  if values_found_in "$measured_value" -- "$TMP/measured-output.txt"; then
+  if ! ps_bounded_to_self "$line"; then unbounded_printing+=("$line"); fi
+done
+if [ "${#unbounded_printing[@]}" -eq 0 ]; then
+  pass "garde des vidages : chaque forme \`ps\` mesurée est bornée au processus mesuré (\`-p \$\$\` ou \`e\$\$\`, ni -A, ni -e, ni a, ni x)"
+else
+  fail "garde des vidages : forme non bornée dans dump_printing, sautée par la mesure" "$(printf '« %s » ' "${unbounded_printing[@]}")"
+fi
+# Chaque forme mesurée écrit son propre fichier : une forme sautée n'en a aucun, ce que le décompte qui suit vérifie.
+measured_count=0
+skipped_lines=()
+for i in "${!dump_printing[@]}"; do
+  line="${dump_printing[$i]}"
+  if ! measure_dump_output "$line" "$TMP/measured-output-$i.txt"; then
+    skipped_lines+=("$i:$line")
+    continue
+  fi
+  measured_count=$((measured_count + 1))
+  if values_found_in "$measured_value" -- "$TMP/measured-output-$i.txt"; then
     pass "garde des vidages : bash imprime la variable factice avec « $line »"
   else
     fail "garde des vidages : « $line » n'imprime pas la variable" "la mesure ne voit pas la valeur factice"
   fi
 done
+skipped_with_output=()
+for skipped in "${skipped_lines[@]}"; do
+  if [ -e "$TMP/measured-output-${skipped%%:*}.txt" ]; then skipped_with_output+=("${skipped#*:}"); fi
+done
+if [ "${#skipped_lines[@]}" -eq 0 ] && [ "$measured_count" -eq "${#dump_printing[@]}" ]; then
+  pass "garde des vidages : la mesure lance les $measured_count formes de dump_printing, aucune sautée"
+else
+  fail "garde des vidages : la mesure lance $measured_count formes sur ${#dump_printing[@]}" \
+    "sautées, non exécutées : $(printf '« %s » ' "${skipped_lines[@]#*:}") ; avec un fichier de sortie : ${#skipped_with_output[@]}"
+fi
+rm -f -- "$TMP"/measured-output-*.txt
+unset unbounded_printing measured_count skipped_lines skipped_with_output skipped i
 # C17-8 : la mesure n'hérite de rien. Une variable témoin exportée par le test (valeur aléatoire, jamais en argument) n'apparaît dans
 # aucune sortie de la mesure, alors que les formes qui listent l'environnement y impriment bien la variable factice.
 witness_value="valeur-temoin-$RANDOM$RANDOM"
@@ -1744,6 +1821,18 @@ dump_forbidden=(
   'typeset +r'
   "bash -c 'set'"
   'bash -c "set"'
+  # C18-1 : l'option BSD `e` collée à des chiffres, à `$$` ou à un nom de variable ; le jeton se juge sur ses seules lettres.
+  # (`ps e$$` et `"ps" e -p $$` y sont déjà, par dump_printing.)
+  'ps -p $$ e1'
+  'ps -p $$ e9999999'
+  'ps e${pid}'
+  # C18-2 : le mot `ps` entre guillemets ou apostrophes.
+  "'ps' e"
+  '"ps" e'
+  # D2 : procps lit `-auxe` et `-eaux` comme les options BSD `aux` et `e` malgré le tiret (C17-1) ; elles liraient l'environnement de
+  # tous les processus de l'utilisateur, et ne sont donc que jugées, jamais exécutées.
+  'ps -auxe'
+  'ps -eaux'
 )
 for line in "${dump_forbidden[@]}"; do
   if [ -n "$(mutant_dump "$line")" ]; then
@@ -1817,6 +1906,12 @@ dump_allowed=(
   'ps -p "$$" -o comm='
   'ps -o args= -p $$'
   'local settings \'
+  # C18-1 : un jeton fait de chiffres seuls ne porte aucune lettre, il passe ; C18-2 : le mot entre guillemets, suivi d'une option admise.
+  'ps -p 1'
+  'ps -p 1 -o comm='
+  '"ps" -ef'
+  # Un accent grave après le mot ferme la commande : la prose de la bibliothèque écrit « ni dans `ps` ni dans une trace ».
+  '# ni dans `ps` ni dans une trace.'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
@@ -1993,6 +2088,34 @@ for only_newlines in $'\n' $'\n\n\n'; do
   fi
 done
 unset only_newlines
+# D2 de la dix-huitième relecture (C18-4) : une valeur faite de blancs seuls (l'espace, la tabulation) écrirait un motif que `grep -F`
+# trouve dans toute ligne qui porte un blanc ; elle est refusée comme la valeur vide (sortie 2, message nommé), par write_value_patterns
+# lui-même, lancé dans un sous-shell.
+for blank_value in ' ' $'\t' $' \t\n '; do
+  rc=0
+  ( write_value_patterns "$blank_value" ) > /dev/null 2> "$TMP/stderr" || rc=$?
+  if [ "$rc" -eq 2 ] && grep -q 'blancs' "$TMP/stderr" && [ ! -e "$TMP/value-patterns" ]; then
+    pass "write_value_patterns : une valeur de blancs seuls ($(printf '%q' "$blank_value")) est refusée (sortie 2), aucun motif écrit"
+  else
+    fail "write_value_patterns : blancs seuls" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fi
+done
+# La forme voisine : une ligne de blancs seuls dans une valeur à plusieurs lignes (`$'abc\n '`) écrirait le même motif ; elle est
+# sautée comme une ligne vide. Le fichier cherché porte un blanc, et ni « abc » ni « x » : seul le motif « ␣ » le trouverait.
+printf 'un blanc ici\n' > "$TMP/haystack-blank"
+for blank_line_value in $'abc\n ' $' \nabc' $'abc\n\t\nx'; do
+  rc_absent=0
+  values_found_in "$blank_line_value" -- "$TMP/haystack-blank" || rc_absent=$?
+  write_value_patterns "$blank_line_value"
+  blank_lines="$(grep -c '^[[:space:]]*$' "$TMP/value-patterns" || true)"
+  rm -f -- "$TMP/value-patterns"
+  if [ "$rc_absent" -eq 1 ] && [ "$blank_lines" -eq 0 ]; then
+    pass "values_found_in : une ligne de blancs seuls dans $(printf '%q' "$blank_line_value") n'est pas un motif : absente (1)"
+  else
+    fail "values_found_in : ligne de blancs" "absente : $rc_absent (attendu 1) ; lignes blanches du fichier de motifs : $blank_lines"
+  fi
+done
+unset blank_value blank_line_value rc_absent blank_lines
 mkdir "$TMP/grep-bin"
 real_grep="$(command -v grep)"
 cat > "$TMP/grep-bin/grep" <<'FAKE'

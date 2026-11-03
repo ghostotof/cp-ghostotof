@@ -54,17 +54,18 @@ generated_basic_auth() {
 # relecture). `<(printf …)` est écarté (St17-27) : son chemin /dev/fd/N ne vit que le temps de la commande qui porte la substitution,
 # et le fichier sert à plusieurs commandes de suite (celui des fils de smoke-http.test.sh : écrit, lu par un `bash -c`, retiré). Le
 # fichier naît dans $TMP et non dans TMPDIR, que des tests exigent vide ; l'appelant le retire (`rm -f -- "$TMP/value-patterns"`)
-# quand il l'a lu. Une valeur qui porte des sauts de ligne donne un motif par ligne non vide : une ligne vide serait un motif qui
-# correspond à toute ligne (CR17-5 : `$'\nabc'`, `$'abc\n'` et `$'a\n\nb'` en écrivaient une). Une valeur vide, ou faite de sauts de
-# ligne seuls, n'a aucune ligne à écrire : elle est refusée et la fonction fait sortir le shell qui l'exécute (code 2), car une
+# quand il l'a lu. Une valeur qui porte des sauts de ligne donne un motif par ligne qui n'est pas faite de blancs seuls : une ligne
+# vide serait un motif qui correspond à toute ligne (CR17-5 : `$'\nabc'`, `$'abc\n'` et `$'a\n\nb'` en écrivaient une), une ligne de
+# blancs (` `, une tabulation) à toute ligne qui en porte un (C18-4). Une valeur vide, ou faite de blancs seuls (sauts de ligne, espaces,
+# tabulations), n'a aucune ligne à écrire : elle est refusée et la fonction fait sortir le shell qui l'exécute (code 2), car une
 # recherche « elle n'est nulle part » serait fausse, une recherche « elle y est » vraie, quoi que le fichier contienne. Ce n'est pas
 # un `fail` : la fonction s'appelle souvent dans un `$( )`, où le compteur d'échecs du test serait perdu. Les trois fonctions qui
 # suivent l'appellent ; un test peut aussi donner le chemin à un processus fils qui doit lire les motifs.
 write_value_patterns() {
   local value rest line
   for value in "$@"; do
-    if [ -z "${value//$'\n'/}" ]; then
-      echo "write_value_patterns : une valeur vide ou faite de sauts de ligne seuls correspondrait à toute ligne, refusée" >&2
+    if [ -z "${value//[[:space:]]/}" ]; then
+      echo "write_value_patterns : une valeur vide ou faite de blancs seuls (sauts de ligne, espaces, tabulations) est refusée" >&2
       exit 2
     fi
   done
@@ -76,7 +77,7 @@ write_value_patterns() {
       while [ -n "$rest" ]; do
         line="${rest%%$'\n'*}"
         if [[ "$rest" == *$'\n'* ]]; then rest="${rest#*$'\n'}"; else rest=""; fi
-        if [ -n "$line" ]; then printf '%s\n' "$line"; fi
+        if [ -n "${line//[[:space:]]/}" ]; then printf '%s\n' "$line"; fi
       done
     done > "$TMP/value-patterns"
   )
