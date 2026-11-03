@@ -19,7 +19,18 @@
              phpunit.xml local, pas -d) : .claude/rules/backend-outillage.md.
              Épinglé par ExceptionArgumentsHiddenInTestsTest. -->
         <ini name="zend.exception_ignore_args" value="1" />
+        <!-- Les valeurs que la suite force (#748, D1 de la dix-huitième
+             relecture) : `<server>` pour ce qui lit `$_SERVER` (Dotenv, qui
+             n'écrase pas une variable qu'il y trouve ; la copie que reçoit
+             chaque fils, ChildPhpProcess), et `<env force>` en plus parce que
+             Symfony lit `$_ENV` d'abord (KernelTestCase pour APP_ENV,
+             l'EnvVarProcessor pour les autres, variables_order EGPCS) : sans
+             lui, une valeur exportée dans le conteneur gagnerait chez le noyau
+             du test. `force` y est indispensable, PHPUnit gardant sinon la
+             valeur du processus. Épinglé par ForcedTestValuesProbeTest et
+             ForcedTestValuesWinOverTheShellTest. -->
         <server name="APP_ENV" value="test" force="true" />
+        <env name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
         <!-- Point d'audit I4 : CONTACT_* sont vides dans le .env versionné
              (dépôt public), les vraies valeurs venant de hors dépôt — .env.local
@@ -27,29 +38,31 @@
              charge jamais .env.local : ces adresses de test sont donc posées
              ici, ce qui rend la suite autonome et identique en local et en CI
              (le workflow écrit son propre .env.test.local, qui n'a pas à les
-             connaître). Le mailer est neutralisé en test (MAILER_DSN=null://null).
-             `force` est indispensable : sans lui, Dotenv écrase la valeur par
-             celle (vide) du .env, puisque la variable y figure. -->
+             connaître). Le mailer est neutralisé en test (MAILER_DSN=null://null). -->
         <server name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
+        <env name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
         <server name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
+        <env name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
         <!-- Base publique de l'API (#647) forcée à vide, le cas de la préprod et
              de la prod : elle retombe sur APP_FRONTEND_BASE_URL. Le conteneur de
              dev la pose en vraie variable d'environnement
-             (docker-compose.override.yml, l'API sur un autre port que Vite), que
-             PHP copie dans $_ENV (variables_order EGPCS) et que Symfony lit avant
-             $_SERVER : un <server> n'y suffit pas (mesuré, 8080 lu), il faut
-             <env force>, qui réécrit $_ENV et getenv(). Sans lui la suite ne
-             serait pas la même en local et en CI. -->
+             (docker-compose.override.yml, l'API sur un autre port que Vite) :
+             `<env force>` seul, ce que Symfony lit ; `$_SERVER` garde la valeur
+             du conteneur, et ChildPhpProcess donne aux fils celle de `$_ENV`.
+             Sans lui la suite ne serait pas la même en local et en CI. -->
         <env name="APP_PUBLIC_API_BASE_URL" value="" force="true" />
-        <!-- Même mécanique pour la clé Anthropic (ADR 0004) : valeur factice
-             forcée, jamais la vraie. Aucun test ne sort sur le réseau — la
-             plateforme est remplacée par une implémentation en mémoire ; un test
-             qui atteindrait l'API réelle échouerait en 401, filet voulu. -->
+        <!-- La clé Anthropic (ADR 0004) : valeur factice forcée, jamais la
+             vraie. Aucun test ne sort sur le réseau — la plateforme est
+             remplacée par une implémentation en mémoire ; un test qui
+             atteindrait l'API réelle échouerait en 401, filet voulu. -->
         <server name="ANTHROPIC_API_KEY" value="sk-ant-test-not-a-real-key" force="true" />
+        <env name="ANTHROPIC_API_KEY" value="sk-ant-test-not-a-real-key" force="true" />
         <!-- Même filet pour la clé Scaleway de l'assistant de carrière (spec 0005) :
              aucun test ne sort sur le réseau, et une fuite échouerait en 401. -->
         <server name="SCALEWAY_AI_API_KEY" value="scw-test-not-a-real-key" force="true" />
+        <env name="SCALEWAY_AI_API_KEY" value="scw-test-not-a-real-key" force="true" />
         <server name="SCALEWAY_AI_PROJECT_ID" value="00000000-0000-4000-8000-000000000000" force="true" />
+        <env name="SCALEWAY_AI_PROJECT_ID" value="00000000-0000-4000-8000-000000000000" force="true" />
         <!-- Garde D8 du serveur MCP (ADR 0006, AuthorNeverNamedTest) : le nom
              que rien de ce que le serveur publie de lui-même ne doit contenir.
              Le vrai nom n'entre jamais dans le dépôt : ici un nom fictif, que

@@ -13,6 +13,8 @@ use App\Tests\Support\SessionLockWait;
 use PhpToken;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\TextUI\Configuration\Registry;
+use PHPUnit\TextUI\Configuration\Variable;
 use ReflectionClass;
 
 /**
@@ -61,14 +63,21 @@ final class ChildProcessHarnessTest extends TestCase
     /** Une variable que phpunit.dist.xml force par `<env force="true">`, qui réécrit `$_ENV` et getenv(), jamais `$_SERVER`. */
     private const string ENV_FORCED_VARIABLE = 'APP_PUBLIC_API_BASE_URL';
 
+    /** Une variable que phpunit.dist.xml pose par `<env>` sans `force` : la valeur du processus, s'il en porte une, l'emporte. */
+    private const string ENV_UNFORCED_VARIABLE = 'MCP_D8_AUTHOR_NAME';
+
     /** Une valeur qu'aucune configuration ne pose : celle que le cas met dans `$_SERVER` seul. */
     private const string DIVERGING_SERVER_VALUE = 'http://child-process-harness.invalid';
 
     /**
      * Les seuls tests qui construisent un Process sur ChildPhpProcess::command()
-     * sans passer par inTestEnvironment(), chacun pour une raison écrite.
+     * sans passer par inTestEnvironment(), chacun pour une raison écrite,
+     * dans l'ordre des chemins.
      */
     private const array OWN_ENVIRONMENT = [
+        // Simule un shell qui exporte une valeur factice pour chaque nom forcé :
+        // la copie de `$_SERVER` y remettrait les valeurs de test.
+        'Shared/ForcedTestValuesWinOverTheShellTest.php',
         // Simule un pod : l'environnement du fils est isolé à dessein, sans
         // celui de PHPUnit, qui fausserait chaque comparaison.
         'Shared/Infrastructure/Dotenv/CompiledDotenvNeverMasksPodVariablesTest.php',
@@ -76,19 +85,20 @@ final class ChildProcessHarnessTest extends TestCase
 
     /**
      * Les entrées de `$_SERVER` qu'un cas a changées, rétablies par tearDown() :
-     * nom => valeur d'avant, null si la clé n'existait pas.
+     * nom => la valeur d'avant, en liste d'un élément, ou une liste vide si la
+     * clé n'existait pas (une valeur `null` reste une valeur).
      *
-     * @var array<string, mixed>
+     * @var array<string, list<mixed>>
      */
     private array $serverBefore = [];
 
     protected function tearDown(): void
     {
-        foreach ($this->serverBefore as $name => $value) {
-            if (null === $value) {
+        foreach ($this->serverBefore as $name => $before) {
+            if ([] === $before) {
                 unset($_SERVER[$name]);
             } else {
-                $_SERVER[$name] = $value;
+                $_SERVER[$name] = $before[0];
             }
         }
         $this->serverBefore = [];
@@ -138,7 +148,10 @@ final class ChildProcessHarnessTest extends TestCase
             $barrier->waitUntilReady(self::TIMEOUT_SECONDS, ...$children);
             usleep(self::SETTLE_MICROSECONDS);
             foreach ($children as $child) {
-                self::assertTrue($child->isRunning(), "Un fils n'a pas attendu la barrière :\n".$child->getOutput().$child->getErrorOutput());
+                self::assertTrue(
+                    $child->isRunning(),
+                    "Un fils n'a pas attendu la barrière :\n".$child->getOutput().$child->getErrorOutput(),
+                );
                 self::assertStringNotContainsString('passed', $child->getOutput());
             }
 
@@ -232,9 +245,9 @@ final class ChildProcessHarnessTest extends TestCase
     }
 
     /**
-     * Les variables que phpunit.dist.xml force par `<server>` ne vivent que dans `$_SERVER` :
-     * le fils les reçoit, et elles l'emportent sur celles du shell — une vraie
-     * clé d'API exportée ne doit pas remplacer la valeur factice.
+     * Une variable posée dans `$_SERVER` seul, comme par un `<server>` : le
+     * fils la reçoit, et elle l'emporte sur celle du shell — une vraie clé
+     * d'API exportée ne doit pas remplacer la valeur factice.
      */
     public function testAChildReceivesTheServerVariablesOverThoseOfTheShell(): void
     {
@@ -243,7 +256,11 @@ final class ChildProcessHarnessTest extends TestCase
         putenv(self::PROBE_VARIABLE.'=from-shell');
 
         try {
-            $child = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, '-r', 'echo getenv("'.self::PROBE_VARIABLE.'"), "\n", getenv("APP_ENV");');
+            $child = ChildPhpProcess::inTestEnvironment(
+                self::TIMEOUT_SECONDS,
+                '-r',
+                'echo getenv("'.self::PROBE_VARIABLE.'"), "\n", getenv("APP_ENV");',
+            );
             $child->mustRun();
 
             self::assertSame("from-phpunit\ntest", $child->getOutput());
@@ -264,23 +281,65 @@ final class ChildProcessHarnessTest extends TestCase
      * #647), `$_SERVER` garde la valeur du conteneur, que le noyau du parent ne
      * lit pas (Symfony lit `$_ENV` d'abord). Le fils doit recevoir la valeur
      * forcée : sinon il sert une autre base d'API que le test, et chaque
-     * échange au point de jeton répond 400 `invalid_target` (#748, R220b). Le
-     * cas pose lui-même la valeur divergente dans `$_SERVER` : il ne dépend
-     * pas de l'environnement du conteneur.
+     * échange au point de jeton répond 400 `invalid_target` (#748). Le cas
+     * pose lui-même la valeur divergente dans `$_SERVER` : il ne dépend pas
+     * de l'environnement du conteneur.
      */
     public function testAChildReceivesTheValueThatPhpunitForcesByEnvOverTheServerCopy(): void
     {
         $forced = $_ENV[self::ENV_FORCED_VARIABLE] ?? null;
-        self::assertIsString($forced, 'phpunit.dist.xml ne force plus '.self::ENV_FORCED_VARIABLE.' par <env force> : choisir une autre variable.');
+        self::assertIsString(
+            $forced,
+            'phpunit.dist.xml ne force plus '.self::ENV_FORCED_VARIABLE.' par <env force> : choisir une autre variable.',
+        );
         self::assertNotSame(self::DIVERGING_SERVER_VALUE, $forced);
-        $this->serverBefore[self::ENV_FORCED_VARIABLE] = $_SERVER[self::ENV_FORCED_VARIABLE] ?? null;
-        $_SERVER[self::ENV_FORCED_VARIABLE] = self::DIVERGING_SERVER_VALUE;
+        $this->replaceServerValue(self::ENV_FORCED_VARIABLE, self::DIVERGING_SERVER_VALUE);
 
-        $child = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, '-r', 'echo var_export(getenv("'.self::ENV_FORCED_VARIABLE.'"), true);');
+        $child = ChildPhpProcess::inTestEnvironment(
+            self::TIMEOUT_SECONDS,
+            '-r',
+            'echo var_export(getenv("'.self::ENV_FORCED_VARIABLE.'"), true);',
+        );
         $child->mustRun();
 
         // var_export : une variable absente (false) ne se confond pas avec une valeur vide.
-        self::assertSame(var_export($forced, true), $child->getOutput(), 'Le fils ne reçoit pas la valeur que phpunit.dist.xml force par <env force>.');
+        self::assertSame(
+            var_export($forced, true),
+            $child->getOutput(),
+            'Le fils ne reçoit pas la valeur que phpunit.dist.xml force par <env force>.',
+        );
+    }
+
+    /**
+     * Seul un `<env force>` recouvre la copie de `$_SERVER` : pour un `<env>`
+     * sans `force`, PHPUnit retient dans `$_ENV` la valeur du shell s'il en
+     * porte une, et la recouvrir ferait gagner le shell chez le fils — une
+     * vraie clé exportée, sous un nom qu'un `phpunit.xml` local poserait par
+     * `<env>`, passerait la valeur factice de `$_SERVER`. Comparées par
+     * empreinte : en CI, la valeur de `$_ENV` est un secret.
+     */
+    public function testAnEnvWithoutForceDoesNotOverrideTheServerCopy(): void
+    {
+        $unforced = array_filter(
+            iterator_to_array(Registry::get()->php()->envVariables()),
+            static fn (Variable $variable): bool => self::ENV_UNFORCED_VARIABLE === $variable->name() && !$variable->force(),
+        );
+        self::assertCount(1, $unforced, 'phpunit.dist.xml ne pose plus '.self::ENV_UNFORCED_VARIABLE.' par <env> sans force.');
+        self::assertNotSame(self::DIVERGING_SERVER_VALUE, $_ENV[self::ENV_UNFORCED_VARIABLE] ?? null);
+        $this->replaceServerValue(self::ENV_UNFORCED_VARIABLE, self::DIVERGING_SERVER_VALUE);
+
+        $child = ChildPhpProcess::inTestEnvironment(
+            self::TIMEOUT_SECONDS,
+            '-r',
+            'echo hash("sha256", var_export(getenv("'.self::ENV_UNFORCED_VARIABLE.'"), true));',
+        );
+        $child->mustRun();
+
+        self::assertSame(
+            hash('sha256', var_export(self::DIVERGING_SERVER_VALUE, true)),
+            $child->getOutput(),
+            'Un <env> sans force recouvre la copie de $_SERVER chez le fils (empreinte seule).',
+        );
     }
 
     /**
@@ -306,7 +365,8 @@ final class ChildProcessHarnessTest extends TestCase
             $child = ChildPhpProcess::inTestEnvironment(
                 self::TIMEOUT_SECONDS,
                 '-r',
-                'require '.var_export(__DIR__.'/../bootstrap.php', true).'; echo hash("sha256", (string) ($_SERVER["'.self::FORCED_VARIABLE.'"] ?? ""));',
+                'require '.var_export(__DIR__.'/../bootstrap.php', true).';'
+                .' echo hash("sha256", (string) ($_SERVER["'.self::FORCED_VARIABLE.'"] ?? ""));',
             );
             $child->mustRun();
 
@@ -371,8 +431,27 @@ final class ChildProcessHarnessTest extends TestCase
             }
         }
 
-        self::assertSame([], $offenders, 'La barrière s\'écrit avec ProcessBarrier, l\'environnement du fils avec ChildPhpProcess::inTestEnvironment() (issue #403), le point d\'entrelacement au flush avec FlushInterleaving (issue #510).');
-        self::assertSame(self::OWN_ENVIRONMENT, array_values($exemptionsUsed), 'Exemption devenue sans objet : la retirer de OWN_ENVIRONMENT.');
+        self::assertSame(
+            [],
+            $offenders,
+            'La barrière s\'écrit avec ProcessBarrier, l\'environnement du fils avec ChildPhpProcess::inTestEnvironment() (issue #403),'
+            .' le point d\'entrelacement au flush avec FlushInterleaving (issue #510).',
+        );
+        self::assertSame(
+            self::OWN_ENVIRONMENT,
+            array_values($exemptionsUsed),
+            'Exemption devenue sans objet : la retirer de OWN_ENVIRONMENT.',
+        );
+    }
+
+    /**
+     * Remplace une entrée de `$_SERVER` jusqu'à la fin du cas : tearDown() la
+     * rétablit, ou la retire si elle n'existait pas.
+     */
+    private function replaceServerValue(string $name, string $value): void
+    {
+        $this->serverBefore[$name] = \array_key_exists($name, $_SERVER) ? [$_SERVER[$name]] : [];
+        $_SERVER[$name] = $value;
     }
 
     /**
@@ -390,7 +469,8 @@ final class ChildProcessHarnessTest extends TestCase
 
         return match (true) {
             !$isMember && 'flock' === ltrim($token->text, '\\') && '(' === $next?->text => self::FLOCK,
-            $token->is([\T_CONSTANT_ENCAPSED_STRING, \T_ENCAPSED_AND_WHITESPACE]) && false !== stripos($token->text, self::PG_STAT_ACTIVITY) => self::PG_STAT_ACTIVITY,
+            $token->is([\T_CONSTANT_ENCAPSED_STRING, \T_ENCAPSED_AND_WHITESPACE])
+                && false !== stripos($token->text, self::PG_STAT_ACTIVITY) => self::PG_STAT_ACTIVITY,
             '::' === $token->text && $this->isFlushEventConstant($next, $tokens[$index + 2] ?? null) => self::FLUSH_EVENT,
             $token->is(\T_FOREACH) && '(' === $next?->text && '$_SERVER' === ($tokens[$index + 2] ?? null)?->text => self::SERVER_COPY,
             $token->is(\T_NEW) && $this->buildsAProcessOnCommand(\array_slice($tokens, $index + 1, 6)) => self::PROCESS_ON_COMMAND,

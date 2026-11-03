@@ -277,9 +277,9 @@ flagged a disposable `JWT_PASSPHRASE` placeholder value as an exposed secret; on
 value, `APP_SECRET=` empty) stays tracked now. `CONTACT_SENDER_EMAIL` / `CONTACT_RECIPIENT_EMAIL` are empty
 there too (audit I4 — real addresses in a public repo feed harvesters and reveal the Scaleway TEM sending
 identity); their values come from outside the repo: `.env.local` in dev, Secret Manager in preprod/prod, and
-**`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — with `force="true"`, without
-which Dotenv overwrites them with the empty value from `.env`. `ANTHROPIC_API_KEY` (ADR 0004) follows the
-exact same route, with a dummy forced value in test: no test may reach the real API. `backend/composer.json` is
+**`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — by `<server>` and `<env force="true">`:
+Symfony reads `$_ENV` first, where a value exported in the container would win. `ANTHROPIC_API_KEY` (ADR 0004)
+follows the exact same route, with a dummy forced value in test: no test may reach the real API. `backend/composer.json` is
 tracked, so `init-symfony.sh` skips the project creation on every clone, but since #481 it still **creates
 `.env.local` / `.env.test.local` when missing** (never overwriting them) and sets `APP_SECRET`; an existing
 `.env.local` older than a new line (those two, say) still needs it added by hand. `make init` runs the copy

@@ -26,7 +26,7 @@ final class PhpSourcesTest extends TestCase
         $fragment = $this->firstTokenWithText($tokens, '(');
         self::assertFalse(PhpSources::isChar($fragment, '('));
 
-        $call = $tokens[\count($tokens) - 3];
+        $call = $this->tokenAfterName($tokens, 'f');
         self::assertSame('(', $call->text);
         self::assertTrue(PhpSources::isChar($call, '('));
         self::assertTrue(PhpSources::isAnyChar($call, '[', '('));
@@ -42,15 +42,6 @@ final class PhpSourcesTest extends TestCase
         PhpSources::isChar($token, '((');
     }
 
-    public function testACharacterOfSeveralBytesIsRefusedByIsAnyChar(): void
-    {
-        // Un `)` : aucun des deux ne le reconnaît, `array_any` va jusqu'au second argument.
-        $token = PhpSources::significantTokens('<?php )')[1];
-
-        $this->expectException(NotASingleCharacterException::class);
-        PhpSources::isAnyChar($token, '(', '[[');
-    }
-
     /**
      * Le contrat ne dépend pas du jeton lu : un argument hors contrat placé
      * après celui qui reconnaît le jeton est refusé aussi, au lieu d'attendre
@@ -62,6 +53,23 @@ final class PhpSourcesTest extends TestCase
 
         $this->expectException(NotASingleCharacterException::class);
         PhpSources::isAnyChar($token, '(', '[[');
+    }
+
+    /**
+     * Le jeton qui suit le premier nom donné : la parenthèse d'appel de `f()`,
+     * plutôt qu'un indice compté depuis la fin.
+     *
+     * @param list<PhpToken> $tokens
+     */
+    private function tokenAfterName(array $tokens, string $name): PhpToken
+    {
+        foreach ($tokens as $index => $token) {
+            if ($token->is(\T_STRING) && $name === $token->text && isset($tokens[$index + 1])) {
+                return $tokens[$index + 1];
+            }
+        }
+
+        self::fail('Aucun nom « '.$name.' » suivi d\'un jeton.');
     }
 
     /**

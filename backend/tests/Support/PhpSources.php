@@ -121,7 +121,7 @@ final class PhpSources
      * identifiants propres (`T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG` et
      * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG`), jamais le sien.
      *
-     * @param non-empty-string $char un seul caractère : seul le premier octet est lu, `'(('` passerait pour `'('`
+     * @param non-empty-string $char un seul caractère, jugé avant la lecture
      *
      * @throws NotASingleCharacterException si l'argument fait plus d'un octet, quel que soit `zend.assertions`
      */
@@ -129,14 +129,14 @@ final class PhpSources
     {
         self::requireASingleCharacter($char);
 
-        return \ord($char[0]) === $token->id;
+        return self::hasCharIdentifier($token, $char);
     }
 
     /**
      * Le jeton est-il l'un de ces caractères du code ? Lu par l'identifiant,
      * comme {@see self::isChar()}, au même contrat : chaque argument est jugé
-     * avant la lecture, y compris ceux qu'`array_any` n'atteindrait pas après
-     * une correspondance.
+     * avant la lecture, une seule fois, y compris ceux qu'`array_any`
+     * n'atteindrait pas après une correspondance.
      *
      * @param non-empty-string ...$chars un seul caractère chacun
      *
@@ -148,7 +148,13 @@ final class PhpSources
             self::requireASingleCharacter($char);
         }
 
-        return array_any($chars, static fn (string $char): bool => self::isChar($token, $char));
+        return array_any($chars, static fn (string $char): bool => self::hasCharIdentifier($token, $char));
+    }
+
+    /** L'identifiant du jeton est-il celui de ce caractère, déjà jugé d'un seul octet ? */
+    private static function hasCharIdentifier(PhpToken $token, string $char): bool
+    {
+        return \ord($char[0]) === $token->id;
     }
 
     /**
