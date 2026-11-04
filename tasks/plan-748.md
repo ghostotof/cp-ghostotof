@@ -17033,6 +17033,173 @@ Aucun n'est réfuté sur le code ; chacun est faible ou info, sans risque réel 
   un prochain rejeu ; **(e)** : les lignes de plus de 140 antérieures à la série sont hors périmètre (2 696 dans le dépôt), une ligne
   se coupe quand une tâche la modifie.
 
+### Ce que la vingtième série a réellement fait *(écrit par R240 le 2026-11-04)*
+
+Cette sous-section couvre **R235 à R239** (cinq tâches) : la série de sortie de la boucle, que l'utilisateur nomme la vingtième (la
+section garde son titre « dix-neuvième relecture »). Elle est écrite par R240 sur HEAD 23362f4f, après lecture du corps de chaque commit
+(`git log -1 --format=%B`) et rejeu des mesures : un écart n'y figure que s'il se lit dans le diff ou dans le message du commit, hors
+les mesures de R240, dites comme telles. Base : `B=6a7c5b90` (`B=$(git log --grep='le plan de la vingtième série' -1 --format=%H)`).
+**R240 ne refactore rien et ne corrige rien** (E1) : ce qu'il voit se rend en fin de sous-section.
+
+**Commits** (ordre réel). Le plan 6a7c5b90 (`B`) ; R235 e8ca17d6 ; R236 d8a37e50 ; R237 c03fed2e ; R238 e353f6b5 ; R239 23362f4f ; R240 :
+le commit de ce bilan (`docs`). Entre `B` et HEAD : 5 commits de tâche ; **43 fichiers** touchés (`git diff --shortstat B...HEAD` : 591
+lignes ajoutées, 313 retirées), dont 1 sous `tasks/` (le brief) ; 42 fichiers hors `tasks/`, 572 ajoutées et 297 retirées. Trailers : 3
+commits de tâche « Claude Opus 5.5 » (R235, R237, R238), le plan aussi, et 2 « Claude Sonnet 5.5 » (R236, R239). Chaque corps : 0 ligne de
+plus de 140 caractères, 0 `[skip ci]` ni variante, une ligne `Co-Authored-By` (`git log -1 --format=%B <sha> | awk 'length>140'` vide ×5).
+
+#### Chaque tâche, conforme ou son écart réel
+
+- **R235** (e8ca17d6) : conforme, **cinq écarts déclarés**. (1) Un cas de plus au spec du sélecteur, `redirect=/fr/\evil.example`
+  (commence par la langue, refusé par `internalRedirectTarget`) : `//evil.example/fr` seul reste vert sous la mutation (e), n'ayant
+  pas de préfixe de langue (le plan prévoyait « rouge : aucune » dite) ; le cas ajouté donne le rouge (M5). (2) La mutation (f)
+  est rendue par un bouton introuvable (M6 : `{{ localeOption.toUpperCase() }}` → `{{ localeOption }}`, 13 échecs sur 13, « Bouton « EN »
+  introuvable ») et non en réécrivant le helper. (3) Le docblock de `LocaleSwitcher.vue`, réécrit pour `redirect`, dit « casse » au
+  présent : il écrit le site de St19-3 (l. 20), qui est à R239. (4) Un cas faux de plus au détecteur (`as string;` suivi d'un
+  `: Locale` n'est pas vu). (5) Le cas `getItem` lève une `SecurityError` (M3 rougit sur « SecurityError: Accès refusé »), le cas
+  `setItem` une `DOMException` de quota. Rouge avant : exit=1, 4 échecs et `localePrefix.spec.ts` sans module. Mutations (a) à (f) = M1
+  à M6, toutes attestées avec méthode, commande, rouge, `restauré`. `localStorage.` dans `frontend/src` : 7 appels, tous sous `try`
+  (dit au corps) ; relevé de la garde sur `src/` `[]`. Tests 2 698 → 2 708 (+10), 187 → 188 fichiers ; `frontend.md` 24 170 → 24 134.
+- **R236** (d8a37e50) : conforme, **deux écarts**. (1) Deux assertions du message ajoutées aux deux cas de catégorie inconnue de
+  `HttpAdminAboutMeCardRepository.spec.ts` (lecture et écriture), qui n'assertaient pas encore le message : le plan disait « son spec
+  la lit » ; le rouge d'avant (2 échecs) vient de là, et le nombre de tests ne change pas (2 708 avant et après). (2) **Le corps écrit
+  « R236 de la vingtième relecture »** au lieu de « dix-neuvième » : la forme est fausse dans le message (non réécrivable) ; le commentaire
+  de `HttpAdminAboutMeCardRepository.ts` portant la même erreur est corrigé par R239. Mutations M1 (autre message dans le dépôt des
+  incidents : 1 échec), M2 (valeur de `UNSUPPORTED_LOCALE_MESSAGE` : 1 échec, `supportedLocale.spec.ts` seul, les neuf specs restent verts :
+  le but), M3 (valeur de `UNKNOWN_CATEGORY_MESSAGE` : « rouge : aucune », voulue, dite), M4 (le dépôt des cartes : 1 échec) = (a), (b), (c)
+  et (a) refaite du plan, toutes attestées. `grep "'Unsupported locale in response'" frontend/tests` : `supportedLocale.spec.ts:33` seul.
+- **R237** (c03fed2e) : conforme, **écarts déclarés au corps**. (1) `--do-not-record-test-run-history` au lieu de `--do-not-cache-result`
+  (choix 7) : PHPUnit 13.4.5 déprécie ce dernier, et la relance rendait « OK, but there were issues! » ; le `--do-not-cache-test-index`
+  est gardé. (2) **La mutation (d) du plan reste verte telle qu'écrite** (M4 : « rouge : aucune », « OK (1 test, 6 assertions) » : la
+  couche `<env force>` de `testEnvironment()` remet la valeur forcée) ; M4b (`$environment['ANTHROPIC_API_KEY'] = false`, la variable
+  retirée du seul fils) rougit sur « ANTHROPIC_API_KEY, fils : empreinte e3b0…, attendue 0292… » sans ligne « noyau du parent » : c'est la
+  colonne « fils » de Sp19-9, enfin vue rouge. (3) Les échecs de la sonde sont regroupés dans une seule liste (empreintes et
+  `envForceDefects`). (4) La relance de la sonde filtre `Classe::méthode`, la classe portant deux cas. (5) `make back-quality` exit=2 au
+  premier passage (Rector, `LocallyCalledStaticMethodToNonStaticRector` sur les deux tests), corrigé par `composer rector:fix` sur ces
+  deux fichiers, puis exit=0 ; `make back-test` relancé après. (6) Les mutations ont été faites avant le raccourcissement d'un message
+  d'assertion de 143 caractères, vérifications relancées après (dit au corps). Rouge avant de C19-5 vu avec le seul `<server force>`
+  posé ; le cas de configuration est vert d'emblée, prouvé par M2. Mutations M1 (`<env force>` retiré : 1 échec), M2 (dernier nom sauté : 2
+  échecs), M3 (option retirée : 1 échec), M4 / M4b ; toutes attestées. Tests 5 800 → 5 802 (+2). `backend-outillage.md` 46 050 → 46 037.
+  **Forme voisine laissée (E1)** : `ApiPlatformDeprecationHandoverTest` lance aussi un `vendor/bin/phpunit` imbriqué sans
+  `--do-not-cache-test-index` ni `--do-not-record-test-run-history` (voir « Questions rendues »). Le corps ne rend pas le
+  `awk 'length>140'` que le Step 6 demandait : mesuré par R240, aucune ligne de plus de 140 caractères écrite par la série (recherche 1).
+- **R238** (e353f6b5) : conforme, **écarts déclarés au corps**. (1) La ligne refusée donnée à `measure_dump_output` est
+  `echo "$MEASURED_VARIABLE"`, non une des sept du plan : au rouge, `ps_bounded_to_self` l'aurait exécutée, et elle n'imprime que la
+  variable factice. (2) `MEASURABLE_DUMP_SHAPES` compte **huit motifs séparés**, ancrés (le plan disait « un des motifs ancrés »). (3) Un
+  tableau `unmeasurable_printing` rend, dans un `fail`, les lignes de `dump_printing` qu'aucun motif ne couvre (le cas d'avant la boucle).
+  (4) La limite d'E2 est citée **en français dans la règle anglaise** (`outillage-smoke.md:186`, « garde lexicale : toute forme non écrite
+  en clair… »), mot pour mot comme à l'en-tête de la garde (`smoke-http.test.sh:1469`) ; le plan demandait « mot pour mot », la citation
+  est donc dans sa langue d'origine. Les phrases « (no guarded script runs either) », « aucun script gardé n'appelle `ps` », « every
+  bypass is refused » et la liste perl/PHP sont retirées (`grep` de R240 : 0 ligne ; `grep -rn ps_bounded_to_self tools .claude` : 0).
+  CR19-9 : la limite de `-f` est écrite dans la règle et dans le docblock de `_smoke_is_data_file` (`tools/lib/smoke-http.sh`, commentaire
+  seul). Rouge avant : exit=1, 13 FAIL (code 127 ×7, le cas d'avant la boucle, `measure_dump_output` « code 0, attendu 1 ; fichier de
+  sortie : créé », les quatre formes `$ENV`). Mutations (a) à (c) = M1 (4 échecs), M2 (`ps 1` : 1 échec), M3 (2 échecs, « la mesure lance
+  21 formes sur 26 », les cinq lignes `bash -c`/`sh -c` non exécutées), toutes attestées ; aucune mutation ne rend la mesure plus
+  permissive (dit). `smoke-http` 559 → 574 `ok` (+15), 26 tests 1 139 → 1 154, shellcheck `--severity=warning` exit=0.
+  `outillage-smoke.md` 28 222 → **26 178**.
+- **R239** (23362f4f) : conforme, **écarts déclarés au corps**. Texte seul : `git diff -U0 23362f4f~1 23362f4f -- frontend tools` filtré
+  des lignes de commentaire (`//`, `*`, `/*`, `#`) rend **0 ligne** (mesure de R240). (1) `frontend.md` **+25 octets** (24 134 → 24 159,
+  sous le plafond de 24 170) : « (D4 of the eighteenth review) », la forme complète du numéro. (2) Le commentaire de `run_nominal`
+  d'`audit-prod.test.sh` n'est pas réécrit : la fonction n'en porte aucun (`audit-prod.test.sh:96`) ; les trois autres lanceurs sont
+  réécrits (« Le lanceur des cas qui lancent le smoke »). (3) Le nombre de tests d'avant n'est pas relevé au Filet (« le nombre d'avant
+  n'a pas été relevé ») : la substitution « texte seul » est prouvée par le diff, non par un décompte ; 2 708 après. (4) Le corps écrit
+  « R239 de la vingtième série » (la forme du plan est « de la dix-neuvième relecture »). (5) **Laissés écrits, dits** :
+  `smoke-cases.sh:376` « R212, St17-23 », `frontend-backoffice.md` « (#748, R214, D2) », les numéros antérieurs de `src/` (recherche 3),
+  les noms de tests (Sp19-12). `supportedLocale.ts:10` porte « (#748, R214, D2 de la dix-septième relecture) » : le numéro R214 y reste
+  seul devant la série de D2. Brief 16 807 → 17 131 octets (la phrase E3, les séries passées) ; le brief nomme la section de la
+  dix-neuvième relecture pour R235 et suivantes, et l'exception de R240.
+
+#### Décisions de l'auteur et exécution
+
+E1 à E4 appliquées : critère de sortie (cette sous-section finit sur la base des relectures du diff `B...HEAD`) ; garde des vidages (R238 :
+limite générique écrite une fois dans la règle et une fois à l'en-tête, mesure à liste d'autorisation de la ligne entière, `$ENV` et
+`process.env` refusés, `ps 1` admis) ; conventions d'écriture (R239, aucune garde mécanique nouvelle) ; micro-série (E4, à décider après les
+relectures). Choix pris à la recommandation : 1 à 3 R235, 4 R236, 5 à 8 R237, 9 à 12 R238, 13 et 14 R239 ; tous appliqués. **C17-7** :
+la rotation du jeton reste à la charge de l'auteur, hors session ; rien ici ne la fait ni ne la vérifie.
+
+#### Les mesures de R240
+
+```bash
+B=$(git log --grep='le plan de la vingtième série' -1 --format=%H)   # 6a7c5b90
+timeout 900 make front-test; echo "exit=$?"     # exit=0 — 188 fichiers, 2 708 tests
+timeout 900 make back-test;  echo "exit=$?"     # exit=0 — OK (5 802 tests, 116 092 assertions)
+for t in tools/tests/*.test.sh; do bash "$t" >/dev/null 2>&1; echo "$t $?"; done            # 26 fichiers, tous à 0
+tools/check-claude-rules.sh; echo "exit=$?"     # exit=0
+```
+
+- **Tests hors ligne** : `grep -c '^[[:space:]]*ok[[:space:]]'` de la sortie de chaque test : **1 154 `ok`** au total (départ 1 139, +15
+  de `smoke-http`) ; `smoke-http` 574 (départ 559). Les 26 fichiers rendent 0.
+- **Tailles** (`wc -c`) : `outillage-smoke.md` **26 178** (≤ 28 222) ; `frontend.md` **24 159** (≤ 24 170) ; `backend-outillage.md`
+  **46 037** (≤ 46 050) ; `frontend-backoffice.md` 40 015, `.claude/CLAUDE.md` 35 042, `security-user.md` 47 922, `backoffice-api.md` 39 834
+  (inchangés) ; le brief 17 131.
+- **Nombres** : 2 698 → 2 708 tests (+10, R235), 187 → 188 fichiers ; 5 800 → 5 802 (+2, R237) ; 1 139 → 1 154 `ok` (+15, R238).
+
+#### Les recherches de R240
+
+```bash
+export LC_ALL=C.UTF-8; B=6a7c5b90
+# 1. lignes de plus de 140 caractères écrites ou retirées par la série (hors tasks/), lignes ajoutées puis retirées
+git diff -U0 $B HEAD -- frontend/src frontend/tests backend tools .claude docs | grep -E '^\+[^+]' | awk 'length>141' | wc -l   # 0
+git diff -U0 $B HEAD -- frontend/src frontend/tests backend/src backend/tests tools .claude docs | grep -E '^-[^-]' | awk 'length>141' | wc -l   # 0
+# 2. lignes de plus de 140 dans les mêmes dossiers, texte seul (git grep -I) : avant et après
+git grep -I -hE '.{141,}' $B -- frontend/src frontend/tests backend/src backend/tests tools .claude docs | wc -l       # 3664
+git grep -I -hE '.{141,}' HEAD -- frontend/src frontend/tests backend/src backend/tests tools .claude docs | wc -l     # 3664
+# 3. numéros de tâche sans série dans les lignes écrites par la série ; puis ceux qui restent à HEAD dans frontend/src
+git diff -U0 $B...HEAD -- frontend/src frontend/tests backend tools .claude/rules | grep -E '^\+[^+]' | grep -E '\b(R|D|E)[0-9]+\b' | grep -v 'de la \(dix\|vingt\)'
+grep -rnE '\bR[0-9]{3}\b' frontend/src | grep -vE 'de la [a-zéè-]+ (relecture|série)|of the [a-z-]+ review'
+# 4. noms disparus
+grep -rn ps_bounded_to_self tools .claude | wc -l                                                         # 0
+grep -n "no guarded script\|aucun script gardé\|every bypass" tools/tests/smoke-http.test.sh .claude/rules/outillage-smoke.md | wc -l   # 0
+# 5. constats écrits relus à HEAD (voir la table)
+```
+
+**1 et 2.** La série n'écrit ni ne retire aucune ligne de plus de 140 caractères hors `tasks/` (0 et 0), et le dépôt en garde 3 664 dans
+ces dossiers, avant comme après (la mesure de R234 disait 2 696 sur un périmètre autre ; ces deux nombres ne se comparent pas). **3.** Les
+lignes ajoutées qui portent un numéro (R229, R214, D2, D4, E2, R238) ont leur série sur la ligne ou sur la suivante du même commentaire
+(coupure de ligne) ; à HEAD, `frontend/src` garde 35 lignes à numéro seul dans 16 fichiers, antérieures à la série et laissées par R239
+(les numéros de R227 et R229 y sont complétés ; `seo.ts:36` porte « R227 de la dix-huitième… »). **4.** `ps_bounded_to_self` : 0
+occurrence ; les trois phrases fausses d'E2 : 0 occurrence.
+
+#### Constats écrits (E1), relus à HEAD
+
+- **CR19-8** : toujours vrai. `router/index.ts:348-350` (`guardLocale`) et `:374-375` (`beforeEach`) lisent chacun `to.params.locale` et
+  `isSupportedLocale` ; la série ne touche pas `index.ts`.
+- **C19-6** : toujours vrai. `ForcedTestValuesProbeTest.php:133, 188` calculent `hash('sha256', …)` et l'échec imprime l'empreinte
+  (R237 ajoute des empreintes de la même façon pour `MAILER_DSN`) ; sans changement du risque.
+- **C19-7** : toujours vrai. `HttpAdminUserRepository.ts:13` déclare `status: 'pending' | 'active'`, `:87` le lit sans `as` ni jugement.
+- **St19-8** : toujours vrai, et `forcedNames()` (R237) est aussi `public static` (`ForcedTestValuesProbeTest.php:112, 126`), lu par le
+  test du shell : même raison, dite par R237.
+- **St19-11** : toujours vrai (`REFUSAL_EN` à `AssistantPage.spec.ts:26` et `OAuthConsentPage.spec.ts:32` ; lanceurs `witness` et
+  `cdpath` dans les smokes).
+- **St19-12 à St19-14, St19-16 à St19-18** : non retouchés par la série ; `CATALOGUES` est encore recopié dans
+  `accessRefusalTexts.ts:5` et `accountMenuTexts.ts:13` ; `CP-Ghostotof — ` est encore écrit en littéral dans 5 `expect` de
+  3 specs (`OAuthConsentPage`, `ConnectAssistantPage`, `LocaleSwitcher`).
+- **Sp19-5** : toujours vrai (`entryFormLockTexts.ts:31`, `.split('{locale}')`).
+- **Sp19-12** : toujours vrai ; la série n'écrit aucun nom de test « (#748, R22x) ». Mesure de R240, à `B` puis à HEAD :
+  `git grep -I -nE "\(#748, R2(2[2-9]|3[0-4])\)" <rév> -- frontend/tests | wc -l` rend **33** deux fois (le plan en comptait 31 : motif ou
+  périmètre différent, le plan ne dit pas lequel).
+- **(b)** : `lines_with_values` a **six** appels (`audit-prod.test.sh:162, 527` ; `smoke-http.test.sh:281, 332, 546, 702`), identiques à
+  `ac8ab8e5` : le plan en disait « cinq » ; aucun changement de la série. **(c)** : trois fichiers de `tests/support` portent des `_FR`.
+  **(d)** : le script du relevé reste hors dépôt. **(e)** : voir la recherche 2.
+
+#### Questions rendues (E1 : rien n'est corrigé ici)
+
+1. **`ApiPlatformDeprecationHandoverTest.php:50-60`** lance un `vendor/bin/phpunit` imbriqué sans `--do-not-record-test-run-history` ni
+   `--do-not-cache-test-index` : il peut réécrire le cache des résultats du run externe, comme CR19-6 le disait de la sonde. Aucun cas ne le
+   mesure. Faible ; à décider par l'auteur (micro-série ou écrit).
+2. **Numéros restants** : `smoke-http.test.sh` porte sept « D3 » seuls (l. 1765, 1779, 1784, 1796, 1880, 1966, 1974) et
+   `sessionState.ts:96` « Deux appelants seulement » ; ils ne sont pas dans la liste de R239 et sont antérieurs à la série
+   (aucun « D2 » seul ne reste dans `smoke-http.test.sh`). Faibles (E3).
+3. **Formes de corps de commit** : « R236 de la vingtième relecture » (R236) et « R239 de la vingtième série » (R239) ne suivent pas la
+   forme « de la dix-neuvième relecture » ; non réécrivables (`--amend` interdit).
+
+#### La suite (E1, E4)
+
+La série a livré les cinq tâches avec tous les rouges vus et toutes les mutations attestées au corps (R235 M1–M6, R236 M1–M4,
+R237 M1–M4b, R238 M1–M3 ; R239 sans code), tous les codes de sortie à 0. Prochaine étape, sans la décider ici : la marche « Après la
+série » ci-dessus, soit la vérification complète sur conteneurs redémarrés, puis les quatre relectures **sur le seul diff
+`B...HEAD`** (`6a7c5b90...HEAD` pour la base de la série, ce commit de bilan en plus), leurs critiques, hauts et moyens corrigés par une
+micro-série sans nouvelle relecture complète (E4), leurs faibles et info écrits ; puis « Task 11 » et « Task 12 ».
+
 ---
 
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
