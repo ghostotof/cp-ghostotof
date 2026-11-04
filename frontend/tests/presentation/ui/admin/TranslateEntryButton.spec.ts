@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { EXPIRED_CALL_PENDING_FR } from '../../../support/adminTranslationTexts'
+import { EXPIRED_CALL_PENDING_FR, TRANSLATION_IN_PROGRESS_FR } from '../../../support/adminTranslationTexts'
 import { proposeVersionLabel } from '../../../support/adminButtonTexts'
 
 type Props = InstanceType<typeof TranslateEntryButton>['$props']
@@ -51,7 +51,7 @@ describe('TranslateEntryButton', () => {
     const button = wrapper.get('button')
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.attributes('aria-busy')).toBe('true')
-    expect(wrapper.text()).toContain('Traduction en cours')
+    expect(wrapper.text()).toContain(TRANSLATION_IN_PROGRESS_FR)
   })
 
   it('reste désactivé quand la page le demande (aucun champ de prose rempli)', () => {

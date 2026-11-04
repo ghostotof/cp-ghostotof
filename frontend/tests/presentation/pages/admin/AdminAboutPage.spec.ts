@@ -57,6 +57,8 @@ import {
 import {
   EXPIRED_CALL_PENDING_FR,
   PROSE_READONLY_FR,
+  proposalNoticeFrom,
+  TRANSLATION_RATE_LIMITED_FR,
   TRANSLATION_UNAVAILABLE_FR,
 } from '../../../support/adminTranslationTexts'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
@@ -524,7 +526,7 @@ describe('AdminAboutPage', () => {
 
       expect(siteCardRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-      expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+      expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
       expect(panelOf(wrapper, SITE_PANEL).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
@@ -603,7 +605,7 @@ describe('AdminAboutPage', () => {
 
       expect(meCardRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-      expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+      expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
       expect(meSectionOf(wrapper, 'technical').text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
@@ -851,7 +853,7 @@ describe('AdminAboutPage', () => {
       expect(category.attributes('disabled')).toBeDefined()
       const helpId = category.attributes('aria-describedby')
       expect(helpId).toBe('admin-about-me-card-category-help')
-      expect(wrapper.get(`#${helpId}`).text()).toContain('ne se modifie pas')
+      expect(wrapper.get(`#${helpId}`).text()).toContain(fr.admin.about.meCard.categoryLockedHelp)
     })
 
     it('libère la catégorie et retire son aide hors de l’édition', async () => {
@@ -1037,8 +1039,7 @@ describe('AdminAboutPage', () => {
       expect(siteCardRepository.update).not.toHaveBeenCalled()
 
       const banner = formOf(wrapper, SITE_FORM).get('[role="status"]')
-      expect(banner.text()).toContain('Proposition générée par IA')
-      expect(banner.text()).toContain('FR')
+      expect(banner.text()).toContain(proposalNoticeFrom('fr'))
 
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
       await flushPromises()
@@ -1098,8 +1099,8 @@ describe('AdminAboutPage', () => {
     let siteCardUnderLock = createSiteCardRepository()
     let meCardUnderLock = createMeCardRepository()
 
-    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour chaque
-    // formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois, pour tous les
+    // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
     describeEntryFormLock({
       name: 'carte « site »',
@@ -1163,14 +1164,20 @@ describe('AdminAboutPage', () => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]).trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), FORM_TEXTS.delete).trigger('click')
+        await buttonLabelled(
+          actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]),
+          FORM_TEXTS.delete,
+        ).trigger('click')
       },
       startEditOther: async (wrapper) => {
         await editButton(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]).trigger('click')
       },
       // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
       deleteSiblingOfOther: async (wrapper) => {
-        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), FORM_TEXTS.delete).trigger('click')
+        await buttonLabelled(
+          actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]),
+          FORM_TEXTS.delete,
+        ).trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], CREATE_FR_LABEL).trigger('click'),
       orderTable: ME_TABLE.technical,
@@ -1228,7 +1235,7 @@ describe('AdminAboutPage', () => {
       await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
-      expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toContain('Quota horaire')
+      expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
       expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe(fr.admin.about.siteCard.edit)
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
       expect(valueOf(wrapper, '#admin-about-site-card-title')).toBe(SITE_FR_TWO.title)
@@ -1411,7 +1418,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
     })
 
     // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
@@ -1478,7 +1485,7 @@ describe('AdminAboutPage', () => {
       await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(translation.translate).toHaveBeenCalledOnce()
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
 
       const button = translateEntryButton(wrapper, SETTINGS_FORM)
       expect(button.attributes('disabled')).toBeDefined()
@@ -1490,7 +1497,7 @@ describe('AdminAboutPage', () => {
 
       expect(translation.translate).toHaveBeenCalledOnce()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
     })
 
     // R127b : la proposition ne se montre pas sous l'autre langue, et le retour sur sa langue cible relit le formulaire du
@@ -1747,7 +1754,7 @@ describe('AdminAboutPage', () => {
         expect(wrapper.find('#admin-about-settings-site-eyebrow').exists()).toBe(false)
         expect(state.saveButton).toBe(false)
         expect(state.translateButton).toBe(false)
-        expect(state.text).toContain('Contenu non chargé')
+        expect(state.text).toContain(fr.admin.notLoaded)
         expect(settingsRepository.update).not.toHaveBeenCalled()
       })
 
@@ -1767,7 +1774,7 @@ describe('AdminAboutPage', () => {
 
         expect(settingsRepository.get).toHaveBeenLastCalledWith('en')
         expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
-        expect(settingsPanelState(wrapper).text).not.toContain('Contenu non chargé')
+        expect(settingsPanelState(wrapper).text).not.toContain(fr.admin.notLoaded)
 
         // « Enregistrer » ne touche que l'EN, avec ses propres valeurs.
         await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
@@ -1798,7 +1805,7 @@ describe('AdminAboutPage', () => {
         expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
         let state = settingsPanelState(wrapper)
         expect(state.values).toEqual([])
-        expect(state.text).toContain('Contenu non chargé')
+        expect(state.text).toContain(fr.admin.notLoaded)
         expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
 
         session.ended = false
@@ -1807,7 +1814,7 @@ describe('AdminAboutPage', () => {
         // Au retour : la lecture EN aboutit, et la proposition se pose par-dessus, comme au premier passage.
         expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('Proposed site')
         expect(valueOf(wrapper, '#admin-about-settings-hobbies-subtitle')).toBe('Proposed hobbies')
-        expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+        expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
         state = settingsPanelState(wrapper)
         expect(state.saveButton).toBe(true)
         expect(settingsRepository.update).not.toHaveBeenCalled()
@@ -1836,7 +1843,7 @@ describe('AdminAboutPage', () => {
       // pas écraser la proposition : celle-ci est appliquée une fois la locale chargée.
       expect(valueOf(wrapper, '#admin-about-settings-site-eyebrow')).toBe('About this site')
       expect(valueOf(wrapper, '#admin-about-settings-hobbies-subtitle')).toBe('Outside work')
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
       expect(settingsRepository.update).not.toHaveBeenCalled()
 
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
@@ -1854,7 +1861,7 @@ describe('AdminAboutPage', () => {
 
       await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
 
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
@@ -1862,7 +1869,7 @@ describe('AdminAboutPage', () => {
       // Refusé : le formulaire porte toujours la proposition, la mention qui le dit reste. Réussi, elle part.
       expect(settingsRepository.update).toHaveBeenCalledOnce()
       expect(panelOf(wrapper, SETTINGS_PANEL).findAll('[role="alert"]').length).toBeGreaterThan(0)
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
     })
 
     it("un enregistrement réussi retire la mention de la proposition de traduction", async () => {
@@ -2113,7 +2120,7 @@ describe('AdminAboutPage', () => {
       expect(englishReads).toBe(2)
       const settingsPanel = panelOf(wrapper, SETTINGS_PANEL)
       expect(settingsPanel.find('form').exists()).toBe(false)
-      expect(settingsPanel.text()).toContain('Contenu non chargé')
+      expect(settingsPanel.text()).toContain(fr.admin.notLoaded)
       expect(settingsPanel.find('[role="status"]').exists()).toBe(false)
       expect(settingsPanel.findAll('button').map((button) => button.text())).not.toContain(fr.admin.about.settings.proposalDiscard)
     })
@@ -2134,7 +2141,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain(proposalNoticeFrom('fr'))
     })
 
     it("enregistrement réussi de l'EN : l'avis disparaît (#748, R50, étape 2b)", async () => {

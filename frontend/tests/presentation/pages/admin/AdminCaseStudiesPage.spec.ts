@@ -21,6 +21,7 @@ import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
 import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import { HttpAdminCaseStudyRepository } from '../../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
 import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
@@ -208,7 +209,7 @@ describe('AdminCaseStudiesPage', () => {
   it('rappelle la règle éditoriale (jamais de nom de client) au-dessus du formulaire', async () => {
     const { wrapper } = await mountPage()
 
-    expect(wrapper.text()).toContain('Ni nom de client')
+    expect(wrapper.text()).toContain(fr.admin.caseStudies.identityHelp)
   })
 
   it("glisse la première ligne sur la troisième puis enregistre l'ordre des groupes", async () => {
@@ -305,7 +306,7 @@ describe('AdminCaseStudiesPage', () => {
 
     expect(caseStudies.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
     expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
@@ -350,7 +351,7 @@ describe('AdminCaseStudiesPage', () => {
       mountedPage = wrapper
 
       expect(wrapper.text()).toContain(fr.admin.notLoaded)
-      expect(wrapper.text()).not.toContain('Aucune étude de cas')
+      expect(wrapper.text()).not.toContain(fr.admin.caseStudies.empty)
       expect(wrapper.find('table').exists()).toBe(false)
       // Le bandeau de session finie est la seule alerte : la mention n'en est pas une.
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -375,7 +376,7 @@ describe('AdminCaseStudiesPage', () => {
     it('une liste réellement vide dit toujours « aucune étude de cas »', async () => {
       const { wrapper } = await mountPage(createStubRepository({ list: vi.fn(async () => []) }))
 
-      expect(wrapper.text()).toContain('Aucune étude de cas')
+      expect(wrapper.text()).toContain(fr.admin.caseStudies.empty)
       expect(wrapper.text()).not.toContain('Contenu non chargé')
     })
   })
@@ -490,15 +491,14 @@ describe('AdminCaseStudiesPage', () => {
     expect(caseStudies.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Proposition générée par IA')
-    expect(banner.text()).toContain('FR')
+    expect(banner.text()).toContain(proposalNoticeFrom('fr'))
   })
 
   // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
   let repositoryUnderLock = createStubRepository()
 
-  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour
-  // chaque formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91).
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois, pour tous les
+  // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91).
   describeEntryFormLock({
     name: '',
     createTranslation: () => createTranslationRepository(),
@@ -567,7 +567,7 @@ describe('AdminCaseStudiesPage', () => {
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
+    expect(wrapper.get('form [role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
     expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-case-study-title')).toBe(FR_TWO.title)

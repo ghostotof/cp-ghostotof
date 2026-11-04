@@ -96,7 +96,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     await flushPromises()
 
     const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('Votre session a pris fin')
+    expect(alert.text()).toContain(fr.admin.sessionEnded.message)
     const link = alert.get('a')
     expect(link.text()).toContain(fr.admin.sessionEnded.signInAgain)
     expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&expired=1')
@@ -115,7 +115,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toContain('noopener')
     // L'ouverture dans un autre onglet est dite à qui ne voit pas l'icône ou le comportement.
-    expect(link.text()).toContain('new tab')
+    expect(link.text()).toContain(en.common.opensInNewTab)
     expect(link.attributes('href')).toContain('/en/login?redirect=')
     wrapper.unmount()
   })
@@ -301,7 +301,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     expect(wrapper.get('[role="alert"]').element).toBe(alert)
     expect(wrapper.get('[role="alert"] a').element).toBe(link)
     expect(wrapper.get('[data-testid="admin-session-ended-message"]').element).not.toBe(message)
-    expect(wrapper.get('[data-testid="admin-session-ended-message"]').text()).toContain('Votre session a pris fin')
+    expect(wrapper.get('[data-testid="admin-session-ended-message"]').text()).toContain(fr.admin.sessionEnded.message)
     wrapper.unmount()
   })
 

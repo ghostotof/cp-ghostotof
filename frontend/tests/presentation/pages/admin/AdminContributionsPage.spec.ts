@@ -17,6 +17,7 @@ import { describeEntryFormLock, translateEntryButton } from '../../../support/en
 import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
 import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import { HttpAdminContributionRepository } from '../../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
@@ -280,7 +281,7 @@ describe('AdminContributionsPage', () => {
 
     expect(contributions.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
     expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
@@ -383,15 +384,14 @@ describe('AdminContributionsPage', () => {
     expect(contributions.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Proposition générée par IA')
-    expect(banner.text()).toContain('FR')
+    expect(banner.text()).toContain(proposalNoticeFrom('fr'))
   })
 
   // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
   let repositoryUnderLock = createContributionRepository()
 
-  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour
-  // chaque formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91).
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois, pour tous les
+  // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91).
   describeEntryFormLock({
     name: '',
     createTranslation: () => createTranslationRepository(),
@@ -465,7 +465,7 @@ describe('AdminContributionsPage', () => {
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
+    expect(wrapper.get('form [role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
     expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-contribution-title')).toBe(FR_TWO.title)

@@ -261,7 +261,7 @@ describe('AdminWatchPage', () => {
 
     expect(repository.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
     expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
@@ -382,7 +382,7 @@ describe('AdminWatchPage', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('déjà surveillé')
+    expect(wrapper.text()).toContain(fr.admin.watch.errors.conflict)
   })
 
   it('demande confirmation avant de quitter la route avec un ordre modifié, et reste sur place si on refuse', async () => {
@@ -452,7 +452,7 @@ describe('AdminWatchPage', () => {
     it('annonce l’absence de vulnérabilité connue', async () => {
       const { wrapper } = await mountPage()
 
-      expect(wrapper.text()).toContain('Aucune vulnérabilité connue')
+      expect(wrapper.text()).toContain(fr.admin.watch.vulnerabilities.empty)
     })
 
     describe('plusieurs lectures en 401 au chargement (#748, R14, Sp-c1)', () => {
@@ -518,7 +518,7 @@ describe('AdminWatchPage', () => {
         mountedPage = wrapper
 
         // Ce que le volet dirait sinon est une affirmation (« aucune vulnérabilité ») que personne n'a vérifiée.
-        expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
+        expect(wrapper.text()).not.toContain(fr.admin.watch.vulnerabilities.empty)
         expect(wrapper.text()).toContain(fr.admin.notLoaded)
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       })
@@ -552,7 +552,7 @@ describe('AdminWatchPage', () => {
         list: vi.fn(async () => Promise.reject(new Error('unavailable'))),
       })
 
-      expect(wrapper.text()).toContain('chargement des vulnérabilités a échoué')
+      expect(wrapper.text()).toContain(fr.admin.watch.vulnerabilities.loadError)
     })
   })
 })

@@ -30,6 +30,7 @@ import type { CvRepository } from '../../../src/domain/cv/repositories/CvReposit
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
 import { accessRefusalTexts } from '../../support/accessRefusalTexts'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 import { defineComponent, h, type Component } from 'vue'
 
 const REFUSAL = accessRefusalTexts('fr')
@@ -202,7 +203,7 @@ describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
 
     // La fin de session est annoncée, avec le chemin pour se reconnecter.
     expect(authState.user).toBeNull()
-    const banner = wrapper.findAll('[role="alert"]').find((alert) => alert.text().includes('Votre session a pris fin'))
+    const banner = wrapper.findAll('[role="alert"]').find((alert) => alert.text().includes(fr.admin.sessionEnded.message))
     expect(banner).toBeDefined()
     expect(banner?.get('a').attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&expired=1')
     wrapper.unmount()
@@ -255,7 +256,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
-    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect(alerts[0]?.text()).toContain(fr.admin.sessionEnded.message)
     expect(wrapper.text()).not.toContain('Une erreur est survenue')
     wrapper.unmount()
   })
@@ -268,7 +269,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
-    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect(alerts[0]?.text()).toContain(fr.admin.sessionEnded.message)
     expect((wrapper.get('#admin-case-study-title').element as HTMLInputElement).value).toBe('Un moteur de tarification asynchrone')
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies')
     wrapper.unmount()
@@ -318,7 +319,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
     await fillAndSubmit(wrapper)
 
     const alerts = wrapper.findAll('[role="alert"]')
-    expect(alerts.some((alert) => alert.text().includes('Votre session a pris fin'))).toBe(false)
+    expect(alerts.some((alert) => alert.text().includes(fr.admin.sessionEnded.message))).toBe(false)
     expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(false)
     expect(alerts).toHaveLength(1)
     expect(alerts[0]?.text()).toContain(REFUSAL.accessRefused)
@@ -601,7 +602,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
-    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect(alerts[0]?.text()).toContain(fr.admin.sessionEnded.message)
     expect(authState.sessionEnded).toBe(true)
     wrapper.unmount()
   })

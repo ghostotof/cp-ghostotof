@@ -18,6 +18,7 @@ export const ORDER_TEXTS: {
   readonly statusDirty: string
   readonly missingTranslation: string
   readonly lockedHint: string
+  readonly staleOrder: string
 } = {
   save: fr.admin.order.save,
   cancel: fr.admin.order.cancel,
@@ -25,6 +26,7 @@ export const ORDER_TEXTS: {
   statusDirty: fr.admin.order.status.dirty,
   missingTranslation: fr.admin.order.missingTranslation,
   lockedHint: fr.admin.order.lockedHint,
+  staleOrder: fr.admin.order.errors['stale-order'],
 }
 
 /** Enregistrer, annuler, supprimer : les boutons du formulaire d'une entrée (non ceux de la barre d'ordre). */

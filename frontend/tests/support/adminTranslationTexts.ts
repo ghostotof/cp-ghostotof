@@ -1,4 +1,6 @@
 import fr from '../../src/infrastructure/i18n/locales/fr.json'
+import type { Locale } from '../../src/domain/portfolio/entities/Locale'
+import { renderedMessage } from './renderedMessage'
 
 /**
  * Les textes FR de la traduction assistée (attente d'un appel abandonné, prose en lecture seule, échec), lus de `fr.json`
@@ -20,3 +22,11 @@ export const TRANSLATION_UNAVAILABLE_FR: string = fr.admin.translation.errors.un
 
 /** `admin.translation.inProgress` : le libellé du bouton de traduction tant que l'appel est en vol, à la place de « Proposer… ». */
 export const TRANSLATION_IN_PROGRESS_FR: string = fr.admin.translation.inProgress
+
+/** `admin.translation.errors.rate-limited` : le message du quota horaire de l'assistant (429), tel que le formulaire le rend. */
+export const TRANSLATION_RATE_LIMITED_FR: string = fr.admin.translation.errors['rate-limited']
+
+/** `admin.translation.proposalNotice` : la mention d'une proposition, qui nomme la version `source` en majuscules, comme les pages. */
+export function proposalNoticeFrom(source: Locale): string {
+  return renderedMessage('fr', 'admin.translation.proposalNotice', { locale: source.toUpperCase() })
+}

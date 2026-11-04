@@ -11,6 +11,7 @@ import type { AuthRepository } from '../../../../src/domain/auth/repositories/Au
 import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/AuthenticatedUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 import { sessionFor } from '../../../support/authSession'
+import { renderedMessage } from '../../../support/renderedMessage'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const SUPER_ID = '019968a0-0000-7000-8000-000000000001'
@@ -119,7 +120,7 @@ describe('AdminUsersPage', () => {
 
     expect(repository.invite).toHaveBeenCalledWith('jean.dupont@example.com', 'fr')
     expect(wrapper.text()).toContain('newcomer')
-    expect(wrapper.text()).toContain('Invitation envoyée')
+    expect(wrapper.text()).toContain(renderedMessage('fr', 'admin.users.invite.success', { username: 'newcomer' }))
   })
 
   it('affiche un message d\'erreur si l\'invitation échoue (email déjà pris) sans casser la liste', async () => {

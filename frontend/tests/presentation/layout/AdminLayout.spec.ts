@@ -223,7 +223,7 @@ describe('AdminLayout', () => {
 
     await contentToggle(wrapper).trigger('click')
 
-    expect(wrapper.get('nav').attributes('aria-label')).toBe('Navigation d\'administration')
+    expect(wrapper.get('nav').attributes('aria-label')).toBe(fr.admin.navigation)
     expect(wrapper.get('.dropdown-menu').attributes('aria-label')).toBe(fr.admin.contentNavigation)
 
     wrapper.unmount()

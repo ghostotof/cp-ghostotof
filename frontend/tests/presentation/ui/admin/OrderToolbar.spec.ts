@@ -59,7 +59,7 @@ describe('OrderToolbar', () => {
   it('affiche une alerte pour une liste obsolète', () => {
     const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: 'stale-order' })
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('a changé entre-temps')
+    expect(wrapper.get('[role="alert"]').text()).toContain(ORDER_TEXTS.staleOrder)
   })
 
   it('affiche une alerte générique pour un échec non identifié', () => {

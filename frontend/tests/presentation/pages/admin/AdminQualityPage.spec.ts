@@ -24,6 +24,7 @@ import { PROPOSE_VERSION_PREFIX_FR, QUALITY_LOCALE_HELP_FR } from '../../../supp
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled, editButtonFor } from '../../../support/buttonLabelled'
 import { createVersionLabel, ENTRY_FORM_TEXTS, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -343,7 +344,7 @@ describe('AdminQualityPage', () => {
 
       expect(principleRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-      expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+      expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
       expect(panelOf(wrapper, PRINCIPLES).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
@@ -399,7 +400,7 @@ describe('AdminQualityPage', () => {
 
       expect(traitRepository.list).toHaveBeenCalledOnce()
       const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-      expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+      expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
       expect(panelOf(wrapper, TRAITS).text()).toContain(ORDER_TEXTS.statusClean)
     })
   })
@@ -663,8 +664,7 @@ describe('AdminQualityPage', () => {
       expect(principleRepository.update).not.toHaveBeenCalled()
 
       const banner = formOf(wrapper, PRINCIPLES).get('[role="status"]')
-      expect(banner.text()).toContain('Proposition générée par IA')
-      expect(banner.text()).toContain('FR')
+      expect(banner.text()).toContain(proposalNoticeFrom('fr'))
     })
 
     it('principe : enregistrer la proposition crée une entrée EN rattachée au même groupe', async () => {
@@ -716,8 +716,8 @@ describe('AdminQualityPage', () => {
     let principleUnderLock = createPrincipleRepository()
     let traitUnderLock = createTraitRepository()
 
-    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour chaque
-    // formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois, pour tous les
+    // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
     describeEntryFormLock({
       name: 'principe',
@@ -813,7 +813,7 @@ describe('AdminQualityPage', () => {
       await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
-      expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toContain('Quota horaire')
+      expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe(fr.admin.quality.principle.edit)
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('fr')
       expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe(PRINCIPLE_FR_TWO.title)
@@ -852,7 +852,7 @@ describe('AdminQualityPage', () => {
       for (const selectId of ['admin-quality-principle-locale', 'admin-quality-trait-locale']) {
         const helpId = wrapper.get(`#${selectId}`).attributes('aria-describedby')
         expect(helpId, selectId).toBe(`${selectId}-help`)
-        expect(wrapper.get(`#${helpId}`).text()).toContain('Langue de cette entrée')
+        expect(wrapper.get(`#${helpId}`).text()).toContain(fr.admin.quality.localeHelp)
       }
     })
 

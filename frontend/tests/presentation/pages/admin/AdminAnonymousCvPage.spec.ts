@@ -17,6 +17,7 @@ import { describeEntryFormLock, translateEntryButton } from '../../../support/en
 import { ANONYMOUS_CV_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 import { buttonLabelled } from '../../../support/buttonLabelled'
 import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
 import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import {
   HttpAdminAnonymousCvSectionRepository,
@@ -204,7 +205,7 @@ describe('AdminAnonymousCvPage', () => {
   it('rappelle la règle éditoriale (ni nom, ni employeur) au-dessus du formulaire', async () => {
     const { wrapper } = await mountPage()
 
-    expect(wrapper.text()).toContain('Ni nom, ni employeur, ni client')
+    expect(wrapper.text()).toContain(fr.admin.anonymousCv.identityHelp)
   })
 
   it("glisse la première ligne sur la troisième puis enregistre l'ordre des groupes", async () => {
@@ -286,7 +287,7 @@ describe('AdminAnonymousCvPage', () => {
 
     expect(sections.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
     expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
@@ -388,15 +389,14 @@ describe('AdminAnonymousCvPage', () => {
     expect(sections.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Proposition générée par IA')
-    expect(banner.text()).toContain('FR')
+    expect(banner.text()).toContain(proposalNoticeFrom('fr'))
   })
 
   // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
   let repositoryUnderLock = createStubRepository()
 
-  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour
-  // chaque formulaire par entrée dans `tests/support/entryFormLock.ts` (#748, R91).
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois, pour tous les
+  // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91).
   describeEntryFormLock({
     name: '',
     createTranslation: () => createTranslationRepository(),
@@ -468,7 +468,7 @@ describe('AdminAnonymousCvPage', () => {
     await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
+    expect(wrapper.get('form [role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
     expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-anonymous-cv-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-anonymous-cv-title')).toBe(FR_TWO.title)
