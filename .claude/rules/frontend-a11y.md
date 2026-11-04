@@ -52,6 +52,11 @@ fixed:
   anonymous and in English, for 301 px of usable width: truncating the brand does not absorb that, so **the group's
   width at each tier, in French and English, is measured in a real browser at 320 px** (`scrollWidth` of the document
   must equal 320) — jsdom does no layout; `AppHeader.spec.ts` (« en-tête à 320 px ») pins only the classes.
+- **A `.row` gutter stays at 1.5 rem or less below `lg`** (WCAG 1.4.10, #748, R244 of the twentieth review): a `.row` takes a
+  negative margin of half its gutter, and the container's padding is 0.75 rem, so `g-5` (3 rem) overflowed the home page by
+  12 px at 320 px (`scrollWidth` 317 for `clientWidth` 305). `HeroSection.vue` uses `g-4 g-lg-5` (the same 3 rem from 992 px).
+  `rowGutterSourceGuard.spec.ts` refuses `g-5` and `gx-5` without a breakpoint prefix on a `.row` in any `src/` template or
+  string; it does not see a gutter set by `--bs-gutter-x`, nor a `.row` outside a container: the width stays measured in a real browser.
 - **Static a11y linting is wired in** (`eslint-plugin-vuejs-accessibility`, `flat/recommended`, in
   `npm run lint` — blocking in CI). One rule is loosened: `label-has-for` defaults to requiring a label
   both wrapped around its field *and* carrying a `for`, stricter than WCAG, which accepts either; the
