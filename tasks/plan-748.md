@@ -15529,6 +15529,17 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
 R226. Q2 : un seul texte de refus, « peut écrire ». Q3 : CR18-7 est écarté, la décision f0a3b889 de R216b tient. Q4 :
 `useRouteLocale()` et `pageLocale` dans R227, St18-13 corrigé. Le plan, écrit pour ces recommandations, ne change pas.
 
+**Décisions de l'auteur en cours de série (2026-11-04, questions de R232)**, appliquées par R233 :
+
+- **D6 — un cas dont le sujet est la rédaction du message garde ses littéraux**, même s'il rougit à la mutation de la clé
+  (AdminUsersPage.spec, cas #410 : le message nomme « au moins 8 caractères » et « 4096 octets » ; comme
+  `adminTranslationTexts.spec`). L'exception se dit au commit et au bilan, cas par cas.
+- **D7 — une garde négative (`not.toContain`, `not.toBe`) lit la même clé que son positif**, même verte à la mutation : un
+  libellé retouché la viderait sans bruit. R233 convertit aussi les cinq que R232 a laissées (AdminCaseStudiesPage ×2,
+  AdminWatchPage ×1 « Contenu non chargé », AdminLayout.sessionEnded ×2 « Une erreur est survenue »).
+- **D8 — R233 écrit le critère au paragraphe « Tests read the catalogue » de `frontend.md`** : égalités et extraits (D3),
+  l'exception de rédaction (D6), les gardes négatives (D7) ; en remplaçant, la règle nommée dans ses fichiers et son rendu.
+
 - **Q1 (R226), la forme voisine de D1 : `APP_ENV`.** `phpunit.dist.xml:22` le force par `<server>` seul, et `KernelTestCase` lit
   `$_ENV['APP_ENV']` avant `$_SERVER` : un `APP_ENV=dev` exporté dans le conteneur démarrerait le noyau de dev dans les tests.
   (A) recommandé : le même traitement que D1 (`<env name="APP_ENV" value="test" force="true" />` en plus, le même test par
