@@ -65,11 +65,19 @@ function queryFollowing(from: Locale, to: Locale): LocationQuery {
       class="btn btn-sm px-2"
       :class="localeOption === pageLocale ? 'btn-outline-light' : 'btn-link text-body-secondary text-decoration-none'"
       :aria-current="localeOption === pageLocale ? 'true' : undefined"
-      :aria-label="LOCALE_NATIVE_NAMES[localeOption]"
       :lang="localeOption"
       @click="switchTo(localeOption)"
     >
       {{ localeOption.toUpperCase() }}
+      <!--
+        Le nom natif, masqué : le nom accessible est « FR (Français) », il commence par le texte visible (WCAG 2.5.3, « Label in
+        Name » : « cliquer FR » à la voix trouve le bouton), et `lang` fait prononcer « English » en anglais (#748, R243 de la
+        vingtième relecture). Pas d'`aria-label` : il remplacerait le contenu, et le nom ne contiendrait plus « FR ».
+      -->
+      <span
+        class="visually-hidden"
+        :lang="localeOption"
+      >{{ ' ' }}({{ LOCALE_NATIVE_NAMES[localeOption] }})</span>
     </button>
   </div>
 </template>

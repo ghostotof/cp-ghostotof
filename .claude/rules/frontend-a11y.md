@@ -77,6 +77,14 @@ fixed:
   turn one off and leave the suite green for the wrong reason. Contrast, focus visibility, tab order
   and the relevance of alt text still need a real browser and a human — automated tooling covers
   roughly a third of WCAG.
+- **An accessible name contains the visible text** (WCAG 2.5.3 « Label in Name », level A, #748, R243 of the twentieth review):
+  a control that shows « FR » is not named « Français » by an `aria-label`, because « click FR » by voice then finds nothing.
+  `LocaleSwitcher.vue` shows the code and appends the native name in a `visually-hidden` span with its own `lang`, so the name
+  is « FR (Français) » and « English » is pronounced in English; the group keeps its `aria-label`, it has no visible text. axe's
+  rule is experimental, off by default, and jsdom only concludes « needs review » (`incomplete`, no canvas):
+  `expectLabelInName(wrapper)` (`tests/support/axe.ts`) turns it on and fails on both. It is opt-in, not part of
+  `expectNoAccessibilityViolation`: switched on everywhere it flagged 33 controls, among them the order handle
+  (`aria-hidden` glyph) and the « Révoquer » buttons (« Révoquer la connexion de … »), which the browser check has to judge.
 - **A disclosure's `aria-controls` must name an element that exists** (#650, R5a): `AccountMenu.vue` hides its list
   with `v-show`, not `v-if`, so the button's `aria-controls` is valid while the menu is closed; the hidden list is
   `display: none`, neither read nor reachable by keyboard. Its tests therefore read « nothing outside the menu »

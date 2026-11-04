@@ -87,6 +87,44 @@ export async function expectNoAccessibilityViolation(wrapper: VueWrapper): Promi
 }
 
 /**
+ * Audit de la seule règle « Label in Name » (WCAG 2.5.3, niveau A, `label-content-name-mismatch`) d'un composant monté
+ * (#748, R243 de la vingtième relecture) : le nom accessible d'un contrôle doit contenir son texte visible, sinon « cliquer FR »
+ * à la voix ne trouve pas le bouton nommé « Français ».
+ *
+ * **À part de `expectNoAccessibilityViolation`, à dessein.** La règle est expérimentale : axe l'éteint par défaut, il faut
+ * l'allumer. Sous jsdom elle ne conclut jamais « violation » mais « à vérifier » (`incomplete`), parce que son test des ligatures
+ * d'icônes veut un canvas, que jsdom n'a pas (axe 4.14 : un bouton « FR » nommé « Français » y est `incomplete`). Les deux
+ * issues, violation et « à vérifier », échouent donc ici. Allumée dans l'audit commun, elle faisait échouer 39 cas pour 33
+ * contrôles : la poignée d'ordre (« Déplacer : X », glyphe `aria-hidden`) et les « Révoquer » de « Mes connexions MCP » (nom
+ * « Révoquer la connexion de … », qui commence bien par le texte visible), tous « à vérifier » sans canvas ; un composant où
+ * la règle est une garantie l'appelle donc lui-même.
+ */
+export async function expectLabelInName(wrapper: VueWrapper): Promise<void> {
+  const element = wrapper.element as HTMLElement
+  // Rattaché le temps de l'analyse, comme `expectNoAccessibilityViolation` (axe n'analyse que ce qui est dans le document).
+  const detache = !document.body.contains(element)
+  if (detache) {
+    document.body.append(element)
+  }
+
+  try {
+    const results = await axe.run(element, {
+      runOnly: ['label-content-name-mismatch'],
+      rules: { 'label-content-name-mismatch': { enabled: true } },
+    })
+
+    const failures = [...results.violations, ...results.incomplete]
+    if (failures.length > 0) {
+      throw new Error(formatViolations(failures))
+    }
+  } finally {
+    if (detache) {
+      element.remove()
+    }
+  }
+}
+
+/**
  * Le nom accessible d'un élément (#748, R191), tel qu'axe-core le calcule : l'étiquette ARIA avant le contenu, sans ce que
  * `aria-hidden` retire aux lecteurs d'écran. Un bouton se retrouve ainsi par ce que lit un lecteur d'écran, pas par le texte du DOM.
  *

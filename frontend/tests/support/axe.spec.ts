@@ -2,7 +2,7 @@ import axe from 'axe-core'
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import { accessibleNameOf, expectNoAccessibilityViolation } from './axe'
+import { accessibleNameOf, expectLabelInName, expectNoAccessibilityViolation } from './axe'
 import { proposeVersionLabel } from './adminButtonTexts'
 
 /**
@@ -31,6 +31,31 @@ describe('expectNoAccessibilityViolation', () => {
     })
 
     await expect(expectNoAccessibilityViolation(mount(Saut))).rejects.toThrow(/heading-order/)
+  })
+
+  // R243 de la vingtième relecture : règle expérimentale (éteinte par défaut dans axe), que jsdom ne conclut qu'en « à vérifier ».
+  it('expectLabelInName : détecte un nom accessible qui ne contient pas le texte visible (WCAG 2.5.3)', async () => {
+    const SansLeTexte = defineComponent({
+      template: '<main><button type="button" aria-label="Français">FR</button></main>',
+    })
+
+    await expect(expectLabelInName(mount(SansLeTexte))).rejects.toThrow(/label-content-name-mismatch/)
+  })
+
+  it('expectLabelInName : accepte un nom accessible qui commence par le texte visible (WCAG 2.5.3)', async () => {
+    const AvecLeTexte = defineComponent({
+      template: '<main><button type="button">FR<span class="visually-hidden"> (Français)</span></button></main>',
+    })
+
+    await expect(expectLabelInName(mount(AvecLeTexte))).resolves.toBeUndefined()
+  })
+
+  it("expectLabelInName : l'audit commun reste muet sur la règle, éteinte par défaut", async () => {
+    const SansLeTexte = defineComponent({
+      template: '<main><button type="button" aria-label="Français">FR</button></main>',
+    })
+
+    await expect(expectNoAccessibilityViolation(mount(SansLeTexte))).resolves.toBeUndefined()
   })
 
   it('détecte une image sans alternative textuelle', async () => {
