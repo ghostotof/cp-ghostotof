@@ -27,6 +27,9 @@ interface BackofficeAboutMeCardApiResponse {
 
 const BASE_PATH = '/api/backoffice/about/me-cards'
 
+/** Le message de l'erreur `unknown` pour une catégorie hors des trois, que ce dépôt lève (#748, R236 de la vingtième relecture). */
+export const UNKNOWN_CATEGORY_MESSAGE = 'Unknown category in response'
+
 function unsupportedLocaleError(): AdminAboutError {
   return new AdminAboutError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
 }
@@ -96,7 +99,7 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
   private toEntity(card: BackofficeAboutMeCardApiResponse): AdminAboutMeCard {
     // La catégorie est jugée comme la langue, à la frontière : une valeur hors des trois est une rupture du contrat (CR18-4).
     if (!isAdminAboutMeCardCategory(card.category)) {
-      throw new AdminAboutError('unknown', 'Unknown category in response')
+      throw new AdminAboutError('unknown', UNKNOWN_CATEGORY_MESSAGE)
     }
 
     return {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminAnonymousCvSectionRepository } from '../../../../src/infrastructure/admin/anonymousCv/HttpAdminAnonymousCvSectionRepository'
 import { AdminAnonymousCvSectionError } from '../../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 const SECTION_ID = '019968a0-0000-7000-8000-000000000051'
@@ -179,7 +180,7 @@ describe('HttpAdminAnonymousCvSectionRepository', () => {
     for (const error of [listError, createError]) {
       expect(error).toBeInstanceOf(AdminAnonymousCvSectionError)
       expect((error as AdminAnonymousCvSectionError).reason).toBe('unknown')
-      expect((error as AdminAnonymousCvSectionError).message).toBe('Unsupported locale in response')
+      expect((error as AdminAnonymousCvSectionError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })

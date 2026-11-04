@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminCaseStudyRepository } from '../../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
 import { AdminCaseStudyError } from '../../../../src/domain/admin/caseStudies/errors/AdminCaseStudyError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 const SECTION_ID = '019968a0-0000-7000-8000-000000000051'
@@ -179,7 +180,7 @@ describe('HttpAdminCaseStudyRepository', () => {
     for (const error of [listError, createError]) {
       expect(error).toBeInstanceOf(AdminCaseStudyError)
       expect((error as AdminCaseStudyError).reason).toBe('unknown')
-      expect((error as AdminCaseStudyError).message).toBe('Unsupported locale in response')
+      expect((error as AdminCaseStudyError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })

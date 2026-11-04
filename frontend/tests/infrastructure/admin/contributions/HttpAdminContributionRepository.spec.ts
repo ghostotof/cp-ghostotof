@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminContributionRepository } from '../../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { AdminContributionError } from '../../../../src/domain/admin/contributions/errors/AdminContributionError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000071'
@@ -178,7 +179,7 @@ describe('HttpAdminContributionRepository', () => {
     for (const error of [listError, createError]) {
       expect(error).toBeInstanceOf(AdminContributionError)
       expect((error as AdminContributionError).reason).toBe('unknown')
-      expect((error as AdminContributionError).message).toBe('Unsupported locale in response')
+      expect((error as AdminContributionError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })

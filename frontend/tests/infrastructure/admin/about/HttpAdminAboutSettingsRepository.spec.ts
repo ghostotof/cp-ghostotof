@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminAboutSettingsRepository } from '../../../../src/infrastructure/admin/about/HttpAdminAboutSettingsRepository'
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 
@@ -118,7 +119,7 @@ describe('HttpAdminAboutSettingsRepository', () => {
     for (const error of [getError, updateError]) {
       expect(error).toBeInstanceOf(AdminAboutError)
       expect((error as AdminAboutError).reason).toBe('unknown')
-      expect((error as AdminAboutError).message).toBe('Unsupported locale in response')
+      expect((error as AdminAboutError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })

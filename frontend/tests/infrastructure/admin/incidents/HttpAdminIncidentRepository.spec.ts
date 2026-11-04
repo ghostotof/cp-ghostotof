@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminIncidentRepository } from '../../../../src/infrastructure/admin/incidents/HttpAdminIncidentRepository'
 import { AdminIncidentError } from '../../../../src/domain/admin/incidents/errors/AdminIncidentError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 const INCIDENT_ID = '019968a0-0000-7000-8000-000000000071'
@@ -176,7 +177,7 @@ describe('HttpAdminIncidentRepository', () => {
     for (const error of [listError, createError]) {
       expect(error).toBeInstanceOf(AdminIncidentError)
       expect((error as AdminIncidentError).reason).toBe('unknown')
-      expect((error as AdminIncidentError).message).toBe('Unsupported locale in response')
+      expect((error as AdminIncidentError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })

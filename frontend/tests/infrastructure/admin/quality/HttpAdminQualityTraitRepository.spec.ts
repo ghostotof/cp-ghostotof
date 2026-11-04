@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminQualityTraitRepository } from '../../../../src/infrastructure/admin/quality/HttpAdminQualityTraitRepository'
 import { AdminQualityError } from '../../../../src/domain/admin/quality/errors/AdminQualityError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
+import { UNSUPPORTED_LOCALE_MESSAGE } from '../../../../src/infrastructure/admin/shared/supportedLocale'
 
 const API_BASE_URL = 'https://api.example.test'
 const TRAIT_ID = '019968a0-0000-7000-8000-000000000031'
@@ -179,7 +180,7 @@ describe('HttpAdminQualityTraitRepository', () => {
     for (const error of [listError, createError]) {
       expect(error).toBeInstanceOf(AdminQualityError)
       expect((error as AdminQualityError).reason).toBe('unknown')
-      expect((error as AdminQualityError).message).toBe('Unsupported locale in response')
+      expect((error as AdminQualityError).message).toBe(UNSUPPORTED_LOCALE_MESSAGE)
     }
   })
 })
