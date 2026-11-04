@@ -68,3 +68,12 @@ Après elle : vérification complète sur conteneurs redémarrés, **sans nouvel
   de la base, pas l'hôte).
 - Si la correction du cas du cache le permet sans perte, l'empreinte se prend autour du premier phpunit imbriqué (CR20-2).
 - Opus, effort high.
+
+## Micro-série faite (2026-11-04)
+R241 (97754821) et R242 (5eac53f5) faites, leurs écarts déclarés au corps de leur commit : R242 fait rougir le cas du cache
+sur l'absence du **répertoire** de cache du run chargé (le fichier d'historique n'existe pas en CI pendant la suite), fige la
+forme de chaque nom de la liste d'autorisation et refuse une entrée devenue sans objet, corrige le commentaire de
+`DATABASE_URL` (la CI l'exporte), fusionne les deux cas du test du shell (CR20-2). Limite écrite : le retrait de
+`--cache-directory` n'est pas mesurable en local (même répertoire). Vérification complète sur conteneurs redémarrés et cache de
+résultats PHPUnit supprimé (comme un checkout neuf de CI) : cinq cibles `make`, 26 tests hors ligne, `check-claude-rules`, tous
+à 0 (front 2 708 / 188 fichiers, back 5 802). Critère E1 tenu : aucun critique, haut ni moyen ouvert. Suite : tâches 11 et 12.
