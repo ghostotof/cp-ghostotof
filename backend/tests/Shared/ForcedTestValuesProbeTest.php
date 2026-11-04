@@ -25,11 +25,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * fichier ({@see self::forcedNames()}, choix 6 de la dix-neuvième relecture) :
  * un nom forcé demain est sondé sans rien écrire ici. Chacun doit aussi être
  * posé par un `<env force="true">` de même valeur ; un nom sans lui est un
- * échec qui le nomme. N'y entrent pas, à dessein : un `<server>` sans `force`
- * (SHELL_VERBOSITY, que le shell peut régler), un `<env force>` sans `<server>`
- * (APP_PUBLIC_API_BASE_URL, une valeur publique que `$_SERVER` garde du
- * conteneur) et un `<env>` sans `force` (MCP_D8_AUTHOR_NAME, que la CI
- * remplace par son secret).
+ * échec qui le nomme. Tout autre nom de `<server>` ou d'`<env>` du fichier
+ * figure, sous sa forme exacte et avec sa raison, dans
+ * {@see self::NOT_FORCED_ON_BOTH_SIDES} ; un nom hors de cette liste, ou sous
+ * une autre forme, est aussi un échec qui le nomme (R242 de la vingtième
+ * relecture).
  *
  * Verte quand rien n'exporte ces noms ; relancée sous un shell qui exporte une
  * valeur factice aléatoire pour chacun d'eux, elle rougit si le shell gagne.
@@ -43,9 +43,26 @@ final class ForcedTestValuesProbeTest extends KernelTestCase
     private const int TIMEOUT_SECONDS = 60;
 
     /**
+     * Les noms de phpunit.dist.xml qui ne sont pas forcés des deux côtés, à
+     * dessein, chacun avec la forme exacte sous laquelle le fichier le pose
+     * (R242 de la vingtième relecture, C20-1) : un nom hors de cette liste,
+     * ou posé sous une autre forme, est un échec qui le nomme.
+     */
+    private const array NOT_FORCED_ON_BOTH_SIDES = [
+        // La verbosité de la console : le shell peut la régler, elle n'ouvre rien.
+        'SHELL_VERBOSITY' => '<server>',
+        // Une base d'URL publique, forcée à vide dans `$_ENV`, ce que lit Symfony ;
+        // `$_SERVER` garde celle du conteneur de dev, ChildPhpProcess donne aux fils celle de `$_ENV`.
+        'APP_PUBLIC_API_BASE_URL' => '<env force>',
+        // Le nom de la garde D8 : la CI le remplace par son secret, qu'un `force` écraserait.
+        'MCP_D8_AUTHOR_NAME' => '<env>',
+    ];
+
+    /**
      * Une configuration de test : un nom forcé des deux côtés, un `<server>`
-     * sans `force`, un nom dont l'`<env force>` porte une autre valeur, et, en
-     * dernier, un nom dont l'`<env>` n'est pas forcé.
+     * sans `force`, un nom dont l'`<env force>` porte une autre valeur, un nom
+     * posé par deux `<server>`, et, en dernier, un nom dont l'`<env>` n'est pas
+     * forcé.
      */
     private const string CONFIGURATION_WITH_DEFECTS = <<<'XML'
         <?xml version="1.0" encoding="UTF-8"?>
@@ -56,11 +73,48 @@ final class ForcedTestValuesProbeTest extends KernelTestCase
                 <server name="SERVER_WITHOUT_FORCE" value="b" />
                 <server name="ENV_FORCE_DIVERGES" value="c" force="true" />
                 <env name="ENV_FORCE_DIVERGES" value="d" force="true" />
+                <server name="SERVER_TWICE" value="f" force="true" />
+                <server name="SERVER_TWICE" value="f" force="true" />
+                <env name="SERVER_TWICE" value="f" force="true" />
                 <server name="ENV_NOT_FORCED" value="e" force="true" />
                 <env name="ENV_NOT_FORCED" value="e" />
             </php>
         </phpunit>
         XML;
+
+    /**
+     * Une configuration de test pour la liste d'autorisation : un nom forcé
+     * des deux côtés, deux noms admis sous leur forme, un nom admis sous une
+     * autre forme, et quatre noms non forcés hors de la liste.
+     */
+    private const string CONFIGURATION_WITH_UNFORCED_NAMES = <<<'XML'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <phpunit>
+            <php>
+                <server name="FORCED_BOTH_SIDES" value="a" force="true" />
+                <env name="FORCED_BOTH_SIDES" value="a" force="true" />
+                <server name="ALLOWED_SERVER" value="b" />
+                <env name="ALLOWED_ENV_FORCE" value="" force="true" />
+                <env name="ALLOWED_BUT_UNFORCED" value="c" />
+                <server name="SERVER_ONLY" value="d" />
+                <env name="ENV_FORCE_ONLY" value="e" force="true" />
+                <env name="ENV_ONLY" value="f" />
+                <server name="SERVER_AND_ENV_FORCE" value="g" />
+                <env name="SERVER_AND_ENV_FORCE" value="g" force="true" />
+            </php>
+        </phpunit>
+        XML;
+
+    /**
+     * La liste d'autorisation de la configuration de test : deux formes
+     * justes, une fausse, et un nom que la configuration ne pose pas.
+     */
+    private const array ALLOWED_IN_TEST_CONFIGURATION = [
+        'ALLOWED_SERVER' => '<server>',
+        'ALLOWED_ENV_FORCE' => '<env force>',
+        'ALLOWED_BUT_UNFORCED' => '<env force>',
+        'ALLOWED_ABSENT' => '<env>',
+    ];
 
     public function testTheKernelAndAChildReadTheValuesThatPhpunitDistForces(): void
     {
@@ -76,7 +130,10 @@ final class ForcedTestValuesProbeTest extends KernelTestCase
         $parent = self::fingerprints($environment, self::bootKernel(['environment' => 'test'])->getContainer());
         $child = $this->childFingerprints();
 
-        $mismatches = $this->envForceDefects($configuration);
+        $mismatches = [
+            ...$this->envForceDefects($configuration),
+            ...$this->unforcedNameDefects($configuration, self::NOT_FORCED_ON_BOTH_SIDES),
+        ];
         foreach ($expected as $name => $fingerprint) {
             foreach (['noyau du parent' => $parent, 'fils' => $child] as $reader => $read) {
                 if (($read[$name] ?? null) !== $fingerprint) {
@@ -93,13 +150,34 @@ final class ForcedTestValuesProbeTest extends KernelTestCase
     {
         $configuration = new SimpleXMLElement(self::CONFIGURATION_WITH_DEFECTS);
 
-        self::assertSame(['FORCED_BOTH_SIDES', 'ENV_FORCE_DIVERGES', 'ENV_NOT_FORCED'], self::forcedNamesIn($configuration));
+        self::assertSame(
+            ['FORCED_BOTH_SIDES', 'ENV_FORCE_DIVERGES', 'SERVER_TWICE', 'ENV_NOT_FORCED'],
+            self::forcedNamesIn($configuration),
+        );
         self::assertSame(
             [
                 'ENV_FORCE_DIVERGES : son <env force> ne porte pas la valeur de son <server>.',
+                'SERVER_TWICE : posé par plusieurs <server>.',
                 'ENV_NOT_FORCED : aucun <env force> ne le pose.',
             ],
             $this->envForceDefects($configuration),
+        );
+    }
+
+    public function testEveryNameNotForcedOnBothSidesIsAllowListedUnderItsExactForm(): void
+    {
+        $configuration = new SimpleXMLElement(self::CONFIGURATION_WITH_UNFORCED_NAMES);
+
+        self::assertSame(
+            [
+                'ALLOWED_BUT_UNFORCED : posé par <env>, la liste d\'autorisation admet <env force>.',
+                'SERVER_ONLY : posé par <server>, ni forcé des deux côtés ni dans la liste d\'autorisation.',
+                'ENV_FORCE_ONLY : posé par <env force>, ni forcé des deux côtés ni dans la liste d\'autorisation.',
+                'ENV_ONLY : posé par <env>, ni forcé des deux côtés ni dans la liste d\'autorisation.',
+                'SERVER_AND_ENV_FORCE : posé par <server> + <env force>, ni forcé des deux côtés ni dans la liste d\'autorisation.',
+                'ALLOWED_ABSENT : dans la liste d\'autorisation, absent de la configuration.',
+            ],
+            $this->unforcedNameDefects($configuration, self::ALLOWED_IN_TEST_CONFIGURATION),
         );
     }
 
@@ -173,6 +251,54 @@ final class ForcedTestValuesProbeTest extends KernelTestCase
         }
 
         return $defects;
+    }
+
+    /**
+     * Ce qui sort de la liste d'autorisation : un nom de `<server>` ou d'`<env>`
+     * qui n'est pas forcé par un `<server force>` et n'y figure pas, un nom qui
+     * y figure sous une autre forme que celle du fichier (forcé depuis, ou
+     * `force` retiré), et une entrée dont la configuration ne pose plus le nom.
+     * Un message par nom, qui le nomme avec sa forme, sans citer de valeur.
+     *
+     * @param array<string, string> $allowed nom => forme admise, par exemple `<env force>`
+     *
+     * @return list<string>
+     */
+    private function unforcedNameDefects(SimpleXMLElement $configuration, array $allowed): array
+    {
+        $forced = self::forcedNamesIn($configuration);
+        $defects = [];
+        $names = array_unique(self::valuesAt($configuration, '/phpunit/php/server/@name | /phpunit/php/env/@name'));
+        foreach ($names as $name) {
+            $form = $this->formOf($configuration, $name);
+            if (!\array_key_exists($name, $allowed)) {
+                if (!\in_array($name, $forced, true)) {
+                    $defects[] = $name.' : posé par '.$form.', ni forcé des deux côtés ni dans la liste d\'autorisation.';
+                }
+            } elseif ($allowed[$name] !== $form) {
+                $defects[] = $name.' : posé par '.$form.', la liste d\'autorisation admet '.$allowed[$name].'.';
+            }
+        }
+        foreach (array_keys(array_diff_key($allowed, array_flip($names))) as $name) {
+            $defects[] = $name.' : dans la liste d\'autorisation, absent de la configuration.';
+        }
+
+        return $defects;
+    }
+
+    /**
+     * Les éléments qui posent le nom, dans l'ordre du fichier : `<server>`,
+     * `<server force>`, `<env>`, `<env force>`, joints par « + ».
+     */
+    private function formOf(SimpleXMLElement $configuration, string $name): string
+    {
+        $elements = $configuration->xpath('/phpunit/php/*[(self::server or self::env) and @name="'.$name.'"]');
+        $forms = [];
+        foreach (\is_array($elements) ? $elements : [] as $element) {
+            $forms[] = '<'.$element->getName().('true' === (string) $element['force'] ? ' force' : '').'>';
+        }
+
+        return implode(' + ', $forms);
     }
 
     /**

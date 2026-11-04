@@ -166,7 +166,8 @@ of the loaded configuration (`@internal` `Registry`) with its `$_ENV` value, as 
 `$_SERVER` (the dev container's `APP_PUBLIC_API_BASE_URL`, #647). An `<env>` without `force` is not overlaid:
 PHPUnit keeps the shell's value there (a local `phpunit.xml`). Every `<server force>` of `phpunit.dist.xml` has
 an `<env force>` of the same value (#748), Symfony reading `$_ENV` first: `ForcedTestValuesWinOverTheShellTest`
-reruns `ForcedTestValuesProbeTest` (names read from the file) under a shell exporting them, by fingerprint.
+reruns `ForcedTestValuesProbeTest` (names read from the file) under a shell exporting them, by fingerprint; any
+other `<server>` or `<env>` name is in the probe's allow-list, with its exact form.
 `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
 `tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
 the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
