@@ -38,11 +38,21 @@
              charge jamais .env.local : ces adresses de test sont donc posées
              ici, ce qui rend la suite autonome et identique en local et en CI
              (le workflow écrit son propre .env.test.local, qui n'a pas à les
-             connaître). Le mailer est neutralisé en test (MAILER_DSN=null://null). -->
+             connaître). -->
         <server name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
         <env name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
         <server name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
         <env name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
+        <!-- Le mailer neutralisé en test (#748, C19-5) : MAILER_DSN forcé à
+             null://null des deux côtés, comme les clés d'API, pour qu'un vrai
+             DSN exporté dans le conteneur ne fasse partir aucun courriel. Les
+             autres DSN et URL de backend/.env ne sont pas forcés : le transport
+             Messenger est remplacé en test par in-memory:// (messenger.yaml,
+             when@test), DATABASE_URL est la base de test, que la CI écrit dans
+             son .env.test.local, et APP_FRONTEND_BASE_URL compose des liens
+             sans rien appeler. -->
+        <server name="MAILER_DSN" value="null://null" force="true" />
+        <env name="MAILER_DSN" value="null://null" force="true" />
         <!-- Base publique de l'API (#647) forcée à vide, le cas de la préprod et
              de la prod : elle retombe sur APP_FRONTEND_BASE_URL. Le conteneur de
              dev la pose en vraie variable d'environnement

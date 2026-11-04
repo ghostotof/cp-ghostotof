@@ -73,14 +73,19 @@ final class ChildPhpProcess
      * conteneur, que le noyau du parent ne lit pas (Symfony lit `$_ENV`
      * d'abord) ; sans cette couche, le fils servirait une autre base d'API que
      * le test, et chaque échange au point de jeton y répondrait 400
-     * `invalid_target`. Un `<env>` sans `force` n'est pas recouvert : PHPUnit
+     * `invalid_target`. Les noms viennent de la configuration chargée (un
+     * `phpunit.xml` local compris), non d'une liste : un `<env force>` ajouté
+     * demain est transmis sans rien écrire ici. Une valeur que le test ne pose
+     * que dans `$_SERVER` sous l'un de ces noms ne passe donc pas.
+     *
+     * Pour un `<server>` et un `<env force>`, le fils voit ainsi ce que voit le
+     * noyau du parent. Un `<env>` sans `force` n'est pas recouvert : PHPUnit
      * retient alors dans `$_ENV` la valeur du processus s'il en porte une, et
-     * la recouvrir ferait gagner le shell sur la copie de `$_SERVER` (un
-     * `phpunit.xml` local qui poserait une clé par `<env>`). Les noms viennent
-     * de la configuration chargée (un `phpunit.xml` local compris), non d'une
-     * liste : un `<env force>` ajouté demain est transmis sans rien écrire ici.
-     * Une valeur que le test ne pose que dans `$_SERVER` sous l'un de ces noms
-     * ne passe donc pas : le fils voit ce que voit le noyau du parent.
+     * la recouvrir ferait gagner le shell sur la copie de `$_SERVER` (C18-7 :
+     * un `phpunit.xml` local qui poserait une clé par `<env>`). Le fils reçoit
+     * pour lui la copie de `$_SERVER` et ce que Process hérite, qui peut
+     * différer du `$_ENV` du parent : limite admise, qui ne touche dans
+     * phpunit.dist.xml que MCP_D8_AUTHOR_NAME, que la CI exporte.
      *
      * La configuration se lit par {@see Registry}, `@internal` à PHPUnit : une
      * montée de version qui la renomme fait échouer à grand bruit chaque test

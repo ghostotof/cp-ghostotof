@@ -164,10 +164,10 @@ child's `Process`: its command line (above) and a copy of the test's `$_SERVER` 
 values) — a variable not to pass on is excluded there, for every child at once —, overlaid by each `<env force="true">`
 of the loaded configuration (`@internal` `Registry`) with its `$_ENV` value, as `<env force>` never rewrites
 `$_SERVER` (the dev container's `APP_PUBLIC_API_BASE_URL`, #647). An `<env>` without `force` is not overlaid:
-PHPUnit keeps the shell's value there (a local `phpunit.xml`). The dummy values (`APP_ENV`, `CONTACT_*`,
-`ANTHROPIC_API_KEY`, `SCALEWAY_AI_*`) are set by `<server>` **and** `<env force>` (#748), Symfony reading `$_ENV`
-first: `ForcedTestValuesWinOverTheShellTest` reruns `ForcedTestValuesProbeTest` under a shell exporting
-them, by fingerprint. `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
+PHPUnit keeps the shell's value there (a local `phpunit.xml`). Every `<server force>` of `phpunit.dist.xml` has
+an `<env force>` of the same value (#748), Symfony reading `$_ENV` first: `ForcedTestValuesWinOverTheShellTest`
+reruns `ForcedTestValuesProbeTest` (names read from the file) under a shell exporting them, by fingerprint.
+`ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
 `tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
 the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
 then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps
