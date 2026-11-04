@@ -123,7 +123,7 @@ describe('ContactPage', () => {
 
     const alert = wrapper.find('[role="alert"]')
     expect(alert.exists()).toBe(true)
-    expect(alert.text()).toContain('Réessayez plus tard')
+    expect(alert.text()).toContain(fr.contact.form.errors.unknown)
   })
 
   it("signale le champ refusé sous le champ lui-même et l'y relie par aria-describedby", async () => {
@@ -141,7 +141,7 @@ describe('ContactPage', () => {
 
     const error = wrapper.find('#contact-message-error')
     expect(error.exists()).toBe(true)
-    expect(error.text()).toContain('entre 10 et 5000 caractères')
+    expect(error.text()).toContain(fr.contact.form.fieldErrors.message)
 
     // L'aide de saisie reste dans aria-describedby, l'erreur s'y ajoute après
     // elle : la règle d'abord, le refus ensuite.
@@ -155,7 +155,7 @@ describe('ContactPage', () => {
     expect(wrapper.find('#contact-name').attributes('aria-describedby')).toBe('contact-name-hint')
 
     // Le bloc global reste présent et renvoie vers les champs signalés.
-    expect(wrapper.find('[role="alert"]').text()).toContain('corrigez les champs signalés')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validation)
   })
 
   it("n'affiche pas le libellé du backend, écrit en français en dur, mais le sien", async () => {
@@ -179,7 +179,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre saisie a été refusée')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validationGeneric)
   })
 
   it("ne révèle rien d'un refus portant sur le honeypot : message générique et aucun champ signalé", async () => {
@@ -197,7 +197,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre saisie a été refusée')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validationGeneric)
     expect(wrapper.findAll('[id$="-error"]')).toHaveLength(0)
   })
 
@@ -209,7 +209,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayez dans quelques minutes')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.rateLimited)
     expect(wrapper.find('#contact-message-error').exists()).toBe(false)
   })
 

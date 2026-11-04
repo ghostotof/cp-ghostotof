@@ -182,8 +182,7 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     expect(repository.validateSetupToken).not.toHaveBeenCalled()
     // Cas aussi atteint en rechargeant la page après le nettoyage de l'URL :
     // le message doit dire quoi faire, pas seulement que ça a échoué.
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet')
-    expect(wrapper.get('[role="alert"]').text()).toContain("e-mail d'invitation")
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.account.setPassword.incomplete)
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
 
@@ -227,9 +226,7 @@ describe('SetPasswordPage', () => {
     // Le backend ne dit plus pourquoi : le message recouvre chaque motif et
     // dit quoi faire dans chacun.
     const alert = wrapper.get('[role="alert"]').text()
-    expect(alert).toContain('incomplet, expiré ou déjà utilisé')
-    expect(alert).toContain("e-mail d'invitation")
-    expect(alert).toContain('nouveau lien')
+    expect(alert).toContain(fr.account.setPassword.unusable)
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
 
@@ -253,7 +250,7 @@ describe('SetPasswordPage', () => {
     })
     const { wrapper } = await mountPage(repository, '/en/set-password#tok123')
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplete, expired or already used')
+    expect(wrapper.get('[role="alert"]').text()).toContain(en.account.setPassword.unusable)
     expect(wrapper.get('a[href="/en/login"]').text()).toBe(en.account.setPassword.logIn)
   })
 
@@ -291,7 +288,7 @@ describe('SetPasswordPage', () => {
     await flushPromises()
 
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet, expiré ou déjà utilisé')
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.account.setPassword.unusable)
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(true)
   })
 
@@ -356,8 +353,9 @@ describe('SetPasswordPage', () => {
     await flushPromises()
 
     expect(repository.completePasswordSetup).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="alert"]').text()).toContain('trop long')
-    expect(wrapper.get('[role="alert"]').text()).toContain('4096 octets')
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      renderedMessage('fr', 'account.setPassword.errors.tooLong', { max: 4096 }),
+    )
   })
 
   it('relie le champ mot de passe à la règle de longueur, puis au message d\'erreur quand il apparaît (a11y)', async () => {

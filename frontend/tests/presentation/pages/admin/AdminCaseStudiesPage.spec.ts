@@ -369,7 +369,7 @@ describe('AdminCaseStudiesPage', () => {
       await signInAgain()
 
       expect(caseStudies.list).toHaveBeenCalledTimes(2)
-      expect(wrapper.text()).not.toContain('Contenu non chargé')
+      expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
       expect(rows(wrapper)).toHaveLength(3)
     })
 
@@ -377,7 +377,7 @@ describe('AdminCaseStudiesPage', () => {
       const { wrapper } = await mountPage(createStubRepository({ list: vi.fn(async () => []) }))
 
       expect(wrapper.text()).toContain(fr.admin.caseStudies.empty)
-      expect(wrapper.text()).not.toContain('Contenu non chargé')
+      expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
     })
   })
 

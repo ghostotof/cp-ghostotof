@@ -162,7 +162,7 @@ describe('LoginPage', () => {
         const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', query)
 
         expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('a pris fin')
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
       },
     )
 
@@ -182,8 +182,8 @@ describe('LoginPage', () => {
 
         expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toBe(notice)
         expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('a pris fin')
-        expect(wrapper.text()).not.toContain('has ended')
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(en.auth.sessionEnded)
       })
 
       // Palier de base : l'accès de base tient (le cookie vit), la session n'est pas finie ; et il n'y a aucun compte
@@ -208,10 +208,10 @@ describe('LoginPage', () => {
 
         expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
         expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('a pris fin')
-        expect(wrapper.text()).not.toContain('has ended')
-        expect(wrapper.text()).not.toContain('Confirmez votre identité')
-        expect(wrapper.text()).not.toContain('Confirm your identity')
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(en.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(fr.auth.reauthNotice)
+        expect(wrapper.text()).not.toContain(en.auth.reauthNotice)
       })
 
       it('anonyme, expired=1 : « votre session a pris fin », sans l\'annonce neutre', async () => {
@@ -275,8 +275,8 @@ describe('LoginPage', () => {
         const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
 
         expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('Confirmez votre identité')
-        expect(wrapper.text()).not.toContain('Confirm your identity')
+        expect(wrapper.text()).not.toContain(fr.auth.reauthNotice)
+        expect(wrapper.text()).not.toContain(en.auth.reauthNotice)
       },
     )
 

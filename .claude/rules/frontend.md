@@ -169,11 +169,21 @@ meaningful (see Lint below):
 directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
 not depend on).
 
-**Tests read the catalogue** (#748, R231), one way per case, never a text copied: a message with no parameter is read as
+**Tests read the catalogue** (#748, R231, R233), one way per case, never a text copied: a message with no parameter is read as
 `fr.…` / `en.…` in the spec, or from a `tests/support/` module when two specs or more need it; a message with parameters
 by `renderedMessage(locale, key, named?, plural?)` alone (`key` is a `CatalogKey`, so a wrong path breaks `vue-tsc`), never a
 `createAppI18n().global.t(…)` in a spec; a module that serves both languages exposes one function taking the `Locale`
-(`accessRefusalTexts(locale)`, `accountMenuTexts(locale)`), not `_FR` / `_EN` pairs.
+(`accessRefusalTexts(locale)`, `accountMenuTexts(locale)`), not `_FR` / `_EN` pairs. **What counts as a copy** is judged by
+a mutation, not by the eye: insert `~#` after the first character of the text in the catalogue value (the literal's own first
+character, so an extract taken from the middle of a message is hit too). **An equality
+(`toBe`) or an extract (`includes`, `toContain`, `startsWith`) whose spec then turns red is read from the catalogue**, the whole
+value (`toContain(fr.contact.form.errors.unknown)`, not `'Réessayez plus tard'`), or by `renderedMessage` when it has
+parameters, a date the page formats being read from the page's own `<time>`; one whose spec stays green is not the
+catalogue's (a fixture value, an event name, the text of the test's own route) and keeps its literal, with the reason said.
+**Exception: a case whose subject is the wording of the message** (`adminTranslationTexts.spec.ts`, the « au moins 8 caractères »
+case of `AdminUsersPage.spec.ts`) keeps its literals even when the mutation turns it red; said at the commit, case by case.
+**A negative guard (`not.toContain`, `not.toBe`) reads the same key as its positive, even when the mutation leaves it green**:
+a text reworded in the catalogue would empty the guard without a sound.
 
 #### SEO
 

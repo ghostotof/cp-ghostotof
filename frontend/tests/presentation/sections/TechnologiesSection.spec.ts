@@ -69,7 +69,7 @@ describe('TechnologiesSection', () => {
 
     const link = wrapper.get('a[href="/fr/stack"]')
 
-    expect(link.text()).toContain('versions')
+    expect(link.text()).toContain(fr.technologies.seeStack)
   })
 
   it('expose le titre de section comme un h2 (navigation par titres)', () => {

@@ -543,7 +543,7 @@ describe('AdminWatchPage', () => {
         await signInAgain()
 
         expect(wrapper.text()).toContain(VULNERABILITY.id)
-        expect(wrapper.text()).not.toContain('Contenu non chargé')
+        expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
       })
     })
 

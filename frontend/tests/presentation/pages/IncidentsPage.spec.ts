@@ -7,6 +7,7 @@ import type { Incident } from '../../../src/domain/incidents/entities/Incident'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const INCIDENT: Incident = {
   title: 'RabbitMQ en CrashLoopBackOff après un durcissement de sécurité',
@@ -40,7 +41,7 @@ describe('IncidentsPage', () => {
   })
 
   it('affiche un message de chargement pendant la récupération', () => {
-    expect(mountPage().text()).toContain('Chargement des incidents')
+    expect(mountPage().text()).toContain(fr.incidents.loading)
   })
 
   it('affiche la version, le titre et les trois volets du post-mortem', async () => {
@@ -124,7 +125,7 @@ describe('IncidentsPage', () => {
     const wrapper = mountPage(repository)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Aucun incident publié')
+    expect(wrapper.text()).toContain(fr.incidents.empty)
     expect(wrapper.find('article').exists()).toBe(false)
   })
 

@@ -257,7 +257,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts).toHaveLength(1)
     expect(alerts[0]?.text()).toContain(fr.admin.sessionEnded.message)
-    expect(wrapper.text()).not.toContain('Une erreur est survenue')
+    expect(wrapper.text()).not.toContain(fr.admin.caseStudies.errors.unknown)
     wrapper.unmount()
   })
 
@@ -320,7 +320,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts.some((alert) => alert.text().includes(fr.admin.sessionEnded.message))).toBe(false)
-    expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(false)
+    expect(alerts.some((alert) => alert.text().includes(fr.admin.caseStudies.errors.unknown))).toBe(false)
     expect(alerts).toHaveLength(1)
     expect(alerts[0]?.text()).toContain(REFUSAL.accessRefused)
     wrapper.unmount()

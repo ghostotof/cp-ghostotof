@@ -96,7 +96,7 @@ describe('AssistantPage', () => {
 
     expect(wrapper.find('h1').exists()).toBe(true)
     const notice = wrapper.find('[data-testid="assistant-disclaimer"]')
-    expect(notice.text()).toContain('peut se tromper')
+    expect(notice.text()).toContain(fr.assistant.disclaimer.notice)
     expect(notice.attributes('role')).toBeUndefined()
     const hrefs = notice.findAll('a').map((a) => a.attributes('href'))
     expect(hrefs).toEqual(['/fr/case-studies', '/fr/anonymous-cv'])
@@ -415,7 +415,7 @@ describe('AssistantPage', () => {
     calls[0].reject(new AssistantError('network'))
     await flushPromises()
 
-    expect(wrapper.find('[role="log"]').text()).toContain('incomplète')
+    expect(wrapper.find('[role="log"]').text()).toContain(fr.assistant.incomplete)
   })
 
   it('ne présente aucune violation d\'accessibilité, conversation affichée', async () => {

@@ -23,6 +23,7 @@ import { signInAgain } from '../../support/signInAgain'
 import { accessRefusalTexts } from '../../support/accessRefusalTexts'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
+import { renderedMessage } from '../../support/renderedMessage'
 
 const REFUSAL = accessRefusalTexts('fr')
 const REFUSAL_EN = accessRefusalTexts('en')
@@ -200,7 +201,7 @@ describe('McpConnectionsPage', () => {
 
     // Échangée mais pas encore rafraîchie : « jamais utilisée » serait faux (#650, R5a).
     expect(rowOf(wrapper, 'Autre Client').text()).toContain(fr.mcpConnections.notRenewedYet)
-    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain('Jamais')
+    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain(fr.mcpConnections.neverCompleted)
     expect(rowOf(wrapper, 'Client Échu').text()).toContain(fr.mcpConnections.states.expired)
   })
 
@@ -289,7 +290,7 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.get('tbody tr').text()).toContain(expected)
-    expect(wrapper.get('tbody tr').text()).not.toContain('non reconnue')
+    expect(wrapper.get('tbody tr').text()).not.toContain(fr.mcpConnections.causes.unknown)
   })
 
   it('affiche un libellé générique pour une cause inconnue', async () => {
@@ -297,8 +298,7 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage({ list })
 
     const row = rowOf(wrapper, 'Client Futur')
-    expect(row.text()).toContain('Révoquée')
-    expect(row.text()).toContain('cause non reconnue')
+    expect(row.text()).toContain(fr.mcpConnections.causes.unknown)
     // La cause brute, inconnue du frontend, n'est pas écrite à l'écran, et rien n'a échoué.
     expect(row.text()).not.toContain('cause-from-the-future')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -381,7 +381,7 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.find('table').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Aucune connexion')
+    expect(wrapper.text()).toContain(fr.mcpConnections.empty)
     const link = wrapper.get('a[href="/fr/connect-your-assistant"]')
     expect(link.text()).toBe(fr.common.connectAssistantLink)
   })
@@ -395,9 +395,10 @@ describe('McpConnectionsPage', () => {
     expect(rowOf(wrapper, 'Client Révoqué').find('button').exists()).toBe(false)
 
     const label = normalized(rowOf(wrapper, 'Claude Code').get('button').attributes('aria-label') ?? '')
-    expect(label.startsWith('Révoquer')).toBe(true)
-    expect(label).toContain('Claude Code')
-    expect(label).toContain('28 oct. 2026')
+    // La date est celle que la ligne affiche : l'étiquette et le tableau la formatent de la même façon.
+    const granted = normalized(rowOf(wrapper, 'Claude Code').get('time').text())
+    expect(granted).toContain('28 oct. 2026')
+    expect(label).toBe(renderedMessage('fr', 'mcpConnections.revokeAria', { client: 'Claude Code', date: granted }))
     expect(rowOf(wrapper, 'Claude Code').get('button').text()).toBe(fr.mcpConnections.revoke)
   })
 
@@ -414,7 +415,7 @@ describe('McpConnectionsPage', () => {
     expect(revoke).toHaveBeenCalledExactlyOnceWith(ACTIVE.id)
     // Liste relue depuis le serveur : chargement initial, puis rechargement.
     expect(list).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[role="status"]').text()).toContain('révoquée')
+    expect(wrapper.get('[role="status"]').text()).toContain(fr.mcpConnections.outcome.revoked)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
@@ -441,7 +442,7 @@ describe('McpConnectionsPage', () => {
 
     expect(revoke).not.toHaveBeenCalled()
     expect(list).toHaveBeenCalledOnce()
-    expect(wrapper.get('[role="status"]').text()).not.toContain('révoquée')
+    expect(wrapper.get('[role="status"]').text()).not.toContain(fr.mcpConnections.outcome.revoked)
   })
 
   it('404 : dit que la connexion était déjà terminée, et relit la liste', async () => {
@@ -454,7 +455,7 @@ describe('McpConnectionsPage', () => {
     await flushPromises()
     await letTheAnnouncementThrough()
 
-    expect(wrapper.get('[role="status"]').text()).toContain('déjà terminée')
+    expect(wrapper.get('[role="status"]').text()).toContain(fr.mcpConnections.outcome.alreadyGone)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(list).toHaveBeenCalledTimes(2)
   })
@@ -468,7 +469,7 @@ describe('McpConnectionsPage', () => {
     await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('n\'a pas pu être révoquée')
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.mcpConnections.errors.revoke)
     expect(list).toHaveBeenCalledOnce()
     expect(rows(wrapper)).toHaveLength(4)
     expect(rowOf(wrapper, 'Claude Code').get('button').attributes('disabled')).toBeUndefined()
@@ -500,9 +501,9 @@ describe('McpConnectionsPage', () => {
     const list = vi.fn().mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([ACTIVE]))
     const { wrapper } = await mountPage({ list })
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('n\'ont pas pu être chargées')
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.mcpConnections.errors.load)
     expect(wrapper.find('table').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Aucune connexion')
+    expect(wrapper.text()).not.toContain(fr.mcpConnections.empty)
 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
@@ -518,9 +519,9 @@ describe('McpConnectionsPage', () => {
 
     // `aria-busy` sur un ancêtre de la région `status` la ferait taire (#748, constat 11).
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toContain('Chargement')
+    expect(wrapper.get('[role="status"]').text()).toContain(fr.mcpConnections.loading)
     expect(wrapper.find('table').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Aucune connexion')
+    expect(wrapper.text()).not.toContain(fr.mcpConnections.empty)
   })
 
   it('une fois chargée, la région n\'est plus occupée', async () => {
@@ -569,7 +570,7 @@ describe('McpConnectionsPage', () => {
 
       await letTheAnnouncementThrough()
 
-      expect(wrapper.get('[role="status"]').text()).toContain('révoquée')
+      expect(wrapper.get('[role="status"]').text()).toContain(fr.mcpConnections.outcome.revoked)
     })
 
     it("le démontage annule l'annonce en attente", async () => {
@@ -637,13 +638,13 @@ describe('McpConnectionsPage', () => {
       await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
       await flushPromises()
       await letTheAnnouncementThrough()
-      expect(wrapper.get('[role="status"]').text()).toContain('révoquée')
+      expect(wrapper.get('[role="status"]').text()).toContain(fr.mcpConnections.outcome.revoked)
 
       await wrapper.get('[role="alert"] button').trigger('click')
       await flushPromises()
 
       // Pendant la relecture : la région ne dit plus « révoquée » (elle dit le chargement).
-      expect(wrapper.get('[role="status"]').text()).not.toContain('révoquée')
+      expect(wrapper.get('[role="status"]').text()).not.toContain(fr.mcpConnections.outcome.revoked)
 
       succeed(listOf([ACTIVE]))
       await flushPromises()
@@ -666,7 +667,7 @@ describe('McpConnectionsPage', () => {
       await button.trigger('click')
       await flushPromises()
 
-      expect(wrapper.get('[role="alert"]').text()).toContain("n'a pas pu être révoquée")
+      expect(wrapper.get('[role="alert"]').text()).toContain(fr.mcpConnections.errors.revoke)
       expect(document.activeElement).toBe(button.element)
     })
 
@@ -746,9 +747,10 @@ describe('McpConnectionsPage', () => {
       await flushPromises()
 
       const question = normalized(String(confirm.mock.calls[0]?.[0]))
-      expect(question).toContain('Claude Code')
-      expect(question).toContain('accordée le')
-      expect(question).toContain('28 oct. 2026')
+      // La date est celle que la ligne affiche : la confirmation et le tableau la formatent de la même façon.
+      const granted = normalized(rowOf(wrapper, 'Claude Code').get('time').text())
+      expect(granted).toContain('28 oct. 2026')
+      expect(question).toContain(renderedMessage('fr', 'mcpConnections.confirm', { client: 'Claude Code', date: granted }))
     })
 
     it("la confirmation nomme le client et la date de l'accord, en anglais", async () => {
@@ -758,9 +760,10 @@ describe('McpConnectionsPage', () => {
       await flushPromises()
 
       const question = normalized(String(confirm.mock.calls[0]?.[0]))
-      expect(question).toContain('Claude Code')
-      expect(question).toContain('granted on')
-      expect(question).toContain('Oct 28, 2026')
+      // La date est celle que la ligne affiche : la confirmation et le tableau la formatent de la même façon.
+      const granted = normalized(rowOf(wrapper, 'Claude Code').get('time').text())
+      expect(granted).toContain('Oct 28, 2026')
+      expect(question).toContain(renderedMessage('en', 'mcpConnections.confirm', { client: 'Claude Code', date: granted }))
     })
 
     it("pendant la relecture qui suit une révocation, c'est le tableau qui est occupé, pas la région d'état", async () => {
@@ -797,7 +800,7 @@ describe('McpConnectionsPage', () => {
       const { wrapper } = await mountPage({ list })
 
       const alert = wrapper.get('[role="alert"]')
-      expect(alert.text()).toContain('Votre session a pris fin')
+      expect(alert.text()).toContain(fr.mcpConnections.errors.sessionEnded)
       const link = alert.get('a')
       expect(link.text()).toContain(fr.mcpConnections.errors.signInAgain)
       const href = link.attributes('href') ?? ''
@@ -808,7 +811,7 @@ describe('McpConnectionsPage', () => {
       expect(query.get('expired')).toBe('1')
       // Réessayer enverrait la même requête sans session : le bouton n'a pas de sens.
       expect(alert.find('button').exists()).toBe(false)
-      expect(wrapper.text()).not.toContain("n'ont pas pu être chargées")
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.load)
     })
 
     it("session finie : le lien de reconnexion s'ouvre dans un nouvel onglet et ramène ici", async () => {
@@ -829,7 +832,7 @@ describe('McpConnectionsPage', () => {
       const { wrapper } = await mountPage({ locale: 'en', list })
 
       const alert = wrapper.get('[role="alert"]')
-      expect(alert.text()).toContain('Your session has ended')
+      expect(alert.text()).toContain(en.mcpConnections.errors.sessionEnded)
       expect(alert.get('a').text()).toBe(`${en.mcpConnections.errors.signInAgain} ${en.common.opensInNewTab}`)
       expect(alert.get('a').attributes('href')).toMatch(/^\/en\/login\?/)
     })
@@ -843,9 +846,9 @@ describe('McpConnectionsPage', () => {
 
       const alerts = wrapper.findAll('[role="alert"]')
       expect(alerts).toHaveLength(1)
-      expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+      expect(alerts[0]?.text()).toContain(fr.mcpConnections.errors.sessionEnded)
       expect(new URLSearchParams((alerts[0]?.get('a').attributes('href') ?? '').split('?')[1]).get('redirect')).toBe('/fr/mcp-connections')
-      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.revoke)
     })
 
     it("révocation refusée pour session finie, puis retour : pas d'alerte « révocation échouée » que personne n'a déclenchée", async () => {
@@ -854,14 +857,14 @@ describe('McpConnectionsPage', () => {
       const { wrapper } = await mountPage({ revoke })
       await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
       await flushPromises()
-      expect(wrapper.text()).toContain('Votre session a pris fin')
+      expect(wrapper.text()).toContain(fr.mcpConnections.errors.sessionEnded)
 
       // Le compte revient (autre onglet) : la liste est relue, et l'issue de la révocation refusée s'efface avec le refus.
       await signInAgain()
       await flushPromises()
 
-      expect(wrapper.text()).not.toContain('Votre session a pris fin')
-      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.sessionEnded)
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.revoke)
       expect(wrapper.findAll('[role="alert"]')).toHaveLength(0)
       expect(rows(wrapper)).toHaveLength(4)
     })
@@ -886,7 +889,7 @@ describe('McpConnectionsPage', () => {
       const { wrapper } = await mountPage({ list })
 
       const alert = wrapper.get('[role="alert"]')
-      expect(alert.text()).toContain("n'ont pas pu être chargées")
+      expect(alert.text()).toContain(fr.mcpConnections.errors.load)
       expect(alert.find('a').exists()).toBe(false)
       expect(alert.find('button').exists()).toBe(true)
     })
@@ -912,8 +915,8 @@ describe('McpConnectionsPage', () => {
         const alert = wrapper.get('[role="alert"]')
         expect(normalized(alert.text())).toContain(message)
         // Ni l'échec générique, ni sa nouvelle tentative : la même requête prendrait le même refus.
-        expect(wrapper.text()).not.toContain("n'ont pas pu être chargées")
-        expect(wrapper.text()).not.toContain('could not be loaded')
+        expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.load)
+        expect(wrapper.text()).not.toContain(en.mcpConnections.errors.load)
         expect(alert.find('button').exists()).toBe(false)
         const link = alert.get('a')
         expect(link.text()).toBe(accessRefusalTexts(locale).switchAccount)
@@ -950,7 +953,7 @@ describe('McpConnectionsPage', () => {
       const alerts = wrapper.findAll('[role="alert"]')
       expect(alerts).toHaveLength(1)
       expect(normalized(alerts[0]?.text() ?? '')).toContain(REFUSAL.accessRefused)
-      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.revoke)
       expect(rows(wrapper)).toHaveLength(4)
       for (const revokeButton of wrapper.findAll('tbody button')) {
         expect(revokeButton.attributes('disabled')).toBeDefined()
@@ -964,7 +967,7 @@ describe('McpConnectionsPage', () => {
       const { wrapper } = await mountPage({ list, me })
 
       const alert = wrapper.get('[role="alert"]')
-      expect(alert.text()).toContain('Votre session a pris fin')
+      expect(alert.text()).toContain(fr.mcpConnections.errors.sessionEnded)
       const link = alert.get('a')
       expect(link.text()).toContain(fr.mcpConnections.errors.signInAgain)
       expect(link.attributes('target')).toBe('_blank')
@@ -981,7 +984,7 @@ describe('McpConnectionsPage', () => {
       const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
       const { wrapper } = await mountPage({ list })
 
-      expect(wrapper.text()).not.toContain('Votre session a pris fin')
+      expect(wrapper.text()).not.toContain(fr.mcpConnections.errors.sessionEnded)
       expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
     })
 

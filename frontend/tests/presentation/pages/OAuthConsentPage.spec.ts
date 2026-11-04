@@ -221,16 +221,15 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(wrapper.find('h1').text()).toBe(fr.oauthConsent.title)
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
     expect(text).toContain(fr.oauthConsent.client.nameLabel)
-    expect(text).toContain("Le nom sous lequel l'administrateur du site a enregistré ce client")
+    expect(text).toContain(fr.oauthConsent.client.nameNotice)
     // Un client pré-enregistré ne s'est pas nommé lui-même : rien ne le dit « déclaré ».
     expect(text).not.toContain('Nom déclaré')
     expect(text).not.toContain('fourni par le client')
     expect(text).not.toContain('pas vérifié')
-    expect(text).toContain("enregistré à l'avance par l'administrateur du site")
+    expect(text).toContain(fr.oauthConsent.client.registration.preregistered)
     expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
-    expect(text).toContain('corpus nominatif')
-    expect(text).toContain('en lecture seule')
-    expect(text).toContain("fournisseur d'IA de ce client")
+    expect(text).toContain(fr.oauthConsent.access.corpus)
+    expect(text).toContain(fr.oauthConsent.access.provider)
     expect(button(wrapper, 'approve').text()).toBe(fr.oauthConsent.approve)
     expect(button(wrapper, 'deny').text()).toBe(fr.oauthConsent.deny)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -243,15 +242,14 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(wrapper.find('h1').text()).toBe(en.oauthConsent.title)
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
     expect(text).toContain(en.oauthConsent.client.nameLabel)
-    expect(text).toContain('The name under which the site’s administrator registered this client')
+    expect(text).toContain(en.oauthConsent.client.nameNotice)
     expect(text).not.toContain('Name declared')
     expect(text).not.toContain('supplied by the client')
     expect(text).not.toContain('not verified')
-    expect(text).toContain('registered in advance by the site’s administrator')
+    expect(text).toContain(en.oauthConsent.client.registration.preregistered)
     expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
-    expect(text).toContain('nominative corpus')
-    expect(text).toContain('read-only')
-    expect(text).toContain('this client’s AI provider')
+    expect(text).toContain(en.oauthConsent.access.corpus)
+    expect(text).toContain(en.oauthConsent.access.provider)
     expect(button(wrapper, 'approve').text()).toBe(en.oauthConsent.approve)
     expect(button(wrapper, 'deny').text()).toBe(en.oauthConsent.deny)
   })
@@ -390,7 +388,7 @@ describe('OAuthConsentPage — décision', () => {
       await flushPromises()
 
       expect(navigate).not.toHaveBeenCalled()
-      expect(wrapper.find('[role="alert"]').text()).toContain("n'est pas une adresse web de l'hôte annoncé")
+      expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.unsafeRedirect)
       expect(button(wrapper, 'approve').exists()).toBe(false)
     },
   )
@@ -402,7 +400,7 @@ describe('OAuthConsentPage — décision', () => {
     await flushPromises()
 
     expect(navigate).not.toHaveBeenCalled()
-    expect(wrapper.find('[role="alert"]').text()).toContain("n'est pas une adresse web de l'hôte annoncé")
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.unsafeRedirect)
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
 
@@ -415,7 +413,7 @@ describe('OAuthConsentPage — décision', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain("La page n'a pas pu transmettre votre décision")
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.malformedDecision)
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(decide).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()
@@ -428,7 +426,7 @@ describe('OAuthConsentPage — décision', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Une erreur inattendue')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.unknown)
     expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
 
     await button(wrapper, 'approve').trigger('click')
@@ -445,8 +443,7 @@ describe('OAuthConsentPage — demande invalide', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('invalide ou a expiré')
-    expect(wrapper.find('[role="alert"]').text()).toContain('Recommencez depuis votre assistant')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.invalid)
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
 
@@ -458,7 +455,7 @@ describe('OAuthConsentPage — demande invalide', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('invalid or has expired')
+    expect(wrapper.find('[role="alert"]').text()).toContain(en.oauthConsent.errors.invalid)
   })
 
   it('400 à la décision : même message, plus aucun bouton', async () => {
@@ -471,7 +468,7 @@ describe('OAuthConsentPage — demande invalide', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('invalide ou a expiré')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.invalid)
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(navigate).not.toHaveBeenCalled()
   })
@@ -480,7 +477,7 @@ describe('OAuthConsentPage — demande invalide', () => {
     const { wrapper, describeRequest } = await mountPage({ query: `${QUERY}&state=autre` })
 
     expect(describeRequest).not.toHaveBeenCalled()
-    expect(wrapper.find('[role="alert"]').text()).toContain('invalide ou a expiré')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.invalid)
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
 })
@@ -498,7 +495,7 @@ describe('OAuthConsentPage — session', () => {
 
     expect(authState.user).toBeNull()
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toContain('session')
+    expect(alert.text()).toContain(fr.oauthConsent.errors.sessionEnded)
     const href = alert.find('a').attributes('href') ?? ''
     const target = router.resolve(href)
     expect(target.name).toBe('login')
@@ -613,7 +610,7 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Une erreur inattendue')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.unknown)
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
 })
@@ -634,7 +631,7 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
     expect(authState.user).not.toBeNull()
     expect(navigate).not.toHaveBeenCalled()
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toContain('reconnectez-vous')
+    expect(alert.text()).toContain(fr.oauthConsent.errors.reauthenticationRequired)
     const link = alert.find('a')
     expect(link.text()).toBe(fr.oauthConsent.errors.reauthenticate)
     const target = router.resolve(link.attributes('href') ?? '')
@@ -658,7 +655,7 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('sign in again')
+    expect(wrapper.find('[role="alert"]').text()).toContain(en.oauthConsent.errors.reauthenticationRequired)
     expect(wrapper.find('[role="alert"] a').text()).toBe(en.oauthConsent.errors.reauthenticate)
   })
 })
@@ -690,7 +687,7 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
 
       expect(navigate).not.toHaveBeenCalled()
       const alert = wrapper.find('[role="alert"]')
-      expect(alert.text()).toContain('compte connecté a changé')
+      expect(alert.text()).toContain(fr.oauthConsent.errors.accountChanged)
       expect(alert.find('[data-testid="consent-reload"]').text()).toBe(fr.oauthConsent.errors.reload)
       // Plus de boutons de décision tant que la demande n'est pas relue : ils porteraient l'ancien compte.
       expect(wrapper.findAll('button').filter((b) => b.attributes('data-testid') !== 'consent-reload')).toHaveLength(0)
@@ -724,7 +721,7 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('signed-in account has changed')
+    expect(wrapper.find('[role="alert"]').text()).toContain(en.oauthConsent.errors.accountChanged)
     expect(wrapper.find('[data-testid="consent-reload"]').text()).toBe(en.oauthConsent.errors.reload)
   })
 

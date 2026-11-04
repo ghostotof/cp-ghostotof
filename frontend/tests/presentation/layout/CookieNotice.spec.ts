@@ -7,6 +7,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const Stub = { template: '<div />' }
 
@@ -46,7 +47,7 @@ describe('CookieNotice', () => {
     const wrapper = await mountNotice('en')
 
     expect(wrapper.get('a').attributes('href')).toBe('/en/privacy-policy')
-    expect(wrapper.text()).toContain('nothing to accept or refuse')
+    expect(wrapper.text()).toContain(en.cookieNotice.message)
   })
 
   it('links to the privacy policy in the default language when the interface language is not one of the site (#748, R213)', async () => {

@@ -58,7 +58,7 @@ describe('ExperiencePage', () => {
     const wrapper = mountExperiencePage()
 
     expect(wrapper.find('ol').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Chargement')
+    expect(wrapper.text()).toContain(fr.experience.loading)
   })
 
   it('liste chaque technologie du classement avec sa durée, dans une liste ordonnée, une fois chargée', async () => {
