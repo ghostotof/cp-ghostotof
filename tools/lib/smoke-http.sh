@@ -390,8 +390,9 @@ _smoke_option_arity() {
 # Vrai si le chemin est, **en entier**, un de ceux que smoke_data_file a retenus : une égalité de chaîne, aucun calcul de chemin
 # (`..`, lien, préfixe de dossier), donc ni le fichier `-K` ni un autre fichier du même dossier ne passent.
 # Limite écrite (Sp16-25) : le jugement porte sur le nom, pas sur le fichier. Un lien qui remplacerait un de ces fichiers entre sa
-# création et l'appel serait lu par curl comme le fichier de corps, sans être vu ; seul l'utilisateur du smoke peut le poser, sous
-# TMPDIR, ce qui sort du modèle (comme un `PATH` ou un `LD_PRELOAD` qu'il contrôlerait, voir _smoke_write_config_file).
+# création et l'appel serait lu par curl comme le fichier de corps, sans être vu, pas même par le `-f` de _smoke_value_touches_file,
+# qui suit les liens (CR19-9) ; seul l'utilisateur du smoke peut le poser, sous TMPDIR, ce qui sort du modèle (comme un `PATH` ou un
+# `LD_PRELOAD` qu'il contrôlerait, voir _smoke_write_config_file).
 _smoke_is_data_file() {
   local _smoke_known
   for _smoke_known in "${SMOKE_AUTH_DATA_FILES[@]}"; do

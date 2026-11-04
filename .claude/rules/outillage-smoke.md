@@ -104,7 +104,8 @@ puts it in `SMOKE_AUTH_DATA_FILE`; it prints nothing, since `"@$(smoke_data_file
 `smoke_cleanup` removes those files and empties both variables, and a second `smoke_use_auth_config` calls it first: a path from before
 it is no longer admitted. Both variables are empty at the source. `smoke-mcp.sh` makes its body file with it, not with `mktemp`.
 Limit (Sp16-25): `smoke_fetch` judges the file's name, not the file: a link that replaced one of those files between its creation and the
-call would be read by curl as the body file, unseen. Only the smoke's own user can put it there, under `TMPDIR`: outside the model.
+call would be read by curl as the body file, unseen, by `-f` too, which follows links (CR19-9). Only the smoke's own user
+can put it there, under `TMPDIR`: outside the model.
 The message gives the **rank** of the argument, never its text (a glued value could be a secret):
 « argument n° N hors des options admises avec la Basic Auth » for `"$@"`, « SMOKE_CURL_OPTS, élément n° N hors des options… » for the other;
 for a value that reads a file, the rank is the value's:
@@ -162,48 +163,30 @@ and lists every refused value. This rule names it too; the `Env :` headers of th
 The first: the substring `AUDIT_BASIC_AUTH`, even inside a longer word, appears only as
 `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
 The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth and fourteenth reviews).
-It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options in `-` or `+`, or `--`, only:
-`declare -x`, `declare +x`, `export --`, `declare -x --`, `typeset +r`)
-and, with a `p` option in **any** cluster of options, `declare -p`, `export -p`, `declare -g -p NAME`; `declare`, `typeset` and `local`
-with an `n` option in any cluster (a nameref reads a variable by name: `local -r -n ref=NAME`);
-`compgen` with `-v`, `-e`, `-A variable` or `-A export`; `set` after any word (`if set`, `then set`, `! set`, `time set`, `do set`) or a
-quote, a backtick or a backslash (`bash -c 'set'`, `` x=`set` ``, `\set`), bare or followed by a redirection, a pipe, `;`, `&&`, `||`, a
-quote, a backtick or a backslash (`set\`); `eval`; `printenv`; `env` as a command; `${!`; `ps` with the BSD option `e` in any position
-(`ps e`, `ps eww`, `ps -p $$ e`, `ps -o args= -p $$ ewww`), a word with no dash being judged on its letters alone (C18-1: `ps e$$`,
-`ps -p $$ e1` and `ps e${pid}` are refused, `ps -p 1` passes), **or with any option in `-` outside an allow-list** (C17-1): `-o` and `-p`
-(their value is skipped), `-e`, `-f`, `-ef` and `-aux` pass (every process, not its environment: `ps -ef`, `ps -aux` and
-`ps -p $$ -o comm=` pass), every other one refuses the line, the long ones too (`ps -auxe` and `ps -eaux`, which procps reads as the
-BSD options `aux` and `e` behind a dash, `ps -A e`, `ps -www`, `ps --cols 200`); the word `ps` is seen between quotes (C18-2: `"ps" e`
-and `'ps' e` are refused, `"ps" -ef` passes), but a backtick after it closes the command (the prose writes `` `ps` ``, followed by words
-that are not its options); a quote, a backtick or a backslash glued to a word is dropped first, and a final backslash refuses the
-line (`bash -c 'ps e'`, `` x=`ps e` ``, `ps -p $$ \`); and the word `environ`, in any case (`ENVIRON` of awk, C17-2), prose included,
-however `/proc/<pid>/environ` is written (`cat /proc/self/environ`, `cd /proc/self && cat environ`, `"$p/environ"`; R148b, St14-29).
-French prose writes « à peu près » or « près de », never that word, in a comment of these files.
-Such a bare word ends its command at the end of the line, `;`, `&`, `|`, `)`, `#`, a redirection, a backslash (`declare\`: the next line
-carries on the command), or at a quote or a backtick **glued** to the word or to its last option (C16-2: `bash -c 'declare'`,
-`bash -c "export"`, `bash -c 'declare -x'`, `` x=`export` ``, `'declare'`, `\declare`). After a blank, a quote ends it only if a word end
-follows (`bash -c 'declare -x '`): `export -n -- "$n"` opens the name, it passes.
-`export -n -- NAME`, `declare +x NAME=1`, `readonly LIMIT=3`, `local -r name="$1"`, `set -e`, `set +x`, `bash -c 'set -e'`,
-`if set -o | grep -q xtrace`, `echo 'declare keyword'`, `` x=`set -e` ``,
-`bash -c 'export -n -- NAME'`, `x="${env}"` and `environment` pass.
-The forms of C16-2 and the `ps` forms bound to the measured process (`ps e -p $$`, `ps e$$`, `"ps" e -p $$`) that print are **measured**
-in `smoke-http.test.sh`: run by `bash -c` under `env -i` with the one dummy variable (a random value, an argument of the `env -i` that
-sets it and of nothing else: the output goes through a pattern file, `grep -F -f`, and is read by `values_found_in`), each prints the
-value, and the same list is then refused by the guard. Only a form whose every `ps` reads the measured process alone is run (D2 of the
-eighteenth review; `ps_bounded_to_self`, an allow-list: `-p $$`, `-o` and its value, a BSD cluster of `e` and `w`, glued to `$$` or
-not, and `$$` named): `ps -auxe` and `ps -eaux`, which would read the environment of every process of the user, are judged by the guard
-without being run, and a case before the measure fails naming any other line of the list, which the measure skips. A witness
-variable the test itself exports must not appear in that output (C17-8): the measure inherits nothing.
+What each pattern aims at (the forms refused and admitted are the cases `dump_forbidden` and `dump_allowed`):
+`declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options in `-` or `+` and `--` only), which list;
+a `p` option (a listing) or an `n` one (a nameref, which reads by name) in any cluster of options; `compgen` enumerating variables;
+`set` with no option, after any word; `eval`; `printenv`; `env` as a command; `${!`; jq's `$ENV` and node's `process.env` (C19-3:
+the audit runs jq); `ps` with the BSD option `e` in any position, a word with no dash judged on its letters alone, or with an option
+in `-` outside an allow-list (`-o` and `-p` with their value, `-e`, `-f`, `-ef`, `-aux`: every process, not its environment); the
+word `environ`, in any case, prose included (French prose writes « à peu près » or « près de »).
+A bare word ends its command at a separator, a redirection, a backslash, or a quote or a backtick glued to it (C16-2).
+The measure, in `smoke-http.test.sh`, runs a line only if it is, **in full**, one of the anchored shapes of `MEASURABLE_DUMP_SHAPES`
+(`measurable_dump_line`, an allow-list of the whole line, C19-2): a declaration word or `set` bare, quoted, next to a backslash, in
+`bash -c`/`sh -c` or between backticks, and the `ps` forms bound to the measured process (`ps e -p $$`, `ps e$$`, `"ps" e -p $$`; D2 of the
+eighteenth review). It runs them by `bash -c` under `env -i` with the one dummy variable (a random value, an argument of the `env -i`
+that sets it and of nothing else: the output goes through a pattern file, `grep -F -f`, and is read by `values_found_in`), each prints
+the value, and the same list is then refused by the guard. Any other line is judged without being run (`ps -auxe` would read every
+process of the user), and a case before the measure fails naming a line of the list that no shape admits. A witness variable the test
+itself exports must not appear in that output (C17-8): the measure inherits nothing.
 Never run such a form in a session outside `env -i` with a dummy.
 **The exemption is one line**: `_smoke_value="${!_smoke_name:-}"`, the reader's one reading by name, in the body of
 `_smoke_write_auth_config`, compared by equality. Anything else added in that body is judged like the rest of the library,
-and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, a `set` alone between
-quotes: `echo 'set'`, `echo "declare"`) is rephrased. Limit: the guard aims at good-faith slips (a debug trace left behind). A list of
-patterns is never complete against a deliberate bypass, which the review of the diff stops: a word cut inside by a quote or a backslash
-(`dec""lare`, `d\eclare`), an alias, a name assembled before an `eval`, `ps` that the line does not write (`p=ps; $p e`,
-`"$(command -v ps)" e`), perl's `%ENV` and PHP's `getenv()` and `$_ENV` (no guarded script runs either);
-« no line lists the environment » holds under that limit only.
-Each guard is proven on altered copies of a script: every bypass is refused, its neighbours pass.
+and so is that line anywhere else. A word of prose that is also one of these commands (`local` ending a sentence, `echo 'set'`) is
+rephrased. **Limit**, in the author's words (E2 of the nineteenth review): « garde lexicale : toute forme non écrite en clair —
+expansion, glob, mot recollé, interprète — est hors de portée ; elle protège de l'oubli, pas du contournement délibéré ». The review of
+the diff stops the deliberate bypass; « no line lists the environment » holds under that limit only.
+Each guard is proven on altered copies of a script: each form its cases list is refused, its neighbours pass.
 A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`

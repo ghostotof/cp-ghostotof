@@ -1453,39 +1453,27 @@ for indent in '    ' $'\t'; do
 done
 
 # --- Garde des vidages d'environnement (C12-2, D3 de la treizième relecture) : aucune ligne de l'audit, des trois
-# smokes ni de la bibliothèque n'énumère l'environnement ni ne lit une variable par son nom. Refusés :
-#   - `declare`, `typeset`, `local`, `export`, `readonly` **sans nom** (seuls, ou suivis d'options seules : `declare -x`,
-#     `export -n`), qui listent ; avec une option `p` dans une grappe quelconque (`declare -g -p NOM`) ; `declare`, `typeset`,
-#     `local` avec une option `n` dans une grappe quelconque (une référence de nom, `local -r -n ref=X`, qui lit X par son
-#     nom) ; `export -n -- NOM` et `readonly LIMITE=3` passent ; le mot finit sur la fin de ligne, `;`, `&`, `|`, `)`, `#`, une
-#     redirection, un antislash (continuation), un guillemet ou un accent grave collé (`bash -c 'declare'`, x=`export`, C16-2) ;
-#   - `compgen` avec `-v`, `-e`, `-A variable` ou `-A export` ; `set` après n'importe quel mot (`if set`, `then set`, `! set`,
-#     `time set`, `bash -c 'set'`, x=`set`, `\set`), seul ou suivi d'une redirection, d'un tube, de `;`, `&&`, `||`, d'un guillemet,
-#     d'un accent grave ou d'un antislash (`set\`) ; `set -o` passe ;
-#   - `eval`, `printenv`, `env` (la commande : `"${env}"` n'en est pas une), `${!…}` ;
-#   - `ps` avec l'option BSD `e` en toute position (`ps e`, `ps eww`, `ps -p $$ e`, `bash -c 'ps e'`, un antislash final), collée à
-#     des chiffres ou à `$` (`ps e$$`, `ps -p $$ e1`, C18-1), le mot entre guillemets ou apostrophes (`"ps" e`, `'ps' e`, C18-2), et
-#     toute option à tiret hors de la liste d'autorisation `-o -p -e -f -ef -aux` (`ps -auxe`, `ps -eaux`, `ps -www`, `ps --cols`) ;
-#     `ps -ef`, `ps -aux`, `ps -p 1` et `"ps" -ef` passent (voir ps_lists_environment) ; limite écrite : le mot que la ligne ne porte
-#     pas, `"$(command -v ps)" e` ou `p=ps; $p e`, n'est pas vu ;
-#   - le mot `environ`, sans égard à la casse (`ENVIRON` d'awk), prose comprise (`/proc/<pid>/environ` écrit de toute façon :
-#     `cd /proc/self && cat environ`, `"$p/environ"`) ; la prose française écrit « à peu près » ; `environment` passe.
-# Chaque ligne est lue, commentaires et heredocs compris. Un motif ancré sur des limites de mot : `set -e`, `set +x` passent.
+# smokes ni de la bibliothèque n'énumère l'environnement ni ne lit une variable par son nom. Ce que vise chaque motif
+# d'env_dump_lines (les formes refusées et admises sont les cas de dump_forbidden et de dump_allowed) :
+#   - pat_bare : `declare`, `typeset`, `local`, `export`, `readonly` sans nom (seuls, ou suivis d'options et de `--` seuls) ;
+#   - pat_listing, pat_nameref : une option `p` (une liste) ou `n` (une référence de nom) dans une grappe quelconque ;
+#   - pat_compgen : `compgen` qui énumère les variables ; pat_eval : `eval` ; pat_printenv : `printenv` ; pat_env : la commande `env` ;
+#   - pat_env_object : l'objet d'environnement de jq (`$ENV`) et de node (`process.env`) ; pat_indirect : `${!…}` ;
+#   - pat_set : `set` sans option, après n'importe quel mot ; pat_environ : le mot `environ` sans égard à la casse, prose comprise
+#     (la prose française écrit « à peu près ») ;
+#   - ps_lists_environment : une commande `ps` qui peut lister l'environnement.
+# Chaque ligne est lue, commentaires et heredocs compris. Un mot nu finit sa commande sur un séparateur, une redirection, un
+# antislash, ou un guillemet ou un accent grave collé (C16-2).
 # **L'exemption est une ligne** : `  _smoke_value="${!_smoke_name:-}"`, comparée par égalité, dans le corps de
 # _smoke_write_auth_config ; tout autre ajout dans ce corps est jugé comme ailleurs.
-# **Limite écrite** : la garde vise les fautes de bonne foi (une trace de débogage oubliée). Une liste de motifs n'est jamais
-# complète contre un contournement délibéré (`eval` d'un nom composé, un `bash -c` dont la chaîne est assemblée, un mot coupé par un
-# guillemet ou un antislash : `dec""lare`) : celui-là
-# est arrêté par la relecture du diff, pas par ce test.
-# ps_lists_environment <ligne> : vrai si une commande `ps` de la ligne peut lister l'environnement : l'option BSD `e` (`ps e`,
-# `ps eww`, `ps auxe`) en toute position (`ps -p $$ e`, `ps -o args= -p $$ ewww`), ou une option à tiret hors de la liste
-# d'autorisation (C17-1). Un jeton sans tiret se juge sur ses seules lettres (C18-1 : `e$$`, `e1`, `e${pid}` sont `e` ou `epid`), et
-# le mot `ps` entre guillemets ou apostrophes est vu (C18-2). procps relit sous un tiret les options BSD (`-auxe`, `-eaux` : `aux`
-# puis `e`), qu'aucune liste de refus ne couvre (`-A e`, `-www`, `--cols`) : seules passent `-o` et `-p` (leur valeur est sautée :
-# `-o etime=`, `-p $$`), `-e`, `-f`, `-ef` et `-aux` ; toute autre option à tiret refuse la ligne, les longues (`--cols`) comprises.
-# Ce sont les options que les cas admis passent, plus `-aux` (BSD sans `e`) ; aucun script gardé n'appelle `ps`. La ligne est coupée
-# aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`. Un guillemet, un accent grave ou un antislash collé
-# à un mot est retiré avant le jugement, et un antislash final (continuation) refuse la ligne.
+# **Limite** (E2 de la dix-neuvième relecture) : « garde lexicale : toute forme non écrite en clair — expansion, glob, mot recollé,
+# interprète — est hors de portée ; elle protège de l'oubli, pas du contournement délibéré ».
+# ps_lists_environment <ligne> : vrai si une commande `ps` de la ligne peut lister l'environnement : l'option BSD `e` en toute
+# position, un jeton sans tiret se jugeant sur ses seules lettres (C18-1 : `e$$` est `e`), le mot entre guillemets ou apostrophes
+# compris (C18-2), ou une option à tiret hors de la liste d'autorisation (C17-1) : `-o` et `-p` (leur valeur est sautée), `-e`, `-f`,
+# `-ef` et `-aux`, qui listent les processus, non leur environnement ; procps relit sous un tiret les options BSD (`-auxe`). La ligne
+# est coupée aux séparateurs (`| ; & ( ) < > #`) : `ps -p $$ | grep -q e` ne juge pas `grep`. Un guillemet, un accent grave ou un
+# antislash collé à un mot est retiré avant le jugement, et un antislash final (continuation) refuse la ligne.
 ps_lists_environment() {
   local segment token skip=0
   # Le mot peut être entre guillemets ou apostrophes (C18-2 : `"ps" e`, `'ps' e`), qui ne coupent pas la commande. Un accent grave
@@ -1537,6 +1525,8 @@ env_dump_lines() {
   local pat_eval='(^|[^[:alnum:]_.-])eval([^[:alnum:]_-]|$)'
   local pat_printenv='(^|[^[:alnum:]_.-])printenv([^[:alnum:]_]|$)'
   local pat_env='(^|[^[:alnum:]_.${-])env([^[:alnum:]_]|$)'
+  # L'objet d'environnement de jq (`$ENV`, `${ENV}`) et de node (`process.env`), C19-3 : `$ENV_NAME` et `$ENVIRONMENT` passent.
+  local pat_env_object='\$\{?ENV([^[:alnum:]_]|$)|process\.env'
   # `set` après n'importe quel mot (`if set`, `then set`, `! set`, `time set`, `do set`), seul ou suivi d'une redirection, d'un
   # tube, d'un `;`, d'un `&&` ou d'un `||` ; `set -o`, `set -e`, `set +x` n'énumèrent rien.
   # Un guillemet, un accent grave ou un antislash avant ou après le mot le rend visible dans `bash -c 'set'`, x=`set`, `\set`
@@ -1545,7 +1535,7 @@ env_dump_lines() {
   local pat_indirect='\$\{!'
   # `unset` ne vide pas la copie de l'environnement que le processus a reçue à son lancement ; /proc/<pid>/environ la montre encore (R148b).
   # Sans égard à la casse (C17-2) : `ENVIRON` d'awk, `os.environ` de python. Des classes plutôt que `shopt -s nocasematch`, qu'il faudrait
-  # rétablir sur chaque chemin de sortie. Perl (`%ENV`) et PHP (`getenv()`, `$_ENV`) ne s'écrivent pas ainsi : limite écrite dans la règle.
+  # rétablir sur chaque chemin de sortie. Un interprète qui l'écrit autrement est hors de portée (la limite de l'en-tête).
   local pat_environ='(^|[^[:alnum:]_])[Ee][Nn][Vv][Ii][Rr][Oo][Nn]([^[:alnum:]_]|$)'
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
@@ -1558,8 +1548,8 @@ env_dump_lines() {
       if [ "$line" = '  _smoke_value="${!_smoke_name:-}"' ]; then continue; fi
     fi
     if [[ "$line" =~ $pat_bare || "$line" =~ $pat_listing || "$line" =~ $pat_nameref || "$line" =~ $pat_compgen \
-          || "$line" =~ $pat_eval || "$line" =~ $pat_printenv || "$line" =~ $pat_env || "$line" =~ $pat_set \
-          || "$line" =~ $pat_indirect || "$line" =~ $pat_environ ]] || ps_lists_environment "$line"; then
+          || "$line" =~ $pat_eval || "$line" =~ $pat_printenv || "$line" =~ $pat_env || "$line" =~ $pat_env_object \
+          || "$line" =~ $pat_set || "$line" =~ $pat_indirect || "$line" =~ $pat_environ ]] || ps_lists_environment "$line"; then
       printf '%s:%s\n' "$n" "$line"
     fi
   done < "$file"
@@ -1608,52 +1598,44 @@ dump_printing=(
   'ps e$$'
 )
 measured_value="valeur-factice-$RANDOM$RANDOM"
-# ps_bounded_to_self <ligne> : vrai si chaque commande `ps` de la ligne ne lit que le processus mesuré (D2 de la dix-huitième
-# relecture) : `env -i` ne vide que l'environnement de ce processus, `ps -auxe` lirait celui de tous les processus de l'utilisateur,
-# jetons de la session comprise. Une liste d'autorisation, comme pour la garde (C17-1) : procps a trop de sélecteurs (`-A`, `-e`, `a`,
-# `x`, `-N`, `U`, `T`, `-u`…) pour qu'une liste de refus soit complète. Chaque jeton est `-p` suivi de `$$`, `-o` suivi de sa valeur, ou
-# une grappe BSD de `e` et de `w` (`e`, `eww`), éventuellement collée à `$$` (`e$$`) ; et la commande nomme `$$`, par `-p` ou collé.
-# Le mot `ps` se cherche ici par un motif large, à part de celui de ps_lists_environment : une garde affaiblie (une mutation, une faute)
-# ne doit jamais faire exécuter une forme non bornée. Les guillemets, accents graves et antislashs collés sont retirés comme là-bas.
-ps_bounded_to_self() {
-  local segment token skip bound
-  local any_ps='(^|[^[:alnum:]_])ps([^[:alnum:]_]|$)'
-  local -a tokens
-  while IFS= read -r segment; do
-    if ! [[ "$segment" =~ $any_ps ]]; then continue; fi
-    segment="${segment#*"${BASH_REMATCH[0]}"}"
-    read -r -a tokens <<< "$segment"
-    skip=""; bound=0
-    for token in "${tokens[@]}"; do
-      token="${token//[\'\"\`\\]/}"
-      if [ "$skip" = o ]; then skip=""; continue; fi
-      if [ "$skip" = p ]; then
-        skip=""
-        if [ "$token" != '$$' ]; then return 1; fi
-        bound=1; continue
-      fi
-      case "$token" in
-        '') ;;
-        -o) skip=o ;;
-        -p) skip=p ;;
-        *)
-          if ! [[ "$token" =~ ^[ew]+(\$\$)?$ ]]; then return 1; fi
-          if [[ "$token" == *'$$' ]]; then bound=1; fi ;;
-      esac
-    done
-    if [ -n "$skip" ] || [ "$bound" -eq 0 ]; then return 1; fi
-  done <<< "${1//[|;&()<>#]/$'\n'}"
-  return 0
+# measurable_dump_line <ligne> : vrai si la ligne **entière** satisfait un des motifs ancrés de MEASURABLE_DUMP_SHAPES (R238 de la
+# dix-neuvième relecture, C19-2). Une liste d'autorisation de la ligne, non du seul mot `ps` : une ligne qui ne l'écrit pas en
+# clair (`p""s e -A`) ou qui vide l'environnement sans lui (`cat /proc/1/environ`) n'est admise par aucun motif. Les formes admises :
+# un mot de liste (`declare`, `typeset`, `export` avec ou sans `-x`, `set`) nu, entre guillemets, à côté d'un antislash, dans
+# `bash -c`/`sh -c` ou entre accents graves ; `ps` borné au processus mesuré (`ps e -p $$`, `ps e$$`, `"ps" e -p $$`, D2 de la
+# dix-huitième relecture : `env -i` ne vide que l'environnement de ce processus), nu, avant ` \`, dans `bash -c` ou entre accents
+# graves. Une ligne à saut de ligne n'est jamais admise.
+measurable_word='((declare|typeset|export)( -x)?|set)'
+measurable_ps='(ps e -p \$\$|ps e\$\$|"ps" e -p \$\$)'
+sq="'" bt='`'
+MEASURABLE_DUMP_SHAPES=(
+  "^\\\\?${measurable_word}( ?\\\\)?\$"
+  "^(\"${measurable_word}\"|${sq}${measurable_word}${sq}|${measurable_word}${sq}${sq})\$"
+  "^(bash|sh) -c ${sq}${measurable_word}${sq}\$"
+  "^bash -c \"${measurable_word}\"\$"
+  "^x=${bt}${measurable_word}${bt}\$"
+  "^${measurable_ps}( \\\\)?\$"
+  "^bash -c ${sq}${measurable_ps}${sq}\$"
+  "^x=${bt}${measurable_ps}${bt}\$"
+)
+unset measurable_word measurable_ps sq bt
+measurable_dump_line() {
+  local shape
+  if [[ "$1" == *$'\n'* ]]; then return 1; fi
+  for shape in "${MEASURABLE_DUMP_SHAPES[@]}"; do
+    if [[ "$1" =~ $shape ]]; then return 0; fi
+  done
+  return 1
 }
 # measure_dump_output <ligne> <fichier> [<valeur>…] : exécute la ligne dans un bash lancé sous `env -i`, avec la seule variable factice
-# (C17-8, St17-22 : un `bash -c` qui hérite de l'environnement du test y lirait celui de la session). Seule une ligne dont chaque `ps`
-# est bornée au processus mesuré est lancée (ps_bounded_to_self, D2) : une autre rend 1 sans rien exécuter ni écrire. La sortie ne
+# (C17-8, St17-22 : un `bash -c` qui hérite de l'environnement du test y lirait celui de la session). Seule une ligne admise par
+# measurable_dump_line est lancée : une autre rend 1 sans rien exécuter ni écrire. La sortie ne
 # passe que par un `grep -F -f` sur un fichier de motifs (la valeur factice et les valeurs en plus, jamais en argument) : seules les
 # lignes qui portent une de ces valeurs arrivent dans le fichier de sortie (600), qu'on lit par `values_found_in`.
 measure_dump_output() {
   local line="$1" out="$2"
   shift 2
-  if ! ps_bounded_to_self "$line"; then return 1; fi
+  if ! measurable_dump_line "$line"; then return 1; fi
   write_value_patterns "$measured_value" "$@"
   (
     umask 077
@@ -1662,17 +1644,37 @@ measure_dump_output() {
   )
   rm -f -- "$TMP/value-patterns"
 }
-# D2 : avant la mesure, chaque ligne de dump_printing qui porte le mot `ps` est bornée au processus mesuré ; une ligne qui ne l'est
-# pas est un `fail` nommé, et la boucle qui suit ne l'exécute pas (measure_dump_output la saute).
-unbounded_printing=()
-for line in "${dump_printing[@]}"; do
-  if ! ps_bounded_to_self "$line"; then unbounded_printing+=("$line"); fi
+# Avant la mesure, chaque ligne de dump_printing et du témoin a, en entier, une forme admise (measurable_dump_line) ; une ligne qui
+# n'en a pas est un `fail` nommé, et la boucle qui suit ne l'exécute pas (measure_dump_output la saute).
+unmeasurable_printing=()
+for line in "${dump_printing[@]}" 'export' 'declare -x' 'ps e -p $$'; do
+  if ! measurable_dump_line "$line"; then unmeasurable_printing+=("$line"); fi
 done
-if [ "${#unbounded_printing[@]}" -eq 0 ]; then
-  pass "garde des vidages : chaque forme \`ps\` mesurée est bornée au processus mesuré (\`-p \$\$\` ou \`e\$\$\`, ni -A, ni -e, ni a, ni x)"
+if [ "${#unmeasurable_printing[@]}" -eq 0 ]; then
+  pass "garde des vidages : chaque forme mesurée a, en entier, une forme admise par measurable_dump_line"
 else
-  fail "garde des vidages : forme non bornée dans dump_printing, sautée par la mesure" "$(printf '« %s » ' "${unbounded_printing[@]}")"
+  fail "garde des vidages : forme hors de MEASURABLE_DUMP_SHAPES, sautée par la mesure" "$(printf '« %s » ' "${unmeasurable_printing[@]}")"
 fi
+# R238 de la dix-neuvième relecture (C19-2) : la liste d'autorisation porte sur la ligne entière, non sur le seul mot `ps`. Ces
+# lignes sont jugées sans être exécutées : l'une lirait l'environnement d'un autre processus, une autre ne nomme pas `ps` en clair.
+for line in 'cat /proc/1/environ' 'p""s e -A' 'ps -auxe' 'ps e -A' 'env' 'printenv' "bash -c 'ps e'"; do
+  rc=0; measurable_dump_line "$line" || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    pass "garde des vidages : measurable_dump_line refuse « $line », jugée sans être exécutée"
+  else
+    fail "garde des vidages : measurable_dump_line sur « $line »" "code $rc, attendu 1"
+  fi
+done
+# Une ligne refusée n'est pas lancée : measure_dump_output rend 1 sans créer son fichier de sortie. La ligne choisie n'imprime que la
+# variable factice si elle était lancée à tort, sous `env -i`.
+rc=0; measure_dump_output 'echo "$MEASURED_VARIABLE"' "$TMP/measured-refused.txt" || rc=$?
+if [ "$rc" -eq 1 ] && [ ! -e "$TMP/measured-refused.txt" ]; then
+  pass "garde des vidages : measure_dump_output rend 1 sur une ligne refusée, sans créer son fichier de sortie"
+else
+  fail "garde des vidages : measure_dump_output sur une ligne refusée" \
+    "code $rc, attendu 1 ; fichier de sortie : $([ -e "$TMP/measured-refused.txt" ] && echo créé || echo absent)"
+fi
+rm -f -- "$TMP/measured-refused.txt"
 # Chaque forme mesurée écrit son propre fichier : une forme sautée n'en a aucun, ce que le décompte qui suit vérifie.
 measured_count=0
 skipped_lines=()
@@ -1689,6 +1691,8 @@ for i in "${!dump_printing[@]}"; do
     fail "garde des vidages : « $line » n'imprime pas la variable" "la mesure ne voit pas la valeur factice"
   fi
 done
+# skipped_with_output est un filet sans mutation possible (St19-10) : le voir non vide exigerait d'exécuter une ligne refusée, ce que
+# D2 de la dix-huitième relecture interdit.
 skipped_with_output=()
 for skipped in "${skipped_lines[@]}"; do
   if [ -e "$TMP/measured-output-${skipped%%:*}.txt" ]; then skipped_with_output+=("${skipped#*:}"); fi
@@ -1700,7 +1704,7 @@ else
     "sautées, non exécutées : $(printf '« %s » ' "${skipped_lines[@]#*:}") ; avec un fichier de sortie : ${#skipped_with_output[@]}"
 fi
 rm -f -- "$TMP"/measured-output-*.txt
-unset unbounded_printing measured_count skipped_lines skipped_with_output skipped i
+unset unmeasurable_printing measured_count skipped_lines skipped_with_output skipped i
 # C17-8 : la mesure n'hérite de rien. Une variable témoin exportée par le test (valeur aléatoire, jamais en argument) n'apparaît dans
 # aucune sortie de la mesure, alors que les formes qui listent l'environnement y impriment bien la variable factice.
 witness_value="valeur-temoin-$RANDOM$RANDOM"
@@ -1840,10 +1844,15 @@ dump_forbidden=(
   # C18-2 : le mot `ps` entre guillemets ou apostrophes.
   "'ps' e"
   '"ps" e'
-  # D2 : procps lit `-auxe` et `-eaux` comme les options BSD `aux` et `e` malgré le tiret (C17-1) ; elles liraient l'environnement de
-  # tous les processus de l'utilisateur, et ne sont donc que jugées, jamais exécutées.
+  # D2 de la dix-huitième relecture : procps lit `-auxe` et `-eaux` comme les options BSD `aux` et `e` malgré le tiret (C17-1) ; elles
+  # liraient l'environnement de tous les processus de l'utilisateur, et ne sont donc que jugées, jamais exécutées.
   'ps -auxe'
   'ps -eaux'
+  # C19-3 : l'objet d'environnement de jq (`$ENV`, lancé par l'audit) et de node (`process.env`).
+  'jq -n "$ENV"'
+  "jq '\$ENV.HOME'"
+  'x="${ENV}"'
+  "node -e 'console.log(process.env)'"
 )
 for line in "${dump_forbidden[@]}"; do
   if [ -n "$(mutant_dump "$line")" ]; then
@@ -1923,6 +1932,10 @@ dump_allowed=(
   '"ps" -ef'
   # Un accent grave après le mot ferme la commande : la prose de la bibliothèque écrit « ni dans `ps` ni dans une trace ».
   '# ni dans `ps` ni dans une trace.'
+  # Sp19-4 : la sélection BSD d'un processus par son numéro, sans `-p` ; C19-3 : un nom qui commence par `ENV` n'est pas `$ENV`.
+  'ps 1'
+  'x="$ENV_NAME"'
+  'echo "$ENVIRONMENT"'
 )
 for line in "${dump_allowed[@]}"; do
   if [ -z "$(mutant_dump "$line")" ]; then
