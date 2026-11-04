@@ -2,9 +2,9 @@ import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 /**
  * Le bouton de `scope` dont le texte est `label`, ou une erreur qui le nomme : un test qui cherche un bouton introuvable échoue
- * sur son libellé, jamais sur un `undefined?.trigger()` muet. Écrite une fois pour les specs des pages d'admin. Le libellé se
- * lit du catalogue (`adminButtonTexts.ts`), jamais d'un littéral français ; seul un test qui juge le texte lui-même l'écrit en
- * toutes lettres, ce que le catalogue ne dirait pas.
+ * sur son libellé, jamais sur un `undefined?.trigger()` muet ni sur une assertion d'absence qui passerait sans bouton. Un
+ * libellé traduit se lit du catalogue (`adminButtonTexts.ts`), jamais d'un littéral français, sauf dans un test qui juge le
+ * texte lui-même ; un libellé que le catalogue ne porte pas (un code de langue en capitales) s'écrit tel qu'affiché.
  */
 export function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
   const button = scope.findAll<HTMLButtonElement>('button').find((candidate) => candidate.text() === label)

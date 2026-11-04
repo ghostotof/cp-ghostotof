@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import LocaleSwitcher from '../../../src/presentation/ui/LocaleSwitcher.vue'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { LOCALE_STORAGE_KEY } from '../../../src/presentation/router/preferredLocale'
+import { buttonLabelled } from '../../support/buttonLabelled'
 import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import en from '../../../src/infrastructure/i18n/locales/en.json'
 
@@ -33,10 +34,6 @@ async function mountSwitcher(initialPath = '/fr/about', i18n = createAppI18n()) 
   return { wrapper, router }
 }
 
-function button(wrapper: Awaited<ReturnType<typeof mountSwitcher>>['wrapper'], label: 'FR' | 'EN') {
-  return wrapper.findAll('button').find((candidate) => candidate.text() === label)
-}
-
 /** Remet l'état global que le sélecteur écrit sur une page sans préfixe : la langue de l'application et ses trois reflets. */
 function resetInterfaceLocale(): void {
   appI18n.global.locale.value = 'fr'
@@ -52,14 +49,14 @@ describe('LocaleSwitcher', () => {
   it('marque la locale courante comme active (aria-current)', async () => {
     const { wrapper } = await mountSwitcher('/fr/about')
 
-    expect(button(wrapper, 'FR')?.attributes('aria-current')).toBe('true')
-    expect(button(wrapper, 'EN')?.attributes('aria-current')).toBeUndefined()
+    expect(buttonLabelled(wrapper, 'FR').attributes('aria-current')).toBe('true')
+    expect(buttonLabelled(wrapper, 'EN').attributes('aria-current')).toBeUndefined()
   })
 
   it('change de langue en conservant le même chemin', async () => {
     const { wrapper, router } = await mountSwitcher('/fr/about')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/en/about')
@@ -69,7 +66,7 @@ describe('LocaleSwitcher', () => {
   it('garde la query et le hash en changeant de langue (#748, R227)', async () => {
     const { wrapper, router } = await mountSwitcher('/fr/oauth/consent?client_id=c&state=s&code_challenge=x#h')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/en/oauth/consent?client_id=c&state=s&code_challenge=x#h')
@@ -79,23 +76,38 @@ describe('LocaleSwitcher', () => {
   it('garde les drapeaux de la connexion en changeant de langue (#748, R227)', async () => {
     const { wrapper, router } = await mountSwitcher('/fr/login?redirect=%2Ffr%2Fadmin&reauth=1')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/en/login')
-    expect(router.currentRoute.value.query).toEqual({ redirect: '/fr/admin', reauth: '1' })
+    expect(router.currentRoute.value.query).toEqual({ redirect: '/en/admin', reauth: '1' })
+  })
+
+  // CR19-2 : une cible restée en `/fr/…` ramènerait le français après la connexion ; seule une cible interne se réécrit.
+  it.each([
+    ['une cible externe', '%2F%2Fevil.example%2Ffr', '//evil.example/fr'],
+    ['une cible sans préfixe de langue', '%2Ffrogs', '/frogs'],
+    ['une cible refusée par internalRedirectTarget', '%2Ffr%2F%5Cevil.example', '/fr/\\evil.example'],
+  ])('garde %s telle quelle en changeant de langue (#748)', async (_label, encoded, kept) => {
+    const { wrapper, router } = await mountSwitcher(`/fr/login?redirect=${encoded}&reauth=1`)
+
+    await buttonLabelled(wrapper, 'EN').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/en/login')
+    expect(router.currentRoute.value.query).toEqual({ redirect: kept, reauth: '1' })
   })
 
   it("page 404 : la langue de l'interface est la langue courante (#748, R213)", async () => {
     const { wrapper } = await mountSwitcher('/frogs')
 
-    expect(button(wrapper, 'FR')?.attributes('aria-current')).toBe('true')
+    expect(buttonLabelled(wrapper, 'FR').attributes('aria-current')).toBe('true')
   })
 
   it("page 404 : un chemin qui ne commence pas par la langue reste tel quel, `/frogs` ne devient pas `/engs` (#748, R213)", async () => {
     const { wrapper, router } = await mountSwitcher('/frogs')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/frogs')
@@ -106,7 +118,7 @@ describe('LocaleSwitcher', () => {
     const { wrapper, router } = await mountSwitcher('/frogs', appI18n)
     const push = vi.spyOn(router, 'push')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(push).not.toHaveBeenCalled()
@@ -115,14 +127,14 @@ describe('LocaleSwitcher', () => {
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
     expect(document.documentElement.lang).toBe('en')
     expect(document.title).toBe(`CP-Ghostotof — ${en.seo.notFound.title}`)
-    expect(button(wrapper, 'EN')?.attributes('aria-current')).toBe('true')
-    expect(button(wrapper, 'FR')?.attributes('aria-current')).toBeUndefined()
+    expect(buttonLabelled(wrapper, 'EN').attributes('aria-current')).toBe('true')
+    expect(buttonLabelled(wrapper, 'FR').attributes('aria-current')).toBeUndefined()
   })
 
   it('page 404 sous un préfixe : `/fr/frogs` devient `/en/frogs` (#748, R227)', async () => {
     const { wrapper, router } = await mountSwitcher('/fr/frogs')
 
-    await button(wrapper, 'EN')?.trigger('click')
+    await buttonLabelled(wrapper, 'EN').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/en/frogs')
@@ -134,8 +146,8 @@ describe('LocaleSwitcher', () => {
     setUnsupportedLocale(i18n, 'de')
     const { wrapper, router } = await mountSwitcher('/en/about', i18n)
 
-    expect(button(wrapper, 'EN')?.attributes('aria-current')).toBe('true')
-    await button(wrapper, 'FR')?.trigger('click')
+    expect(buttonLabelled(wrapper, 'EN').attributes('aria-current')).toBe('true')
+    await buttonLabelled(wrapper, 'FR').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/fr/about')
@@ -146,7 +158,7 @@ describe('LocaleSwitcher', () => {
     setUnsupportedLocale(i18n, 'de')
     const { wrapper } = await mountSwitcher('/frogs', i18n)
 
-    expect(button(wrapper, 'FR')?.attributes('aria-current')).toBe('true')
-    expect(button(wrapper, 'EN')?.attributes('aria-current')).toBeUndefined()
+    expect(buttonLabelled(wrapper, 'FR').attributes('aria-current')).toBe('true')
+    expect(buttonLabelled(wrapper, 'EN').attributes('aria-current')).toBeUndefined()
   })
 })

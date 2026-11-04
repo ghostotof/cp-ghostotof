@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES, type Locale } from '../../domain/portfolio/entities/Locale'
 import { applyInterfaceLocale } from '../router/interfaceLocale'
+import { internalRedirectTarget } from '../router/internalRedirect'
+import { swapLocalePrefix } from '../router/localePrefix'
 import { applySeoMeta } from '../router/seo'
 import { useRouteLocale } from '../router/useRouteLocale'
 
@@ -15,10 +17,12 @@ const pageLocale = useRouteLocale()
 /**
  * Change de langue en restant sur la même page (#748, R227, D4).
  *
- * Sous un préfixe de langue, le **premier** segment est remplacé (`/fr/about` → `/en/about`), la query et le fragment
- * gardés : la demande d'un consentement OAuth (`client_id`, `state`, `code_challenge`) et les drapeaux de la connexion
- * (`redirect`, `reauth`, `expired`) sont dans la query, et la perdre cassait le flux (CR18-1). Un `replace` sur tout le
- * chemin changerait `/frogs` en `/engs`.
+ * Sous un préfixe de langue, le **premier** segment est remplacé (`swapLocalePrefix` : `/fr/about` → `/en/about`, jamais
+ * `/frogs` → `/engs`), la query et le fragment gardés : la demande d'un consentement OAuth (`client_id`, `state`,
+ * `code_challenge`) et les drapeaux de la connexion (`reauth`, `expired`) sont dans la query, et la perdre casse le flux
+ * (CR18-1). La cible de retour `redirect` suit la langue choisie (CR19-2) quand `internalRedirectTarget()` l'admet et
+ * qu'elle commence par la langue de la page ; toute autre valeur (une cible externe, un tableau, `/frogs`) reste telle
+ * quelle, et la page de connexion la juge.
  *
  * Un chemin qui ne commence pas par la langue (la page 404 `/frogs`, sans segment `:locale`) n'a aucune adresse à
  * changer : le sélecteur pose la langue d'interface lui-même, sans naviguer, comme le routeur le ferait
@@ -29,14 +33,22 @@ function switchTo(target: Locale): void {
   if (target === pageLocale.value) {
     return
   }
-  const prefix = `/${pageLocale.value}`
-  const startsWithLocale = route.path === prefix || route.path.startsWith(`${prefix}/`)
-  if (!startsWithLocale) {
+  const from = pageLocale.value
+  const path = swapLocalePrefix(route.path, from, target)
+  if (null === path) {
     applyInterfaceLocale(target)
     applySeoMeta(route)
     return
   }
-  void router.push({ path: `/${target}${route.path.slice(prefix.length)}`, query: route.query, hash: route.hash })
+  void router.push({ path, query: queryFollowing(from, target), hash: route.hash })
+}
+
+/** La query de la page, la cible `redirect` passée de `from` à `to` quand elle est interne et préfixée par `from`. */
+function queryFollowing(from: Locale, to: Locale): LocationQuery {
+  const redirect = internalRedirectTarget(route.query.redirect)
+  const moved = null === redirect ? null : swapLocalePrefix(redirect, from, to)
+
+  return null === moved ? route.query : { ...route.query, redirect: moved }
 }
 </script>
 

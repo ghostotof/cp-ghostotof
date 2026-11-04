@@ -5,9 +5,8 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_FRAGMENTS } from '../support/srcSources'
 /**
  * Les gardes de source de la langue (#748) : une `string` ne devient `Locale` que par `isSupportedLocale`, et la langue
  * d'interface de vue-i18n, une `string` elle aussi, ne se **lit** qu'à un endroit. Deux gardes, deux `describe` :
- * - **aucune assertion vers une langue dans `src/`** : `LOCALE_CASTS` liste les formes (`as Locale`, `<Locale>x`,
- *   `as 'fr' | 'en'`, `as typeof DEFAULT_LOCALE`, `as (typeof SUPPORTED_LOCALES)[number]`), lues par la garde et par le cas
- *   du détecteur. La langue se juge à la frontière (`isSupportedLocale`, `supportedLocaleOf` pour les dépôts d'admin) ;
+ * - **aucune assertion vers une langue dans `src/`** : `LOCALE_CASTS` liste les formes, lues par la garde et par le cas du
+ *   détecteur. La langue se juge à la frontière (`isSupportedLocale`, `supportedLocaleOf` pour les dépôts d'admin) ;
  *   le relevé égale `[]`, et une assertion qui reviendrait est une conversion sans jugement, non une exception à lister.
  * - **la langue d'interface ne se lit que par `useCurrentLocale()`** (`application/shared/`), qui ramène une langue hors du
  *   site à la langue par défaut ; la langue d'une route se lit par `routeLocale()`, celle d'une page par `useRouteLocale()`.
@@ -27,11 +26,13 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_FRAGMENTS } from '../support/srcSources'
 const LOCALE_READERS: readonly string[] = ['application/shared/useCurrentLocale.ts']
 
 /**
- * Les formes d'une assertion vers une langue. `<Locale>` n'est une assertion que s'il ne suit ni un identifiant ni `>`, `)`,
- * `]` : `ComputedRef<Locale>`, `computed<Locale>(` et `ref<Locale>(` sont des types génériques.
+ * Les formes d'une assertion vers une langue, la seule liste. `as` suivi d'un type qui contient le mot `Locale` avant la
+ * fin de la ligne ou de l'instruction (`as Locale`, `as Ref<Locale>`, `as readonly Locale[]`, `as Locale | null` ;
+ * `as LocaleKey` n'en est pas une). `<Locale>` n'est une assertion que s'il ne suit ni un identifiant ni `>`, `)`, `]` :
+ * `ComputedRef<Locale>`, `computed<Locale>(` et `ref<Locale>(` sont des types génériques.
  */
 const LOCALE_CASTS: readonly RegExp[] = [
-  /\bas\s+Locale\b/,
+  /\bas\s+[^;\n]*?\bLocale\b/,
   /(?<![\w$>)\]])<\s*Locale\s*>/,
   /\bas\s+['"](?:fr|en)['"]/,
   /\bas\s+typeof\s+DEFAULT_LOCALE\b/,
@@ -99,6 +100,14 @@ describe('aucune assertion vers une langue dans src/', () => {
     expect(detect("const l = x as 'fr' | 'en'")).toBe(true)
     expect(detect('const l = x as typeof DEFAULT_LOCALE')).toBe(true)
     expect(detect('const l = x as (typeof SUPPORTED_LOCALES)[number]')).toBe(true)
+    // Un type qui contient `Locale` après `as` (CR19-1) : une enveloppe, un tableau, une union.
+    expect(detect('const r = x as Ref<Locale>')).toBe(true)
+    expect(detect('const r = x as ComputedRef<Locale>')).toBe(true)
+    expect(detect('const l = x as Array<Locale>')).toBe(true)
+    expect(detect('const l = x as readonly Locale[]')).toBe(true)
+    expect(detect('const l = x as Locale | null')).toBe(true)
+    // `as` et `Locale` séparés par une fin d'instruction ne font pas une assertion.
+    expect(detect('const a = x as string;\nconst b: Locale = y')).toBe(false)
     // Un type générique ou annoté n'est pas une assertion.
     expect(detect('const l: ComputedRef<Locale> = x')).toBe(false)
     expect(detect('const l = computed<Locale>(() => x)')).toBe(false)

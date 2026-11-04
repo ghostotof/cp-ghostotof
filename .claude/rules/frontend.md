@@ -138,17 +138,16 @@ for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guar
 first path segment so the 404 page itself stays in the right language.
 `/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
 to `fr`. **The language switcher** (`presentation/ui/LocaleSwitcher.vue`, #748, R227) replaces the first segment
-and keeps the query and the hash (a consent request's `client_id`/`state`/`code_challenge`, the login's flags); on
-a path with no locale prefix (the 404 `/frogs`) it navigates nowhere: it calls `applyInterfaceLocale()`, then
-`applySeoMeta(route)` for the title (D4).
+(`swapLocalePrefix()`) and keeps the query and the hash (a consent request's `client_id`/`state`/`code_challenge`, the
+login's flags; an internal `redirect` follows the new language); on a path with no locale prefix (the 404 `/frogs`) it
+navigates nowhere: it calls `applyInterfaceLocale()`, then `applySeoMeta(route)` for the title (D4).
 
 **The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
 vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
 carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A page's language is
 `useRouteLocale()` (`presentation/router/useRouteLocale.ts`, variable `pageLocale`): the route's, else the interface's (the 404
-page). `tests/presentation/localeSourceGuards.spec.ts` holds two guards: no assertion to a language in `src/` (`as Locale`,
-`<Locale>x`, `as 'fr' | 'en'`, `as typeof DEFAULT_LOCALE`, `as (typeof SUPPORTED_LOCALES)[number]`, listed once in
-`LOCALE_CASTS`) and no other read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`,
+page). `tests/presentation/localeSourceGuards.spec.ts` holds two guards: no assertion to a language in `src/` (the forms
+listed in `LOCALE_CASTS`) and no other read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`,
 `i18n.global.locale`; the write in `applyInterfaceLocale` is not a read); a test that needs such a language sets it with
 `setUnsupportedLocale()` (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
 

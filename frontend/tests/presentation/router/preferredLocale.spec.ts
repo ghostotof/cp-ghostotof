@@ -45,4 +45,14 @@ describe('resolvePreferredLocale', () => {
 
     expect(resolvePreferredLocale()).toBe('en')
   })
+
+  // CR19-3, forme voisine : la redirection de `/` lit ce choix ; un stockage qui lève la ferait échouer.
+  it('sous un stockage bloqué, retombe sur la langue du navigateur', () => {
+    setBrowserLanguage('en-US')
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Accès refusé', 'SecurityError')
+    })
+
+    expect(resolvePreferredLocale()).toBe('en')
+  })
 })
