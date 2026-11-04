@@ -28,11 +28,13 @@ const LOCALE_READERS: readonly string[] = ['application/shared/useCurrentLocale.
 /**
  * Les formes d'une assertion vers une langue, la seule liste. `as` suivi d'un type qui contient le mot `Locale` avant la
  * fin de la ligne ou de l'instruction (`as Locale`, `as Ref<Locale>`, `as readonly Locale[]`, `as Locale | null` ;
- * `as LocaleKey` n'en est pas une). `<Locale>` n'est une assertion que s'il ne suit ni un identifiant ni `>`, `)`, `]` :
- * `ComputedRef<Locale>`, `computed<Locale>(` et `ref<Locale>(` sont des types génériques.
+ * `as LocaleKey` n'en est pas une). Ne sont pas des assertions : `as const` (`as const satisfies Record<Locale, …>`) et le
+ * `as` d'alias dans les accolades d'un `import` ou d'un `export` (`import { X as Y, type Locale }`). `<Locale>` n'est une
+ * assertion que s'il ne suit ni un identifiant ni `>`, `)`, `]` : `ComputedRef<Locale>`, `computed<Locale>(` et
+ * `ref<Locale>(` sont des types génériques.
  */
 const LOCALE_CASTS: readonly RegExp[] = [
-  /\bas\s+[^;\n]*?\bLocale\b/,
+  /(?<!\b(?:import|export)\b[^{};]*\{[^}]*)\bas\s+(?!const\b)[^;\n]*?\bLocale\b/,
   /(?<![\w$>)\]])<\s*Locale\s*>/,
   /\bas\s+['"](?:fr|en)['"]/,
   /\bas\s+typeof\s+DEFAULT_LOCALE\b/,
@@ -115,6 +117,19 @@ describe('aucune assertion vers une langue dans src/', () => {
     expect(detect('const m = new Map<string, Locale>()')).toBe(false)
     expect(detect('const l = (x as unknown as string[])[0]')).toBe(false)
     expect(detect("const names = ['fr', 'en'] as const")).toBe(false)
+    // `as const` et l'alias d'un import ou d'un export ne sont pas des assertions (R241 de la vingtième relecture).
+    expect(detect("const names = { fr: 'a', en: 'b' } as const satisfies Record<Locale, string>")).toBe(false)
+    expect(detect("const names = ['fr', 'en'] as const satisfies readonly Locale[]")).toBe(false)
+    expect(detect("import { SUPPORTED_LOCALES as ALL, type Locale } from '../domain/locale'")).toBe(false)
+    expect(detect("import type { A as B, Locale } from '../domain/locale'")).toBe(false)
+    expect(detect("import Def, { A as B, type Locale } from '../domain/locale'")).toBe(false)
+    expect(detect("import {\n  SUPPORTED_LOCALES as ALL,\n  type Locale,\n} from '../domain/locale'")).toBe(false)
+    expect(detect("export { ALL as SUPPORTED, type Locale } from '../domain/locale'")).toBe(false)
+    // Une assertion reste vue à côté d'un `as const`, d'un alias ou d'un import.
+    expect(detect('const l = x as const as Locale')).toBe(true)
+    expect(detect("import { A as B } from './a'\nconst l = x as Locale")).toBe(true)
+    expect(detect("import { A as B } from './a'\nconst l = x as Ref<Locale>")).toBe(true)
+    expect(detect("export { a as b }\nconst l = x as Locale | null")).toBe(true)
   })
 
   it('aucun fichier de src/ ne convertit une chaîne en Locale par une assertion', () => {
