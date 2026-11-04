@@ -168,7 +168,7 @@ comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur 
 
 ## Rendu
 Fichiers touchés, SHA du commit, preuve : commande et extrait du test rouge (raison de l'échec, ou mutation — la même que
-celle du corps du commit), lignes de
-résumé et codes de sortie des cibles make, des tests hors ligne et de check-claude-rules, taille des règles touchées,
+celle du corps du commit), lignes de résumé et codes de sortie des cibles make, des tests hors ligne et de
+check-claude-rules, taille des règles touchées,
 **écarts au plan, chacun nommé** (ce que la tâche disait, ce que le code fait, pourquoi : R181 les reporte au plan —
 la treizième relecture a reproché au plan de les avoir perdus), questions ouvertes.

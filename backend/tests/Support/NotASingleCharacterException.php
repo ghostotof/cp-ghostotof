@@ -8,7 +8,8 @@ use InvalidArgumentException;
 
 /**
  * {@see PhpSources::isChar()} ou {@see PhpSources::isAnyChar()} a reçu un
- * argument qui n'est pas un seul caractère (#748, St17-31, R220b).
+ * argument qui n'est pas un seul caractère (#748, St17-31 et R220b de la
+ * dix-septième relecture).
  *
  * L'argument est écrit dans le code d'un recenseur (`'('`, `','`) : c'est une
  * erreur de programmation. Acceptée, elle échouerait sans bruit — seul le

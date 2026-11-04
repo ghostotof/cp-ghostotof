@@ -16172,6 +16172,324 @@ est déclarée au commit de R217 **et** au bilan de R221 (« Écarts déclarés 
 la relecture le note sans y voir de défaut. **CR18-7** : écarté (Q3 (A), réponse du 2026-11-03) ; **St18-13** : corrigé
 par R227 (Q4 (A)).
 
+### Ce que la dix-neuvième série a réellement fait *(écrit par R234 le 2026-11-04)*
+
+Cette sous-section couvre **R222 à R233** (douze tâches) et les deux commits `docs` du fil principal en cours de série : la série que
+l'utilisateur nomme la dix-neuvième (la section garde son titre « dix-huitième relecture »). Elle est écrite par R234 sur HEAD 98c2f43f,
+après lecture du corps de chaque commit (`git log -1 --format=%B`) et rejeu des mesures : un écart n'y figure que s'il se lit dans le
+diff ou dans le message du commit, hors les mesures de R234, dites comme telles. Base de la série : `B=d3071a85`
+(`B=$(git log --grep='le plan de la dix-neuvième série' -1 --format=%H)`). **R234 ne refactore rien** : ce qu'il voit à restructurer se
+rend en question, en fin de sous-section.
+
+**Commits** (ordre réel). R222 bd0807cd (le brief) ; R223 b6f0adba ; R224 a3cdc790 ; R225 b12202bf ; R226 91ed87c7 ; R227 f8135c11 ;
+R228 b72a3e5f ; R229 208594c2 ; R230 179e4858 ; R231 d4173804 ; R232 d6a646f8 ; décisions D6 à D8 c9709139 (plan seulement) ; R233
+98c2f43f ; réponses de l'auteur à Q1 à Q4 8c38a279 (avant R222, plan seulement) ; R234 : le commit de ce balayage (`docs`). Entre `B` et
+HEAD : 14 commits, dont 12 de tâche et 2 `docs` du fil principal ; **104 fichiers** touchés (`git diff --name-only B...HEAD`, `tasks/`
+compris, 102 sans `tasks/`), 2 255 lignes ajoutées et 1 073 retirées. Trailers : 7 commits « Claude Opus 5.5 » (R223 à R227, les deux
+`docs`) et 7 « Claude Sonnet 5.5 » (R222, R228 à R233), comme le plan de la série précédente l'a dit : le trailer est celui du modèle
+de l'agent.
+
+#### Chaque tâche, conforme ou son écart réel
+
+- **R222** (bd0807cd) : conforme, un fichier (le brief), les Steps 1 à 5 lisibles dans le diff ; `security-user.md` 47 914 → 47 922 ;
+  `awk 'length>140'` du brief : 0 ; `tools/check-claude-rules.sh` exit=0 ; « Mutations : aucune (document sans code) ». Le corps dit qu'une
+  ligne courte reste au brief (« celle du corps du commit), lignes de », section « Rendu », hors du périmètre de D5 (e)) : **recollée
+  par R234** (voir plus bas).
+- **R223** (b6f0adba) : conforme, avec quatre écarts. (1) Le choix 2 du plan, `["'\`]?ps["'\`]?`, devient `["'\`]?ps["']?` : un accent
+  grave **après** le mot ferme la commande (la prose de `lib/smoke-http.sh:37` et `:178` écrit « ni dans `ps` ni dans une trace » :
+  deux fausses alertes avec la forme du plan), dit au corps et mutation M6. (2) Le « cas des formes bornées » est une liste
+  d'autorisation, `ps_bounded_to_self` (`-p $$`, `-o` et sa valeur, une grappe BSD de `e` et `w`, `$$` nommé), non la liste de refus
+  du plan (`-A`, `-e`, `a`, `x`) ; `measure_dump_output` refuse elle-même (rend 1, n'exécute rien) une ligne non bornée, en plus du
+  `fail` nommé ; un décompte dit combien de formes la mesure a lancées. (3) Forme voisine ajoutée : une ligne de blancs seuls dans une
+  valeur à plusieurs lignes est sautée comme une ligne vide (M4). (4) **Non déclaré** : le corps ne rend pas le rouge d'avant la
+  correction (Step 2, « Expected : FAIL ») ; les mutations M1 à M3 et M5 prouvent chaque cas
+  (`git log -1 --format=%B b6f0adba | grep -ciE 'rouge avant|test rouge|^- rouge'` rend 0 ; 1 pour R224, 1 pour R225, 2 pour R226).
+  Mutations (a) à (d) du plan = M1, M2, M3, M5 ; M4 et M6 en plus ; toutes attestées. `smoke-http` 535 → 554 (+19), 26 tests 1 115 → 1
+  134, shellcheck 0, `check-claude-rules` 0. `outillage-smoke.md` 26 016 → 27 113.
+- **R224** (a3cdc790) : conforme. Rouge avant la correction rendu (32 FAIL : 28 cas `writes` sur l'ancien texte et 4 corps retirés
+  admis) ; mutations (a) à (c) = M1 à M3, attestées (M3 : 30 échecs) ; les mesures du Step 1 sont rendues sur l'image épinglée 8.5.0
+  (`-D <corps>` : sortie 7 et 0 octet ; `-D <dossier>` : 23 ; `<d>/absent/../…` : 23 ; C18-6 : `<fichier>/` et `<dossier>/neuf/` : 23, rien
+  de touché) ; le texte `writes` n'est plus écrit qu'à trois endroits (`grep -rnF 'écrire sur un fichier de la Basic Auth' tools .claude`) ;
+  fonctions ≤ 25 lignes (19, 9, 10) ; `onze endroits` retiré. `smoke-http` 554 → 558 (+4), 26 tests 1 134 → 1 138, shellcheck 0.
+  `outillage-smoke.md` 27 113 → 27 663. Aucun écart au plan ; une forme voisine dite (l'égalité de chaîne vaut aussi pour le `-K` et son
+  dossier).
+- **R225** (b12202bf) : conforme (refactoring sauf C18-8), écarts déclarés. Rouge avant : 1 échec (« repère dans le détail d'un échec »).
+  Mutations (a) = M1, (b) = M2, (c) = M3 et M4 (4 échecs chacune, `smoke-http` vert : il n'appelle pas ces cas) ; M0 (C14-11 rouvert) en
+  plus. `smoke-http` 558 → 559 (+1, aucun cas fusionné), 26 tests 1 138 → 1 139 ; shellcheck 0 (`--network none`). `grep -n '"\$rc"'` : deux
+  lignes de docblock, dites. Écarts dits : le cas CDPATH porte désormais une Basic Auth pour les quatre tests ; les blocs « vide » et
+  « http:// » restent (une ligne de préparation) ; le cas `badname` de l'audit garde ses faux ; le test R199 « run_case : pas de code de
+  sortie » lit désormais `check_empty_basic_auth` (comportement changé exprès). `outillage-smoke.md` 27 663 → 28 222.
+- **R226** (91ed87c7) : conforme, **un fichier hors du « Files » du plan** (`backend/tests/Shared/Fixtures/ForcedTestValues/
+  print-fingerprints.php`, le script du fils de la sonde, dit au corps) et le mécanisme de lecture justifié (`createKernel()->
+  getEnvironment()` pour `APP_ENV`, `Container::getEnv()` par réflexion pour les autres). Rouge avant : 2 sorties rendues (le test du
+  shell, le cas `<env>` sans `force`). Mutations (a) = M1, (b) = M2, (c) = M3 ; M4 (`APP_ENV`, Q1 (A)) et M5 en plus, attestées.
+  `make back-test` 5 798 → **5 800** (+3 cas, −1), `back-quality` 0, `back-style-fix` 0 (« Fixed 0 of 691, 0 of 661 »), mais le corps ne
+  rend pas le `git status` que le Step 6 demande après lui (`grep -c 'git status'` : 0). `backend-outillage.md` 46 050 → 46 050 ;
+  `.claude/CLAUDE.md` 35 014 → 35 042. **Une ligne de 182 caractères au corps** (la ligne 36, « `SHELL_VERBOSITY` (`<server>` seul…) ;
+  `MCP_D8_AUTHOR_NAME`… », une ligne de prose, non une ligne rouge) : déclarée ici, **non réécrivable** (`--amend` interdit) ;
+  `git log -1 --format=%B 91ed87c7 | awk 'length>140'` la rend seule. Trois lignes de la série et cinq plus anciennes de
+  `ChildProcessHarnessTest.php` coupées (D5 (d)).
+- **R227** (f8135c11) : conforme. Rouge avant : 3 échecs et 2 modules absents. Mutations (a) à (d) = M1 à M4, M5 en plus (les cas sous
+  `de` d'une route à `:locale` ne dépendent pas du repli : M4 les laisse verts) ; tests 2 663 → 2 681 (+18), 185 → 187 fichiers ;
+  `frontend.md` 21 669 → 22 216, `frontend-session-bandeau.md` 12 973 → 12 982. Deux manques que le corps ne dit pas : la règle
+  `frontend-session-bandeau.md` nomme `useRouteLocale()` (l. 69) mais ses `paths:` ne le listaient pas (**corrigé par R234**) ; six lignes
+  de `src/` citent « R227 » sans série (recherche 9, question (f)). Lignes > 140 laissées, antérieures, dites : `frontend.md:8`,
+  `AppFooter.vue:34`, `LoginPage.spec.ts:227` et `:301`, `SetPasswordPage.spec.ts:109`.
+- **R228** (b72a3e5f) : conforme. Rouge avant : 1 échec (le détecteur ne voit pas `<Locale>x`) ; les huit cas Sp18-2 sont verts d'emblée
+  et prouvés par M3 (huit fois, 1 échec chacun). Mutations (a) = M1, (b) = M2, (c) = M3. Écart dit : `useIncidents` n'a pas de spec propre,
+  son cas est dans `IncidentsPage.spec.ts`. Tests 2 681 → 2 689 (+8) ; `frontend.md` 22 216 → 22 391 ; `grep -rn 'noLocaleCast\|
+  REMAINING_LOCALE_CASTS\|depuis R214' frontend .claude/rules` vide. Lignes > 140 de `OAuthConsentPage.spec.ts` (270, 296, 701, 732)
+  laissées au commit, coupées ensuite par R231 et R233 (il en reste une, l. 742, antérieure).
+- **R229** (208594c2) : conforme, deux écarts dits. Un helper hors du « Files » du plan (`tests/support/backofficeFetch.ts`) ; les six
+  cas de page sont verts d'emblée une fois l'assertion « aucun formulaire n'existe » remplacée par « l'entrée n'atteint pas la page », leur
+  rouge est M2. Rouge avant : 8 échecs. Mutations (a) = M1 (2 échecs), (b) = M2 (17 échecs : neuf dépôts, deux cas de
+  `supportedLocale.spec.ts`, six pages). Formes voisines (`grep -rnE ' as Admin[A-Za-z]*(Category|Kind|Status|Reason)\b'`) : la catégorie
+  des cartes « moi » corrigée, `status: 'pending' | 'active'` de `HttpAdminUserRepository` laissé (déclaré dans le type, sans `as`). Tests
+  2 689 → 2 698 (+9) ; `frontend-backoffice.md` 39 440 → 40 015. Deux lignes écrites par R229 disent « les neuf dépôts » (décompte
+  d'appelants, question (g)), et deux citent « R229 » sans série (question (f)).
+- **R230** (179e4858) : conforme (refactoring), aucun écart au plan, aucune règle. Rouge vu à la compilation : M1 (la clé `iconKey` ôtée)
+  rend `make front-build` exit=2 avec trois erreurs, dont `AdminQualityPage.vue(87,3)` et `(88,…)` : le type de la page suit le record.
+  Filet : 533 tests de `tests/presentation/pages/admin` (13 fichiers) avant et après, noms et verdicts identiques à `cmp` près aux trois
+  renommages ; 2 698 / 187 avant et après.
+- **R231** (d4173804) : conforme (refactoring), écarts dits. Rouge vu à la compilation (une sonde `catalogKeyProbe.ts` : `make front-build`
+  exit=0 avec `key: string`, exit=2 avec `CatalogKey`, sonde retirée ; 5-6 s avant et après). Mutations (a) = M1 (6 échecs, 5 fichiers),
+  (b) = M2 (3 échecs, 2 fichiers). Écarts : `AssistantPage.spec.ts` lit `fr.common.downloadCvError` et non `renderedMessage` (le plan disait
+  « par `renderedMessage` ») : le message n'a pas de paramètre, et la règle que la tâche écrit dit qu'un tel message se lit du catalogue ;
+  le `grep` de `createAppI18n().global.t` est **vide** (le plan attendait `renderedMessage.ts` et `adminButtonTexts.ts` s'ils gardaient une
+  interpolation) ; les constantes `_FR` qui restent sont dites (question (c)). 2 698 / 187 avant et après ; `frontend.md` 22 391 → 22 969.
+- **R232** (d6a646f8) : conforme (refactoring), écarts dits. Relevé déséchappé rejoué : FR 100 égalités + 167 extraits (admin : 25 + 67),
+  EN 26 + 32 (admin : 9 + 7), après FR 99 + 110 (admin : 24 + 10), EN 26 + 31 (admin : 9 + 6). Rouges avant : 59 couples FR et 13 EN du
+  périmètre, dont 22 FR et 4 EN rouges (57 échecs) ; après conversion il en reste 5 FR et 3 EN, les cas dont la rédaction est le sujet
+  (`adminTranslationTexts.spec.ts`, deux cas d'`AdminUsersPage.spec.ts`). Mutations M1 à M3 (constantes : 10, 6, 12 échecs), M4 (le relevé).
+  `fr.json` et `en.json` intacts (`git diff --exit-code`), `AdminAboutPage.spec.ts` : plus aucune ligne > 140 écrite par la série (huit
+  lignes antérieures). Les questions rendues (AdminUsersPage #410, trois gardes négatives de « Contenu non chargé ») sont tranchées par D6
+  et D7. La mutation se pose « après le premier caractère du littéral » et non de la valeur (reprise de R219c, dit). « 187 fichiers » du
+  corps = les **specs** ; le relevé lit 209 fichiers `.ts` (187 specs et 22 modules de `tests/support`, le chiffre de R233 :
+  `find frontend/tests -name '*.ts' | wc -l` rend 209, `-name '*.spec.ts'` 187).
+- **R233** (98c2f43f) : conforme à D3, D6, D7 et D8. Relevé hors admin : avant FR 75 + 100, EN 17 + 25 ; après FR 74 + 7, EN 17 + 4
+  (toutes en mutation verte, raison dite). Rouges avant : 221 couples FR (64 rouges, 83 échecs) et 75 EN (13 rouges, 13 échecs) ; M2
+  les rejoue après conversion : 0 échec. D7 : les cinq gardes négatives de R232 (AdminCaseStudiesPage ×2, AdminWatchPage ×1,
+  AdminLayout.sessionEnded ×2) et celles de LoginPage, McpConnectionsPage et StackPage lisent la clé de leur positif ; M4 (StackPage)
+  et M5 (McpConnectionsPage) en donnent la preuve. D6 : aucun cas de ce périmètre n'a pour sujet la rédaction. D8 : `frontend.md` 22
+  969 → 24 170 (le paragraphe « Tests read the catalogue » remplacé). Un angle mort du relevé (un littéral à la fois égalité et
+  extrait) est trouvé et traité à la main (`startsWith('Révoquer')` → `renderedMessage('fr', 'mcpConnections.revokeAria', …)`) ; le
+  script du scratchpad n'est pas corrigé (question (d)). Sept lignes > 140 dans les fichiers touchés, toutes antérieures. `#753` :
+  aucune ligne croisée. Tests 2 698 / 187.
+
+#### Décisions de l'auteur en cours de série et réponses suivies
+
+**Q1 à Q4, (A) toutes** (8c38a279, 2026-11-03) : Q1 `APP_ENV` forcé comme D1 (R226 : `<env name="APP_ENV" … force="true">`, mutation
+M4, empreinte seule) ; Q2 un seul texte de refus, « peut écrire » (R224 : `CASE_WRITE_REFUSAL`, mutation M3) ; Q3 CR18-7 écarté, la
+décision f0a3b889 de R216b tient (aucune tâche) ; Q4 `useRouteLocale()` et `pageLocale` (R227). **D1 à D5** : D1 R226 ; D2 R223 ; D3
+R232 et R233 ; D4 R227 ; D5 (a) R228 à R230 (mais voir la recherche 9), (b) R226 et R228 (recherche 4 : aucun récit), (c) R231
+(recherche 8 : trois nouveaux), (d) R226, R231 à R233 (recherche 5 : 0 ligne de code écrite par la série au-delà de 140), (e) R222,
+(f) R224, (g) rectifié. **D6 à D8** (c9709139, 2026-11-04, questions de R232), appliquées par R233 : D6 (aucun cas de rédaction dans
+son périmètre ; l'exception de R232 reste, écrite à `frontend.md`), D7 (les cinq gardes de R232 et celles de LoginPage,
+McpConnectionsPage et StackPage), D8 (`frontend.md`). **C17-7** : la rotation du jeton exposé par l'incident de R197 est **à la charge
+de l'auteur, hors session** (« Je gère », 2026-11-01) ; rien dans ce plan ni dans cette série ne la fait ni ne la vérifie. **À
+confirmer par lui seul.**
+
+#### Les recherches de R234
+
+```bash
+X=(--exclude='.env*' --exclude-dir=jwt --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=var --exclude-dir=.git)
+P=(.claude docs frontend/src frontend/tests backend/src backend/tests tools)
+B=$(git log --grep='le plan de la dix-neuvième série' -1 --format=%H)   # d3071a85
+git diff --name-only --diff-filter=ACMR $B...HEAD | grep -v '^tasks/'                         # 102 fichiers, listés dans live.txt
+```
+
+**1. Noms disparus** : **1** ligne, `tools/tests/lib/smoke-cases.sh:353`, `CASE_WRITE_REFUSAL="…peut écrire…"` (l'oracle renommé : le motif
+`WRITE_REFUSAL=` en est un suffixe). Manques vérifiés, un `grep -rnF -e <nom> "${P[@]}"` par nom : `_smoke_writes_in_auth_dir` 0,
+`REMAINING_LOCALE_CASTS` 0, `noLocaleCast` 0, `function unsupportedLocale(` 0, `entryFieldsOf` 0, `EntryFieldOptions` 0, `syncLocale` 0.
+
+```bash
+grep -rn "${X[@]}" -e _smoke_writes_in_auth_dir -e 'WRITE_REFUSAL=' -e REMAINING_LOCALE_CASTS -e noLocaleCast \
+  -e 'function unsupportedLocale(' -e entryFieldsOf -e EntryFieldOptions -e syncLocale "${P[@]}"
+```
+
+**2. Décomptes d'appelants et vocabulaire**, la recherche 2 de R221 rejouée sur les 102 fichiers : **13** lignes.
+
+```bash
+xargs -a live.txt grep -nE -e 'huit formulaires' -e 'jamais un fichier lu' -e 'jugée pour cinq' -e '\bnine\b' -e '\bfive\b' \
+  -e '\bsept\b' -e '\bhuit\b' -e '\bneuf\b' -e '\bseven\b' -e '\beight\b' /dev/null
+```
+
+Cinq sont des nombres du domaine, antérieurs : `.claude/CLAUDE.md:35` (« eight ordered tables »), `:39` (« the seven below »), `:383`
+(« five plans »), `backend-outillage.md:387` (« five representative requests »), `frontend-backoffice.md:298` (« all five fields »).
+Huit « neuf » : cinq au sens de « nouveau » ou un nom de dossier (`AdminQualityEntrySection.vue:294`, `qualityEntrySection.ts:33`,
+`router/index.ts:215`, `smoke-http.sh:422` et `smoke-http.test.sh:836`, « `<dossier>/neuf/` »), un nombre mesuré antérieur
+(`AppHeader.spec.ts:389`, « neuf entrées », l'issue #70) et **deux décomptes d'appelants écrits par R229** : `supportedLocale.ts:5` et
+`supportedLocale.spec.ts:31` (« les neuf dépôts »). **Rendus en question** (g).
+
+**3. Identifiants de constat dans les noms de tests** (la recherche 3 de R221, commandes identiques) : **17** lignes, **0** écrite par la
+série (`git blame` + `git merge-base --is-ancestor`), les mêmes qu'aux séries précédentes.
+
+**4. Récits au passé** : `git diff --name-only --diff-filter=ACMR $B...HEAD -- frontend backend tools .claude` rend 102 fichiers ; la
+première expression de la recherche 4 de R221 rend **82** lignes, dont **6** écrites par la série : `ChildProcessHarnessTest.php:293`
+et `:327` (« ne force plus », « ne pose plus » : le message d'une précondition, au présent), `localeSourceGuards.spec.ts:16` (« un
+fichier de plus »), `smoke-http.sh:452` (« n'est plus un fichier que le smoke tient »), `smoke-cases.sh:48` (« le plus souvent »),
+`smoke-http.test.sh:1492` (« n'est plus une option ») : **aucun récit**, des états présents ou des faux positifs. La seconde (lignes
+ajoutées, `git diff -U0 $B`) rend **16** lignes, toutes des états présents ou conditionnels (« corps retiré » est un terme du domaine,
+« a été appelé » décrit l'état d'un test) : aucun récit, aucune ne contient « depuis R » ni « avant R ».
+
+**5. Longueurs**. Fichiers touchés hors `tasks/` : `awk 'length>140'` rend **94** lignes, **0 écrite par la série** (`git blame`) ; les
+lignes ajoutées de plus de 140 (`git diff -U0 $B...HEAD -- . ':!tasks' | grep -E '^\+[^+]' | awk 'length>141'`) : **0**. Les 94 : 30 dans
+`.claude/CLAUDE.md`, 21 `smoke-mcp.test.sh`, 9 `smoke-login-throttling.test.sh`, 8 `AdminAboutPage.spec.ts` (l. 147-151, 157, 829, 882),
+7 `backend-outillage.md`, 4 `frontend-backoffice.md`, 1 `frontend.md` (l. 8, 161 caractères), 1 `smoke-dead-session-cookie.test.sh`, et
+côté frontend `AppFooter.vue:34`, `AdminLayout.sessionEnded.spec.ts:200`, `AdminLayout.spec.ts:60` et `:149`, `LoginPage.spec.ts:227` et
+`:301`, `McpConnectionsPage.spec.ts:424` et `:535`, `OAuthConsentPage.spec.ts:742`, `SetPasswordPage.spec.ts:109`,
+`AdminAnonymousCvPage.spec.ts:10`, `AdminUsersPage.spec.ts:22` et `:292`. Hors des fichiers touchés : `AccountMenu.spec.ts` 1,
+`useAccountPasswordSetup.spec.ts` 1, `useAuth.spec.ts` 2, `useMcpConnections.spec.ts` 1, `useOAuthConsent.spec.ts` 1,
+`AdminTechnologiesPage.spec.ts` 5. Le dépôt entier, code (`ts`, `vue`, `php`, `sh`, `js`, `py`) : frontend/src 81, frontend/tests 77,
+backend/src 295, backend/tests 2 072, tools 171, soit **2 696** lignes. Règles : mêmes nombres qu'à la base (recherche 6). Corps de commit :
+
+```bash
+for c in $(git rev-list $B..HEAD); do git log -1 --format=%B $c | awk -v c="$c" 'length>140 {print c": "length}'; done
+```
+
+rend **une** ligne : 91ed87c7 (182, R226), déclarée plus haut. Question (e).
+
+**6. Moignons et coupes**, les six règles touchées (`outillage-smoke`, `frontend`, `frontend-backoffice`, `frontend-session-bandeau`,
+`backend-outillage` et `.claude/CLAUDE.md`), les quatre recherches du brief, HEAD contre `git show $B:<règle>` : ponctuation de tête
+**0**, guillemets orphelins **0**, accents graves impairs **0** (`backend-outillage.md` 8 et `.claude/CLAUDE.md` 10, antérieurs, même
+nombre à la base) ; lignes de 45 caractères ou moins (`awk 'length<=45 && NF'`) : 11, 22, 19, 8, 16 et 50, **au même nombre qu'à la
+base** ; lignes > 140 : 0, 1, 4, 0, 7 et 30, au même nombre aussi. `git blame` désigne **une** ligne courte écrite par la série :
+`frontend.md:143` (« `applySeoMeta(route)` for the title (D4). », 41 caractères), la **fin d'un paragraphe**, non un moignon.
+
+```bash
+for r in outillage-smoke frontend frontend-backoffice frontend-session-bandeau backend-outillage; do f=.claude/rules/$r.md
+  awk 'length<=45 && NF' $f ; grep -nE '^[[:space:]]*[,;:.)»]' $f ; perl -ne 'print "$.\n" if (() = /\x60/g) % 2' $f
+  grep -nE '«[[:space:]]*$|^[[:space:]]*»' $f ; awk 'length>140' $f ; done          # puis les mêmes mesures sur git show $B:$f
+```
+
+**7. Règles relues avec `Read`** : `outillage-smoke.md` en entier, `frontend-session-bandeau.md` en entier, `backend-outillage.md`,
+`frontend.md`, `frontend-backoffice.md` et `.claude/CLAUDE.md` (chargés par les lectures). Contre le code de HEAD : **aucune phrase
+fausse**. Vérifiés : les 83 identifiants entre accents graves d'`outillage-smoke.md` existent dans `tools/` (seul `curl_ssl_backend`
+manque : un nom de la page de manuel de curl, cité comme tel) ; `phpunit.dist.xml` force bien par `<env force>` après chaque `<server>` les
+six noms (`APP_ENV`, `CONTACT_SENDER_EMAIL`, `CONTACT_RECIPIENT_EMAIL`, `ANTHROPIC_API_KEY`, `SCALEWAY_AI_API_KEY`,
+`SCALEWAY_AI_PROJECT_ID`) et `MCP_D8_AUTHOR_NAME` sans `force` ; `OWN_ENVIRONMENT` compte deux entrées, celles que la règle nomme ;
+`accessRefusalTexts(locale)`, `accountMenuTexts(locale)`, `renderedMessage`, `setUnsupportedLocale` existent. Règles modifiées par la
+série : six (celles ci-dessus et rien d'autre : `git show --name-only` de chaque commit), **chacune nommée au message de chaque commit
+qui la touche** (R223 à R225, R226, R227, R228, R229, R231, R233). **Un manque** : `frontend-session-bandeau.md` nommait `useRouteLocale()`
+sans l'avoir dans ses `paths:` (voir plus bas). Aucune phrase remplacée.
+
+**8. Docblocks** : dans `frontend/src`, `frontend/tests/support`, `backend/tests/Support` et `tools/`, les commentaires et docblocks de
+trois lignes au plus que la série a écrits : **48** (le script `docblocks.py` de R221, rejoué sur `B`). **Trois** ne font que redire le
+membre : `qualityEntrySection.ts:189` (« Les noms de champs d'un trait, lus du record. » sur `QualityTraitField = keyof typeof
+QUALITY_TRAIT_FIELD_OPTIONS`), `accessRefusalTexts.ts:5` (« Les catalogues par langue, lus tels que les fichiers JSON les écrivent. » sur
+`{ fr, en }`) et `adminButtonTexts.ts:32` (« Enregistrer, annuler, supprimer : les boutons du formulaire d'une entrée… » sur
+`EntryFormTexts = { save, cancel, delete }`, que seul « non ceux de la barre d'ordre » distingue). Les 45 autres disent une provenance, une
+contrainte ou un usage. **Rendus en question** (h). Aucun docblock rétabli par une tâche de la série n'est réécrit.
+
+**9. Numéros de tâche dans `src/`** : `grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l` rend **315** lignes (318 à d0b896c1) ;
+`git blame` : **11** écrites dans `B..HEAD`, toutes dans `frontend/src` (`backend/src` : 0). **3** portent leur série et leur règle
+(`qualityEntrySection.ts:7, 15, 20`) ; **2** sont des identifiants de constat seuls, permis en commentaire (`LocaleSwitcher.vue:20` CR18-1,
+`HttpAdminAboutMeCardRepository.ts:97` CR18-4) ; **6 citent un numéro de tâche seul**, non 0 : `seo.ts:37`, `useRouteLocale.ts:8`,
+`interfaceLocale.ts:6` et `LocaleSwitcher.vue:16` (« #748, R227 »), `AdminAboutMeCard.ts:15` et `supportedLocale.ts:4` (« #748, R229 »).
+D5 (a) visait les lignes de R213 à R215 ; ces six, nées de R227 et R229, la rouvrent. **Rendu en question** (f).
+
+```bash
+grep -rnE 'R[0-9]+' frontend/src backend/src | wc -l          # 315
+# puis git blame -L <ligne>,<ligne> --porcelain de chacune, git merge-base --is-ancestor <commit> $B : 11 hors de B
+```
+
+**10. Mutations** (`git log --format='%h %s%n%b' "$B"..HEAD`) : lues dans le corps de chaque commit de tâche. **Aucune mutation que le
+plan annonce n'est « non attestée »**, et chacune porte sa méthode, sa commande, sa ligne rouge et sa ligne `restauré :` ; le fichier muté
+que la tâche ne modifie pas est restauré par `git diff --exit-code` (R225 M0, R228 M1 et M3, R233 M4 et M5, R232 et R233 pour les deux
+catalogues), celui qu'elle modifie par `cmp` contre une copie d'après sa modification. **Chaque vérification que la tâche nomme rend son
+code de sortie au corps**, sauf deux manques dits plus haut (R223 : le rouge d'avant la correction ; R226 : le `git status` après
+`back-style-fix`). Détail (échecs entre parenthèses) :
+
+- **R222** : aucune (texte seul). **R223** : M1 le retrait des non-lettres ôté (4) ; M2 les guillemets ôtés de `ps_word` (3) ; M3 le
+  refus des blancs ôté (3) ; M4 la ligne de blancs écrite en motif (3) ; M5 `'ps -auxe'` remis dans `dump_printing` (2, la ligne n'est
+  pas exécutée : « 26 formes sur 27 ») ; M6 l'accent grave admis après le mot (2) = (a), (b), (c), (d) du plan, M4 et M6 en plus.
+- **R224** : M1 l'égalité de chaîne ôtée (2) ; M2 le `-f` de `--data-binary` ôté (2) ; M3 l'ancien texte `writes` rétabli (30) = (a) à (c).
+- **R225** : M0 `CDPATH` ôté du `source` de `smoke-mcp.sh` (1) ; M1 le filtre de `CASE_CALLS` ôté (1) ; M2 le lanceur qui rend
+  toujours 0 (3) ; M3 `[ -z "$carriers" ]` inversé (4, un par test qui l'appelle) ; M4 la vérification du cas CDPATH inversée (4) =
+  (a), (b), (c), M0 en plus.
+- **R226** : M1 l'`<env force>` d'`ANTHROPIC_API_KEY` retiré (1) ; M2 le filtre `force()` ôté (1) ; M3 celui de `CONTACT_SENDER_EMAIL` (1) =
+  (a), (b), (c) ; M4 celui d'`APP_ENV` (1, Q1) ; M5 la boucle d'`isAnyChar` retirée (1).
+- **R227** : M1 `query: route.query` ôté (2) ; M2 la branche sans préfixe qui pousse (1) ; M3 `applySeoMeta(route)` retiré (1) ; M4 le repli
+  brut (4) = (a) à (d) ; M5 le repli seul remplacé (8), en plus.
+- **R228** : M1 `as typeof DEFAULT_LOCALE` dans `NotFoundPage.vue` (1) ; M2 `<Locale>` retiré de `LOCALE_CASTS` (1) ; M3 huit
+  composables (1 chacun).
+- **R229** : M1 `isAdminAboutMeCardCategory` toujours vrai (2) ; M2 `supportedLocaleOf` ne juge plus (17).
+- **R230** : M1 la clé `iconKey` ôtée (3 erreurs TS, `make front-build` exit=2). **R231** : M1 (6) ; M2 (3). **R232** : M1 (10), M2 (6), M3
+  (12) ; M4 le relevé (22 FR + 4 EN rouges avant, 5 FR + 3 EN après). **R233** : M1 (64 FR, 13 EN rouges avant), M2 (0 après), M3 (0 :
+  « rouge : aucune », le relevé final), M4 (1), M5 (2).
+
+Au total **41 entrées de mutation** dans les corps (M0 à M6 de R223 à R233 ; chaque entrée de clés de catalogue couvre une exécution par
+couple). « Rouge : aucune » écrit au corps : R233 M2 et M3, par construction (la preuve que les littéraux restants ne sont pas ceux du
+catalogue). R222 n'a pas de mutation (texte), R230 et R231 sont des refactorings dont le rouge est la compilation.
+
+**Une mutation de R234** (mesure, hors commit) pour la question (a) : dans `tools/tests/smoke-http.test.sh`, la branche `*)` de
+`ps_lists_environment` remplacée par `*) return 0 ;;` (chaque mot sans tiret refusé) laisse `bash tools/tests/smoke-http.test.sh` à
+**exit=0, 559 `ok`, aucun FAIL** : `ps -p 1` et `ps -p 1 -o comm=` ne jugent jamais le `1` (valeur de `-p`, sautée), et `"ps" -ef` n'a
+aucun mot sans tiret. Méthode : `python3 -I` (copie `smoke-http.test.sh.orig`, `cmp`) ; restauré : `cmp` → 0, `git diff --exit-code --
+tools/tests/smoke-http.test.sh` → 0.
+
+**11. D2** : `grep -n 'ps -auxe\|ps -eaux' tools/tests/smoke-http.test.sh` rend 5 lignes : 1468, 1605 et 1612 sont des commentaires, 1845 et
+1846 sont dans `dump_forbidden` (l. 1722-1847) ; **aucune** dans `dump_printing` (l. 1577-1609).
+
+#### Nombres de tests, taille des règles
+
+**Tests** (codes lus sans pipe, sur HEAD 98c2f43f plus les quatre modifications de R234 hors cette sous-section : commentaires, un
+`paths:`, le brief) : `make front-test` exit=0, **2 698** tests dans **187** fichiers (2 663 / 185 au départ : +18 R227, +8 R228, +9
+R229, 0 ensuite) ; `make front-lint` 0 ; `make front-build` 0 ; `make back-test` exit=0, **OK (5 800 tests, 116 074 assertions)** (5
+798 au départ : +3 −1 R226) ; `make back-quality` 0. Les 26 `tools/tests/*.test.sh` à 0, **1 139** `ok` (1 115 au départ : +19 R223,
++4 R224, +1 R225) : `smoke-http` **559** (535 → 554 → 558 → 559), `smoke-mcp` **44**, `audit-prod` **40**, `smoke-login-throttling`
+**30**, `smoke-dead-session-cookie` **41** (inchangés) ; shellcheck non rejoué par R234 (aucun fichier de `tools/` touché ; dernier
+rendu : R225, exit=0).
+
+**Tailles des règles touchées** (octets ; base de la série → HEAD) : `outillage-smoke.md` 26 016 → **28 222** (R223 27 113, R224 27 663,
+R225 28 222), `frontend.md` 21 669 → **24 170** (R227 22 216, R228 22 391, R231 22 969, R233 24 170), `frontend-backoffice.md` 39 440 →
+**40 015** (R229), `frontend-session-bandeau.md` 12 973 → **13 039** (R227 12 982, R234 13 039), `backend-outillage.md` 46 050 → **46 050**
+(R226 : taille égale, St18-34), `.claude/CLAUDE.md` 35 014 → **35 042** (R226). Non touchées : `backoffice-api.md` **39 834**,
+`security-user.md` **47 922**. Toutes < 50 000 ; la plus grande, `security-user.md`. `tools/check-claude-rules.sh` : « Règles .claude/
+conformes. », exit=0.
+
+#### Ce que R234 a modifié
+
+Cinq fichiers : cette sous-section ; `tasks/relectures-748/brief-commun-agents.md` (le moignon « celle du corps du commit), lignes de »
+recollé à sa voisine, sans mot changé : `diff` des suites de mots (`tr -s '[:space:]' '\n'`) vide, `awk 'length>140'` vide, 2 lignes
+changées) ; `backend/tests/Shared/PhpSourcesTest.php:18` et `backend/tests/Support/NotASingleCharacterException.php:11` (« #748, R220b »
+→ « R220b de la dix-septième relecture », commentaires seuls, comme D5 (a) l'a fait ailleurs ; `make back-test` et `make back-quality`
+à 0 après) ; `.claude/rules/frontend-session-bandeau.md` (le chemin `frontend/src/presentation/router/useRouteLocale.ts` ajouté à
+ses `paths:`, 12 982 → 13 039 octets, `check-claude-rules` à 0). Aucun test, aucune assertion, aucun nom de test ne change.
+
+#### Questions ouvertes (rendues, non décidées)
+
+- (a) **Les trois cas voisins de R223** (`ps -p 1`, `ps -p 1 -o comm=`, `"ps" -ef`) sont verts d'emblée **et** insensibles à toutes les
+  mutations du plan ; la mesure de la recherche 10 le montre pour le jugement des mots sans tiret (`*) return 0 ;;` : exit=0, 559 `ok`).
+  Les ajouter est un filet de non-régression de l'admission, non de la garde. Recommandation : garder les trois comme témoins d'admission,
+  dits tels, et ajouter à `dump_allowed` un mot de chiffres seuls qui n'est pas la valeur de `-p` (`ps 1`, la sélection BSD d'un processus),
+  que la mutation `*) return 0 ;;` fait rougir ; coût : une ligne et sa mutation.
+- (b) **Les cinq `lines_with_values`** qui affichent la valeur générée dans un détail d'échec (`audit-prod.test.sh:527`,
+  `smoke-http.test.sh:281`, `:332`, `:546`, `:702` ; `audit-prod.test.sh:162` ne l'imprime pas, il compte) et les détails qui citent une
+  valeur littérale déjà écrite dans le test (`smoke:p"a\ss`, `u:p\nurl = "x"`). Recommandation : les laisser, la valeur est tirée au hasard
+  à chaque lancement et la ligne qui la porte est la preuve de la fuite que l'échec dénonce (leur docblock le dit) ; la littérale est déjà
+  dans le source.
+- (c) **Les constantes `_FR` monolingues** de `entryFormLockTexts.ts` (7) et `adminTranslationTexts.ts` (5) : la règle de R231 veut une
+  fonction par langue pour un module qui sert les deux. Recommandation : les laisser, elles ne servent qu'une langue (le suffixe le dit) ;
+  les passer en fonctions de `Locale` le jour où un spec anglais les lit.
+- (d) **L'angle mort du relevé de R233** (un littéral à la fois égalité et extrait est classé égalité seul) : une seule autre ligne
+  trouvée (`AppHeader.spec.ts:504`, `toContain('Parcours')`, mutation verte, libellé de la fixture de navigation), sans suite. Le script
+  `releve20.py` / `mutkey20.py` du scratchpad n'est pas corrigé. Recommandation : le corriger (classer le littéral dans les deux) avant
+  un prochain rejeu ; aucun changement du dépôt.
+- (e) **Les lignes de code > 140 antérieures à la série** (recherche 5) : 94 dans les fichiers touchés, 2 696 dans le dépôt, 0 écrite
+  par la série. Recommandation : les **déclarer hors périmètre** (D5 (d) vaut pour ce qu'une tâche écrit : couper 2 696 lignes de code
+  est un reformatage de masse, que `git blame` rendrait illisible) et couper une ligne de plus de 140 quand une tâche la modifie.
+  Autre réponse : les couper dans la série suivante, dans l'ordre des fichiers de la liste de la recherche 5. S'y ajoute le corps de
+  91ed87c7 (182, non réécrivable).
+- (f) **Six numéros de tâche seuls** dans `frontend/src` (recherche 9 : R227 ×4, R229 ×2). Recommandation : leur donner leur série et leur
+  règle comme D5 (a), en commentaire seulement : « #748, R227 de la dix-huitième relecture, `frontend.md` (i18n) » et « #748, R229 de la
+  dix-huitième relecture, `frontend-backoffice.md` (Existing resources) » ; `make front-lint` et `make front-build` à relancer.
+- (g) **Deux décomptes d'appelants** (`supportedLocale.ts:5`, `supportedLocale.spec.ts:31`, « les neuf dépôts ») : les reformuler
+  (« chaque dépôt du backoffice ») comme R221 l'a fait pour `orderProblems.ts:10` ?
+- (h) **Trois docblocks qui redisent le membre** (recherche 8) : `qualityEntrySection.ts:189`, `accessRefusalTexts.ts:5`,
+  `adminButtonTexts.ts:32` : les retirer, comme D5 (c) l'a fait pour `accessRefusalTexts.ts:29` et `adminButtonTexts.ts:62` ? (Le
+  dernier garde sa distinction « non ceux de la barre d'ordre » si on le réécrit.)
+
 ---
 
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**

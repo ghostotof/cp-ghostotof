@@ -15,7 +15,8 @@ use PHPUnit\Framework\TestCase;
  * le premier octet de leur argument, et une chaîne plus longue ne doit pas
  * passer pour le caractère qu'elle commence. Le refus est une exception
  * nommée, non un `\assert()` : ces cas tournent sous `zend.assertions=-1` (la
- * CI) comme sous 1 (le conteneur de dev), sans saut (#748, R220b).
+ * CI) comme sous 1 (le conteneur de dev), sans saut (#748, R220b de la
+ * dix-septième relecture).
  */
 final class PhpSourcesTest extends TestCase
 {

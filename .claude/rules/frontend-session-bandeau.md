@@ -7,6 +7,7 @@ paths:
   - "frontend/src/presentation/router/sessionEnded.ts"
   - "frontend/src/presentation/router/reauthentication.ts"
   - "frontend/src/presentation/router/routeLocale.ts"
+  - "frontend/src/presentation/router/useRouteLocale.ts"
   - "frontend/src/presentation/layout/AppHeader.vue"
   - "frontend/src/presentation/layout/usePublishedHeight.ts"
   - "frontend/src/presentation/layout/AdminLayout.vue"
