@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { ABOUT_CONTENT_REPOSITORY, useAboutContent } from '../../../src/application/about/useAboutContent'
 import type { AboutContentRepository } from '../../../src/domain/about/repositories/AboutContentRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 
 const STUB_CONTENT = {
   site: { eyebrow: 'À propos', cards: [] },
@@ -25,7 +26,7 @@ function createStubRepository(overrides: Partial<AboutContentRepository> = {}): 
   }
 }
 
-function mountWithComposable(repository: AboutContentRepository) {
+function mountWithComposable(repository: AboutContentRepository, i18n = createAppI18n()) {
   let captured: ReturnType<typeof useAboutContent> | undefined
 
   const Probe = defineComponent({
@@ -37,7 +38,7 @@ function mountWithComposable(repository: AboutContentRepository) {
 
   mount(Probe, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [i18n],
       provide: { [ABOUT_CONTENT_REPOSITORY as symbol]: repository },
     },
   })
@@ -86,5 +87,17 @@ describe('useAboutContent', () => {
 
     expect(hasError.value).toBe(true)
     expect(isLoading.value).toBe(false)
+  })
+
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const repository = createStubRepository()
+
+    mountWithComposable(repository, i18n)
+    await flushPromises()
+
+    expect(repository.get).toHaveBeenCalledWith('fr')
+    expect(repository.get).not.toHaveBeenCalledWith('de')
   })
 })

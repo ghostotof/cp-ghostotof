@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSiteCards } from '../../../application/admin/about/useAdminAboutSiteCards'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -22,6 +20,14 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
+import { SITE_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -49,26 +55,20 @@ import type { AdminAboutSiteCard } from '../../../domain/admin/about/entities/Ad
  * **Le verrou d'ordre (D6) est global à la page** : cette section reçoit
  * `isLocked` et annonce son propre `orderDirtyChange`, la page faisant la
  * somme. Un seul brouillon modifié, où qu'il soit, désactive toutes les
- * mutations — un état, une aide, une règle à retenir.
+ * mutations — un état, une aide, une règle à retenir. Le refus de traduire lit
+ * **son** brouillon (`isOrderDirty`) tout de suite et ceux des autres sections
+ * par `isLocked`, à jour après le rendu de la page : voir la limite dans
+ * `AdminQualityPage`.
  */
 
-defineProps<{ isLocked: boolean; lockedHintId?: string }>()
+const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
 const emit = defineEmits<{ orderDirtyChange: [isDirty: boolean] }>()
 
 const { t } = useI18n()
 
-const { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminAboutSiteCards()
+const { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminAboutSiteCards()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
-
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
-
-/**
- * Prose d'une carte du site. Le complément de cette liste — `iconKey` — est ce
- * que « Créer la version XX » recopie de l'entrée existante : une clé d'icône
- * n'a pas de traduction (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité.
- */
-const PROSE_FIELDS = ['title', 'description'] as const
 
 /**
  * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
@@ -91,28 +91,16 @@ const form = reactive<SiteCardForm>({
   iconKey: '',
 })
 
-const editingId = ref<string | null>(null)
-const isSubmitting = ref(false)
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
+
 const isEditing = computed(() => null !== editingId.value)
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher la
- * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
- * aucune traduction et que le sélecteur affichait donc « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
-
-/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const proposalSourceLocale = ref<Locale | null>(null)
-
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const lock = useEntryFormLock({
+  hintId: 'admin-about-site-card-entry-lock-help',
+  isEditing,
+  proposalSourceLocale,
+  localeHelpId: 'admin-about-site-card-locale-help',
+})
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const rows = computed(() => groupByTranslationGroup(cards.value, SUPPORTED_LOCALES))
@@ -129,6 +117,37 @@ const {
   serverKeys: () => rows.value.map((row) => row.key),
   reorder,
   reload: load,
+})
+
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-site-card',
+  form,
+  proseFields: SITE_CARD_PROSE_FIELDS,
+  // Son brouillon d'ordre est lu tout de suite, celui des autres sections par `props.isLocked` : la limite de cette
+  // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
+  isRefused: () => isSubmitting.value || isOrderDirty.value || props.isLocked || lock.isProposalLocked,
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
 })
 
 // Le verrou est global à la page : elle seule connaît l'état des quatre
@@ -161,6 +180,7 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -177,6 +197,7 @@ function resetForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEdit(card: AdminAboutSiteCard): void {
+  renewForm()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -191,10 +212,11 @@ function startEdit(card: AdminAboutSiteCard): void {
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante — qu'adopte le sélecteur du formulaire. Les champs
  * non-prose sont recopiés de l'entrée existante (ici `iconKey`, cf.
- * PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
+ * SITE_CARD_PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutSiteCard>, locale: Locale): void {
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -220,40 +242,17 @@ async function handleSubmit(): Promise<void> {
     iconKey: '' === form.iconKey ? null : form.iconKey,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
 
-/**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
- * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
- * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
- * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
@@ -261,7 +260,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
     return
   }
 
-  await remove(card.id)
+  await removeEntry(card, () => remove(card.id))
 }
 </script>
 
@@ -275,11 +274,12 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       novalidate
       @submit.prevent="handleSubmit"
     >
+      <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
         id="admin-about-site-card-locale"
         v-model="form.locale"
-        :disabled="isEditing"
-        aria-describedby="admin-about-site-card-locale-help"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.localeDescribedBy"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -289,21 +289,29 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       >
         {{ t('admin.about.localeHelp') }}
       </p>
+      <EntryFormLockHint
+        :id="lock.hintId"
+        :state="lock.state"
+      />
       <BaseSelect
         id="admin-about-site-card-translation-group"
         v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.about.translationOfLabel')"
         :options="translationOptions"
       />
       <BaseTextInput
         id="admin-about-site-card-title"
         v-model="form.title"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.siteCard.titleLabel')"
         required
       />
       <BaseTextarea
         id="admin-about-site-card-description"
         v-model="form.description"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.siteCard.descriptionLabel')"
         required
       />
@@ -322,11 +330,18 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         <TranslateEntryButton
           :form-locale="form.locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSubmitting || isLocked"
-          :aria-describedby="lockedHintId"
+          :is-expired-call-pending="isExpiredCallPending"
+          :hint-id="translationHintId"
+          :disabled="isTranslationRefused"
+          :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"
         />
       </div>
+
+      <TranslationReadonlyHint
+        :id="proseReadonlyHintId"
+        :shown="isTranslating"
+      />
 
       <p
         v-if="proposalSourceLocale"
@@ -338,7 +353,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
 
       <p
         v-if="translationErrorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ translationErrorText }}
@@ -346,7 +361,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
 
       <p
         v-if="errorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ errorText }}
@@ -362,7 +377,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isEditing"
+          v-if="lock.isEntryLocked"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"
@@ -386,10 +401,16 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
     </p>
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('admin.about.loadError') }}
+    </p>
+    <p
+      v-else-if="!isLoaded"
+      class="text-body-secondary mb-0"
+    >
+      {{ t('admin.notLoaded') }}
     </p>
     <p
       v-else-if="0 === orderedRows.length"

@@ -10,7 +10,18 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH } from '../../../domain/account/services/passwordLength'
 
 const { t } = useI18n()
-const { users, isLoading, hasError, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
+const {
+  users,
+  isLoading,
+  hasError,
+  isLoaded,
+  errorMessage,
+  invite,
+  setSuperAdmin,
+  resendInvitation,
+  remove,
+  changePassword,
+} = useAdminUsers()
 const { user: currentUser } = useAuth()
 
 // --- Invitation ---
@@ -97,11 +108,11 @@ onBeforeUnmount(() => {
  * domaine plutôt qu'écrites en dur dans la traduction (#410). Les autres
  * messages ignorent ces paramètres.
  */
-const errorText = computed(() =>
-  errorMessage.value
-    ? t(`admin.users.errors.${errorMessage.value.reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES })
-    : null,
-)
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.users.errors.${reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES }) : null
+})
 
 function isCurrentUser(user: AdminUser): boolean {
   return user.username === currentUser.value?.username
@@ -121,9 +132,7 @@ async function handleToggleSuperAdmin(user: AdminUser): Promise<void> {
 async function handleResend(user: AdminUser): Promise<void> {
   closeMenu()
   clearFeedback()
-  await resendInvitation(user.id, selectedLocale())
-
-  if (!errorMessage.value) {
+  if (await resendInvitation(user.id, selectedLocale())) {
     resendSuccessForUserId.value = user.id
   }
 }
@@ -155,11 +164,11 @@ async function handleSubmitPassword(): Promise<void> {
   isSubmittingPassword.value = true
   passwordChanged.value = false
 
-  await changePassword(changingPasswordForUserId.value, newPassword.value)
+  const changed = await changePassword(changingPasswordForUserId.value, newPassword.value)
 
   isSubmittingPassword.value = false
 
-  if (!errorMessage.value) {
+  if (changed) {
     passwordChanged.value = true
     newPassword.value = ''
   }
@@ -230,7 +239,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
 
       <p
         v-if="errorText"
-        class="text-danger"
+        class="text-danger-emphasis"
         role="alert"
       >
         {{ errorText }}
@@ -244,10 +253,16 @@ async function handleDelete(user: AdminUser): Promise<void> {
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.users.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === users.length"
@@ -367,7 +382,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
                       <li>
                         <button
                           type="button"
-                          class="dropdown-item text-danger"
+                          class="dropdown-item text-danger-emphasis"
                           :disabled="isCurrentUser(user)"
                           :title="isCurrentUser(user) ? t('admin.users.cannotDeleteSelf') : undefined"
                           @click="handleDelete(user)"

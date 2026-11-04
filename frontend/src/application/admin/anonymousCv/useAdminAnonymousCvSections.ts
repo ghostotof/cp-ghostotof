@@ -5,21 +5,20 @@ import type {
   AdminAnonymousCvSectionRepository,
 } from '../../../domain/admin/anonymousCv/repositories/AdminAnonymousCvSectionRepository'
 import { AdminAnonymousCvSectionError } from '../../../domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY: InjectionKey<AdminAnonymousCvSectionRepository> = Symbol(
   'AdminAnonymousCvSectionRepository',
 )
 
-export interface UseAdminAnonymousCvSectionsResult {
+export interface UseAdminAnonymousCvSectionsResult extends AdminLoadState {
   sections: Ref<readonly AdminAnonymousCvSection[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminAnonymousCvSectionError | null>
   load: () => Promise<void>
-  create: (input: AdminAnonymousCvSectionInput) => Promise<void>
-  update: (id: string, input: AdminAnonymousCvSectionInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminAnonymousCvSectionInput) => Promise<boolean>
+  update: (id: string, input: AdminAnonymousCvSectionInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -44,45 +43,40 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
   }
 
   const sections = ref<readonly AdminAnonymousCvSection[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminAnonymousCvSectionError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      sections.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      sections.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value =
-        error instanceof AdminAnonymousCvSectionError ? error : new AdminAnonymousCvSectionError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(
+        error,
+        AdminAnonymousCvSectionError,
+        () => new AdminAnonymousCvSectionError('unknown', 'Unknown error'),
+      )
+
+      return false
     }
   }
 
-  const create = (input: AdminAnonymousCvSectionInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminAnonymousCvSectionInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminAnonymousCvSectionInput): Promise<void> =>
+  const update = (id: string, input: AdminAnonymousCvSectionInput): Promise<boolean> =>
     runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de
@@ -95,5 +89,5 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
 
   void load()
 
-  return { sections, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { sections, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

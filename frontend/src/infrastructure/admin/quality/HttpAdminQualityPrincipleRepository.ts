@@ -5,9 +5,10 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import { AdminQualityError, type AdminQualityErrorReason } from '../../../domain/admin/quality/errors/AdminQualityError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeQualityPrincipleApiResponse {
   id: string
@@ -20,6 +21,10 @@ interface BackofficeQualityPrincipleApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/quality/principles'
+
+function unsupportedLocaleError(): AdminQualityError {
+  return new AdminQualityError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminQualityPrincipleRepository, même pattern que
@@ -82,7 +87,7 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
   private toEntity(principle: BackofficeQualityPrincipleApiResponse): AdminQualityPrinciple {
     return {
       id: principle.id,
-      locale: principle.locale as Locale,
+      locale: supportedLocaleOf(principle.locale, unsupportedLocaleError),
       translationGroup: principle.translationGroup,
       title: principle.title,
       description: principle.description,

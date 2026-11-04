@@ -4,7 +4,11 @@
  * connaître le détail du transport HTTP ; `message` reste le détail brut
  * (souvent déjà en français côté backend) utile pour le débogage/logs.
  */
-export type AdminExperienceTechnologyErrorReason = 'duplicate' | 'not-found' | 'validation' | 'unknown'
+export type AdminExperienceTechnologyErrorReason =
+  | 'duplicate'
+  | 'not-found'
+  | 'validation'
+  | 'unknown'
 
 /**
  * Levée par AdminExperienceTechnologyRepository en cas d'échec d'une

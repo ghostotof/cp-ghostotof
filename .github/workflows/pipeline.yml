@@ -425,7 +425,10 @@ jobs:
           tools/tests/verify-release-merge.test.sh
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
+          tools/tests/smoke-dead-session-cookie.test.sh
           tools/tests/smoke-mcp.test.sh
+          tools/tests/smoke-http.test.sh
+          tools/tests/audit-prod.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
@@ -889,6 +892,17 @@ jobs:
         env:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
+      # #748 (R35, C1) : un cookie `BEARER` refusé ne doit pas fermer les
+      # lectures publiques. Les tests PHPUnit voient le conteneur de test ; la
+      # préprod porte en plus la Basic Auth de l'ingress, que seule la vraie pile
+      # montre. Trois requêtes : le témoin sans cookie, la lecture publique avec
+      # un BEARER aléatoire (200, aucun Set-Cookie), puis /api/me (401, cookie
+      # effacé). Quelques secondes ; borné à part par principe.
+      - name: Un cookie mort ne ferme pas les lectures publiques
+        timeout-minutes: 2
+        env:
+          AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
+        run: tools/smoke-dead-session-cookie.sh https://preprod.cp-ghostotof.com
       # Spec 0007, #644 : un `initialize` MCP sur l'hôte réel (allowed_hosts,
       # dérivé d'APP_FRONTEND_BASE_URL), la session fermée, la borne de corps
       # de 16 Kio en Content-Length et en chunked (413), puis la zone nginx

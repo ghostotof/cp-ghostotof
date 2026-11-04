@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Routing\RouterInterface;
 
@@ -77,7 +78,7 @@ final class RouterScopeTest extends KernelTestCase
             $path = $route->getPath();
             ++$checked;
 
-            if ('/api' === $path || str_starts_with($path, '/api/')) {
+            if (CanonicalPath::isPathUnder($path, '/api')) {
                 continue;
             }
 

@@ -14,7 +14,8 @@ export interface OAuthConsentRepository {
    * Le résumé de la demande, à présenter avant la décision.
    *
    * @throws InvalidConsentRequestError demande invalide, expirée ou altérée (400 `authorization-request-rejected`)
-   * @throws SessionExpiredError session absente, expirée ou sans le palier de confiance (401/403)
+   * @throws SessionEndedError session absente ou expirée (401, règle : `infrastructure/http/sessionAwareFetch.ts`)
+   * @throws AccessForbiddenError compte sans le palier de confiance (403)
    * @throws ConsentFailedError tout autre échec
    */
   describe(params: ConsentParams): Promise<ConsentRequest>
@@ -28,7 +29,9 @@ export interface OAuthConsentRepository {
    * @returns l'URL de retour vers le client (avec `code`, ou `error=access_denied`),
    *   que la page suit — après en avoir vérifié le schéma et l'hôte.
    * @throws InvalidConsentRequestError demande invalide, expirée ou altérée (400 `authorization-request-rejected`)
-   * @throws SessionExpiredError session absente, expirée, sans le palier de confiance, ou CSRF refusé (401/403)
+   * @throws SessionEndedError session absente ou expirée (401, ou 403 parti sans jeton CSRF : voir
+   *   `infrastructure/http/sessionAwareFetch.ts`)
+   * @throws AccessForbiddenError compte sans le palier de confiance, ou signature CSRF refusée (403 parti avec son jeton)
    * @throws ConsentAccountChangedError le compte connecté n'est plus celui que le résumé a nommé (409 `consent-account-changed`) : rien n'a été fait
    * @throws MalformedConsentDecisionError corps de la décision refusé (422), un défaut de la page
    * @throws ConsentFailedError tout autre échec

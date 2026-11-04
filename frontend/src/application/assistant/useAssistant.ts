@@ -18,7 +18,7 @@ import {
   buildConversationWindow,
   codePointLength,
 } from '../../domain/assistant/services/conversationWindow'
-import { markSessionExpired } from '../auth/useAuth'
+import { markSessionExpired, sessionStamp, useAuth } from '../auth/useAuth'
 
 export const ASSISTANT_REPOSITORY: InjectionKey<AssistantRepository> = Symbol('AssistantRepository')
 
@@ -51,6 +51,9 @@ export function useAssistant(): UseAssistantResult {
       "AssistantRepository n'a pas été fourni. Vérifiez que app.provide(ASSISTANT_REPOSITORY, ...) est bien appelé dans main.ts.",
     )
   }
+
+  // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
+  const { followRefusal, onSessionRestored } = useAuth()
 
   const messages = ref<AssistantMessage[]>([])
   const state = ref<AssistantState>('idle')
@@ -88,6 +91,8 @@ export function useAssistant(): UseAssistantResult {
     error.value = null
     state.value = 'streaming'
 
+    // La génération de session à l'envoi (#748, R14) : un « session finie » parti avant un retour est un échec ordinaire.
+    const sentAt = sessionStamp()
     const current = new AbortController()
     controller = current
     const isCurrent = (): boolean => controller === current && !current.signal.aborted
@@ -112,7 +117,7 @@ export function useAssistant(): UseAssistantResult {
       if (!isCurrent()) {
         return
       }
-      const failure = caught instanceof AssistantError ? caught : new AssistantError('unknown')
+      let failure = caught instanceof AssistantError ? caught : new AssistantError('unknown')
       const answer = messages.value[answerIndex]
       if ('' !== answer.content.trim()) {
         answer.status = 'incomplete'
@@ -124,8 +129,24 @@ export function useAssistant(): UseAssistantResult {
           draft.value = question
         }
       }
-      if ('unauthenticated' === failure.reason || 'forbidden' === failure.reason) {
-        markSessionExpired()
+      // Seule une session finie (`unauthenticated`, voir `infrastructure/http/sessionAwareFetch.ts`)
+      // anonymise l'en-tête ; un refus réel (`forbidden`) laisse la session, qui vaut pour le reste du
+      // site (#748, #732 point 4), mais relit `/api/me` (`followRefusal`, une seule relecture en vol) : un
+      // compte rétrogradé y est au palier de base, et l'en-tête ne doit pas rester à celui de confiance (R7).
+      if ('unauthenticated' === failure.reason) {
+        if (!markSessionExpired(sentAt)) {
+          // La session a été rétablie depuis l'envoi : ce verdict est celui d'une session révolue.
+          failure = new AssistantError('unknown')
+        }
+      } else if ('forbidden' === failure.reason) {
+        // La relecture ne change l'affichage que si `/api/me` répond « anonyme » : la session est alors finie, et
+        // l'erreur affichée passe de `forbidden` à `unauthenticated` (#748, R15, F) — si c'est encore elle.
+        followRefusal(
+          () => 'forbidden' === error.value?.reason,
+          () => {
+            error.value = new AssistantError('unauthenticated')
+          },
+        )
       }
       error.value = failure
       state.value = 'error'
@@ -139,6 +160,17 @@ export function useAssistant(): UseAssistantResult {
     error.value = null
     state.value = 'idle'
   }
+
+  // Au retour de la session (`onSessionRestored`), l'erreur « session finie » n'a plus lieu d'être : elle
+  // s'efface et l'assistant redevient disponible (#748, R8). Le brouillon reste — la question que la personne
+  // avait tapée est revenue dans le champ à l'échec. Rien n'est renvoyé de soi-même, et les autres erreurs
+  // (réseau, quota…) ne sont pas de la session : elles restent.
+  onSessionRestored(() => {
+    if ('error' === state.value && 'unauthenticated' === error.value?.reason) {
+      error.value = null
+      state.value = 'idle'
+    }
+  })
 
   onScopeDispose(abortCurrent)
 

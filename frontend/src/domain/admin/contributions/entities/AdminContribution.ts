@@ -1,3 +1,5 @@
+import type { Locale } from '../../../portfolio/entities/Locale'
+
 /**
  * Forme à plat éditable d'une contribution, distincte de Contribution
  * (contrat public en lecture seule) : celle-ci porte l'id, la locale, la
@@ -14,7 +16,7 @@
  */
 export interface AdminContribution {
   readonly id: string
-  readonly locale: string
+  readonly locale: Locale
   readonly translationGroup: string
   readonly title: string
   readonly project: string

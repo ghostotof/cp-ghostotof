@@ -1,4 +1,5 @@
 import type { AdminIncident } from '../entities/AdminIncident'
+import type { Locale } from '../../../portfolio/entities/Locale'
 
 /**
  * Corps d'écriture d'un incident. Sans `position` (spec 0004, D3 : elle n'est
@@ -13,7 +14,7 @@ import type { AdminIncident } from '../entities/AdminIncident'
  *   le faire romprait le lien FR/EN à la première édition.
  */
 export interface AdminIncidentInput {
-  locale: string
+  locale: Locale
   translationGroup: string | null
   title: string
   version: string

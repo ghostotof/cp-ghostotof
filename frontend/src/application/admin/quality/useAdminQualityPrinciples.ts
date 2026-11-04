@@ -5,19 +5,18 @@ import type {
   AdminQualityPrincipleRepository,
 } from '../../../domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_QUALITY_PRINCIPLE_REPOSITORY: InjectionKey<AdminQualityPrincipleRepository> = Symbol('AdminQualityPrincipleRepository')
 
-export interface UseAdminQualityPrinciplesResult {
+export interface UseAdminQualityPrinciplesResult extends AdminLoadState {
   principles: Ref<readonly AdminQualityPrinciple[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminQualityError | null>
   load: () => Promise<void>
-  create: (input: AdminQualityPrincipleInput) => Promise<void>
-  update: (id: string, input: AdminQualityPrincipleInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminQualityPrincipleInput) => Promise<boolean>
+  update: (id: string, input: AdminQualityPrincipleInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -26,10 +25,10 @@ export interface UseAdminQualityPrinciplesResult {
  * appelante traduit `errorMessage.reason`, ce qui garde ce composable testable
  * sans instance i18n.
  *
- * `load()` ne prend plus de locale depuis la spec 0004 (D8) : le tableau du
- * backoffice affiche toutes les langues, le sélecteur de la page ne pilote
- * plus que les formulaires. La liste se charge donc une fois, à la création du
- * composable, et non plus à chaque changement de langue.
+ * `load()` ne prend pas de locale (spec 0004, D8) : le tableau du backoffice
+ * affiche toutes les langues, le sélecteur de chaque section ne pilote que son
+ * formulaire. La liste se charge donc une fois, à la création du composable, et
+ * non à chaque changement de langue.
  */
 export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
   const repository = inject(ADMIN_QUALITY_PRINCIPLE_REPOSITORY)
@@ -41,43 +40,35 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
   }
 
   const principles = ref<readonly AdminQualityPrinciple[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminQualityError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      principles.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      principles.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminQualityError ? error : new AdminQualityError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminQualityError, () => new AdminQualityError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
-  const create = (input: AdminQualityPrincipleInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminQualityPrincipleInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminQualityPrincipleInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminQualityPrincipleInput): Promise<boolean> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de
@@ -90,5 +81,5 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
 
   void load()
 
-  return { principles, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { principles, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

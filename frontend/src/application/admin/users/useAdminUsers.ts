@@ -3,22 +3,21 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError } from '../../../domain/admin/users/errors/AdminUserError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_USER_REPOSITORY: InjectionKey<AdminUserRepository> = Symbol('AdminUserRepository')
 
-export interface UseAdminUsersResult {
+export interface UseAdminUsersResult extends AdminLoadState {
   users: Ref<readonly AdminUser[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminUserError | null>
   load: () => Promise<void>
   /** Retourne le compte créé, ou `null` si l'invitation a échoué (errorMessage renseigné). */
   invite: (email: string, locale: Locale) => Promise<AdminUser | null>
-  setSuperAdmin: (id: string, grant: boolean) => Promise<void>
-  resendInvitation: (id: string, locale: Locale) => Promise<void>
-  remove: (id: string) => Promise<void>
-  changePassword: (id: string, newPassword: string) => Promise<void>
+  setSuperAdmin: (id: string, grant: boolean) => Promise<boolean>
+  resendInvitation: (id: string, locale: Locale) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
+  changePassword: (id: string, newPassword: string) => Promise<boolean>
 }
 
 /**
@@ -37,28 +36,16 @@ export function useAdminUsers(): UseAdminUsersResult {
   }
 
   const users = ref<readonly AdminUser[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminUserError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      users.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      users.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runAction = async (action: () => Promise<unknown>, reloadAfter: boolean): Promise<void> => {
+  const runAction = async (action: () => Promise<unknown>, reloadAfter: boolean): Promise<boolean> => {
     errorMessage.value = null
 
     try {
@@ -66,8 +53,12 @@ export function useAdminUsers(): UseAdminUsersResult {
       if (reloadAfter) {
         await load()
       }
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminUserError ? error : new AdminUserError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminUserError, () => new AdminUserError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
@@ -80,24 +71,24 @@ export function useAdminUsers(): UseAdminUsersResult {
 
       return created
     } catch (error) {
-      errorMessage.value = error instanceof AdminUserError ? error : new AdminUserError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminUserError, () => new AdminUserError('unknown', 'Unknown error'))
 
       return null
     }
   }
 
-  const setSuperAdmin = (id: string, grant: boolean): Promise<void> =>
+  const setSuperAdmin = (id: string, grant: boolean): Promise<boolean> =>
     runAction(() => repository.setSuperAdmin(id, grant), true)
 
-  const resendInvitation = (id: string, locale: Locale): Promise<void> =>
+  const resendInvitation = (id: string, locale: Locale): Promise<boolean> =>
     runAction(() => repository.resendInvitation(id, locale), false)
 
-  const remove = (id: string): Promise<void> => runAction(() => repository.remove(id), true)
+  const remove = (id: string): Promise<boolean> => runAction(() => repository.remove(id), true)
 
-  const changePassword = (id: string, newPassword: string): Promise<void> =>
+  const changePassword = (id: string, newPassword: string): Promise<boolean> =>
     runAction(() => repository.changePassword(id, newPassword), false)
 
   void load()
 
-  return { users, isLoading, hasError, errorMessage, load, invite, setSuperAdmin, resendInvitation, remove, changePassword }
+  return { users, isLoading, hasError, isLoaded, errorMessage, load, invite, setSuperAdmin, resendInvitation, remove, changePassword }
 }

@@ -33,7 +33,7 @@
     "connectAssistantLink": "Brancher votre assistant",
     "footerNavigation": "Navigation du pied de page",
     "administration": "Administration",
-    "opensInNewTab": "(nouvelle fenêtre)",
+    "opensInNewTab": "(s'ouvre dans un nouvel onglet)",
     "copy": "Copier",
     "copied": "Copié dans le presse-papiers.",
     "copyFailed": "La copie a échoué : sélectionnez le texte pour le copier à la main.",
@@ -44,19 +44,27 @@
     "baseAccessBadge": "Accès de base",
     "endBaseAccess": "Terminer cet accès",
     "accountMenu": "Menu du compte",
-    "myAccount": "Mon compte"
+    "myAccount": "Mon compte",
+    "accessRefused": "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+    "earlierSaveRefused": "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+    "switchAccount": "Changer de compte"
   },
   "admin": {
     "heading": "Administration",
     "navigation": "Navigation d'administration",
+    "notLoaded": "Contenu non chargé : voyez le message en haut de la page.",
     "sessionEnded": {
       "message": "Votre session a pris fin : ce que vous avez saisi est toujours là, mais l'enregistrement est refusé tant que vous n'êtes pas reconnecté.",
       "signInAgain": "Se reconnecter",
-      "newTab": "(s'ouvre dans un nouvel onglet)"
+      "restored": "Session rétablie, vous pouvez enregistrer."
     },
     "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",
     "localeLabel": "Langue",
+    "entryLock": {
+      "editing": "La langue d'une entrée existante ne peut pas être modifiée.",
+      "proposal": "Verrouillé par la proposition de traduction en cours ; « Annuler » la retire et vide le formulaire."
+    },
     "nav": {
       "content": "Contenu",
       "technologies": "Technologies",
@@ -155,7 +163,9 @@
         "meEyebrowLabel": "Titre de section « À propos de moi »",
         "technicalSubtitleLabel": "Sous-titre « Techniquement »",
         "personalSubtitleLabel": "Sous-titre « Humainement »",
-        "hobbiesSubtitleLabel": "Sous-titre « En dehors du travail »"
+        "hobbiesSubtitleLabel": "Sous-titre « En dehors du travail »",
+        "proposalLockedHelp": "Verrouillé par la proposition de traduction affichée : enregistrez-la, ou « Abandonner » pour la retirer.",
+        "proposalDiscard": "Abandonner"
       },
       "siteCard": {
         "listTitle": "Cartes « À propos de ce site »",
@@ -386,6 +396,8 @@
     "translation": {
       "proposeVersion": "Proposer la version {locale}",
       "inProgress": "Traduction en cours…",
+      "expiredCallPending": "La traduction précédente, abandonnée, se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.",
+      "proseReadonly": "Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse, qui peut ouvrir une proposition dans la langue cible ; rien n'est enregistré.",
       "proposalNotice": "Proposition générée par IA à partir de la version {locale} : relisez et corrigez avant d'enregistrer. Rien n'est enregistré tant que vous ne cliquez pas sur Enregistrer.",
       "errors": {
         "validation": "Le contenu à traduire est invalide (champ vide ou trop long).",
@@ -479,7 +491,7 @@
     "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
     "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
     "genericError": "Une erreur est survenue, veuillez réessayer.",
-    "reauthNotice": "Confirmez votre identité : autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes. Vous reviendrez ensuite à la demande.",
+    "reauthNotice": "Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.",
     "sessionEnded": "Votre session a pris fin, reconnectez-vous."
   },
   "contact": {
@@ -787,7 +799,6 @@
     "reset": "Nouvelle conversation",
     "errors": {
       "unauthenticated": "Votre session a expiré.",
-      "forbidden": "Votre session ne permet plus d'utiliser l'assistant. Reconnectez-vous.",
       "relogin": "Se reconnecter",
       "validation": "La conversation n'a pas pu être envoyée. Réessayez.",
       "tooLarge": "La conversation est trop longue : commencez-en une nouvelle.",
@@ -805,8 +816,7 @@
     "submitting": "Transmission de votre décision…",
     "account": {
       "heading": "Le compte",
-      "grantingAs": "Vous accordez cet accès en tant que {username}",
-      "switch": "Changer de compte"
+      "grantingAs": "Vous accordez cet accès en tant que {username}"
     },
     "client": {
       "heading": "Le client",
@@ -828,7 +838,7 @@
     "deny": "Refuser",
     "errors": {
       "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
-      "sessionExpired": "Votre session a expiré ou ne permet pas d'autoriser cette connexion.",
+      "sessionEnded": "Votre session a expiré.",
       "relogin": "Se reconnecter",
       "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
       "reauthenticate": "Me reconnecter pour autoriser",
@@ -875,7 +885,7 @@
     },
     "revoke": "Révoquer",
     "revokeAria": "Révoquer la connexion de {client}, accordée le {date}",
-    "confirm": "Révoquer la connexion de « {client} » ? Elle cessera de fonctionner dès la prochaine requête de l'assistant.",
+    "confirm": "Révoquer la connexion de « {client} », accordée le {date} ? Elle cessera de fonctionner dès la prochaine requête de l'assistant.",
     "outcome": {
       "revoked": "La connexion a été révoquée. Elle cesse de fonctionner dès la prochaine requête de l'assistant.",
       "alreadyGone": "Cette connexion était déjà terminée : rien à révoquer. La liste a été actualisée."

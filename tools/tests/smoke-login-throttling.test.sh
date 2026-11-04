@@ -20,11 +20,20 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
+# run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth, check_finds_library_under_cdpath,
+# check_root_script_dir_is_slash, check_http_base_served_without_basic_auth, check_hollow_basic_auth_values),
+# generated_basic_auth : communs aux smokes (`write_env_noting`, que le cas des fils appelle, n'est pas appelé ici).
+# shellcheck source=tools/tests/lib/smoke-cases.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
+
 # Le faux curl : lit la n-ième ligne de $FAKE_RESPONSES (format
 # `code|retry-after|content-type|corps`, champ vide = pas d'en-tête), imprime
 # le corps comme le vrai avec `-w '\n%{http_code}'`, écrit les en-têtes dans
 # le fichier de `-D`, et ajoute ses arguments à $FAKE_ARGS. Le corps passe par
 # `printf '%b'` : `\r` ou `\033` y deviennent les vrais caractères de contrôle.
+# Une ligne `curl-exit:<n>|…` fait écrire `curl: (<n>) faux échec` sur stderr et
+# sortir en `<n>`, comme un vrai curl qui n'a pas de réponse (7 : connexion
+# refusée, 6 : DNS, 28 : délai).
 cat > "$TMP/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -38,6 +47,12 @@ n=$(wc -l < "$FAKE_CALLS" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" >> "$FAKE_CALLS"
 line="$(sed -n "${n}p" "$FAKE_RESPONSES")"
+if [[ "$line" == curl-exit:* ]]; then
+  exit_code="${line#curl-exit:}"
+  exit_code="${exit_code%%|*}"
+  echo "curl: ($exit_code) faux échec" >&2
+  exit "$exit_code"
+fi
 code="${line%%|*}"
 rest="${line#*|}"
 retry_after="${rest%%|*}"
@@ -64,7 +79,7 @@ run() {
   : > "$TMP/$name.args"; : > "$TMP/$name.calls"
   set +e
   FAKE_RESPONSES="$TMP/$name.responses" FAKE_ARGS="$TMP/$name.args" FAKE_CALLS="$TMP/$name.calls" \
-    SMOKE_CURL="$TMP/curl" "$SCRIPT" https://example.invalid >"$TMP/out" 2>"$TMP/err"
+    SMOKE_CURL="$TMP/curl" "${RUN_SCRIPT:-$SCRIPT}" "${TEST_BASE_URL:-https://example.invalid}" >"$TMP/out" 2>"$TMP/err"
   rc=$?
   set -e
 }
@@ -188,6 +203,99 @@ if grep -q -- ' -D ' "$TMP/nominal.args" && grep -q -- 'X-Requested-With: fetch'
   pass "POST /api/login_check, JSON, X-Requested-With, identifiant de sonde, en-têtes lus"
 else
   fail "requête" "args : $(head -1 "$TMP/nominal.args")"
+fi
+
+# --- Un retour à la ligne dans la Basic Auth ouvrirait une seconde directive
+# dans le fichier -K : refus, sortie 2, aucun appel, valeur jamais citée.
+AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run newline "$toomany"
+if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/err" \
+   && [ ! -s "$TMP/newline.calls" ] && ! grep -qF 'url = ' "$TMP/out" "$TMP/err"; then
+  pass "AUDIT_BASIC_AUTH avec un retour à la ligne → sortie 2, aucun appel, valeur jamais citée"
+else
+  fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
+fi
+
+# --- Un secret de Basic Auth défini mais vide : check_empty_basic_auth.
+AUDIT_BASIC_AUTH='' run vide "$toomany"
+case_vars_set "$TMP/err" "$TMP/vide.calls" "$TMP/out"
+run_case check_empty_basic_auth \
+  "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
+  "${CASE_VARS[@]}"
+
+# Le lanceur des cas qui lancent le smoke (CASE_RUNNER, smoke-cases.sh) : ses réponses nominales sous le nom que le cas
+# donne, le code de sortie du smoke rendu (St18-23), jamais lu dans `rc` par le cas.
+run_nominal() { run "$1" "$toomany"; return "$rc"; }
+
+# --- D2 de la quatorzième relecture : aucun processus fils ne voit la variable (check_no_child_sees_basic_auth).
+run_case check_no_child_sees_basic_auth "aucun processus fils (dirname, mktemp, date, openssl, rm) ne reçoit la Basic Auth" - \
+  CASE_RUNNER=run_nominal CASE_ENV_FILE="$TMP/witness-env.txt" CASE_EXPECTED_RC=0
+
+# --- C14-11 : un CDPATH piégé et un chemin relatif (check_finds_library_under_cdpath).
+run_case check_finds_library_under_cdpath "CDPATH posé et chemin relatif : le smoke trouve sa bibliothèque" - \
+  CASE_RUNNER=run_nominal CASE_SCRIPT="$SCRIPT" CASE_ERR="$TMP/err" CASE_CALLS="$TMP/cdpath.calls" CASE_EXPECTED_RC=0
+# Sp15-22 : un script à la racine (check_root_script_dir_is_slash).
+run_case check_root_script_dir_is_slash "un script à la racine : le smoke lit « / » comme dossier de sa bibliothèque" - \
+  CASE_SCRIPT="$SCRIPT"
+
+# --- C11-1 : une Basic Auth et une base en `http://` (check_non_https_refused).
+http_auth="$(generated_basic_auth)"
+AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$toomany"
+case_vars_set "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
+run_case check_non_https_refused \
+  "Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" "$rc" \
+  "${CASE_VARS[@]}"
+# Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
+TEST_BASE_URL=http://example.invalid run httplocal "$toomany"
+run_case check_http_base_served_without_basic_auth "sans Basic Auth, une base http:// part sans -K" "$rc" \
+  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/httplocal.calls" CASE_ARGS="$TMP/httplocal.args"
+
+# --- C11-8 : un utilisateur ou un mot de passe vide n'est pas une Basic Auth : sortie 2 avant tout
+# appel, « sans utilisateur ou sans mot de passe », la valeur jamais citée.
+run_case check_hollow_basic_auth_values "AUDIT_BASIC_AUTH à côté vide" - CASE_RUNNER=run_nominal \
+  CASE_ERR="$TMP/err" CASE_OUT="$TMP/out" CASE_CALLS="$TMP/creuse.calls" CASE_ARGS="$TMP/creuse.args"
+
+# --- CR5-10 étendu : un curl en échec (réseau, DNS, délai) sort du contrat
+# 0/1/2 si le script laisse `set -e` rendre le code de curl (7, 6, 28). Il doit
+# sortir 1 et dire que RIEN n'a été vérifié, à la première tentative comme plus
+# tard, sans enchaîner d'autre appel.
+run net1 'curl-exit:7|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 7' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/net1.calls")" -eq 1 ]; then
+  pass "curl en échec (7) à la tentative 1 → sortie 1, « curl a échoué (code 7) … rien de vérifié »"
+else
+  fail "curl en échec à la tentative 1" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run net3 "$invalid" "$invalid" 'curl-exit:28|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'tentative 3' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/net3.calls")" -eq 3 ]; then
+  pass "curl en échec (28) à la tentative 3 → sortie 1, la tentative est nommée, arrêt immédiat"
+else
+  fail "curl en échec à la tentative 3" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- C6-7 : une bibliothèque présente mais invalide ne se dit pas « introuvable »
+# en cachant la vraie erreur : sortie 2, « introuvable ou invalide » et l'erreur
+# de bash sur stderr.
+mkdir -p "$TMP/badlib/tools/lib"
+cp "$SCRIPT" "$TMP/badlib/tools/"
+printf 'if then\n' > "$TMP/badlib/tools/lib/smoke-http.sh"
+# LC_ALL=C : bash dit « syntax error » en anglais, quelle que soit la langue du poste.
+set +e; LC_ALL=C "$TMP/badlib/tools/smoke-login-throttling.sh" https://example.invalid >/dev/null 2>"$TMP/err"; rc=$?; set -e
+if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/err" && grep -q 'syntax error' "$TMP/err"; then
+  pass "bibliothèque invalide → sortie 2, « introuvable ou invalide » et l'erreur de syntaxe de bash visible"
+else
+  fail "bibliothèque invalide" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- C6-12 : le Retry-After invalide part dans le journal de la CI : en extrait,
+# sans caractère de contrôle (un ESC ou un octet de commande n'y a rien à faire).
+# `header()` retire déjà le CR : le contrôle qui survit est un autre (ESC ici).
+run retryctl "$invalid" $'429|12x\033[31m::error::forge|application/problem+json|{"type":"\\/errors\\/rate-limited","status":429}'
+if [ "$rc" -eq 1 ] && grep -q 'Retry-After invalide' "$TMP/err" && grep -q '::error::forge' "$TMP/err" \
+   && ! grep -q $'\033' "$TMP/err" && ! grep -q $'\r' "$TMP/err"; then
+  pass "Retry-After invalide avec caractère de contrôle → échec, extrait neutralisé dans le message"
+else
+  fail "Retry-After avec caractère de contrôle" "rc=$rc ; err : $(cat -A "$TMP/err")"
 fi
 
 # --- Sans URL : usage, code 2.

@@ -3,7 +3,10 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppFooter from '../../../src/presentation/layout/AppFooter.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 const StubPage = { template: '<div />' }
@@ -13,7 +16,7 @@ const StubPage = { template: '<div />' }
  * politique de confidentialité, dont la locale suit la route courante) : on
  * lui fournit une vraie instance, même pattern que AppHeader.spec.ts.
  */
-async function mountFooter(initialPath = '/fr') {
+async function mountFooter(initialPath = '/fr', unsupportedLocale?: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -21,6 +24,8 @@ async function mountFooter(initialPath = '/fr') {
       { path: '/:locale(fr|en)/legal-notice', name: 'legal-notice', component: StubPage },
       { path: '/:locale(fr|en)/privacy-policy', name: 'privacy-policy', component: StubPage },
       { path: '/:locale(fr|en)/connect-your-assistant', name: 'connect-assistant', component: StubPage },
+      // Comme la page 404 de l'application : aucun segment `:locale`.
+      { path: '/:pathMatch(.*)*', name: 'not-found', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -30,6 +35,9 @@ async function mountFooter(initialPath = '/fr') {
   // (beforeEach) ; ce routeur de test ne le fait pas, on la pose donc ici.
   const i18n = createAppI18n()
   i18n.global.locale.value = initialPath.startsWith('/en') ? 'en' : 'fr'
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   return mount(AppFooter, {
     props: { siteIdentity },
@@ -49,6 +57,18 @@ describe('AppFooter', () => {
     expect(wrapper.find('a[href="/fr/privacy-policy"]').exists()).toBe(true)
   })
 
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse.
+  it.each([
+    ['/en', 'en'],
+    ['/frogs', 'fr'],
+  ])('sous une langue hors du site, sur %s, les liens sont en `%s`, aucun `/de/` (#748, R227)', async (path, expected) => {
+    const wrapper = await mountFooter(path, 'de')
+
+    const hrefs = wrapper.findAll('a[href^="/"]').map((link) => link.attributes('href'))
+    expect(hrefs).toEqual(expect.arrayContaining([`/${expected}/legal-notice`, `/${expected}/privacy-policy`]))
+    expect(hrefs.filter((href) => href?.startsWith('/de'))).toEqual([])
+  })
+
   it('construit les liens légaux avec la locale de la route courante', async () => {
     const wrapper = await mountFooter('/en')
 
@@ -61,8 +81,8 @@ describe('AppFooter', () => {
    * pied de page, dans la langue de la route courante.
    */
   it.each([
-    ['fr', 'Brancher votre assistant'],
-    ['en', 'Connect your assistant'],
+    ['fr', fr.common.connectAssistantLink],
+    ['en', en.common.connectAssistantLink],
   ])('lie la page « Brancher votre assistant » dans la langue de la route (%s)', async (locale, label) => {
     const wrapper = await mountFooter(`/${locale}`)
     const link = wrapper.find(`a[href="/${locale}/connect-your-assistant"]`)
@@ -79,7 +99,7 @@ describe('AppFooter', () => {
   it('nomme la navigation du pied de page sans la dire légale', async () => {
     const wrapper = await mountFooter()
 
-    expect(wrapper.find('footer nav').attributes('aria-label')).toBe('Navigation du pied de page')
+    expect(wrapper.find('footer nav').attributes('aria-label')).toBe(fr.common.footerNavigation)
   })
 
   it('affiche le copyright avec le nom de marque fourni', async () => {
@@ -107,7 +127,7 @@ describe('AppFooter', () => {
       expect(link.attributes('title')).toContain('2c86b65')
       // Lien externe : même annonce que BaseButton pour les lecteurs d'écran.
       expect(link.attributes('target')).toBe('_blank')
-      expect(link.find('.visually-hidden').text()).toBe('(nouvelle fenêtre)')
+      expect(link.find('.visually-hidden').text()).toBe(fr.common.opensInNewTab)
     })
 
     it("affiche un build local (tag = SHA) en texte, sans lien : il n'a pas de release", async () => {

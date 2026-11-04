@@ -86,6 +86,68 @@ export async function expectNoAccessibilityViolation(wrapper: VueWrapper): Promi
   }
 }
 
+/**
+ * Audit de la seule règle « Label in Name » (WCAG 2.5.3, niveau A, `label-content-name-mismatch`) d'un composant monté
+ * (#748, R243 de la vingtième relecture) : le nom accessible d'un contrôle doit contenir son texte visible, sinon « cliquer FR »
+ * à la voix ne trouve pas le bouton nommé « Français ».
+ *
+ * **À part de `expectNoAccessibilityViolation`, à dessein.** La règle est expérimentale : axe l'éteint par défaut, il faut
+ * l'allumer. Sous jsdom elle ne conclut jamais « violation » mais « à vérifier » (`incomplete`), parce que son test des ligatures
+ * d'icônes veut un canvas, que jsdom n'a pas (axe 4.14 : un bouton « FR » nommé « Français » y est `incomplete`). Les deux
+ * issues, violation et « à vérifier », échouent donc ici. Allumée dans l'audit commun, elle faisait échouer 39 cas pour 33
+ * contrôles : la poignée d'ordre (« Déplacer : X », glyphe `aria-hidden`) et les « Révoquer » de « Mes connexions MCP » (nom
+ * « Révoquer la connexion de … », qui commence bien par le texte visible), tous « à vérifier » sans canvas ; un composant où
+ * la règle est une garantie l'appelle donc lui-même.
+ */
+export async function expectLabelInName(wrapper: VueWrapper): Promise<void> {
+  const element = wrapper.element as HTMLElement
+  // Rattaché le temps de l'analyse, comme `expectNoAccessibilityViolation` (axe n'analyse que ce qui est dans le document).
+  const detache = !document.body.contains(element)
+  if (detache) {
+    document.body.append(element)
+  }
+
+  try {
+    const results = await axe.run(element, {
+      runOnly: ['label-content-name-mismatch'],
+      rules: { 'label-content-name-mismatch': { enabled: true } },
+    })
+
+    const failures = [...results.violations, ...results.incomplete]
+    if (failures.length > 0) {
+      throw new Error(formatViolations(failures))
+    }
+  } finally {
+    if (detache) {
+      element.remove()
+    }
+  }
+}
+
+/**
+ * Le nom accessible d'un élément (#748, R191), tel qu'axe-core le calcule : l'étiquette ARIA avant le contenu, sans ce que
+ * `aria-hidden` retire aux lecteurs d'écran. Un bouton se retrouve ainsi par ce que lit un lecteur d'écran, pas par le texte du DOM.
+ *
+ * axe ne calcule que pour ce qui est dans le document, et @vue/test-utils monte hors du document : on rattache **une copie** de
+ * l'élément le temps du calcul (le même geste que `expectNoAccessibilityViolation`, sans déplacer l'élément lui-même).
+ * Limite : une copie perd son contexte, donc un `aria-labelledby` vers un élément hors de l'élément n'y est pas résolu.
+ * Coût mesuré (Vitest 5, jsdom, un bouton de deux `span`, cinq séries de 100 appels) : en moyenne 1,0 ms par appel dans la première
+ * série, 0,3 ms dans les quatre suivantes. Négligeable pour un bouton ; à remesurer avant de l'appeler sur plusieurs centaines d'éléments.
+ */
+export function accessibleNameOf(element: Element): string {
+  const copy = element.cloneNode(true) as Element
+  // Le rattachement et `axe.setup` sont dans le `try` : si l'un des deux lève, la copie ne reste pas dans le document, où elle
+  // s'ajouterait au DOM de tous les cas suivants (CR16-9). `remove()` passe avant `teardown()`, qui pourrait lever à son tour.
+  try {
+    document.body.append(copy)
+    axe.setup(copy)
+    return axe.commons.text.accessibleText(copy).trim()
+  } finally {
+    copy.remove()
+    axe.teardown()
+  }
+}
+
 function assertRulesActuallyRan(results: axe.AxeResults): void {
   const executed = new Set([
     ...results.violations.map((r) => r.id),

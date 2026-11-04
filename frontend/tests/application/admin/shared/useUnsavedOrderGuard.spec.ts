@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useUnsavedOrderGuard } from '../../../../src/application/admin/shared/useUnsavedOrderGuard'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const isDirty = ref(false)
 
@@ -36,12 +37,10 @@ async function mountGuarded() {
 
 /**
  * Issue #170 F5 : la garde « quitter la page » était recopiée à l'identique
- * dans sept pages. Une seule implémentation, testée ici une fois — les pages
+ * dans chaque page ordonnée. Une seule implémentation, testée ici une fois — les pages
  * n'ont plus qu'à la brancher sur leur `isDirty`.
  */
 describe('useUnsavedOrderGuard', () => {
-  enableAutoUnmount(afterEach)
-
   afterEach(() => {
     isDirty.value = false
     vi.restoreAllMocks()
@@ -55,7 +54,7 @@ describe('useUnsavedOrderGuard', () => {
     await router.push('/elsewhere')
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalledWith("L'ordre modifié n'est pas enregistré. Quitter cette page l'abandonnera. Continuer ?")
+    expect(confirmSpy).toHaveBeenCalledWith(fr.admin.order.leaveConfirm)
     expect(router.currentRoute.value.path).toBe('/guarded')
   })
 

@@ -1,4 +1,5 @@
 import type { AdminAnonymousCvSection } from '../entities/AdminAnonymousCvSection'
+import type { Locale } from '../../../portfolio/entities/Locale'
 
 /**
  * Corps d'écriture d'une section du CV sans identité. Sans `position`
@@ -13,7 +14,7 @@ import type { AdminAnonymousCvSection } from '../entities/AdminAnonymousCvSectio
  *   le faire romprait le lien FR/EN à la première édition.
  */
 export interface AdminAnonymousCvSectionInput {
-  locale: string
+  locale: Locale
   translationGroup: string | null
   title: string
   skills: string

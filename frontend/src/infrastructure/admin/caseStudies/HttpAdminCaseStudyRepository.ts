@@ -9,7 +9,9 @@ import {
 } from '../../../domain/admin/caseStudies/errors/AdminCaseStudyError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeCaseStudyApiResponse {
   id: string
@@ -24,6 +26,10 @@ interface BackofficeCaseStudyApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/case-studies'
+
+function unsupportedLocaleError(): AdminCaseStudyError {
+  return new AdminCaseStudyError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminCaseStudyRepository. Toutes les
@@ -86,7 +92,7 @@ export class HttpAdminCaseStudyRepository implements AdminCaseStudyRepository {
   private toEntity(caseStudy: BackofficeCaseStudyApiResponse): AdminCaseStudy {
     return {
       id: caseStudy.id,
-      locale: caseStudy.locale,
+      locale: supportedLocaleOf(caseStudy.locale, unsupportedLocaleError),
       translationGroup: caseStudy.translationGroup,
       title: caseStudy.title,
       problem: caseStudy.problem,

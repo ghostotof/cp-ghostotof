@@ -7,7 +7,7 @@ import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import type { AdminExperienceTechnology } from '../../../domain/admin/technologies/entities/AdminExperienceTechnology'
 
 const { t } = useI18n()
-const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
+const { technologies, isLoading, hasError, isLoaded, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
 
 const editingId = ref<string | null>(null)
 const form = reactive({ name: '', years: 0, iconKey: '', relatedTechnologyName: '', isSecondary: false })
@@ -15,7 +15,11 @@ const isSubmitting = ref(false)
 
 const isEditing = computed(() => null !== editingId.value)
 
-const errorText = computed(() => (errorMessage.value ? t(`admin.technologies.errors.${errorMessage.value.reason}`) : null))
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.technologies.errors.${reason}`) : null
+})
 
 function resetForm(): void {
   editingId.value = null
@@ -46,15 +50,11 @@ async function handleSubmit(): Promise<void> {
     isSecondary: form.isSecondary,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
@@ -124,7 +124,7 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -163,10 +163,16 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.technologies.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === technologies.length"

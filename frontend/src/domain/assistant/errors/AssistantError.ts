@@ -1,6 +1,8 @@
 /**
  * Catégorise l'échec pour que la présentation choisisse le message traduit sans
- * connaître le transport : `unauthenticated` (401), `forbidden` (403),
+ * connaître le transport : `unauthenticated` (session finie, voir `infrastructure/http/sessionAwareFetch.ts` : un 401, ou un 403 à une
+ * requête partie sans jeton CSRF), `forbidden` (refus réel : un 403 à une requête qui
+ * portait son jeton, la session vaut encore),
  * `validation` (422, conversation hors bornes), `too-large` (413),
  * `rate-limited` (429), `unavailable` (503 ou événement `error` du flux),
  * `network` (réseau coupé, flux interrompu avant la fin), `unknown` (le reste).

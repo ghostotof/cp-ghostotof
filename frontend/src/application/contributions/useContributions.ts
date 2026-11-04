@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { Contribution } from '../../domain/contributions/entities/Contribution'
 import type { ContributionRepository } from '../../domain/contributions/repositories/ContributionRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const CONTRIBUTION_REPOSITORY: InjectionKey<ContributionRepository> = Symbol('ContributionRepository')
@@ -27,7 +26,7 @@ export function useContributions(): UseContributionsResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const contributions = ref<readonly Contribution[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -39,7 +38,7 @@ export function useContributions(): UseContributionsResult {
     hasError.value = false
 
     try {
-      const loaded = await repository.list(locale.value as Locale)
+      const loaded = await repository.list(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       contributions.value = loaded
     } catch {
@@ -49,7 +48,7 @@ export function useContributions(): UseContributionsResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { contributions, isLoading, hasError }
 }

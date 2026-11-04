@@ -11,8 +11,20 @@ import type { AdminCaseStudyRepository } from '../../../../src/domain/admin/case
 import type { AdminCaseStudy } from '../../../../src/domain/admin/caseStudies/entities/AdminCaseStudy'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { describeEntryFormLock, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
+import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
+import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import { HttpAdminCaseStudyRepository } from '../../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
+import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -139,17 +151,12 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
-
-function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
-}
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
+// de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = ENTRY_FORM_TEXTS.caseStudies
+const TITLES = ENTRY_TITLES.caseStudies
+const CREATE_EN_LABEL: string = createVersionLabel('en')
+const EDIT_FR: string = fr.admin.caseStudies.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -162,6 +169,19 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
 describe('AdminCaseStudiesPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // Le dépôt HTTP réel juge la langue de la réponse à la frontière : la page montre son alerte de chargement et l'entrée
+  // dans une langue que le site ne porte pas n'atteint ni le tableau ni un formulaire (#748, R229, Sp18-3).
+  it("une liste répondue avec une entrée en langue 'de' montre l'alerte de chargement, sans l'entrée (#748, R229)", async () => {
+    const unsupportedEntry = { ...FR_ONE, locale: 'de' }
+    stubBackofficeJson([unsupportedEntry])
+
+    const { wrapper } = await mountPage(new HttpAdminCaseStudyRepository(BACKOFFICE_TEST_API_URL))
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.caseStudies.loadError)
+    expect(wrapper.text()).not.toContain(unsupportedEntry.title)
   })
 
   it('affiche une ligne par groupe, un badge par langue, et la traduction manquante', async () => {
@@ -175,8 +195,8 @@ describe('AdminCaseStudiesPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
-    expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
+    expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
   it("n'affiche plus aucune colonne ni champ de position", async () => {
@@ -189,7 +209,7 @@ describe('AdminCaseStudiesPage', () => {
   it('rappelle la règle éditoriale (jamais de nom de client) au-dessus du formulaire', async () => {
     const { wrapper } = await mountPage()
 
-    expect(wrapper.text()).toContain('Ni nom de client')
+    expect(wrapper.text()).toContain(fr.admin.caseStudies.identityHelp)
   })
 
   it("glisse la première ligne sur la troisième puis enregistre l'ordre des groupes", async () => {
@@ -197,15 +217,15 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(caseStudies)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(caseStudies.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(caseStudies.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(caseStudies.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -219,7 +239,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Un moteur de tarification asynchrone')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -234,28 +254,43 @@ describe('AdminCaseStudiesPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
-    const edit = buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Supprimer').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), FORM_TEXTS.delete).attributes('disabled'),
     ).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, CREATE_EN_LABEL).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
-    expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).attributes('disabled'),
     ).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
+  })
+
+  // (#748, R93) : le bouton de traduction porte deux verrous à la fois et les décrit tous les deux, celui de l'ordre d'abord.
+  it("un ordre modifié et une proposition affichée : le bouton de traduction est décrit par les deux textes", async () => {
+    const { wrapper } = await mountPage()
+
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
+    await flushPromises()
+    await dragRow(wrapper, 0, 2)
+
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, 0))).toEqual([
+      ORDER_TEXTS.lockedHint,
+      ENTRY_LOCK_PROPOSAL_FR,
+    ])
   })
 
   it("recharge la liste et annonce un ordre obsolète quand le serveur refuse l'ensemble envoyé", async () => {
@@ -266,21 +301,21 @@ describe('AdminCaseStudiesPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(caseStudies.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(caseStudies.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('« Créer la version EN » ouvre une création rattachée, tout vide — une étude de cas est prose de bout en bout', async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_TWO)
     for (const field of ['title', 'problem', 'solution', 'tradeoffs', 'measured-result']) {
@@ -288,11 +323,92 @@ describe('AdminCaseStudiesPage', () => {
     }
   })
 
+  describe('liste non chargée (#748, R4)', () => {
+    // Une page laissée montée relirait sa lecture interrompue au retour suivant : démontée avant de rendre la session.
+    let mountedPage: VueWrapper | undefined
+    afterEach(async () => {
+      mountedPage?.unmount()
+      mountedPage = undefined
+      await signInAgain()
+    })
+
+    /** Le dépôt de la page, dont la lecture tombe en session finie (la réaction du client marque la session) tant que `ended`. */
+    function repositoryEndingSession(session: { ended: boolean }): AdminCaseStudyRepository {
+      return createStubRepository({
+        list: vi.fn(async () => {
+          if (session.ended) {
+            markSessionExpired()
+            throw new SessionEndedError()
+          }
+
+          return ALL_SECTIONS
+        }),
+      })
+    }
+
+    it('première lecture en session finie : ni « aucune étude de cas » ni tableau, la mention « non chargé »', async () => {
+      const { wrapper } = await mountPage(repositoryEndingSession({ ended: true }))
+      mountedPage = wrapper
+
+      expect(wrapper.text()).toContain(fr.admin.notLoaded)
+      expect(wrapper.text()).not.toContain(fr.admin.caseStudies.empty)
+      expect(wrapper.find('table').exists()).toBe(false)
+      // Le bandeau de session finie est la seule alerte : la mention n'en est pas une.
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it("au retour de la session, la liste se lit et s'affiche", async () => {
+      await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
+      const session = { ended: true }
+      const caseStudies = repositoryEndingSession(session)
+      const { wrapper } = await mountPage(caseStudies)
+      mountedPage = wrapper
+      expect(rows(wrapper)).toHaveLength(0)
+
+      session.ended = false
+      await signInAgain()
+
+      expect(caseStudies.list).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
+      expect(rows(wrapper)).toHaveLength(3)
+    })
+
+    it('une liste réellement vide dit toujours « aucune étude de cas »', async () => {
+      const { wrapper } = await mountPage(createStubRepository({ list: vi.fn(async () => []) }))
+
+      expect(wrapper.text()).toContain(fr.admin.caseStudies.empty)
+      expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
+    })
+  })
+
+  it("une erreur « session finie » à l'enregistrement n'affiche aucune alerte de la page", async () => {
+    // Le bandeau de session finie (AdminLayout) est alors la seule annonce : la page ne double ni
+    // d'une alerte, ni d'une clé de traduction brute (#748, constat 7).
+    const caseStudies = createStubRepository({
+      create: vi.fn(async () => Promise.reject(new SessionEndedError())),
+    })
+    const { wrapper } = await mountPage(caseStudies)
+
+    await wrapper.get('#admin-case-study-title').setValue(TRANSLATED.title)
+    await wrapper.get('#admin-case-study-problem').setValue(TRANSLATED.problem)
+    await wrapper.get('#admin-case-study-solution').setValue(TRANSLATED.solution)
+    await wrapper.get('#admin-case-study-tradeoffs').setValue(TRANSLATED.tradeoffs)
+    await wrapper.get('#admin-case-study-measured-result').setValue(TRANSLATED.measuredResult)
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(caseStudies.create).toHaveBeenCalledOnce()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.caseStudies.errors.session-ended')
+    // La saisie reste : l'échec a bien été vu comme tel, le formulaire n'est pas remis à zéro.
+    expect(valueOf(wrapper, '#admin-case-study-title')).toBe(TRANSLATED.title)
+  })
+
   it("renvoie toujours le groupe lu lors d'une modification, pour ne pas détacher la traduction", async () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -312,7 +428,7 @@ describe('AdminCaseStudiesPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -325,7 +441,7 @@ describe('AdminCaseStudiesPage', () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
     await wrapper.get('#admin-case-study-title').setValue(TRANSLATED.title)
     await wrapper.get('#admin-case-study-problem').setValue(TRANSLATED.problem)
     await wrapper.get('#admin-case-study-solution').setValue(TRANSLATED.solution)
@@ -343,8 +459,8 @@ describe('AdminCaseStudiesPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -360,13 +476,13 @@ describe('AdminCaseStudiesPage', () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-case-study-title')).toBe(TRANSLATED.title)
@@ -375,16 +491,59 @@ describe('AdminCaseStudiesPage', () => {
     expect(caseStudies.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Proposition générée par IA')
-    expect(banner.text()).toContain('FR')
+    expect(banner.text()).toContain(proposalNoticeFrom('fr'))
+  })
+
+  // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
+  let repositoryUnderLock = createStubRepository()
+
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois, pour tous les
+  // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91).
+  describeEntryFormLock({
+    name: '',
+    createTranslation: () => createTranslationRepository(),
+    mount: async (translation) => {
+      repositoryUnderLock = createStubRepository()
+      return (await mountPage(repositoryUnderLock, translation)).wrapper
+    },
+    form: 0,
+    ids: {
+      locale: 'admin-case-study-locale',
+      group: 'admin-case-study-translation-group',
+      title: 'admin-case-study-title',
+      hint: 'admin-case-study-entry-lock-help',
+    },
+    proseFields: CASE_STUDY_PROSE_FIELDS,
+    heading: TITLES.create,
+    startEdit: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    },
+    deleteEditedEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), FORM_TEXTS.delete).trigger('click')
+    },
+    startEditOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), EDIT_FR).trigger('click')
+    },
+    // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+    deleteSiblingOfOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'An asynchronous pricing engine'), FORM_TEXTS.delete).trigger('click')
+    },
+    startCreateVersion: (wrapper) => buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click'),
+    propose: async (wrapper) => {
+      await translateEntryButton(wrapper, 0).trigger('click')
+      await flushPromises()
+    },
+    holdNextSave: () => {
+      vi.mocked(repositoryUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
+    },
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
     const caseStudies = createStubRepository()
     const { wrapper } = await mountPage(caseStudies)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -404,12 +563,12 @@ describe('AdminCaseStudiesPage', () => {
     })
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
+    expect(wrapper.get('form [role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-case-study-title')).toBe(FR_TWO.title)
   })

@@ -5,9 +5,10 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSiteCardRepository'
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAboutSiteCardApiResponse {
   id: string
@@ -20,6 +21,10 @@ interface BackofficeAboutSiteCardApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/about/site-cards'
+
+function unsupportedLocaleError(): AdminAboutError {
+  return new AdminAboutError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminAboutSiteCardRepository, même pattern que
@@ -82,7 +87,7 @@ export class HttpAdminAboutSiteCardRepository implements AdminAboutSiteCardRepos
   private toEntity(card: BackofficeAboutSiteCardApiResponse): AdminAboutSiteCard {
     return {
       id: card.id,
-      locale: card.locale as Locale,
+      locale: supportedLocaleOf(card.locale, unsupportedLocaleError),
       translationGroup: card.translationGroup,
       title: card.title,
       description: card.description,

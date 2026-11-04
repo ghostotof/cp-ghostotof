@@ -1,9 +1,8 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
 import type { QualityContentRepository } from '../../domain/quality/repositories/QualityContentRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const QUALITY_CONTENT_REPOSITORY: InjectionKey<QualityContentRepository> = Symbol('QualityContentRepository')
@@ -31,7 +30,7 @@ export function useQualityContent(): UseQualityContentResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const principles = ref<readonly QualityPrinciple[]>([])
   const traits = ref<readonly QualityTrait[]>([])
   const isLoading = ref(true)
@@ -44,7 +43,7 @@ export function useQualityContent(): UseQualityContentResult {
     hasError.value = false
 
     try {
-      const content = await repository.get(locale.value as Locale)
+      const content = await repository.get(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       principles.value = content.principles
       traits.value = content.traits
@@ -55,7 +54,7 @@ export function useQualityContent(): UseQualityContentResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { principles, traits, isLoading, hasError }
 }

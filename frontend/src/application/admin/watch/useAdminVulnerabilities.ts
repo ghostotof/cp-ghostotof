@@ -1,14 +1,13 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminVulnerability } from '../../../domain/admin/watch/entities/AdminVulnerability'
 import type { AdminVulnerabilityRepository } from '../../../domain/admin/watch/repositories/AdminVulnerabilityRepository'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
 
 export const ADMIN_VULNERABILITY_REPOSITORY: InjectionKey<AdminVulnerabilityRepository> =
   Symbol('AdminVulnerabilityRepository')
 
-export interface UseAdminVulnerabilitiesResult {
+export interface UseAdminVulnerabilitiesResult extends AdminLoadState {
   vulnerabilities: Ref<readonly AdminVulnerability[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
 }
 
 /**
@@ -29,23 +28,14 @@ export function useAdminVulnerabilities(): UseAdminVulnerabilitiesResult {
   }
 
   const vulnerabilities = ref<readonly AdminVulnerability[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
-
-  const load = async (): Promise<void> => {
-    isLoading.value = true
-    hasError.value = false
-
-    try {
-      vulnerabilities.value = await repository.list()
-    } catch {
-      hasError.value = true
-    } finally {
-      isLoading.value = false
-    }
-  }
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      vulnerabilities.value = value
+    },
+  })
 
   void load()
 
-  return { vulnerabilities, isLoading, hasError }
+  return { vulnerabilities, isLoading, hasError, isLoaded }
 }

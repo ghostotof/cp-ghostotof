@@ -68,8 +68,10 @@ paths:
   have, a restored database; « credentials » rather than « password » because the predicate is an equality of versions:
   `userId`, `presentedVersion` — `0` when the claim is absent, `null` when it is present but unreadable —,
   `currentVersion`, actor `anonymous` (the refusal precedes the authentication); never the token, its payload nor the
-  login identifier. **No de-duplication, on purpose**: the browser clears the cookies after the first 401
-  (`StaleSessionCookiesClearingListener`), so only a loop replaying a kept token writes several lines — and it already
+  login identifier. **No de-duplication, on purpose**: the browser clears the cookies at the first 401 of
+  a route that requires a role (`StaleSessionCookiesClearingListener`); a public route serves the closed session as
+  anonymous and audits each request (#748 R35), so a legitimate tab writes one line per public read until its next
+  `/api/me` (C5-1, accepted), and otherwise only a loop replaying a kept token writes several lines — and it already
   writes as many `Authenticator failed.` on the `security` channel; de-duplicating through `cache.app` (in the database,
   ADR 0005-compliant) would cost an SQL read and write per refused request, on the very path a replay would hammer, to
   remove one line among several already written; the rate is bounded upstream by the nginx zones, and that replay is

@@ -5,9 +5,10 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityTraitRepository'
 import { AdminQualityError, type AdminQualityErrorReason } from '../../../domain/admin/quality/errors/AdminQualityError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeQualityTraitApiResponse {
   id: string
@@ -18,6 +19,10 @@ interface BackofficeQualityTraitApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/quality/traits'
+
+function unsupportedLocaleError(): AdminQualityError {
+  return new AdminQualityError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminQualityTraitRepository, même pattern que
@@ -80,7 +85,7 @@ export class HttpAdminQualityTraitRepository implements AdminQualityTraitReposit
   private toEntity(trait: BackofficeQualityTraitApiResponse): AdminQualityTrait {
     return {
       id: trait.id,
-      locale: trait.locale as Locale,
+      locale: supportedLocaleOf(trait.locale, unsupportedLocaleError),
       translationGroup: trait.translationGroup,
       label: trait.label,
       position: trait.position,

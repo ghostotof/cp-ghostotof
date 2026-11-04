@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useWatch } from '../../application/watch/useWatch'
 import type { SupportStatus } from '../../domain/watch/entities/WatchContent'
 import { parseIsoDate } from '../format/isoDate'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 const { content, isLoading, hasError } = useWatch()
 
 /**
@@ -54,7 +56,7 @@ const isPartial = computed(() => releaseCycles.value?.sourceStatus === 'partial'
 const IMMINENT_THRESHOLD_MONTHS = 12
 
 const deadlineFormatter = computed(
-  () => new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'long' }),
+  () => new Intl.DateTimeFormat(currentLocale.value, { year: 'numeric', month: 'long' }),
 )
 
 /**
@@ -63,12 +65,12 @@ const deadlineFormatter = computed(
  * sont l'affaire du navigateur, pas du fichier de traduction.
  */
 const relativeFormatter = computed(
-  () => new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' }),
+  () => new Intl.RelativeTimeFormat(currentLocale.value, { numeric: 'auto' }),
 )
 
 const refreshedAtFormatter = computed(
   () =>
-    new Intl.DateTimeFormat(locale.value, {
+    new Intl.DateTimeFormat(currentLocale.value, {
       dateStyle: 'long',
       timeStyle: 'short',
     }),
@@ -80,7 +82,7 @@ const refreshedAtFormatter = computed(
  * impression de précision.
  */
 function formatDeadline(isoDate: string | null): string {
-  if (isoDate === null) return '—'
+  if (null === isoDate) return '—'
 
   const parsed = parseIsoDate(isoDate)
 
@@ -151,7 +153,7 @@ function isImminent(isoDate: string | null): boolean {
 
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('stack.error') }}
@@ -160,7 +162,7 @@ function isImminent(isoDate: string | null): boolean {
     <!-- Aucun rafraîchissement encore abouti : le dire explicitement plutôt que
          d'afficher un tableau vide, qui se lirait comme « rien à signaler ». -->
     <p
-      v-else-if="refreshedAt === null"
+      v-else-if="null === refreshedAt"
       class="text-body-secondary mb-0"
     >
       {{ t('stack.neverRefreshed') }}
@@ -223,7 +225,7 @@ function isImminent(isoDate: string | null): boolean {
     </div>
 
     <div
-      v-if="!isLoading && !hasError && refreshedAt !== null"
+      v-if="!isLoading && !hasError && null !== refreshedAt"
       class="surface-panel p-3 p-sm-4"
     >
       <p

@@ -39,16 +39,24 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 #[AsEventListener(event: RequestEvent::class, priority: 20)]
 final readonly class CsrfCookieRequestSubscriber
 {
-    private const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    /**
+     * Les méthodes qui changent l'état : seules soumises au double-submit. Publique parce que
+     * `ApiRouteExposureTest` (invariant n° 8) la lit pour savoir quelles requêtes sondées doivent
+     * porter la paire `XSRF-TOKEN` : la source de vérité du contrôle est ici, une liste recopiée
+     * dans le test pourrait s'en écarter sans que rien ne rougisse.
+     */
+    public const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
     /**
      * - /api/login_check : n'a pas encore de cookie XSRF-TOKEN (posé au login,
      *   donc après cette requête).
-     * - /api/contact : endpoint public, jamais atteint avec une session ou un
-     *   cookie BEARER à protéger (un visiteur anonyme n'a pas d'"état ambiant"
-     *   qu'un attaquant pourrait faire agir à son insu) — la protection
-     *   double-submit-cookie n'a pas de sens ici. Le spam reste un risque
-     *   distinct, traité par le honeypot de ContactMessageResource.
+     * - /api/contact : endpoint public. Le SPA lui envoie ses cookies comme à toute
+     *   route de son origine ; la route ne lit aucune identité, donc aucun "état
+     *   ambiant" qu'un attaquant pourrait faire agir à son insu — la protection
+     *   double-submit-cookie n'a pas de sens ici. Un `BEARER` refusé n'y fait plus
+     *   répondre 401 (#748, R35 : une route publique sert l'anonyme, voir
+     *   PublicRouteIgnoresRefusedSessionListener). Le spam reste un risque distinct,
+     *   traité par le honeypot de ContactMessageResource.
      * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
      *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
      *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.
@@ -157,6 +165,9 @@ final readonly class CsrfCookieRequestSubscriber
         // Symfony l'exécute bien comme /api/logout.
         $path = CanonicalPath::of($request);
 
+        // Le préfixe large est voulu, pas `CanonicalPath::isUnderApi()` : le pare-feu `api` est `^/api` non
+        // ancré (A23), une route `/apix` y lirait `BEARER` ; ancrer ce test sortirait une écriture authentifiée
+        // du double-submit (`CsrfCookieRequestSubscriberTest`, cas `/apix`).
         if (!str_starts_with($path, '/api')) {
             return false;
         }

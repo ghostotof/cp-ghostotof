@@ -24,7 +24,7 @@ export interface TranslationGroupRow<T> {
  * et un bouton « Créer la version XX » (D8) sans connaître la structure de
  * `T` par ailleurs.
  */
-export function groupByTranslationGroup<T extends { translationGroup: string; locale: string; position: number }>(
+export function groupByTranslationGroup<T extends { translationGroup: string; locale: Locale; position: number }>(
   entries: readonly T[],
   locales: readonly Locale[],
 ): TranslationGroupRow<T>[] {
@@ -46,8 +46,8 @@ export function groupByTranslationGroup<T extends { translationGroup: string; lo
     const byLocale: Partial<Record<Locale, T>> = {}
 
     for (const member of members) {
-      if ((locales as readonly string[]).includes(member.locale)) {
-        byLocale[member.locale as Locale] = member
+      if (locales.includes(member.locale)) {
+        byLocale[member.locale] = member
       }
     }
 

@@ -156,6 +156,38 @@ describe('HttpAssistantRepository', () => {
     await expect(collect()).rejects.toMatchObject({ reason })
   })
 
+  // Le `beforeEach` pose un cookie XSRF-TOKEN : le 403 de la table ci-dessus est donc celui d'une
+  // écriture partie AVEC son jeton, un refus réel (#748, #732 point 4).
+  it('un 403 parti sans jeton CSRF est une session finie (unauthenticated)', async () => {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    fetchMock.mockResolvedValue(new Response('{}', { status: 403 }))
+
+    await expect(collect()).rejects.toMatchObject({ reason: 'unauthenticated' })
+  })
+
+  it('cookie XSRF-TOKEN vide : la requête part sans en-tête, son 403 est une session finie', async () => {
+    document.cookie = 'XSRF-TOKEN=; path=/'
+    fetchMock.mockResolvedValue(new Response('{}', { status: 403 }))
+
+    await expect(collect()).rejects.toMatchObject({ reason: 'unauthenticated' })
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(init.headers).not.toHaveProperty('X-XSRF-TOKEN')
+  })
+
+  it('un 403 avec jeton CSRF est un refus (forbidden), pas une session finie', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 403 }))
+
+    await expect(collect()).rejects.toMatchObject({ reason: 'forbidden' })
+  })
+
+  it('un 401 reste une session finie, avec ou sans jeton', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
+    await expect(collect()).rejects.toMatchObject({ reason: 'unauthenticated' })
+
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    await expect(collect()).rejects.toMatchObject({ reason: 'unauthenticated' })
+  })
+
   it('lit Retry-After en secondes sur un 429', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 429, headers: { 'Retry-After': '120' } }))
 

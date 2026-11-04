@@ -6,6 +6,7 @@ import type {
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAboutSettingsApiResponse {
   locale: string
@@ -17,6 +18,10 @@ interface BackofficeAboutSettingsApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/about/settings'
+
+function unsupportedLocaleError(): AdminAboutError {
+  return new AdminAboutError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminAboutSettingsRepository. La locale EST
@@ -52,7 +57,7 @@ export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepos
 
   private toEntity(settings: BackofficeAboutSettingsApiResponse): AdminAboutSettings {
     return {
-      locale: settings.locale as Locale,
+      locale: supportedLocaleOf(settings.locale, unsupportedLocaleError),
       siteEyebrow: settings.siteEyebrow,
       meEyebrow: settings.meEyebrow,
       technicalSubtitle: settings.technicalSubtitle,

@@ -29,10 +29,9 @@
 #
 # Usage :  tools/smoke-login-throttling.sh <url-de-base>
 #          ex. tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-# Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel.
-#                            Jamais via `-u` : les arguments d'un processus se
-#                            lisent dans `ps` ; le couple passe par un fichier
-#                            de configuration curl en 600 (comme audit-prod.sh).
+# Env :    la variable de la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (son nom, les
+#          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
+#          le couple passe par un fichier de configuration curl en 600.
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -44,21 +43,34 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-curl_bin="${SMOKE_CURL:-curl}"
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+# Le dossier se calcule sans `dirname` (la variable de la Basic Auth est encore exportée ici, un fils la recevrait) : `cd` et
+# `pwd` sont des commandes internes de bash. `CDPATH=''` et `--` : ni un CDPATH hérité ni un dossier qui commence par `-` ne
+# changent le dossier trouvé ; un script à la racine (`script_dir` vide) vaut `/` (C14-11).
+script_dir="${BASH_SOURCE[0]}"
+case "$script_dir" in */*) script_dir="${script_dir%/*}" ;; *) script_dir=. ;; esac
+[ -n "$script_dir" ] || script_dir=/
+# shellcheck source=tools/lib/smoke-http.sh
+source "$(CDPATH='' cd -- "$script_dir" && pwd)/lib/smoke-http.sh" || {
+  echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
+  exit 2
+}
+
+# Ordre (D2 de la quatorzième relecture) : le `trap` (qui ne retire que le fichier déjà créé), puis la Basic Auth, puis
+# seulement `date` et `mktemp` : la bibliothèque retire la variable du shell en la lisant, donc aucun fils ne la reçoit.
+headers_file=""
+trap '[ -z "$headers_file" ] || rm -f -- "$headers_file"; smoke_cleanup' EXIT
+
+# Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux ; `smoke_fetch` le lit
+# et refuse, avec lui, une URL non https:// ou un argument hors de la liste d'options admises (tools/lib/smoke-http.sh).
+smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
+
 attempts=6
 username="smoke-throttling-probe-$(date +%s)-$$"
 
 # Les en-têtes de chaque réponse, pour y lire Retry-After.
 headers_file="$(mktemp)"
-auth_config=""
-trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
-
-curl_opts=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(mktemp)"
-  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$auth_config"
-  curl_opts+=(-K "$auth_config")
-fi
+SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 
 # Le `detail` littéral de LoginRateLimitExceededException (backend) : le
 # second discriminant face à la zone nginx, dont le 429 dit « Trop de
@@ -69,44 +81,33 @@ app_detail='"detail":"Trop de tentatives de connexion.'
 # portable, et sans pipe que `pipefail` ferait échouer sur un SIGPIPE.
 type_pattern='"type":"(\\)?/errors(\\)?/rate-limited"'
 
-# Valeur d'un en-tête de la dernière réponse : nom insensible à la casse
-# (HTTP/2 l'écrit en minuscules), CR retiré, dernière occurrence.
-header() {
-  tr -d '\r' < "$headers_file" | awk -v name="$1" '
-    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); value = $0 }
-    END { print value }'
-}
-
 throttled_at=0
 for attempt in $(seq 1 "$attempts"); do
-  # Dernière ligne = code HTTP, le reste = corps.
-  response="$("$curl_bin" "${curl_opts[@]}" \
+  # Un curl sans réponse (sortie 1) ou un fichier de la Basic Auth absent (sortie 2) arrête le smoke en le disant.
+  smoke_fetch "tentative $attempt" "$base/api/login_check" \
     -X POST \
     -H 'Content-Type: application/json' \
     -H 'X-Requested-With: fetch' \
-    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" \
-    -w '\n%{http_code}' \
-    "$base/api/login_check")"
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
+    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" || exit "$?"
+  status="$SMOKE_STATUS"
+  body="$SMOKE_BODY"
 
   # Le corps est toujours montré, tronqué : un 401 de la Basic Auth de
   # l'ingress (HTML nginx) et un 401 de l'application (JSON Lexik) se
   # ressemblent au code près, et c'est la première chose à savoir quand ce
-  # test échoue. Tout caractère de contrôle devient une espace : ce texte part
-  # dans le journal de la CI, où un `\r` ouvrirait une ligne `::commande::`
-  # que le runner exécuterait.
-  excerpt="$(printf '%s' "$body" | tr '\000-\037\177' '[ *]' | cut -c1-160)"
+  # test échoue. `smoke_excerpt` neutralise les caractères de contrôle (le texte
+  # part dans le journal de la CI).
+  excerpt="$(smoke_excerpt "$body")"
 
   if [ "$status" = "429" ]; then
-    retry_after="$(header Retry-After)"
-    content_type="$(header Content-Type)"
+    retry_after="$(smoke_header "$headers_file" Retry-After)"
+    content_type="$(smoke_header "$headers_file" Content-Type)"
     if [ -z "$retry_after" ]; then
       echo "tentative $attempt : 429 sans Retry-After — c'est la zone nginx \`login\`, pas le login_throttling de l'application, et il ne prouve rien sur l'état des limiteurs (corps : $excerpt)" >&2
       exit 1
     fi
     if ! [[ "$retry_after" =~ ^[0-9]+$ ]] || [ "$retry_after" -le 0 ]; then
-      echo "tentative $attempt : 429 avec un Retry-After invalide (« $retry_after »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
+      echo "tentative $attempt : 429 avec un Retry-After invalide (« $(smoke_excerpt "$retry_after") »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
       exit 1
     fi
     if [[ "$content_type" != application/problem+json* ]]; then

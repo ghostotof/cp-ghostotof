@@ -6,7 +6,9 @@ import { QualityContentUnavailableError } from '../../domain/quality/errors/Qual
 /**
  * Implémentation HTTP de QualityContentRepository. Endpoint public (GET
  * /api/quality/{locale}, cf. App\Portfolio\Quality, aucune restriction dans
- * access_control côté backend) : pas de `credentials: 'include'` nécessaire.
+ * access_control côté backend).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpQualityContentRepository implements QualityContentRepository {
   private readonly apiBaseUrl: string

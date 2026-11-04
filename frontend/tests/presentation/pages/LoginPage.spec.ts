@@ -3,13 +3,18 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../../../src/presentation/pages/LoginPage.vue'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import { sessionFor } from '../../support/authSession'
+import { renderedMessage } from '../../support/renderedMessage'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const StubPage = { template: '<div />' }
 
@@ -17,12 +22,32 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }
 }
 
-async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: Record<string, string> = {}) {
+/** La session que le reste de l'application voit (authState, partagé d'un test à l'autre). */
+async function primeSession(user: AuthenticatedUser | null): Promise<void> {
+  const repository = createStubRepository({ me: vi.fn(async () => sessionFor(user)) })
+  const Probe = defineComponent({
+    setup() {
+      return { auth: useAuth() }
+    },
+    template: '<div />',
+  })
+  const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+  await probe.vm.auth.checkAuth()
+  probe.unmount()
+}
+
+async function mountLoginPage(
+  repository: AuthRepository,
+  locale = 'fr',
+  query: Record<string, string> = {},
+  unsupportedLocale?: string,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -36,6 +61,9 @@ async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: 
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale as typeof i18n.global.locale.value
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   const wrapper = mount(LoginPage, {
     global: {
@@ -72,6 +100,19 @@ describe('LoginPage', () => {
     expect(router.currentRoute.value.path).toBe('/fr')
   })
 
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse ; la route donne la langue.
+  it('sous une langue hors du site, le retour après la connexion suit la route, non `/de` (#748, R227)', async () => {
+    const repository = createStubRepository()
+    const { wrapper, router } = await mountLoginPage(repository, 'en', {}, 'de')
+
+    await wrapper.get('#login-username').setValue('jane')
+    await wrapper.get('#login-password').setValue('password123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/en')
+  })
+
   it('affiche un message dédié en cas d\'identifiants invalides', async () => {
     const repository = createStubRepository({ login: vi.fn(async () => Promise.reject(new InvalidCredentialsError())) })
     const { wrapper } = await mountLoginPage(repository)
@@ -85,12 +126,12 @@ describe('LoginPage', () => {
   })
 
   it.each([
-    ['fr', null, 'Trop de tentatives de connexion. Réessayez dans quelques minutes.'],
-    ['en', null, 'Too many login attempts. Please try again in a few minutes.'],
-    ['fr', 900, 'Trop de tentatives de connexion. Réessayez dans 15 minutes.'],
-    ['en', 900, 'Too many login attempts. Please try again in 15 minutes.'],
-    ['fr', 30, 'Trop de tentatives de connexion. Réessayez dans 1 minute.'],
-    ['en', 30, 'Too many login attempts. Please try again in 1 minute.'],
+    ['fr', null, fr.auth.rateLimited],
+    ['en', null, en.auth.rateLimited],
+    ['fr', 900, renderedMessage('fr', 'auth.rateLimitedIn', { minutes: 15 }, 15)],
+    ['en', 900, renderedMessage('en', 'auth.rateLimitedIn', { minutes: 15 }, 15)],
+    ['fr', 30, renderedMessage('fr', 'auth.rateLimitedIn', { minutes: 1 }, 1)],
+    ['en', 30, renderedMessage('en', 'auth.rateLimitedIn', { minutes: 1 }, 1)],
   ])('affiche un message dédié au throttling du login (%s, Retry-After %s, issue #399)', async (locale, retryAfterSeconds, message) => {
     const repository = createStubRepository({ login: vi.fn(async () => Promise.reject(new LoginRateLimitedError(retryAfterSeconds))) })
     const { wrapper } = await mountLoginPage(repository, locale)
@@ -105,8 +146,8 @@ describe('LoginPage', () => {
 
   describe('session finie (`expired`, posé par la redirection d\'une page à laquelle l\'API a refusé la session, #650 R5a)', () => {
     it.each([
-      ['fr', 'Votre session a pris fin, reconnectez-vous.'],
-      ['en', 'Your session has ended, please sign in again.'],
+      ['fr', fr.auth.sessionEnded],
+      ['en', en.auth.sessionEnded],
     ])('annonce que la session a pris fin, dans une région role="status" (%s)', async (locale, notice) => {
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
 
@@ -121,9 +162,66 @@ describe('LoginPage', () => {
         const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', query)
 
         expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('a pris fin')
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
       },
     )
+
+    describe('connectée (R30)', () => {
+      afterEach(async () => {
+        await primeSession(null)
+      })
+
+      // Le lien `expired=1` s'ouvre dans un nouvel onglet, où `authState.sessionEnded` est faux : le critère est
+      // « un compte est affiché », comme pour `reauth=1`, et la page dit alors la même chose neutre.
+      it.each([
+        ['fr', fr.auth.reauthNotice],
+        ['en', en.auth.reauthNotice],
+      ])("connectée, expired=1 : l'annonce neutre, pas « session finie » (%s)", async (locale, notice) => {
+        await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+        const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toBe(notice)
+        expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(en.auth.sessionEnded)
+      })
+
+      // Palier de base : l'accès de base tient (le cookie vit), la session n'est pas finie ; et il n'y a aucun compte
+      // à confirmer. Cas réel : session finie dans l'onglet A, « Accès instantané » dans B, lien du bandeau de A ouvert
+      // ensuite (#748, R40, CR4-7). La page est la connexion ordinaire.
+      it.each([['fr'], ['en']])("palier de base, expired=1 : pas d'annonce, ni « session finie » ni « confirmez » (%s)", async (locale) => {
+        const repository = createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) })
+        const probe = mount(
+          defineComponent({
+            setup() {
+              return { auth: useAuth() }
+            },
+            template: '<div />',
+          }),
+          { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } },
+        )
+        await probe.vm.auth.checkAuth()
+        probe.unmount()
+        expect(authState.tier).toBe('base')
+
+        const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain(fr.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(en.auth.sessionEnded)
+        expect(wrapper.text()).not.toContain(fr.auth.reauthNotice)
+        expect(wrapper.text()).not.toContain(en.auth.reauthNotice)
+      })
+
+      it('anonyme, expired=1 : « votre session a pris fin », sans l\'annonce neutre', async () => {
+        await primeSession(null)
+        const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.get('[data-testid="login-session-ended-notice"]').text()).toBe(fr.auth.sessionEnded)
+        expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+      })
+    })
 
     it('après la connexion, retour à la page d\'où l\'on venait', async () => {
       const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/oauth/consent?client_id=claude-code' })
@@ -154,32 +252,20 @@ describe('LoginPage', () => {
   describe('reconnexion demandée par le consentement MCP (`reauth`, #647)', () => {
     const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
 
-    /** La session que le reste de l'application voit (authState, partagé d'un test à l'autre). */
-    async function primeSession(user: AuthenticatedUser | null): Promise<void> {
-      const repository = createStubRepository({ me: vi.fn(async () => sessionFor(user)) })
-      const Probe = defineComponent({
-        setup() {
-          return { auth: useAuth() }
-        },
-        template: '<div />',
-      })
-      const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
-      await probe.vm.auth.checkAuth()
-      probe.unmount()
-    }
-
     afterEach(async () => {
       await primeSession(null)
     })
 
+    // L'annonce est neutre (#748, R7) : `reauth=1` s'ouvre aussi depuis « Changer de compte » (un refus, une
+    // page MCP ou l'assistant), plus seulement pour l'authentification de plus de dix minutes du consentement.
     it.each([
-      ['fr', 'Confirmez votre identité'],
-      ['en', 'Confirm your identity'],
-    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée (%s)', async (locale, notice) => {
+      ['fr', fr.auth.reauthNotice],
+      ['en', en.auth.reauthNotice],
+    ])('dit pourquoi la page de connexion s’ouvre à une personne connectée, sans parler de dix minutes (%s)', async (locale, notice) => {
       await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
 
-      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toContain(notice)
+      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toBe(notice)
     })
 
     it.each(['fr', 'en'])(
@@ -189,8 +275,8 @@ describe('LoginPage', () => {
         const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
 
         expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('Confirmez votre identité')
-        expect(wrapper.text()).not.toContain('Confirm your identity')
+        expect(wrapper.text()).not.toContain(fr.auth.reauthNotice)
+        expect(wrapper.text()).not.toContain(en.auth.reauthNotice)
       },
     )
 

@@ -9,7 +9,9 @@ import {
 } from '../../../domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeAnonymousCvSectionApiResponse {
   id: string
@@ -23,6 +25,10 @@ interface BackofficeAnonymousCvSectionApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/anonymous-cv'
+
+function unsupportedLocaleError(): AdminAnonymousCvSectionError {
+  return new AdminAnonymousCvSectionError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminAnonymousCvSectionRepository. Toutes les
@@ -85,7 +91,7 @@ export class HttpAdminAnonymousCvSectionRepository implements AdminAnonymousCvSe
   private toEntity(section: BackofficeAnonymousCvSectionApiResponse): AdminAnonymousCvSection {
     return {
       id: section.id,
-      locale: section.locale,
+      locale: supportedLocaleOf(section.locale, unsupportedLocaleError),
       translationGroup: section.translationGroup,
       title: section.title,
       skills: section.skills,

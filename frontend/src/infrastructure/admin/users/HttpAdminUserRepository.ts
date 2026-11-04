@@ -2,7 +2,8 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError, type AdminUserErrorReason } from '../../../domain/admin/users/errors/AdminUserError'
-import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
+import type { ApiProblemBody } from '../../http/problemJson'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeUserApiResponse {
   id: string

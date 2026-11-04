@@ -5,6 +5,8 @@ import CopyableCode, { ANNOUNCEMENT_DELAY_MS, ANNOUNCEMENT_LIFETIME_MS } from '.
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const CODE = 'claude mcp add --transport http cp-ghostotof https://site.example.test/api/mcp'
 
@@ -92,7 +94,7 @@ describe('CopyableCode', () => {
 
     await copyAndAnnounce(wrapper)
 
-    expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
+    expect(wrapper.find('[role="status"]').text()).toBe(fr.common.copied)
   })
 
   it('annonce la copie en anglais sur la version anglaise', async () => {
@@ -101,7 +103,7 @@ describe('CopyableCode', () => {
     await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('button').text()).toBe('Copy the Claude Code command')
-    expect(wrapper.find('[role="status"]').text()).toBe('Copied to the clipboard.')
+    expect(wrapper.find('[role="status"]').text()).toBe(en.common.copied)
   })
 
   /**
@@ -120,7 +122,7 @@ describe('CopyableCode', () => {
 
     vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
     await nextTick()
-    expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
+    expect(wrapper.find('[role="status"]').text()).toBe(fr.common.copied)
   })
 
   /**
@@ -156,7 +158,7 @@ describe('CopyableCode', () => {
     vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
     await nextTick()
 
-    expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
+    expect(wrapper.find('[role="status"]').text()).toBe(fr.common.copied)
   })
 
   /**
@@ -186,7 +188,7 @@ describe('CopyableCode', () => {
     await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('[role="status"]').text()).toBe(
-      'La copie a échoué : sélectionnez le texte pour le copier à la main.',
+      fr.common.copyFailed,
     )
   })
 
@@ -201,7 +203,7 @@ describe('CopyableCode', () => {
     await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('[role="status"]').text()).toBe(
-      'La copie a échoué : sélectionnez le texte pour le copier à la main.',
+      fr.common.copyFailed,
     )
   })
 

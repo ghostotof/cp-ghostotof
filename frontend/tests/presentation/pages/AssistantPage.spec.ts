@@ -1,16 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { defineComponent } from 'vue'
 import AssistantPage from '../../../src/presentation/pages/AssistantPage.vue'
 import { ASSISTANT_REPOSITORY } from '../../../src/application/assistant/useAssistant'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import { AssistantError, type AssistantErrorReason } from '../../../src/domain/assistant/errors/AssistantError'
+import { AUTH_REPOSITORY, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import AppLayout from '../../../src/presentation/layout/AppLayout.vue'
+import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
+import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
+import { sessionFor } from '../../support/authSession'
+import { signInAgain } from '../../support/signInAgain'
+import { accessRefusalTexts } from '../../support/accessRefusalTexts'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
-// Aucun flux ne doit survivre à un test : chaque wrapper est démonté à la fin.
-enableAutoUnmount(afterEach)
+const REFUSAL = accessRefusalTexts('fr')
+const REFUSAL_EN = accessRefusalTexts('en')
 
 /** Un appel au repository dont le test pilote les fragments et l'issue. */
 interface PendingCall {
@@ -30,20 +43,34 @@ function createControlledRepository(): { repository: AssistantRepository; calls:
   return { repository: { answer } as unknown as AssistantRepository, calls, answer }
 }
 
-function mountPage(repository: AssistantRepository, downloadCv = vi.fn(async () => ({ blob: new Blob(), filename: 'cv.pdf' }))): VueWrapper {
+/** `/api/me`, que la page relit sur un refus réel (#748, R7) : il répond le palier de base. */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
+function mountPage(
+  repository: AssistantRepository,
+  downloadCv = vi.fn(async () => ({ blob: new Blob(), filename: 'cv.pdf' })),
+  locale: 'fr' | 'en' = 'fr',
+): VueWrapper {
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
+  const i18n = createAppI18n()
+  i18n.global.locale.value = locale
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
+      // `requiresAuth`, comme la vraie route : sans lui le lien de connexion n'a pas de `redirect` (#748, R16, F8).
+      { path: '/:locale/assistant', component: { template: '<div />' }, meta: { requiresAuth: true } },
     ],
   })
 
   return mount(AssistantPage, {
     global: {
-      plugins: [router, createAppI18n()],
+      plugins: [router, i18n],
       provide: {
         [ASSISTANT_REPOSITORY as symbol]: repository,
+        [AUTH_REPOSITORY as symbol]: authRepository,
         [CV_REPOSITORY as symbol]: { download: downloadCv },
       },
     },
@@ -69,7 +96,7 @@ describe('AssistantPage', () => {
 
     expect(wrapper.find('h1').exists()).toBe(true)
     const notice = wrapper.find('[data-testid="assistant-disclaimer"]')
-    expect(notice.text()).toContain('peut se tromper')
+    expect(notice.text()).toContain(fr.assistant.disclaimer.notice)
     expect(notice.attributes('role')).toBeUndefined()
     const hrefs = notice.findAll('a').map((a) => a.attributes('href'))
     expect(hrefs).toEqual(['/fr/case-studies', '/fr/anonymous-cv'])
@@ -194,20 +221,8 @@ describe('AssistantPage', () => {
     await wrapper.find('[data-testid="assistant-disclaimer"] button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(createAppI18n().global.t('common.downloadCvError'))
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.common.downloadCvError)
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
-  })
-
-  it('403 : le message parle d\'une session à rafraîchir', async () => {
-    const { repository, calls } = createControlledRepository()
-    const wrapper = mountPage(repository)
-
-    await type(wrapper, 'Question')
-    await submitWithButton(wrapper)
-    calls[0].reject(new AssistantError('forbidden'))
-    await flushPromises()
-
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre session ne permet plus d\'utiliser l\'assistant. Reconnectez-vous.')
   })
 
   it('Entrée pendant une composition IME n\'envoie pas', async () => {
@@ -227,12 +242,12 @@ describe('AssistantPage', () => {
     await type(wrapper, '😀'.repeat(3))
     const counter = wrapper.find('#assistant-counter')
     expect(counter.text()).toContain('3 / 1000')
-    expect(counter.classes()).not.toContain('text-danger')
+    expect(counter.classes()).not.toContain('text-danger-emphasis')
     expect(wrapper.find('textarea').attributes('aria-describedby')).toBe('assistant-counter')
     expect(wrapper.find('textarea').attributes('maxlength')).toBeUndefined()
 
     await type(wrapper, 'a'.repeat(1001))
-    expect(counter.classes()).toContain('text-danger')
+    expect(counter.classes()).toContain('text-danger-emphasis')
     expect(sendButton(wrapper).attributes('disabled')).toBeDefined()
   })
 
@@ -290,8 +305,65 @@ describe('AssistantPage', () => {
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
   })
 
+  // Session finie (401, ou 403 sans jeton CSRF) : le lien s'ouvre, la route `login` accueille un anonyme.
+  // Un nouvel onglet (#748, R6) : dans le même, la question tapée serait perdue ; `redirect` ramène l'autre onglet ici.
+  it.each<['fr' | 'en', string, string]>([
+    ['fr', fr.assistant.errors.unauthenticated, `${fr.assistant.errors.relogin} ${fr.common.opensInNewTab}`],
+    ['en', en.assistant.errors.unauthenticated, `${en.assistant.errors.relogin} ${en.common.opensInNewTab}`],
+  ])("session finie (%s) : « Se reconnecter » : nouvel onglet, expired=1, retour à l'assistant", async (locale, message, linkText) => {
+    const { repository, calls } = createControlledRepository()
+    const wrapper = mountPage(repository, undefined, locale)
+    // La page est montée sur sa route : `redirect` est le chemin courant.
+    await wrapper.vm.$router.push(`/${locale}/assistant`)
+
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    calls[0].reject(new AssistantError('unauthenticated'))
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain(message)
+    const link = alert.find('a')
+    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant&expired=1`)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener')
+    expect(link.text()).toBe(linkText)
+  })
+
+  // Refus réel (403 avec jeton) : la session vaut pour le reste du site ; le message est neutre (un compte rétrogradé,
+  // ou une signature CSRF périmée) et « Changer de compte » ouvre la connexion dans le même onglet (#748, R7) : la
+  // conversation perdue est acceptée.
+  it.each<['fr' | 'en', string, string]>([
+    [
+      'fr',
+      REFUSAL.accessRefused,
+      REFUSAL.switchAccount,
+    ],
+    [
+      'en',
+      REFUSAL_EN.accessRefused,
+      REFUSAL_EN.switchAccount,
+    ],
+  ])('refus (%s) : message neutre et « Changer de compte » (reauth=1, retour à l\'assistant)', async (locale, message, linkText) => {
+    const { repository, calls } = createControlledRepository()
+    const wrapper = mountPage(repository, undefined, locale)
+    await wrapper.vm.$router.push(`/${locale}/assistant`)
+
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    calls[0].reject(new AssistantError('forbidden'))
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text().replace(/\s+/g, ' ')).toBe(`${message} ${linkText}`)
+    const link = alert.get('a')
+    expect(link.text()).toBe(linkText)
+    expect(link.attributes('target')).toBeUndefined()
+    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant&reauth=1`)
+  })
+
   it.each<AssistantErrorReason>(['unauthenticated', 'forbidden'])(
-    'erreur « %s » : message et lien de reconnexion avec redirect',
+    'erreur « %s » : aucune violation d\'accessibilité détectable',
     async (reason) => {
       const { repository, calls } = createControlledRepository()
       const wrapper = mountPage(repository)
@@ -301,8 +373,7 @@ describe('AssistantPage', () => {
       calls[0].reject(new AssistantError(reason))
       await flushPromises()
 
-      const link = wrapper.find('[role="alert"] a')
-      expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/assistant')
+      await expectNoAccessibilityViolation(wrapper)
     },
   )
 
@@ -344,7 +415,7 @@ describe('AssistantPage', () => {
     calls[0].reject(new AssistantError('network'))
     await flushPromises()
 
-    expect(wrapper.find('[role="log"]').text()).toContain('incomplète')
+    expect(wrapper.find('[role="log"]').text()).toContain(fr.assistant.incomplete)
   })
 
   it('ne présente aucune violation d\'accessibilité, conversation affichée', async () => {
@@ -358,5 +429,96 @@ describe('AssistantPage', () => {
     await flushPromises()
 
     await expectNoAccessibilityViolation(wrapper)
+  })
+})
+
+/**
+ * Un autre compte revient pendant que l'assistant montre une conversation (#748, R18, Review Focus 3) : la page est
+ * remontée par `AppLayout`, rien du premier compte n'est affiché. Le même chemin garderait sinon la même instance.
+ */
+describe('AssistantPage — le compte change au retour', () => {
+  const FIRST = { username: 'premier', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+  const OTHER = { username: 'autre', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+
+  afterEach(async () => {
+    await signInAgain()
+  })
+
+  async function mountInLayout(returning: typeof FIRST, repository: AssistantRepository) {
+    // Le compte affiché quand la session finit : c'est lui que le retour compare.
+    const signedIn: AuthRepository = {
+      login: vi.fn(async () => FIRST),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor(returning)),
+    }
+    const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+    const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: signedIn } } })
+    await probe.vm.auth.login(FIRST.username, 'x')
+    probe.unmount()
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
+        { path: '/:locale/assistant', name: 'assistant', component: AssistantPage, meta: { requiresAuth: true } },
+      ],
+    })
+    await router.push('/fr/assistant')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: {
+        plugins: [router, createAppI18n()],
+        provide: {
+          [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
+          [AUTH_REPOSITORY as symbol]: signedIn,
+          [ASSISTANT_REPOSITORY as symbol]: repository,
+          [CV_REPOSITORY as symbol]: { download: vi.fn() },
+          [BASE_ACCESS_REPOSITORY as symbol]: { grant: async () => undefined },
+        },
+      },
+    })
+    await flushPromises()
+
+    return { wrapper, signedIn }
+  }
+
+  async function converse(wrapper: VueWrapper, calls: PendingCall[]): Promise<void> {
+    await wrapper.find('textarea').setValue('Quelle expérience ?')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    calls[0].onDelta('Douze ans.')
+    calls[0].resolve()
+    await flushPromises()
+  }
+
+  async function returnToTab(): Promise<void> {
+    markSessionExpired()
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+  }
+
+  it("un autre compte revient : la conversation du premier n'est plus affichée", async () => {
+    const { repository, calls } = createControlledRepository()
+    const { wrapper } = await mountInLayout(OTHER, repository)
+    await converse(wrapper, calls)
+    expect(wrapper.find('[role="log"]').text()).toContain('Douze ans.')
+
+    await returnToTab()
+
+    expect(wrapper.find('[role="log"]').text()).not.toContain('Douze ans.')
+    expect(wrapper.find('[role="log"]').text()).not.toContain('Quelle expérience ?')
+  })
+
+  it('le même compte revient : la conversation reste affichée', async () => {
+    const { repository, calls } = createControlledRepository()
+    const { wrapper } = await mountInLayout(FIRST, repository)
+    await converse(wrapper, calls)
+
+    await returnToTab()
+
+    expect(wrapper.find('[role="log"]').text()).toContain('Douze ans.')
   })
 })

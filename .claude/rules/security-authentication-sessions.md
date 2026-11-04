@@ -3,6 +3,7 @@ paths:
   - "backend/src/Security/Authentication/Infrastructure/Http/AuthCookieFactory.php"
   - "backend/src/Security/Authentication/Infrastructure/Http/UnknownAuthCookieException.php"
   - "backend/src/Security/Authentication/Infrastructure/Jwt/**"
+  - "backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php"
   - "backend/src/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChangeRefusalListener.php"
   - "backend/src/Security/Authentication/Infrastructure/Security/SessionPredatesPasswordChangeException.php"
   - "backend/src/Shared/Domain/Security/CredentialsVersionClaim.php"
@@ -13,9 +14,16 @@ paths:
   - "backend/tests/Security/Authentication/SessionBeforePasswordChangeTest.php"
   - "backend/tests/Security/Authentication/Infrastructure/Http/AuthCookieFactoryTest.php"
   - "backend/tests/Security/Authentication/Infrastructure/Jwt/**"
+  - "backend/tests/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSession*Test.php"
   - "backend/tests/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChange*Test.php"
   - "backend/tests/Support/CookieConstructions.php"
   - "backend/tests/Support/ReadsResponseCookies.php"
+  - "backend/tests/Support/PutsTheBearerCookie.php"
+  - "backend/tests/Support/RefusedBearerCookie.php"
+  - "tools/smoke-dead-session-cookie.sh"
+  - "tools/tests/smoke-dead-session-cookie.test.sh"
+  - "tools/lib/smoke-http.sh"
+  - "tools/tests/smoke-http.test.sh"
 ---
 
 # Backend — `Security/Authentication`: cookies and sessions
@@ -25,13 +33,25 @@ paths:
 - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
   `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
   without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
-  `/api/logout`).
+  `/api/logout`). **`BEARER` and `XSRF-TOKEN` are session cookies, at login as at the base access** (#748, F1, the
+  author's decision of 2026-10-29, replacing R1's persistent `XSRF-TOKEN`): `set_cookies.BEARER.lifetime: 0` (Lexik
+  gives no `Expires`: `JWTCookieProvider` answers `0` for a zero lifetime) and `xsrf($token)` without expiry, in
+  `LoginSuccessSubscriber` (which no longer reads `token_ttl`) and `BaseAccessController`. Why: closing the browser
+  without session restore then ends the session, read and write, and the cookies always die together (a session
+  `XSRF-TOKEN` thrown away while a persistent `BEARER` survived made every write a 403 read « session ended », in a
+  loop — #748 CR3). The JWT keeps `exp` = `token_ttl` (3600) or 900 s at the base access: **the token, not the cookie,
+  bounds the session**, so a copied JWT stays valid until its `exp` (ADR 0003, unchanged). A browser that restores its
+  session restores the cookies too, accepted. A session opened before the deployment keeps its persistent cookies, one
+  hour at most. `AuthCookieAttributesTest` (`testTheLoginCookiesAreSessionCookies`,
+  `testTheBaseAccessCookiesAreSessionCookies`: `getExpiresTime()` is `0` on the response) and
+  `BaseAccessControllerTest` (the body's `expiresAt` equals the JWT's `exp`) pin it.
 - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
   cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
   `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
   only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below; `dev` is served in http,
   where Chrome and Firefox accept a `Secure` cookie on `localhost`, a secure context, but not every browser,
-  and none on another address). `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+  and none on another address). `bearer()` / `xsrf()` take **one parameter, no expiry** (#748, St3-3: a session cookie only, so
+  none persistent can be asked for; `AuthCookieFactoryTest::testNeitherCookieTakesAnExpiry`),
   `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
   from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
   three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
@@ -61,7 +81,7 @@ paths:
   stay needed. Not `withPath()` / `withRaw()`: the first is also a PSR-7 URI method (league), and neither
   drops a protection. A `with…()` homonym of another class is refused by name: rename it, no allow-list.
   Not seen, accepted: a dynamic call, the header composed (`'Set-'.'Cookie'`, `sprintf()`) or written with
-  `\u{…}`, a grouped import or `use function` (both refused in `src/` by `ImportsStaySortedTest`), the
+  `\u{…}`, a `use function` (refused in `src/` by `ImportsStaySortedTest`), the
   vendor and the configuration. **At run time**, `ApiRouteExposureTest` (invariant 7, trait
   `tests/Support/ReadsResponseCookies`) requires every response it produces — after each of its requests,
   and on each `PUBLIC_PATHS` route called anonymously, `/api/mcp` and its PSR-7 bridge included — to set
@@ -88,7 +108,8 @@ paths:
   would otherwise pass for a fresh login, and outlive a password change. The `cv` of the refreshed token is the one
   **of the token being refreshed**, never a re-read of the account's current version, which would absolve a stolen
   token.
-- **A session opened before the last password change is refused by the whole `api` firewall** (#650, R1b, the
+- **A session opened before the last password change is refused by every route of the `api` firewall that requires a role; a public route
+  serves the request as anonymous, the refusal still audited** (#650, R1b, the
   author's decision of 2026-10-28; ADR 0003 amended), **judged on the credentials version the JWT carries, not on a
   date** (S1 of the second review, decision of 2026-10-28). Three pieces, one source of truth each:
   - **`cpg_user.credentials_version`** (`INT NOT NULL DEFAULT 0`, `Version20261028180000`, fingerprint n° 39 of
@@ -122,13 +143,73 @@ paths:
     login that read the old hash before the change's COMMIT but signed a second later passed (F-A), two pods' clocks
     refused a legitimate sign-in (F-B), and « the same second » was refused in both directions (`<=`). All gone: a
     person signing in right after a change is served, and tests no longer move a date back in SQL. A future `iat`
-    (a pod's clock ahead) is refused by Lexik itself before this rule.
-  - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID`) makes that refusal — that
-    one only — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The firewall authenticates
-    as soon as a cookie is present, **public routes included**: without it a refused cookie, alive up to an hour more,
-    would answer 401 to every `/api` request, the About page and the contact form too. The next request is
-    anonymous; the frontend reads that 401 as a finished session (a banner mid-page in the backoffice, the sign-in
-    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »).
+    (a pod's clock ahead by more than `clock_skew`, below) is refused by Lexik itself before this rule.
+  - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID` **and** `JWT_EXPIRED`, #748
+    F1) makes **every** refusal of the `BEARER` cookie — expired, invalid (signature, payload, account gone), opened
+    before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`: with
+    session cookies a refused one would stay until the browser closes. The next request is anonymous.
+    `JWT_NOT_FOUND` (no cookie) clears nothing. **Accepted limit**: a login's expiry is not exposed to the
+    frontend, so the first authenticated request after its `exp` takes the 401 (a read: 401; a write: 401, then the CSRF's
+    403 without token), read as an ended session (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in
+    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by
+    `RefusedSessionCookiesAreClearedTest` (cleared on `/api/me` with the factory's attributes, the public route served
+    afterwards, a served session clearing nothing) and, for the password change, `SessionBeforePasswordChangeTest`.
+  - **`Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener`** (#748 R35, the author's decision of
+    2026-10-29, replacing R23's `credentials: 'omit'` and R24's replay): **a route with no `access_control` rule serves
+    the request as anonymous and touches nothing**. A `LoginFailureEvent`
+    listener on `security.event_dispatcher.api` only, last priority (-1024), that sets the response to `null` when the
+    `AccessMap` asks for nothing — `requiresAccess()` is `AccessListener::supports()`'s predicate, compared with it on
+    every route by a test, no second list of public routes (Lexik still builds and discards its 401). A protected
+    route keeps its 401 and the clearing; the first one reached clears the dead cookie, and the SPA reads one at each
+    load (`GET /api/me`). **Invariant n° 8 of `ApiRouteExposureTest`**: on every route and method — writes carrying a valid CSRF pair,
+    or the double-submit's 403 would answer first —, a refused `BEARER` (invalid, expired) gets the anonymous status, a 401
+    of a route that requires a role (`requiresAccess()`) expires both cookies with the factory's exact attributes, and a
+    `PUBLIC_PATHS` route sets no cookie the anonymous call does not; on the `api` firewall a route that requires a role
+    answers the anonymous call 401 (C7-10). **The premise — a public route is a route without a rule, every authorization of
+    `/api` an `access_control` rule — has three witnesses, listed here only** (the docblocks point here): **invariant n° 9 of
+    `ApiRouteExposureTest`** (R73, decision 1 of the seventh review), at run time on the router and the `AccessMap`: on the
+    `api` firewall every route outside `PUBLIC_PATHS` has a rule and every `PUBLIC_PATHS` route has none, `/api/logout` the one
+    justified exception (`RULELESS_OUTSIDE_PUBLIC_PATHS`, each entry required to still be needed), so a route outside
+    `PUBLIC_PATHS` guarded otherwise (`#[CurrentUser]`, a hand-thrown refusal) turns it red; `AuthorizationLivesInAccessControlTest`,
+    whose token detector (`tests/Support/AuthorizationSites`, proven on code extracts, not widened: its limits are in its
+    docblock) refuses in `src/` an `#[IsGranted]`, a `denyAccessUnlessGranted`, an `isGranted()`, an API Platform `security:`
+    argument, a hand-thrown `AccessDenied(Http)Exception` / `UnauthorizedHttpException`, `AccessDecisionManagerInterface` and an
+    `is_granted(` string, each exemption (the MCP reader, the two CSRF guards) carrying its reason and the number of sites of
+    each kind it covers in its file; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform
+    metadata — every resource, operation, parameter, link
+    and property — of the resources, of their input and output DTOs and of the `App\` objects they nest (R74, R88) —, a
+    `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and
+    `securityPostValidation` of the resources and operations, a
+    parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in
+    YAML or XML or merged by `api_platform.defaults`. **Seen by none
+    (accepted, Q1 of the seventh review)**: an authorization other than an API Platform expression on a `PUBLIC_PATHS` route;
+    the written justification of the `PUBLIC_PATHS` entry is what a review reads.
+    Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
+    firewall without authenticator for public routes. Pinned by `PublicRouteIgnoresRefusedSession{,Registration}Test`,
+    the three witnesses above and, on the real stack, `tools/smoke-dead-session-cookie.sh`
+    (`smoke-test-preprod`, behind the Basic Auth the test container lacks): a random `BEARER` on a public read gets 200
+    and no `Set-Cookie` for `BEARER` nor `XSRF-TOKEN`; on `/api/me` a 401 that expires both.
+    Its plumbing (the Basic Auth file, exits 1 and 2) is `tools/lib/smoke-http.sh`'s, described once in
+    `.claude/rules/outillage-smoke.md`; offline tests
+    `tools/tests/smoke-dead-session-cookie.test.sh` and `tools/tests/smoke-http.test.sh`.
+    **Accepted limit (C5-1, the author's decision of 2026-10-30)**: a closed session (the password changed since) kept by a
+    legitimate tab writes one `session-refused-after-credentials-change` line per public request until that tab's next
+    `GET /api/me` — every load — clears the cookie; bounded by the nginx `publicapi` zone and the page's life, and an
+    attacker gains nothing (served as anonymous). Not de-duplicated, for the reason in `security-authentication-audit.md`.
+    **Accepted (C5-2, the author's decision of 2026-10-30)**: since the SPA sends its cookies to public reads (R37), a public
+    read by a signed-in person is authenticated — the JWT verified and one `SELECT` of the account (the `cpg_users` provider
+    reloads it) —, the price of serving a public route whatever the cookie (decision 1 of the fourth review); the response
+    stays the anonymous one.
+  - **`lexik_jwt_authentication.clock_skew: 5`** (#748, A3-9, the author's decision of 2026-10-29): a pod's clock a
+    second ahead made an `iat` in the future a 401 which, since F1, clears the session. Read in Lexik 3.2
+    (`LoadedJWS`, `LcobucciJWSProvider::verify()`): it loosens `iat` **and `exp`** (an expired token is served up to
+    5 s more — hence no more than 5), and `nbf` (not set here); `cv` reads no date; the MCP consent reads `iat`, a
+    future one up to 5 s giving a negative age, « recent », harmless. `JwtClockSkewTest` pins the value and both bounds.
+  - **Accepted limit (CR3-2)**: the clearing targets a cookie *name*, not the value sent. A late 401 of an
+    authenticated request still in flight with a dead cookie clears the fresh cookies another tab just received (a
+    `Set-Cookie` is never conditional); window of one round trip, repaired by the sign-in that follows (read: 401,
+    write: 403 without CSRF token, both « session ended »). Conditioning on the JWT's age was rejected: the race is on
+    the order of arrival. ADR 0003, 2026-10-29 amendment.
   - **Every refusal is audited** (`session-refused-after-credentials-change`,
     `.claude/rules/security-authentication-audit.md`), before the exception is thrown.
   - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision:
@@ -137,5 +218,6 @@ paths:
     (`.claude/rules/mcp-oauth.md`, « Consent »).
   `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, a version older or newer, the
   `iat` playing no part, a token without claim before and after a change, **the race** — an instance read before
-  the change, a token created after it: refused, red under the old rule —, the base tier, cookies cleared then a
-  public route served), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.
+  the change, a token created after it: refused, red under the old rule —, the base tier, a closed
+  session served as anonymous on a public route and cleared by
+  the first protected one), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.

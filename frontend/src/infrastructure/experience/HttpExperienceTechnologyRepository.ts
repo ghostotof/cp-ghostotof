@@ -16,7 +16,9 @@ interface ExperienceTechnologyApiResponse {
  * Implémentation HTTP de ExperienceTechnologyRepository. Contrairement à
  * HttpCvRepository, l'endpoint (GET /api/experience/technologies) est public
  * (cf. App\Portfolio\Experience, aucune restriction dans access_control côté
- * backend) : pas de `credentials: 'include'` nécessaire.
+ * backend).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpExperienceTechnologyRepository implements ExperienceTechnologyRepository {
   private readonly apiBaseUrl: string

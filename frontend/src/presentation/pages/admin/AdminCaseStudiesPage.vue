@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminCaseStudies } from '../../../application/admin/caseStudies/useAdminCaseStudies'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -23,17 +21,25 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
+import { CASE_STUDY_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminCaseStudy } from '../../../domain/admin/caseStudies/entities/AdminCaseStudy'
 
 const { t } = useI18n()
-const { caseStudies, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminCaseStudies()
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
-const editingId = ref<string | null>(null)
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 
 /**
  * Typé explicitement : sans annotation, `reactive` infère `locale` au type
@@ -62,48 +68,13 @@ const form = reactive<CaseStudyForm>({
   tradeoffs: '',
   measuredResult: '',
 })
-const isSubmitting = ref(false)
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant de traduction bascule le formulaire vers l'autre locale et doit
- * y rattacher la proposition au groupe de la **source** (D9), y compris quand
- * ce groupe n'avait aucune traduction et que le sélecteur affichait donc
- * « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
-
-/**
- * Locale de l'entrée dont le formulaire courant est une proposition traduite,
- * `null` sinon : porte la bannière « proposition générée par IA ». Effacée dès que
- * le formulaire repart d'une entrée réelle ou d'une page blanche.
- */
-const proposalSourceLocale = ref<Locale | null>(null)
-
-/**
- * Les champs que l'assistant traduit — ici, tout : une étude de cas n'a aucun
- * champ non-prose, « Créer la version XX » n'a donc rien à recopier de
- * l'entrée existante (spec 0002, D2 ; spec 0004 §7).
- *
- * Contenu du palier de base (ADR 0003 D5) : la règle éditoriale — jamais de
- * nom de client — vaut pour la proposition autant que pour l'original, et c'est
- * la relecture humaine qui la garantit.
- */
-const PROSE_FIELDS = ['title', 'problem', 'solution', 'tradeoffs', 'measuredResult'] as const
 
 const isEditing = computed(() => null !== editingId.value)
-
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
-
-const errorText = computed(() => (errorMessage.value ? t(`admin.caseStudies.errors.${errorMessage.value.reason}`) : null))
-
-const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
+const lock = useEntryFormLock({
+  hintId: 'admin-case-study-entry-lock-help',
+  isEditing,
+  proposalSourceLocale,
+})
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const rows = computed(() => groupByTranslationGroup(caseStudies.value, SUPPORTED_LOCALES))
@@ -121,6 +92,37 @@ const {
   reorder,
   reload: load,
 })
+
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-case-study',
+  form,
+  proseFields: CASE_STUDY_PROSE_FIELDS,
+  isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.caseStudies.errors.${reason}`) : null
+})
+
+const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
 
@@ -160,6 +162,7 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -173,10 +176,11 @@ function resetForm(): void {
 }
 
 function startEdit(caseStudy: AdminCaseStudy): void {
+  renewForm()
   editingId.value = caseStudy.id
   proposalSourceLocale.value = null
   sourceGroup.value = caseStudy.translationGroup
-  form.locale = caseStudy.locale as Locale
+  form.locale = caseStudy.locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
   // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
@@ -196,6 +200,7 @@ function startEdit(caseStudy: AdminCaseStudy): void {
  * recopier, et rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminCaseStudy>, locale: Locale): void {
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = row.key
@@ -223,40 +228,17 @@ async function handleSubmit(): Promise<void> {
     measuredResult: form.measuredResult,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
 
-/**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
- * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
- * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
- * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(caseStudy: AdminCaseStudy): Promise<void> {
@@ -264,7 +246,7 @@ async function handleDelete(caseStudy: AdminCaseStudy): Promise<void> {
     return
   }
 
-  await remove(caseStudy.id)
+  await removeEntry(caseStudy, () => remove(caseStudy.id))
 }
 
 useUnsavedOrderGuard(isOrderDirty)
@@ -287,28 +269,38 @@ useUnsavedOrderGuard(isOrderDirty)
         novalidate
         @submit.prevent="handleSubmit"
       >
+        <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
         <BaseSelect
           id="admin-case-study-locale"
           v-model="form.locale"
-          :disabled="isEditing"
+          :disabled="lock.isEntryLocked"
+          :aria-describedby="lock.localeDescribedBy"
           :label="t('admin.caseStudies.localeLabel')"
           :options="localeOptions"
+        />
+        <EntryFormLockHint
+          :id="lock.hintId"
+          :state="lock.state"
         />
         <BaseSelect
           id="admin-case-study-translation-group"
           v-model="form.translationGroup"
+          :disabled="lock.isProposalLocked"
+          :aria-describedby="lock.proposalDescribedBy"
           :label="t('admin.caseStudies.translationOfLabel')"
           :options="translationOptions"
         />
         <BaseTextInput
           id="admin-case-study-title"
           v-model="form.title"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.titleLabel')"
           required
         />
         <BaseTextarea
           id="admin-case-study-problem"
           v-model="form.problem"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.problemLabel')"
           :rows="5"
           required
@@ -316,6 +308,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-solution"
           v-model="form.solution"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.solutionLabel')"
           :rows="6"
           required
@@ -323,6 +316,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-tradeoffs"
           v-model="form.tradeoffs"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.tradeoffsLabel')"
           :rows="4"
           required
@@ -330,10 +324,10 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-measured-result"
           v-model="form.measuredResult"
+          v-bind="proseFieldAttrs('admin-case-study-measured-result-help')"
           :label="t('admin.caseStudies.measuredResultLabel')"
           :rows="3"
           required
-          aria-describedby="admin-case-study-measured-result-help"
         />
         <div
           id="admin-case-study-measured-result-help"
@@ -351,11 +345,18 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
-            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty"
-            :aria-describedby="lockedHintId"
+            :is-expired-call-pending="isExpiredCallPending"
+            :hint-id="translationHintId"
+            :disabled="isTranslationRefused"
+            :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
           />
         </div>
+
+        <TranslationReadonlyHint
+          :id="proseReadonlyHintId"
+          :shown="isTranslating"
+        />
 
         <p
           v-if="proposalSourceLocale"
@@ -367,7 +368,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="translationErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ translationErrorText }}
@@ -375,7 +376,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -391,7 +392,7 @@ useUnsavedOrderGuard(isOrderDirty)
             {{ t('admin.caseStudies.save') }}
           </button>
           <button
-            v-if="isEditing"
+            v-if="lock.isEntryLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetForm"
@@ -415,10 +416,16 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.caseStudies.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

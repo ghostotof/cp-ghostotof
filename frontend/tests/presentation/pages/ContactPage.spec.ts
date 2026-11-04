@@ -5,10 +5,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ContactPage from '../../../src/presentation/pages/ContactPage.vue'
 import { CONTACT_REPOSITORY } from '../../../src/application/contact/useContactForm'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import type { ContactRepository } from '../../../src/domain/contact/repositories/ContactRepository'
 import { ContactRateLimitedError } from '../../../src/domain/contact/errors/ContactRateLimitedError'
 import { ContactValidationError } from '../../../src/domain/contact/errors/ContactValidationError'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const StubPage = { template: '<div />' }
 
@@ -24,7 +26,11 @@ function createStubRepository(overrides: Partial<ContactRepository> = {}): Conta
  * cf. mention RGPD sous le formulaire) : on lui fournit une vraie instance,
  * même pattern que tests/presentation/layout/AppHeader.spec.ts.
  */
-async function mountContactPage(repository: ContactRepository = createStubRepository()) {
+async function mountContactPage(
+  repository: ContactRepository = createStubRepository(),
+  path = '/fr/contact',
+  unsupportedLocale?: string,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -32,12 +38,17 @@ async function mountContactPage(repository: ContactRepository = createStubReposi
       { path: '/:locale(fr|en)/privacy-policy', name: 'privacy-policy', component: StubPage },
     ],
   })
-  await router.push('/fr/contact')
+  await router.push(path)
   await router.isReady()
+
+  const i18n = createAppI18n()
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   return mount(ContactPage, {
     global: {
-      plugins: [router, createAppI18n()],
+      plugins: [router, i18n],
       provide: { [CONTACT_REPOSITORY as symbol]: repository },
     },
   })
@@ -68,6 +79,14 @@ describe('ContactPage', () => {
     const wrapper = await mountContactPage()
 
     expect(wrapper.find('h1').exists()).toBe(true)
+  })
+
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse ; la route donne la langue.
+  it('sous une langue hors du site, le lien de la politique de confidentialité suit la route, aucun `/de/` (#748, R227)', async () => {
+    const wrapper = await mountContactPage(createStubRepository(), '/en/contact', 'de')
+
+    expect(wrapper.find('a[href="/en/privacy-policy"]').exists()).toBe(true)
+    expect(wrapper.find('a[href^="/de"]').exists()).toBe(false)
   })
 
   it('affiche une mention RGPD sous le formulaire, avec un lien vers la politique de confidentialité', async () => {
@@ -104,7 +123,7 @@ describe('ContactPage', () => {
 
     const alert = wrapper.find('[role="alert"]')
     expect(alert.exists()).toBe(true)
-    expect(alert.text()).toContain('Réessayez plus tard')
+    expect(alert.text()).toContain(fr.contact.form.errors.unknown)
   })
 
   it("signale le champ refusé sous le champ lui-même et l'y relie par aria-describedby", async () => {
@@ -122,7 +141,7 @@ describe('ContactPage', () => {
 
     const error = wrapper.find('#contact-message-error')
     expect(error.exists()).toBe(true)
-    expect(error.text()).toContain('entre 10 et 5000 caractères')
+    expect(error.text()).toContain(fr.contact.form.fieldErrors.message)
 
     // L'aide de saisie reste dans aria-describedby, l'erreur s'y ajoute après
     // elle : la règle d'abord, le refus ensuite.
@@ -136,7 +155,7 @@ describe('ContactPage', () => {
     expect(wrapper.find('#contact-name').attributes('aria-describedby')).toBe('contact-name-hint')
 
     // Le bloc global reste présent et renvoie vers les champs signalés.
-    expect(wrapper.find('[role="alert"]').text()).toContain('corrigez les champs signalés')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validation)
   })
 
   it("n'affiche pas le libellé du backend, écrit en français en dur, mais le sien", async () => {
@@ -160,7 +179,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre saisie a été refusée')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validationGeneric)
   })
 
   it("ne révèle rien d'un refus portant sur le honeypot : message générique et aucun champ signalé", async () => {
@@ -178,7 +197,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre saisie a été refusée')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.validationGeneric)
     expect(wrapper.findAll('[id$="-error"]')).toHaveLength(0)
   })
 
@@ -190,7 +209,7 @@ describe('ContactPage', () => {
 
     await submitForm(wrapper)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayez dans quelques minutes')
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.contact.form.errors.rateLimited)
     expect(wrapper.find('#contact-message-error').exists()).toBe(false)
   })
 
@@ -211,9 +230,9 @@ describe('ContactPage', () => {
     // permanence au champ par aria-describedby.
     const wrapper = await mountContactPage()
 
-    expect(wrapper.find('#contact-name-hint').text()).toContain('2 caractères minimum')
+    expect(wrapper.find('#contact-name-hint').text()).toContain(fr.contact.form.hints.name)
     expect(wrapper.find('#contact-name').attributes('aria-describedby')).toBe('contact-name-hint')
-    expect(wrapper.find('#contact-message-hint').text()).toContain('10 caractères minimum')
+    expect(wrapper.find('#contact-message-hint').text()).toContain(fr.contact.form.hints.message)
     expect(wrapper.find('#contact-message').attributes('aria-describedby')).toBe('contact-message-hint')
   })
 

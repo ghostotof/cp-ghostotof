@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
-import { applyTranslationProposal, collectProseFields } from '../../../../src/application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../../src/application/admin/translation/proseFieldCopy'
 
 const PROSE = ['title', 'body'] as const
 

@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutMeCards } from '../../../application/admin/about/useAdminAboutMeCards'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -22,6 +20,14 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
+import { ME_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -58,37 +64,29 @@ import {
  * un autre contenu.
  *
  * **Une carte ne change pas de catégorie** (issue #578) : en édition, le
- * sélecteur est désactivé, comme celui de la langue. Il restait actif, et le
- * changer vidait « Version de » : le `PUT` partait avec `translationGroup:
- * null`, et le serveur, qui ignorait alors la catégorie, détachait la carte de
- * sa traduction en répondant 200. Il refuse désormais une autre catégorie
- * (409 `me-card-category-immutable`).
+ * sélecteur est désactivé, comme celui de la langue. Un `PUT` qui changerait
+ * la catégorie est refusé par le serveur (409 `me-card-category-immutable`) :
+ * le changer ici viderait « Version de », le `PUT` partirait avec
+ * `translationGroup: null` et détacherait la carte de sa traduction.
  *
  * **Le verrou d'ordre (D6) est global à la page** : cette section annonce son
- * `orderDirtyChange` (la somme de ses trois brouillons) et reçoit `isLocked`.
+ * `orderDirtyChange` (la somme de ses trois brouillons) et reçoit `isLocked`. Le
+ * refus de traduire lit **ses** trois brouillons (`isAnyOrderDirty`) tout de suite
+ * et ceux des autres sections par `isLocked`, à jour après le rendu de la page :
+ * voir la limite dans `AdminQualityPage`.
  */
 
-defineProps<{ isLocked: boolean; lockedHintId?: string }>()
+const props = defineProps<{ isLocked: boolean; lockedHintId?: string }>()
 const emit = defineEmits<{ orderDirtyChange: [isDirty: boolean] }>()
 
 const { t } = useI18n()
 
-const { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminAboutMeCards()
+const { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminAboutMeCards()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 const categoryOptions = computed(() =>
   ME_CARD_CATEGORIES.map((category) => ({ value: category, label: categoryLabel(category) })),
 )
-
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
-
-/**
- * Prose d'une carte « moi ». Le complément de cette liste — `iconKey` et
- * `category` — est ce que « Créer la version XX » recopie de l'entrée
- * existante : ni une clé d'icône ni une catégorie ne se traduisent
- * (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité.
- */
-const PROSE_FIELDS = ['title', 'description'] as const
 
 /**
  * `locale` et `category` sont typées explicitement : sans annotation,
@@ -117,28 +115,16 @@ const form = reactive<MeCardForm>({
 /** Aide du sélecteur de catégorie en édition (issue #578). */
 const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 
-const editingId = ref<string | null>(null)
-const isSubmitting = ref(false)
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
+
 const isEditing = computed(() => null !== editingId.value)
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher la
- * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
- * aucune traduction et que le sélecteur affichait donc « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
-
-/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const proposalSourceLocale = ref<Locale | null>(null)
-
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const lock = useEntryFormLock({
+  hintId: 'admin-about-me-card-entry-lock-help',
+  isEditing,
+  proposalSourceLocale,
+  localeHelpId: 'admin-about-me-card-locale-help',
+})
 
 /**
  * Tout ce qu'il faut pour ordonner une catégorie : ses lignes groupées, son
@@ -184,6 +170,37 @@ const categoryOrders = ME_CARD_CATEGORIES.map(createCategoryOrder)
 const isAnyOrderDirty = computed(() => categoryOrders.some((order) => order.draft.isDirty.value))
 watch(isAnyOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
 
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-me-card',
+  form,
+  proseFields: ME_CARD_PROSE_FIELDS,
+  // Les brouillons d'ordre des trois catégories sont lus tout de suite, ceux des autres sections par `props.isLocked` : la limite de cette
+  // lecture est écrite une fois, `.claude/rules/frontend-backoffice.md`, « The refusal is written once ».
+  isRefused: () => isSubmitting.value || isAnyOrderDirty.value || props.isLocked || lock.isProposalLocked,
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
+})
+
 /** Les cartes de la catégorie du formulaire : le périmètre d'un rattachement. */
 const cardsOfFormCategory = computed(() => cards.value.filter((card) => card.category === form.category))
 
@@ -216,7 +233,9 @@ const translationOptions = computed(() => [
 // catégorie change, donc avant que `startCreateVersion`/`resetForm` n'écrivent
 // le groupe juste après — un watcher différé l'aurait effacé au tick suivant.
 // Sans cette remise à zéro, le sélecteur afficherait une valeur absente de ses
-// options et l'enregistrement partirait vers un 422.
+// options et l'enregistrement partirait vers un 422. Tant que le formulaire
+// porte une proposition de traduction, le sélecteur est désactivé aussi (#748,
+// D-b) : le watcher ne s'y déclenche que par `resetForm` (« Annuler »).
 watch(
   () => form.category,
   () => {
@@ -229,6 +248,7 @@ watch(
 )
 
 function resetForm(): void {
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -248,6 +268,7 @@ function resetForm(): void {
 // `hasSibling` cherche dans **toutes** les catégories : sur un groupe réparti
 // (antérieur à #501), le sélecteur paraît vide, « aucune » le répare (#573).
 function startEdit(card: AdminAboutMeCard): void {
+  renewForm()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -263,10 +284,11 @@ function startEdit(card: AdminAboutMeCard): void {
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante — qu'adopte le sélecteur du formulaire. Les champs
  * non-prose sont recopiés de l'entrée existante (`category` et `iconKey`, cf.
- * PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
+ * ME_CARD_PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutMeCard>, locale: Locale): void {
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -296,40 +318,18 @@ async function handleSubmit(): Promise<void> {
     iconKey: '' === form.iconKey ? null : form.iconKey,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
 
-/**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * catégorie, icône, et le groupe de l'entrée source, pour que l'enregistrement
- * rattache la version proposée sans geste supplémentaire (spec 0004, D9). Rien
- * n'est enregistré ici — seul le bouton Enregistrer habituel persiste
- * (ADR 0004, D4). En cas d'échec, le formulaire reste intact.
- */
+/** La bascule (`switchToProposedCreation`) ne touche ni la catégorie ni l'icône du formulaire : elles restent. */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(card: AdminAboutMeCard): Promise<void> {
@@ -337,7 +337,7 @@ async function handleDelete(card: AdminAboutMeCard): Promise<void> {
     return
   }
 
-  await remove(card.id)
+  await removeEntry(card, () => remove(card.id))
 }
 
 /** Libellé traduit d'une catégorie, réutilisé par le sélecteur et par les titres de tableaux. */
@@ -356,11 +356,12 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       novalidate
       @submit.prevent="handleSubmit"
     >
+      <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
         id="admin-about-me-card-locale"
         v-model="form.locale"
-        :disabled="isEditing"
-        aria-describedby="admin-about-me-card-locale-help"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.localeDescribedBy"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -370,17 +371,27 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       >
         {{ t('admin.about.localeHelp') }}
       </p>
+      <EntryFormLockHint
+        :id="lock.hintId"
+        :state="lock.state"
+      />
       <!--
         Désactivée en édition, comme la langue (issue #578) : une carte ne
         change pas de catégorie, et le serveur refuse le `PUT` qui en porte une
-        autre (409). L'aide n'existe qu'en édition, d'où un `aria-describedby`
-        conditionnel — jamais une référence vers un élément absent.
+        autre (409). Désactivée aussi tant que le formulaire porte une proposition
+        de traduction (#748, D-b de l'auteur) : une version dans l'autre langue ne
+        change pas de catégorie (#501, #561) — la changer vidait « Version de »
+        (le watcher ci-dessus) et l'enregistrement créait une carte détachée de sa
+        source avec la prose générée. « Créer la version XX » reste libre. L'aide
+        propre à la catégorie n'existe qu'en édition ; pendant une proposition, la
+        catégorie désigne le texte du verrou du formulaire (R93) — jamais une
+        référence vers un élément absent.
       -->
       <BaseSelect
         id="admin-about-me-card-category"
         v-model="form.category"
-        :disabled="isEditing"
-        :aria-describedby="isEditing ? CATEGORY_HELP_ID : undefined"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="isEditing ? CATEGORY_HELP_ID : lock.proposalDescribedBy"
         :label="t('admin.about.meCard.categoryLabel')"
         :options="categoryOptions"
       />
@@ -394,18 +405,22 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       <BaseSelect
         id="admin-about-me-card-translation-group"
         v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.about.translationOfLabel')"
         :options="translationOptions"
       />
       <BaseTextInput
         id="admin-about-me-card-title"
         v-model="form.title"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.meCard.titleLabel')"
         required
       />
       <BaseTextarea
         id="admin-about-me-card-description"
         v-model="form.description"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.meCard.descriptionLabel')"
         required
       />
@@ -424,11 +439,18 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
         <TranslateEntryButton
           :form-locale="form.locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSubmitting || isLocked"
-          :aria-describedby="lockedHintId"
+          :is-expired-call-pending="isExpiredCallPending"
+          :hint-id="translationHintId"
+          :disabled="isTranslationRefused"
+          :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"
         />
       </div>
+
+      <TranslationReadonlyHint
+        :id="proseReadonlyHintId"
+        :shown="isTranslating"
+      />
 
       <p
         v-if="proposalSourceLocale"
@@ -440,7 +462,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
 
       <p
         v-if="translationErrorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ translationErrorText }}
@@ -448,7 +470,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
 
       <p
         v-if="errorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ errorText }}
@@ -464,7 +486,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isEditing"
+          v-if="lock.isEntryLocked"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"
@@ -488,10 +510,16 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
     </p>
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('admin.about.loadError') }}
+    </p>
+    <p
+      v-else-if="!isLoaded"
+      class="text-body-secondary mb-0"
+    >
+      {{ t('admin.notLoaded') }}
     </p>
     <template v-else>
       <!-- Un tableau, un brouillon et un enregistrement par catégorie (D8). -->

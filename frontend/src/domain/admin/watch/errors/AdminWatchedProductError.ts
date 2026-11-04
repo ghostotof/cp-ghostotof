@@ -6,7 +6,11 @@
  * les deux refus propres à ce contexte — un slug déjà suivi, et une tentative
  * de changer le slug d'une entrée existante.
  */
-export type AdminWatchedProductErrorReason = 'not-found' | 'validation' | 'conflict' | 'unknown'
+export type AdminWatchedProductErrorReason =
+  | 'not-found'
+  | 'validation'
+  | 'conflict'
+  | 'unknown'
 
 export class AdminWatchedProductError extends Error {
   readonly reason: AdminWatchedProductErrorReason

@@ -20,7 +20,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *   frontend le relit et le renvoie dans le header X-XSRF-TOKEN sur les
  *   requêtes qui changent l'état (double-submit cookie, cf.
  *   Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber). Ses
- *   attributs viennent d'AuthCookieFactory (issue #87), jamais d'ici ;
+ *   attributs viennent d'AuthCookieFactory (issue #87), jamais d'ici ; comme le
+ *   BEARER, c'est un cookie de session, sans échéance (#748, F1) ;
  * - remplace le corps JSON (vide une fois le token retiré) par les infos de
  *   l'utilisateur connecté, pour que le frontend n'ait pas à refaire un appel
  *   /api/me immédiatement après un login réussi.
@@ -52,8 +53,10 @@ final readonly class LoginSuccessSubscriber implements EventSubscriberInterface
             ],
         ]);
 
-        // Cookie de session (pas d'échéance) : Lexik pose le BEARER avec sa
-        // propre durée de vie, et c'est lui qui borne la session, pas celui-ci.
+        // Cookie de session, comme le BEARER (set_cookies.BEARER.lifetime: 0, #748 F1) : les deux
+        // meurent ensemble à la fermeture du navigateur — un XSRF-TOKEN jeté pendant que le BEARER
+        // survivait faisait de chaque écriture un 403 sans jeton, lu « session finie » en boucle —
+        // et, à l'expiration du JWT, StaleSessionCookiesClearingListener les efface tous deux.
         $event->getResponse()->headers->setCookie(
             $this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue()),
         );

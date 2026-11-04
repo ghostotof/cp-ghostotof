@@ -150,6 +150,19 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         yield 'barre oblique finale' => ['/api/account/password-setup/'];
     }
 
+    /**
+     * Le pare-feu `api` est `^/api` non ancré : une route voisine comme `/apix` y lit `BEARER`. Le double-submit la
+     * juge donc aussi, ce qu'un test de préfixe ancré (`/api` ou `/api/…`) laisserait passer.
+     */
+    public function testANeighbourOfApiUnderTheApiFirewallIsStillChecked(): void
+    {
+        $request = Request::create('/apix', 'POST', cookies: ['BEARER' => 'session-value']);
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+    }
+
     public function testUnsafeMethodOutsideApiIsNeverChecked(): void
     {
         $request = Request::create('/login', 'POST');

@@ -52,7 +52,12 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 `PortfolioContentRepository` one. `domain/watch` → `infrastructure/watch/HttpWatchRepository.ts` →
 `application/watch/useWatch.ts` → `presentation/pages/StackPage.vue` follows the identical shape, with one
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
-version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+version number is a fact, not a translation, so only the surrounding UI strings are localized.
+**These public repositories (and the contact and password-setup ones) write no `credentials`** (#748, R37): the default
+`same-origin` sends the cookies in preprod and prod (one origin) and not in dev (two), and the server serves a public
+route as anonymous whatever the cookie (R35). **`'omit'` is forbidden** (`noOmittedCredentials.spec.ts`): it also drops
+the Basic Auth of preprod, so each call takes the ingress's 401 — invisible in dev and CI. Don't add new
+content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
@@ -60,7 +65,14 @@ The assistant follows the same layered shape without being backoffice content: i
 `infrastructure/assistant/HttpAssistantRepository.ts` (reads the SSE stream with `fetch` + `ReadableStream`,
 incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts` (state machine
 `idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts
-in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
+in code points, never `.length`; a session ended — a 401, or a 403 sent without a CSRF token, judged by
+`sessionAwareFetch`, `.claude/rules/frontend-session.md` — is `unauthenticated` and calls `markSessionExpired()`; a 403
+that carried its token is a real refusal, `forbidden`: the session stays (never `markSessionExpired()`), the composable
+re-reads `/api/me` once (`useAuth().rereadAfterRefusal()`, not awaited, one in
+flight, a rejection swallowed) so the header returns to the tier
+the server now recognises, and the page says the refusal in a neutral message (`common.accessRefused`) with a « Changer
+de compte » link (`login?redirect=<this page>&reauth=1`, the same tab, the lost conversation accepted) — #748, #732
+point 4, R7; `.claude/rules/frontend-session-refus.md`, « A real refusal ») →
 `presentation/pages/AssistantPage.vue`.
 
 The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
@@ -72,13 +84,19 @@ Details: `.claude/rules/mcp-oauth-revocation-personne.md`.
 
 Three things the MCP slice shares with the rest of the frontend:
 
-- **A refused session reaches the person in words** (#650, R5a). `useMcpConnections` exposes `sessionExpired` (the
-  server answered 401/403 on the last read or revocation, besides `markSessionExpired()`); the page then shows « Votre
-  session a pris fin » and a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
-  error and its retry, which would send the same request without a session. `LoginPage` reads `expired=1`
+- **A refused session reaches the person in words** (#650, R5a; #748, R7). `useMcpConnections` exposes
+  `refusal: 'session-ended' | 'forbidden' | null` (reset to `null` at the start of each `load()` and `revoke()`).
+  `session-ended`: the repository raised `SessionEndedError` — a 401, or a 403 to a revocation sent without a CSRF
+  token, judged by `infrastructure/http/sessionAwareFetch.ts`, rule in `.claude/rules/frontend-session.md` — besides
+  `markSessionExpired()`; the page then shows « Votre session a pris fin », a **sign-in-again link**
+  (`login?redirect=<this page>&expired=1`, `SignInAgainLink`, a new tab) in place of the generic error and its retry,
+  which would send the same request without a session. `forbidden`: any other 403 (a read's, or a revocation that
+  carried its token) is `AccessForbiddenError`; the session is not marked expired, `/api/me` is re-read once, and the
+  page shows the neutral `common.accessRefused` with « Changer de compte » (`login?redirect=<this page>&reauth=1`, the
+  same tab), again with no « Réessayer ». **Either refusal disables every « Révoquer »** (#748, #732-4). `LoginPage` reads `expired=1`
   (`presentation/router/sessionEnded.ts`, the single value `1`) and shows a `role="status"` notice « Votre session a
   pris fin, reconnectez-vous. » — the same flag the backoffice banner's link sets (`SessionEndedBanner`, which
-  replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-backoffice.md`). The flag
+  replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-session.md`). The flag
   opens nothing and grants nothing.
 - **`redirect` is judged in one place, `presentation/router/internalRedirect.ts`** (`internalRedirectTarget()`, #650,
   F-I1 of the second review; `LoginPage` is its only reader). A target is an internal path when it starts with a
@@ -102,8 +120,10 @@ Three things the MCP slice shares with the rest of the frontend:
   (`data-testid="terminated-truncated"`, an ordinary paragraph). Shared test fixture:
   `frontend/tests/support/mcpConnectionList.ts`.
 
-`HttpMcpConnectionsRepository` and `HttpOAuthConsentRepository` have their **own `fetch`**, not
-`BackofficeHttpClient`: the 401 reaction is the composable's, with no redirect. **The two apps agree on a contract**:
+`HttpMcpConnectionsRepository` and `HttpOAuthConsentRepository` (like `HttpAssistantRepository`) send through the shared
+**function** `sessionAwareFetch`, **never `BackofficeHttpClient`**, which is the backoffice's alone: the reaction to an ended
+session there is the composable's (`markSessionExpired()`), with no redirect
+(`.claude/rules/frontend-session.md`). **The two apps agree on a contract**:
 the consent decision carries `accountId` (the `account.id` the summary showed). A frontend and a backend that differ
 there fail: a new frontend before its backend cannot parse a summary without `account.id`, an old frontend page left
 open after the new backend sends no `accountId` and gets a 422 (the page is terminal, a reload fixes it). **The
@@ -112,11 +132,24 @@ backend is deployed first**: its summary only adds a field, which an old fronten
 #### i18n (French/English)
 
 Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —
-`presentation/router/index.ts`'s `beforeEach` syncs `i18n.global.locale` from `to.params.locale` on every
-navigation (also handled for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard
-falls back to parsing the URL's first path segment so the 404 page itself stays in the right language).
+`presentation/router/index.ts`'s `beforeEach` sets it from `to.params.locale` on every navigation with
+`applyInterfaceLocale()` (`presentation/router/interfaceLocale.ts`: vue-i18n, `localStorage`, `<html lang>`), also
+for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard falls back to parsing the URL's
+first path segment so the 404 page itself stays in the right language.
 `/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
-to `fr`.
+to `fr`. **The language switcher** (`presentation/ui/LocaleSwitcher.vue`, #748, R227) replaces the first segment
+(`swapLocalePrefix()`) and keeps the query and the hash (a consent request's `client_id`/`state`/`code_challenge`, the
+login's flags; an internal `redirect` follows the new language); on a path with no locale prefix (the 404 `/frogs`) it
+navigates nowhere: it calls `applyInterfaceLocale()`, then `applySeoMeta(route)` for the title (D4 of the eighteenth review).
+
+**The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
+vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not
+carry back to `fr`, never `locale.value as Locale` (a link must not become `/de/login`). A page's language is
+`useRouteLocale()` (`presentation/router/useRouteLocale.ts`, variable `pageLocale`): the route's, else the interface's (the 404
+page). `tests/presentation/localeSourceGuards.spec.ts` holds two guards: no assertion to a language in `src/` (the forms
+listed in `LOCALE_CASTS`) and no other read of that language outside the accessor (`locale` taken from `useI18n()`, `$i18n`,
+`i18n.global.locale`; the write in `applyInterfaceLocale` is not a read); a test that needs such a language sets it with
+`setUnsupportedLocale()` (`tests/support/unsupportedLocale.ts`), not `'de' as never`.
 
 Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
 meaningful (see Lint below):
@@ -134,6 +167,22 @@ meaningful (see Lint below):
 `StaticPortfolioContentRepository` stays framework-free infrastructure: it reads the raw locale JSON/TS files
 directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
 not depend on).
+
+**Tests read the catalogue** (#748, R231, R233), one way per case, never a text copied: a message with no parameter is read as
+`fr.…` / `en.…` in the spec, or from a `tests/support/` module when two specs or more need it; a message with parameters
+by `renderedMessage(locale, key, named?, plural?)` alone (`key` is a `CatalogKey`, so a wrong path breaks `vue-tsc`), never a
+`createAppI18n().global.t(…)` in a spec; a module that serves both languages exposes one function taking the `Locale`
+(`accessRefusalTexts(locale)`, `accountMenuTexts(locale)`), not `_FR` / `_EN` pairs. **What counts as a copy** is judged by
+a mutation, not by the eye: insert `~#` after the first character of the text in the catalogue value (the literal's own first
+character, so an extract taken from the middle of a message is hit too). **An equality
+(`toBe`) or an extract (`includes`, `toContain`, `startsWith`) whose spec then turns red is read from the catalogue**, the whole
+value (`toContain(fr.contact.form.errors.unknown)`, not `'Réessayez plus tard'`), or by `renderedMessage` when it has
+parameters, a date the page formats being read from the page's own `<time>`; one whose spec stays green is not the
+catalogue's (a fixture value, an event name, the text of the test's own route) and keeps its literal, with the reason said.
+**Exception: a case whose subject is the wording of the message** (`adminTranslationTexts.spec.ts`, the « au moins 8 caractères »
+case of `AdminUsersPage.spec.ts`) keeps its literals even when the mutation turns it red; said at the commit, case by case.
+**A negative guard (`not.toContain`, `not.toBe`) reads the same key as its positive, even when the mutation leaves it green**:
+a text reworded in the catalogue would empty the guard without a sound.
 
 #### SEO
 
@@ -155,8 +204,8 @@ to the TypeScript parser (non type-checked — type errors are already caught by
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
 strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
-no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
-lint:fix` for the auto-fixable (mostly formatting) rules.
+no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot).
+`npm run lint:fix` for the auto-fixable (mostly formatting) rules.
 
 **The TypeScript-in-SFC wiring is written by hand, not `@vue/eslint-config-typescript`** (issue #328,
 2026-10-03). That wrapper pulled `fast-glob` → `micromatch` → `braces`, and `braces` ≤ 3.0.3 got a *high*
@@ -180,8 +229,12 @@ The header's « Accès instantané » calls `POST /api/account/base-access`; « 
 calls `POST /api/logout`. The tier comes from the status of `GET /api/me` (401 / 403 / 200). The httpOnly
 cookie cannot be read, so the response's `expiresAt` is the only way to know when it dies: `useAuth` arms a
 timer on it, remembered in `localStorage` to survive a reload — a past value is ignored, the server is the
-truth —, and any 401 on base-tier content calls `markBaseAccessExpired()`, so the header never shows
-« Accès de base » above a page asking for it.
+truth —, and at that deadline the header goes back to anonymous with **no network call** (#748, R23;
+`.claude/rules/frontend-session.md`, « Accepted limits »), as at the first 401 on base-tier content
+(`markBaseAccessExpired()`), so the header never shows « Accès de base » above a page asking for it.
+**« Accès instantané » makes one call** (`HttpBaseAccessRepository.grant()`, #748, R37): a refused `BEARER` is ignored by
+the server on this public route (R35), so there is no replay and one limiter token is spent; 429 is `rate-limited`, any
+other failure `unknown`.
 
 ### Toolchain history (Node, jsdom, Vitest)
 
@@ -208,3 +261,16 @@ Node changed, because reinstating it would hide a real regression just as well a
 `vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
 container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
 more reason the `make front-*` targets exist.
+
+`@vue/compiler-dom` is a direct dev dependency (the spec template reader imports it) and must stay `vue`'s own version, installed once:
+`tests/support/vueCompilerAlignment.spec.ts` reads `package.json` and the lockfile and fails with the command that realigns them (#748):
+`npm pkg set '<section>.@vue/compiler-dom=<vue's range>' && npm install --package-lock-only`, where `<section>` is the section it is
+declared in (`dependencies` or `devDependencies`, the one the test read; `devDependencies` when it is absent), preceded, when the lockfile
+holds a second installation or a wrong version, by `npm install --save-dev '@vue/compiler-dom@<vue's version>'` (`--save-prod` when it is
+declared in `dependencies`: `--save-dev` moves it to `devDependencies`). **Never the bare `npm install …@<version>` alone**: it writes
+`^<version>`, which the test refuses when `vue` is declared `~` (the loop of CR13-5); `npm pkg set` writes `vue`'s range as is.
+**Every value read from the repository (`vue`'s range, the compiler's, the lockfile's versions and paths) is quoted in single
+quotes, an apostrophe escaped as `'\''`, in the command and in the message's prose** (R192, C15-8; R200, C16-6): the message is
+copied whole into a terminal, and a `$(…)` in any of them would run if it sat unquoted or in double quotes.
+**A compiler declared in both sections** is refused with its own message, which gives the two `npm pkg delete` commands (one per
+section): `npm pkg set` writes one section only, so it cannot realign two copies.

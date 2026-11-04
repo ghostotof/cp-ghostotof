@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpMcpConnectionsRepository } from '../../../src/infrastructure/mcp/HttpMcpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 
 const ID = '0199d6a0-7b1c-7c3e-9a4d-1f2e3d4c5b6a'
 
@@ -47,9 +48,14 @@ describe('HttpMcpConnectionsRepository', () => {
     document.cookie = 'XSRF-TOKEN=tok%20en; path=/'
   })
 
+  /** Efface le cookie, comme une déconnexion (`/api/logout` expire les deux cookies). */
+  function clearCsrfCookie(): void {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals()
-    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    clearCsrfCookie()
   })
 
   describe('list()', () => {
@@ -91,10 +97,23 @@ describe('HttpMcpConnectionsRepository', () => {
       expect(connection?.revocationCause).toBe('a-future-cause')
     })
 
-    it.each([401, 403])('un %i est une session expirée', async (status) => {
-      fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, status))
+    it('un 401 est une session expirée', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 401))
 
-      await expect(repository.list()).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.list()).rejects.toBeInstanceOf(SessionEndedError)
+    })
+
+    it('list : un 403 est AccessForbiddenError, pas une session finie : lecture jamais refusée pour le CSRF (#748, #732)', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 403))
+
+      await expect(repository.list()).rejects.toBeInstanceOf(AccessForbiddenError)
+    })
+
+    it('list : un 403 reste AccessForbiddenError même sans cookie XSRF-TOKEN : seule une écriture est jugée sur le jeton', async () => {
+      clearCsrfCookie()
+      fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 403))
+
+      await expect(repository.list()).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it.each([500, 429, 404])('un %i est un échec de la requête', async (status) => {
@@ -168,10 +187,40 @@ describe('HttpMcpConnectionsRepository', () => {
       expect(url).toBe('http://api.test/api/me/mcp-connections/a%2Fb%3Fc')
     })
 
-    it.each([401, 403])('un %i est une session expirée', async (status) => {
-      fetchMock.mockResolvedValue(jsonResponse({}, status))
+    it('un 401 est une session expirée', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}, 401))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
+    })
+
+    it('un 401 sans cookie XSRF-TOKEN reste une session expirée', async () => {
+      clearCsrfCookie()
+      fetchMock.mockResolvedValue(jsonResponse({}, 401))
+
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
+    })
+
+    it('revoke : un 403 avec jeton est AccessForbiddenError, pas une session finie : un refus réel (#748, #732)', async () => {
+      // Le jeton est posé par le beforeEach : l'écriture est partie avec son en-tête.
+      fetchMock.mockResolvedValue(jsonResponse({}, 403))
+
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(AccessForbiddenError)
+    })
+
+    it('un 403 parti sans jeton CSRF est une session finie', async () => {
+      clearCsrfCookie()
+      fetchMock.mockResolvedValue(jsonResponse({}, 403))
+
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(init.headers as Record<string, string>).not.toHaveProperty('X-XSRF-TOKEN')
+    })
+
+    it("un cookie XSRF-TOKEN vide : l'écriture part sans en-tête, son 403 est une session finie", async () => {
+      document.cookie = 'XSRF-TOKEN=; path=/'
+      fetchMock.mockResolvedValue(jsonResponse({}, 403))
+
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('un 404 mcp-connection-not-found est « déjà terminée »', async () => {

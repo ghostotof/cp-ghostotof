@@ -6,39 +6,48 @@ import { useAuth } from '../../application/auth/useAuth'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import { isReauthentication } from '../router/reauthentication'
 import { isSessionEnded } from '../router/sessionEnded'
 import { internalRedirectTarget } from '../router/internalRedirect'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const pageLocale = useRouteLocale()
 const route = useRoute()
 const router = useRouter()
-const { login, user } = useAuth()
+const { login, user, isAuthenticated } = useAuth()
 
 /**
- * L'annonce « confirmez votre identité » ne vaut que pour une session encore
- * ouverte (`reauth=1` posé par le consentement MCP, #647) : une personne dont
- * la session a expiré entre-temps se connecte, tout simplement.
+ * Un compte est affiché : la page ne s'ouvre pas pour se connecter mais pour confirmer son identité ou changer de
+ * compte. Le critère est le compte affiché, pas `authState.sessionEnded` : le lien `expired=1` s'ouvre dans un nouvel
+ * onglet, où l'application est neuve et `sessionEnded` toujours faux (A3-10, R30).
  */
-const isReauthenticatingASession = computed(() => null !== user.value && isReauthentication(route))
+const isSignedIn = computed(() => null !== user.value)
+
+/**
+ * L'annonce « confirmez votre identité » ne vaut que pour une session encore ouverte : `reauth=1` (posé par le
+ * consentement MCP, #647, et « Changer de compte »), ou `expired=1` ouvert par une personne qui a encore un compte
+ * affiché (B/F2 : un `BEARER` vivant sans `XSRF-TOKEN`, ou une session déjà rétablie dans un autre onglet) — à qui
+ * « votre session a pris fin » serait faux. Une personne dont la session a expiré entre-temps se connecte, tout
+ * simplement.
+ */
+const isReauthenticatingASession = computed(
+  () => isSignedIn.value && (isReauthentication(route) || isSessionEnded(route)),
+)
 
 /**
  * La page s'ouvre parce que la session a pris fin (#650, R5a) : une page de la
  * personne ou du backoffice s'est vu refuser sa session et l'a menée ici avec
- * `expired=1`. La personne n'est plus connectée (le drapeau n'ouvre rien).
+ * `expired=1`. Annoncé seulement au palier **anonyme** : avec un compte affiché, l'annonce neutre ci-dessus ; au
+ * palier de base (« Accès instantané » obtenu dans un autre onglet depuis), l'accès tient et il n'y a aucun compte à
+ * confirmer — ni l'une ni l'autre annonce, la page est la connexion ordinaire (#748, R40, CR4-7).
  */
-const hasSessionEnded = computed(() => isSessionEnded(route))
+const hasSessionEnded = computed(() => !isAuthenticated.value && isSessionEnded(route))
 
 const username = ref('')
 const password = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
-
-function currentLocale(): Locale {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-}
 
 /**
  * Posé par le garde d'authentification (presentation/router/index.ts) quand
@@ -49,7 +58,7 @@ function currentLocale(): Locale {
  * paramètre d'URL.
  */
 function redirectTarget(): string {
-  return internalRedirectTarget(route.query.redirect) ?? `/${currentLocale()}`
+  return internalRedirectTarget(route.query.redirect) ?? `/${pageLocale.value}`
 }
 
 /** Un message par cause : ce que la personne doit faire n'est pas le même (corriger, attendre, réessayer). */
@@ -154,7 +163,7 @@ async function handleSubmit(): Promise<void> {
 
         <p
           v-if="errorMessage"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorMessage }}

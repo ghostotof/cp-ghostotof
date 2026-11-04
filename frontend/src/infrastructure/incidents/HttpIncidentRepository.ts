@@ -5,8 +5,9 @@ import { IncidentsUnavailableError } from '../../domain/incidents/errors/Inciden
 
 /**
  * Implémentation HTTP de IncidentRepository. Endpoint public (GET
- * /api/incidents/{locale}, cf. App\Portfolio\Incident) : pas de
- * `credentials: 'include'` nécessaire.
+ * /api/incidents/{locale}, cf. App\Portfolio\Incident).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpIncidentRepository implements IncidentRepository {
   private readonly apiBaseUrl: string

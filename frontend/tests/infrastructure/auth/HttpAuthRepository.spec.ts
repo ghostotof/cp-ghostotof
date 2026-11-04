@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpAuthRepository } from '../../../src/infrastructure/auth/HttpAuthRepository'
+import { HttpAuthRepository, ME_TIMEOUT_MS } from '../../../src/infrastructure/auth/HttpAuthRepository'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
+import { fetchSettledOnlyByAbort } from '../../support/abortableFetch'
 
 function stubFetch(status: number, body: unknown = undefined, headers: Record<string, string> = {}): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({
@@ -51,6 +52,61 @@ describe('HttpAuthRepository.me()', () => {
     stubFetch(503)
 
     await expect(new HttpAuthRepository('https://api.example.test').me()).rejects.toThrow(/503/)
+  })
+})
+
+/**
+ * Un `/api/me` qui ne répond pas (#748, R49, CR5-7) : la route `login`, le garde des routes protégées et les deux
+ * relectures l'attendent ; sans borne, ils attendaient sans fin. `me()` abandonne donc après `ME_TIMEOUT_MS`.
+ */
+describe('HttpAuthRepository.me() — la borne de temps', () => {
+  afterEach(() => {
+    // Les faux minuteurs ne survivent jamais à leur test : le suivant (axe-core compris) tourne sous les vrais.
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('envoie les cookies et un signal d\'abandon', async () => {
+    const fetchMock = stubFetch(401)
+
+    await new HttpAuthRepository('https://api.example.test').me()
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/me', {
+      method: 'GET',
+      credentials: 'include',
+      signal: expect.any(AbortSignal),
+    })
+  })
+
+  it('me() abandonne après ME_TIMEOUT_MS : rejet AbortError', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', fetchSettledOnlyByAbort())
+    const pending = new HttpAuthRepository('https://api.example.test').me()
+    const outcome = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+
+    // Un instant avant le délai : toujours en attente, rien n'est abandonné.
+    await vi.advanceTimersByTimeAsync(ME_TIMEOUT_MS - 1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await outcome
+  })
+
+  it('une réponse avant le délai lève la minuterie', async () => {
+    vi.useFakeTimers()
+    stubFetch(401)
+
+    await new HttpAuthRepository('https://api.example.test').me()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('un échec avant le délai lève aussi la minuterie', async () => {
+    vi.useFakeTimers()
+    stubFetch(503)
+
+    await expect(new HttpAuthRepository('https://api.example.test').me()).rejects.toThrow(/503/)
+
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 
@@ -117,5 +173,69 @@ describe('HttpAuthRepository.login()', () => {
     stubFetch(429, { type: '/errors/rate-limited', status: 429 })
 
     await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toMatchObject({ retryAfterSeconds: null })
+  })
+})
+
+/**
+ * `hasWriteToken()` (#748, R8) : la session finie ne se rétablit que si le jeton d'écriture est là. Un compte
+ * retrouvé par `/api/me` (le `BEARER`, httpOnly, vaut encore) sans `XSRF-TOKEN` prendrait un 403 à la première
+ * écriture, lu « session finie » : l'annonce « rétablie » mentirait, et la boucle recommencerait.
+ */
+describe('HttpAuthRepository.hasWriteToken()', () => {
+  const clearCsrfCookie = (): void => {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  }
+
+  afterEach(clearCsrfCookie)
+
+  it('vrai quand un cookie XSRF-TOKEN non vide est lisible', () => {
+    document.cookie = 'XSRF-TOKEN=jeton-de-test; path=/'
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(true)
+  })
+
+  it('faux sans cookie XSRF-TOKEN', () => {
+    clearCsrfCookie()
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(false)
+  })
+
+  it('faux avec un cookie XSRF-TOKEN vide : le client n\'enverrait aucun en-tête', () => {
+    document.cookie = 'XSRF-TOKEN=; path=/'
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(false)
+  })
+})
+
+/**
+ * `logout()` est une écriture : elle part avec ses cookies et le jeton CSRF lu dans `XSRF-TOKEN`, par l'envoi partagé.
+ */
+describe('HttpAuthRepository.logout()', () => {
+  const clearCsrfCookie = (): void => {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearCsrfCookie()
+  })
+
+  it('POST /api/logout avec les cookies et le jeton CSRF', async () => {
+    document.cookie = 'XSRF-TOKEN=jeton-de-test; path=/'
+    const fetchMock = stubFetch(204)
+
+    await new HttpAuthRepository('https://api.example.test').logout()
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-XSRF-TOKEN': 'jeton-de-test' },
+    })
+  })
+
+  it('un refus (même un 401 : le jeton est déjà mort) rejette, sans verdict de session', async () => {
+    stubFetch(401)
+
+    await expect(new HttpAuthRepository('https://api.example.test').logout()).rejects.toThrow('Logout failed with status 401')
   })
 })

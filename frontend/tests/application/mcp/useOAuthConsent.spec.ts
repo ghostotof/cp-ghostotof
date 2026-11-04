@@ -1,15 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { CLIENT_REDIRECT, OAUTH_CONSENT_REPOSITORY, useOAuthConsent } from '../../../src/application/mcp/useOAuthConsent'
 import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositories/OAuthConsentRepository'
 import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
+import { signInAgain } from '../../support/signInAgain'
+import { sessionFor } from '../../support/authSession'
+import { AUTH_REPOSITORY, authState, markSessionExpired } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
-
-enableAutoUnmount(afterEach)
 
 const PARAMS: ConsentParams = {
   responseType: 'code',
@@ -35,9 +40,14 @@ const SUMMARY: ConsentRequest = {
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz'
 
+/** `/api/me`, relu sur un refus réel (#748, R7) : il répond le palier de base. */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
 function mountComposable(decide: OAuthConsentRepository['decide'], describeRequest: OAuthConsentRepository['describe'] = vi.fn(async () => SUMMARY)) {
   const navigate = vi.fn()
   const repository: OAuthConsentRepository = { describe: describeRequest, decide }
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
   let captured: ReturnType<typeof useOAuthConsent> | undefined
 
   const Probe = defineComponent({
@@ -50,6 +60,7 @@ function mountComposable(decide: OAuthConsentRepository['decide'], describeReque
     global: {
       provide: {
         [OAUTH_CONSENT_REPOSITORY as symbol]: repository,
+        [AUTH_REPOSITORY as symbol]: authRepository,
         [CLIENT_REDIRECT as symbol]: navigate,
       },
     },
@@ -136,6 +147,119 @@ describe('useOAuthConsent', () => {
     expect(consent.failure.value).toBe('reauthentication-required')
     // La demande reste lisible : la page la montre au-dessus du lien de reconnexion.
     expect(consent.request.value).toEqual(SUMMARY)
+    await consent.approve()
+    expect(decide).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  // R8 (#748) : le retour de la session relit la demande, sous le compte revenu.
+  it('au retour de la session, la demande se relit', async () => {
+    await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
+    const describeRequest = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockResolvedValueOnce(SUMMARY)
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+    await consent.load(PARAMS)
+    expect(consent.failure.value).toBe('session-ended')
+    expect(authState.sessionEnded).toBe(true)
+
+    await signInAgain()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(describeRequest).toHaveBeenLastCalledWith(PARAMS)
+    expect(consent.state.value).toBe('ready')
+    expect(consent.failure.value).toBeNull()
+    expect(consent.request.value).toEqual(SUMMARY)
+  })
+
+  it("au retour de la session, un autre échec terminal n'est pas relu", async () => {
+    const describeRequest = vi.fn().mockRejectedValue(new AccessForbiddenError())
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+    await consent.load(PARAMS)
+    await flushPromises()
+    markSessionExpired()
+
+    await signInAgain()
+
+    expect(describeRequest).toHaveBeenCalledTimes(1)
+    expect(consent.failure.value).toBe('forbidden')
+  })
+
+  it("forbidden au résumé : /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    const describeRequest = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    await consent.load(PARAMS)
+    await flushPromises()
+
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("refus réel puis /api/me en 401 : la page dit la session finie (R15)", async () => {
+    const describeRequest = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+    me.mockResolvedValue(sessionFor(null))
+
+    await consent.load(PARAMS)
+    await flushPromises()
+
+    expect(authState.sessionEnded).toBe(true)
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('session-ended')
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // Rétablit la session partagée pour les tests suivants. Le retour relit la demande (toujours refusée) : `/api/me`
+    // répond désormais le palier de base, sans quoi cette relecture finirait la session une seconde fois.
+    me.mockResolvedValue(BASE_ACCESS_SESSION)
+    await signInAgain()
+  })
+
+  it("forbidden à la décision : /api/me relu une fois, et un /api/me en panne n'y change rien", async () => {
+    const decide = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(decide)
+    me.mockRejectedValue(new Error('network'))
+    await consent.load(PARAMS)
+
+    await consent.approve()
+    await flushPromises()
+
+    // Le rejet de /api/me est avalé : l'échec terminal est posé, sans seconde relecture.
+    expect(consent.failure.value).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("forbidden au résumé : terminal, la demande n'est plus montrée, la session n'est pas marquée expirée", async () => {
+    const describeRequest = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    await consent.load(PARAMS)
+
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('forbidden')
+    expect(consent.request.value).toBeNull()
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("forbidden à la décision : terminal, la demande n'est plus montrée, pas de retour à ready, session non marquée expirée", async () => {
+    const decide = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent, navigate } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent.approve()
+
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('forbidden')
+    expect(consent.request.value).toBeNull()
+    expect(authState.sessionEnded).toBe(false)
     await consent.approve()
     expect(decide).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()
@@ -243,5 +367,23 @@ describe('useOAuthConsent', () => {
     await consent.approve()
 
     expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('refus de session parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const describeRequest = vi.fn(() => new Promise<ConsentRequest>((_resolve, rejectDescribe) => (reject = rejectDescribe)))
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    const pending = consent.load(PARAMS)
+    markSessionExpired()
+    await signInAgain()
+    expect(authState.sessionEnded).toBe(false)
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(consent.failure.value).toBe('unknown')
+    expect(consent.state.value).toBe('error')
   })
 })

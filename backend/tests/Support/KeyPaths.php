@@ -7,9 +7,7 @@ namespace App\Tests\Support;
 /**
  * Un chemin de clés dans un tableau imbriqué — une clé de configuration, un
  * argument d'une définition —, lu ou retiré par les gardes de parité entre
- * environnements ({@see \App\Tests\Security\SecurityConfigEnvironmentParityTest},
- * {@see \App\Tests\Security\SecurityServicesEnvironmentParityTest}), qui
- * l'écrivaient chacune (relecture de #698).
+ * environnements, écrit une fois ici (relecture de #698).
  */
 final class KeyPaths
 {

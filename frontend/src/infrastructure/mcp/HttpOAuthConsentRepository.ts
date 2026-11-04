@@ -1,15 +1,15 @@
 import { NOMINATIVE_READ_SCOPE, type ConsentParams, type ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { consentQuery } from '../../domain/mcp/services/consentParams'
+import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
+import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
-import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
-import { readCsrfToken } from '../auth/csrfCookie'
-import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
-import { hasProblemType } from '../admin/shared/orderProblems'
+import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/oauth/consent'
 
@@ -44,9 +44,11 @@ type UnprocessableMeaning = 'malformed-decision' | 'generic'
 
 /**
  * Implémentation HTTP d'OAuthConsentRepository : `GET` puis `POST
- * /api/oauth/consent` (#647). Cookie httpOnly BEARER (`credentials:
- * 'include'`) sur les deux, double-submit CSRF (`X-XSRF-TOKEN`) sur le `POST`,
- * comme toute mutation de l'API.
+ * /api/oauth/consent` (#647). L'envoi (cookies, CSRF du `POST`) et le verdict
+ * « session finie » sont ceux de `infrastructure/http/sessionAwareFetch.ts`, qui porte
+ * la règle : un 401 sans type, ou un 403 au `POST` parti sans jeton, est une
+ * `SessionEndedError` ; tout autre 403 (le `GET`, ou le `POST` qui portait son jeton)
+ * est un refus réel, `AccessForbiddenError` (#748, #732 point 4).
  *
  * Le `POST` répond un 200 JSON portant l'URL de retour, jamais un 302 : `fetch`
  * suivrait la redirection au lieu de la rendre, vers le client, hors de
@@ -72,7 +74,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     const query = new URLSearchParams(consentQuery(params)).toString()
     const response = await this.send(
       `${this.apiBaseUrl}${PATH}?${query}`,
-      { method: 'GET', credentials: 'include', headers: { Accept: 'application/json' } },
+      { method: 'GET', headers: { Accept: 'application/json' } },
       // Un GET n'a pas de corps : un 422 n'y a pas de sens propre.
       'generic',
     )
@@ -81,17 +83,11 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   }
 
   async decide(params: ConsentParams, approved: boolean, accountId: string): Promise<string> {
-    const csrfToken = readCsrfToken()
     const response = await this.send(
       `${this.apiBaseUrl}${PATH}`,
       {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         // Les paramètres reçus, tels quels (un absent part en `null`), la décision,
         // et l'UUID du compte que le résumé a nommé (F5) : le serveur refuse en 409
         // si le cookie est devenu celui d'un autre.
@@ -109,23 +105,37 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   }
 
   /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: RequestInit, unprocessable: UnprocessableMeaning): Promise<Response> {
-    let response: Response
+  private async send(url: string, init: SessionAwareInit, unprocessable: UnprocessableMeaning): Promise<Response> {
+    let judged: SessionAwareResponse
     try {
-      response = await fetch(url, init)
+      judged = await sessionAwareFetch(url, init)
     } catch {
       throw new ConsentFailedError('The consent request could not reach the server')
     }
 
-    if (!response.ok) {
-      throw await this.httpError(response, unprocessable)
+    if (!judged.response.ok) {
+      throw await this.httpError(judged, unprocessable)
     }
 
-    return response
+    return judged.response
   }
 
-  private async httpError(response: Response, unprocessable: UnprocessableMeaning): Promise<Error> {
+  private async httpError(judged: SessionAwareResponse, unprocessable: UnprocessableMeaning): Promise<Error> {
+    const response = judged.response
     const status = response.status
+
+    // Le seul cas typé avant le verdict : l'accord sur une authentification trop ancienne a son
+    // propre type (un 401 que la session ne finit pas) ; tout autre 401 est une session finie.
+    if (401 === status && (await this.hasType(response, REAUTHENTICATION_REQUIRED))) {
+      return new ReauthenticationRequiredError()
+    }
+
+    // Puis le verdict de la règle commune ; un autre 403 est un refus réel, que se reconnecter
+    // au même compte ne lèverait pas (#748, #732 point 4).
+    if (judged.endedTheSession) {
+      return new SessionEndedError()
+    }
+
     switch (status) {
       case 400:
         return (await this.hasType(response, AUTHORIZATION_REQUEST_REJECTED))
@@ -135,12 +145,6 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
         return 'malformed-decision' === unprocessable
           ? new MalformedConsentDecisionError()
           : new ConsentFailedError('The consent request failed with status 422')
-      case 401:
-        // L'accord sur une authentification trop ancienne a son propre type ;
-        // tout autre 401 (cookie absent ou expiré) est une session expirée.
-        return (await this.hasType(response, REAUTHENTICATION_REQUIRED))
-          ? new ReauthenticationRequiredError()
-          : new SessionExpiredError()
       case 409:
         // Le compte connecté n'est plus celui que la page a montré ; tout autre
         // 409 est un échec générique.
@@ -148,9 +152,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           ? new ConsentAccountChangedError()
           : new ConsentFailedError('The consent request failed with an unrecognised 409')
       case 403:
-        // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
-        // repose un cookie de session et un jeton CSRF neufs.
-        return new SessionExpiredError()
+        return new AccessForbiddenError()
       default:
         return new ConsentFailedError(`The consent request failed with status ${status}`)
     }

@@ -15,5 +15,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.spec.ts'],
+    // Remet l'état de module de la session à zéro avant chaque test et pose enableAutoUnmount une fois (#748, R25).
+    setupFiles: ['tests/support/setup.ts'],
   },
 })

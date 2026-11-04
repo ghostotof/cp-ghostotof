@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useCookieNotice } from '../../application/cookieNotice/useCookieNotice'
 
 /**
@@ -13,10 +14,11 @@ import { useCookieNotice } from '../../application/cookieNotice/useCookieNotice'
  * de page une fois la page défilée jusqu'en bas. Fond opaque — un panneau
  * translucide ferait dépendre le contraste du texte de ce qui défile dessous.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
 const { isVisible, dismiss } = useCookieNotice()
 
-const privacyPolicyPath = computed(() => `/${locale.value}/privacy-policy`)
+const privacyPolicyPath = computed(() => `/${currentLocale.value}/privacy-policy`)
 </script>
 
 <template>

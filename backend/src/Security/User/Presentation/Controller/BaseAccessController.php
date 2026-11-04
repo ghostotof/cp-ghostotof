@@ -25,9 +25,10 @@ use Symfony\Component\Routing\Attribute\Route;
  * Pose les cookies BEARER + XSRF-TOKEN lui-même plutôt que de passer par le
  * firewall "login" (json_login) : il n'y a ni identifiant ni mot de passe à
  * vérifier ici, donc pas d'authenticator Symfony à faire intervenir. Leurs
- * attributs viennent d'AuthCookieFactory (issue #87), les mêmes qu'au login ;
- * seule la durée de vie est volontairement plus courte (D6 : « jeton court,
- * sans renouvellement »).
+ * attributs viennent d'AuthCookieFactory (issue #87), les mêmes qu'au login, et
+ * ce sont des cookies de session comme au login (#748, F1). Seul le JWT a une
+ * durée de vie volontairement plus courte (D6 : « jeton court, sans
+ * renouvellement ») : c'est son `exp`, non le cookie, qui la porte.
  */
 final readonly class BaseAccessController
 {
@@ -62,11 +63,13 @@ final readonly class BaseAccessController
             'expiresAt' => (new DateTimeImmutable('@'.$expiresAt))->format(DateTimeInterface::ATOM),
         ]);
 
-        // Les deux cookies meurent avec le jeton : rien à « terminer » côté
-        // navigateur passé les 15 minutes, et le XSRF-TOKEN n'a pas de raison
-        // de survivre au BEARER qu'il accompagne.
-        $response->headers->setCookie($this->authCookieFactory->bearer($jwt, $expiresAt));
-        $response->headers->setCookie($this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue(), $expiresAt));
+        // Cookies de session, sans échéance (#748, F1) : le navigateur fermé finit l'accès, et
+        // l'`exp` du JWT le borne à quinze minutes. Un `BEARER` refusé (expiré, invalide) est
+        // ignoré sur cette route publique (#748, R35 : le firewall `api` sert l'anonyme, voir
+        // PublicRouteIgnoresRefusedSessionListener) : le frontend n'a pas à rejouer l'appel, un
+        // seul jeton du limiteur est consommé, et les cookies neufs ci-dessous remplacent le mort.
+        $response->headers->setCookie($this->authCookieFactory->bearer($jwt));
+        $response->headers->setCookie($this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue()));
 
         // Journal de sécurité (D5) : l'identifiant `guest-…` du jeton, jamais
         // le jeton lui-même — c'est lui qu'on retrouvera comme auteur d'un

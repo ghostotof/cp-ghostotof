@@ -14,12 +14,13 @@ import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/AdminWatchedProduct'
 
 const { t } = useI18n()
-const { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { products, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminWatchedProducts()
 const {
   vulnerabilities,
   isLoading: isLoadingVulnerabilities,
   hasError: hasVulnerabilityError,
+  isLoaded: isVulnerabilitiesLoaded,
 } = useAdminVulnerabilities()
 
 /** L'adresse de la fiche publiée par la base, pour vérifier à la source. */
@@ -64,7 +65,11 @@ const isEditing = computed(() => null !== editingId.value)
  */
 const isManualVersion = computed(() => 'manual' === form.versionSource)
 
-const errorText = computed(() => (errorMessage.value ? t(`admin.watch.errors.${errorMessage.value.reason}`) : null))
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.watch.errors.${reason}`) : null
+})
 
 const versionSourceOptions = computed(() =>
   VERSION_SOURCES.map((source) => ({ value: source, label: t(`admin.watch.sources.${source}`) })),
@@ -152,15 +157,11 @@ async function handleSubmit(): Promise<void> {
     version: isManualVersion.value && '' !== form.version.trim() ? form.version : null,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (null === errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
@@ -243,7 +244,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -283,10 +284,16 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.watch.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedProducts.length"
@@ -423,10 +430,16 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasVulnerabilityError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.watch.vulnerabilities.loadError') }}
+      </p>
+      <p
+        v-else-if="!isVulnerabilitiesLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === vulnerabilities.length"

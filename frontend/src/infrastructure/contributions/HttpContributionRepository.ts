@@ -6,8 +6,9 @@ import { ContributionsUnavailableError } from '../../domain/contributions/errors
 /**
  * Implémentation HTTP de ContributionRepository. Endpoint public (GET
  * /api/contributions/{locale}, cf. App\Portfolio\Contribution, aucune
- * restriction dans access_control côté backend) : pas de
- * `credentials: 'include'` nécessaire.
+ * restriction dans access_control côté backend).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpContributionRepository implements ContributionRepository {
   private readonly apiBaseUrl: string

@@ -5,21 +5,20 @@ import type {
   AdminCaseStudyRepository,
 } from '../../../domain/admin/caseStudies/repositories/AdminCaseStudyRepository'
 import { AdminCaseStudyError } from '../../../domain/admin/caseStudies/errors/AdminCaseStudyError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_CASE_STUDY_REPOSITORY: InjectionKey<AdminCaseStudyRepository> = Symbol(
   'AdminCaseStudyRepository',
 )
 
-export interface UseAdminCaseStudiesResult {
+export interface UseAdminCaseStudiesResult extends AdminLoadState {
   caseStudies: Ref<readonly AdminCaseStudy[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminCaseStudyError | null>
   load: () => Promise<void>
-  create: (input: AdminCaseStudyInput) => Promise<void>
-  update: (id: string, input: AdminCaseStudyInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminCaseStudyInput) => Promise<boolean>
+  update: (id: string, input: AdminCaseStudyInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -44,45 +43,36 @@ export function useAdminCaseStudies(): UseAdminCaseStudiesResult {
   }
 
   const caseStudies = ref<readonly AdminCaseStudy[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminCaseStudyError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      caseStudies.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      caseStudies.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value =
-        error instanceof AdminCaseStudyError ? error : new AdminCaseStudyError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminCaseStudyError, () => new AdminCaseStudyError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
-  const create = (input: AdminCaseStudyInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminCaseStudyInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminCaseStudyInput): Promise<void> =>
+  const update = (id: string, input: AdminCaseStudyInput): Promise<boolean> =>
     runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de
@@ -95,5 +85,5 @@ export function useAdminCaseStudies(): UseAdminCaseStudiesResult {
 
   void load()
 
-  return { caseStudies, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { ASSISTANT_REPOSITORY, useAssistant } from '../../../src/application/assistant/useAssistant'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { AssistantError } from '../../../src/domain/assistant/errors/AssistantError'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
 
 type AnswerFn = AssistantRepository['answer']
@@ -40,6 +41,7 @@ function setup(answer: AnswerFn, authRepo?: AuthRepository) {
   const authRepository: AuthRepository = authRepo ?? {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(null)),
   }
   const wrapper = mount(Probe, {
@@ -177,17 +179,187 @@ describe('useAssistant', () => {
     expect(assistant.error.value?.reason).toBe('unknown')
   })
 
-  it.each(['unauthenticated', 'forbidden'] as const)('%s : la session nominative est révoquée', async (reason) => {
+  // `login` referme l'annonce de session finie (état d'auth partagé, singleton de module) : chaque
+  // test des deux suivants repart d'une session ouverte, sans ordre entre eux.
+  it('unauthenticated : la session est marquée expirée', async () => {
     const { assistant, auth } = setup(async () => {
-      throw new AssistantError(reason)
+      throw new AssistantError('unauthenticated')
     })
     await auth.login('jane', 'password')
     expect(auth.tier.value).toBe('trusted')
+    expect(auth.hasSessionEnded.value).toBe(false)
 
     assistant.draft.value = 'q'
     await assistant.send('fr')
 
     expect(auth.tier.value).toBe('anonymous')
+    expect(auth.hasSessionEnded.value).toBe(true)
+  })
+
+  it("forbidden : /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    const me = vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
+    )
+    await auth.login('jane', 'password')
+    expect(auth.hasSessionEnded.value).toBe(false)
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(assistant.error.value?.reason).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+    // Le compte est toujours de confiance pour /api/me (une signature CSRF périmée, par exemple) : rien ne bouge.
+    expect(auth.tier.value).toBe('trusted')
+    expect(auth.user.value).not.toBeNull()
+    expect(auth.hasSessionEnded.value).toBe(false)
+  })
+
+  it("forbidden d'un compte rétrogradé : /api/me, simulé au palier de base, remet l'en-tête à ce palier", async () => {
+    const me = vi.fn(async () => BASE_ACCESS_SESSION)
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
+    )
+    await auth.login('jane', 'password')
+    expect(auth.tier.value).toBe('trusted')
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(auth.tier.value).toBe('base')
+    expect(auth.hasSessionEnded.value).toBe(false)
+  })
+
+  it("forbidden : un /api/me en panne est avalé, l'erreur reste posée, aucune boucle", async () => {
+    const me = vi.fn(async () => {
+      throw new Error('network')
+    })
+    const { assistant } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me },
+    )
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("refus réel puis /api/me en 401 : la page dit la session finie (R15)", async () => {
+    const me = vi.fn(async () => sessionFor(null))
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
+    )
+    await auth.login('jane', 'password')
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(auth.hasSessionEnded.value).toBe(true)
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unauthenticated')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("unauthenticated : /api/me n'est pas relu, la session est déjà dite finie", async () => {
+    const me = vi.fn(async () => sessionFor(null))
+    const { assistant } = setup(
+      async () => {
+        throw new AssistantError('unauthenticated')
+      },
+      { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me },
+    )
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(me).not.toHaveBeenCalled()
+  })
+
+  // R8 (#748) : l'erreur de session n'a plus lieu d'être quand la session revient ; la saisie, elle, reste.
+  it("au retour de la session, l'erreur de session s'efface et le brouillon reste", async () => {
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('unauthenticated')
+      },
+      {
+      login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+    },
+    )
+    await auth.login('jane', 'password')
+    assistant.draft.value = 'ma question'
+    await assistant.send('fr')
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unauthenticated')
+    expect(auth.hasSessionEnded.value).toBe(true)
+
+    // Le retour passe par la relecture partagée (le `focus` de la fenêtre) : une connexion ne rappelle plus (R18).
+    await auth.recheckEndedSession()
+    await flushPromises()
+
+    expect(auth.hasSessionEnded.value).toBe(false)
+    expect(assistant.error.value).toBeNull()
+    expect(assistant.state.value).toBe('idle')
+    expect(assistant.draft.value).toBe('ma question')
+  })
+
+  it("au retour de la session, une autre erreur n'est pas effacée", async () => {
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('unavailable')
+      },
+      {
+      login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+    },
+    )
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    markSessionExpired()
+
+    await auth.recheckEndedSession()
+    await flushPromises()
+
+    expect(assistant.error.value?.reason).toBe('unavailable')
+    expect(assistant.state.value).toBe('error')
   })
 
   it("une autre erreur ne touche pas à la session", async () => {
@@ -257,5 +429,27 @@ describe('useAssistant', () => {
     expect(repository.answer).toHaveBeenCalledTimes(1)
     gate.resolve()
     await first
+  })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('refus de session parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    const gate = deferred()
+    const { assistant, auth } = setup(async () => {
+      await gate.promise
+      throw new AssistantError('unauthenticated')
+    })
+    assistant.draft.value = 'ma question'
+    const sending = assistant.send('fr')
+
+    markSessionExpired()
+    await auth.login('jane', 'password')
+    expect(auth.hasSessionEnded.value).toBe(false)
+    gate.resolve()
+    await sending
+
+    expect(auth.hasSessionEnded.value).toBe(false)
+    expect(auth.user.value?.username).toBe('jane')
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unknown')
   })
 })

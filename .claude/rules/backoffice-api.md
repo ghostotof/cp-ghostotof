@@ -16,8 +16,11 @@ paths:
 - **Authorization**: a single `access_control` entry in `config/packages/security.yaml`,
   `{ path: ^/api/backoffice(/|$), roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
   applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
-  override it, but a rule placed *before* it could accidentally widen backoffice access. **Every `path` is
-  anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
+  override it, but a rule placed *before* it could accidentally widen backoffice access. **Every authorization of
+  `/api` is an `access_control` rule** — never a `#[IsGranted]`, a `denyAccessUnlessGranted`, an `isGranted()` nor an
+  API Platform `security:` (attribute, YAML or XML): `PublicRouteIgnoresRefusedSessionListener` reads « public route »
+  as « route without a rule » (#748 R35); its witnesses are listed in `security-authentication-sessions.md`.
+  **Every `path` is anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
   `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
   `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against

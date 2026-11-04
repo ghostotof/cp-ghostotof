@@ -9,7 +9,9 @@ import {
 } from '../../../domain/admin/contributions/errors/AdminContributionError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeContributionApiResponse {
   id: string
@@ -25,6 +27,10 @@ interface BackofficeContributionApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/contributions'
+
+function unsupportedLocaleError(): AdminContributionError {
+  return new AdminContributionError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminContributionRepository. Toutes les méthodes
@@ -87,7 +93,7 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
   private toEntity(contribution: BackofficeContributionApiResponse): AdminContribution {
     return {
       id: contribution.id,
-      locale: contribution.locale,
+      locale: supportedLocaleOf(contribution.locale, unsupportedLocaleError),
       translationGroup: contribution.translationGroup,
       title: contribution.title,
       project: contribution.project,

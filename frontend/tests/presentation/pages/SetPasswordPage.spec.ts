@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createWebHistory, type Router } from 'vue-router'
 import SetPasswordPage from '../../../src/presentation/pages/SetPasswordPage.vue'
 import { ACCOUNT_REPOSITORY } from '../../../src/application/account/useAccountPasswordSetup'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
+import { renderedMessage } from '../../support/renderedMessage'
 import type { AccountRepository } from '../../../src/domain/account/repositories/AccountRepository'
 import { PasswordSetupLinkError } from '../../../src/domain/account/errors/PasswordSetupLinkError'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
+import en from '../../../src/infrastructure/i18n/locales/en.json'
 
 const StubPage = { template: '<div />' }
 
@@ -40,7 +44,11 @@ function createTestRouter(): Router {
   })
 }
 
-async function mountPage(repository: AccountRepository = createStubRepository(), path = '/fr/set-password#tok123') {
+async function mountPage(
+  repository: AccountRepository = createStubRepository(),
+  path = '/fr/set-password#tok123',
+  unsupportedLocale?: string,
+) {
   // L'URL d'arrivée est celle du lien de l'e-mail : posée dans le navigateur
   // AVANT la création du routeur, comme lors d'un vrai chargement de page.
   window.history.replaceState(null, '', path)
@@ -54,6 +62,9 @@ async function mountPage(repository: AccountRepository = createStubRepository(),
   // l'application (presentation/router/index.ts), absent de ce routeur de test.
   const i18n = createAppI18n()
   i18n.global.locale.value = path.startsWith('/en/') ? 'en' : 'fr'
+  if (undefined !== unsupportedLocale) {
+    setUnsupportedLocale(i18n, unsupportedLocale)
+  }
 
   const wrapper = mount(SetPasswordPage, {
     global: { plugins: [router, i18n], provide: { [ACCOUNT_REPOSITORY as symbol]: repository } },
@@ -67,8 +78,6 @@ async function mountPage(repository: AccountRepository = createStubRepository(),
 function headLinkHrefs(): string[] {
   return Array.from(document.head.querySelectorAll('link')).map((link) => link.getAttribute('href') ?? '')
 }
-
-enableAutoUnmount(afterEach)
 
 afterEach(() => {
   window.history.replaceState(null, '', '/')
@@ -173,8 +182,7 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     expect(repository.validateSetupToken).not.toHaveBeenCalled()
     // Cas aussi atteint en rechargeant la page après le nettoyage de l'URL :
     // le message doit dire quoi faire, pas seulement que ça a échoué.
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet')
-    expect(wrapper.get('[role="alert"]').text()).toContain("e-mail d'invitation")
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.account.setPassword.incomplete)
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
 
@@ -218,9 +226,7 @@ describe('SetPasswordPage', () => {
     // Le backend ne dit plus pourquoi : le message recouvre chaque motif et
     // dit quoi faire dans chacun.
     const alert = wrapper.get('[role="alert"]').text()
-    expect(alert).toContain('incomplet, expiré ou déjà utilisé')
-    expect(alert).toContain("e-mail d'invitation")
-    expect(alert).toContain('nouveau lien')
+    expect(alert).toContain(fr.account.setPassword.unusable)
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
 
@@ -230,9 +236,9 @@ describe('SetPasswordPage', () => {
     })
     const { wrapper } = await mountPage(repository)
 
-    expect(wrapper.text()).toContain('Vous avez déjà défini votre mot de passe ?')
+    expect(wrapper.text()).toContain(fr.account.setPassword.alreadySet)
     const loginLink = wrapper.get('a[href="/fr/login"]')
-    expect(loginLink.text()).toBe('Se connecter')
+    expect(loginLink.text()).toBe(fr.account.setPassword.logIn)
     // Hors de la région `alert` : le message s'annonce seul, le lien se
     // trouve au clavier.
     expect(wrapper.get('[role="alert"]').find('a').exists()).toBe(false)
@@ -244,8 +250,20 @@ describe('SetPasswordPage', () => {
     })
     const { wrapper } = await mountPage(repository, '/en/set-password#tok123')
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplete, expired or already used')
-    expect(wrapper.get('a[href="/en/login"]').text()).toBe('Log in')
+    expect(wrapper.get('[role="alert"]').text()).toContain(en.account.setPassword.unusable)
+    expect(wrapper.get('a[href="/en/login"]').text()).toBe(en.account.setPassword.logIn)
+  })
+
+  // Sp18-2 : une langue d'interface que le site ne porte pas (`de`) n'atteint aucune adresse ; la route donne la langue.
+  it('sous une langue hors du site, la connexion et l’URL nettoyée suivent la route, aucun `/de/` (#748, R227)', async () => {
+    const repository = createStubRepository({
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper, router } = await mountPage(repository, '/en/set-password#tok123', 'de')
+
+    expect(router.currentRoute.value.fullPath).toBe('/en/set-password')
+    expect(wrapper.find('a[href="/en/login"]').exists()).toBe(true)
+    expect(wrapper.find('a[href^="/de"]').exists()).toBe(false)
   })
 
   it('lien inutilisable : aucune violation axe', async () => {
@@ -270,7 +288,7 @@ describe('SetPasswordPage', () => {
     await flushPromises()
 
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
-    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet, expiré ou déjà utilisé')
+    expect(wrapper.get('[role="alert"]').text()).toContain(fr.account.setPassword.unusable)
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(true)
   })
 
@@ -280,7 +298,7 @@ describe('SetPasswordPage', () => {
     const { wrapper } = await mountPage(repository)
 
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
-    const retryButton = wrapper.findAll('button').find((b) => b.text().includes('Réessayer'))
+    const retryButton = wrapper.findAll('button').find((b) => b.text().includes(fr.account.setPassword.retry))
     expect(retryButton).toBeDefined()
 
     await retryButton?.trigger('click')
@@ -335,8 +353,9 @@ describe('SetPasswordPage', () => {
     await flushPromises()
 
     expect(repository.completePasswordSetup).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="alert"]').text()).toContain('trop long')
-    expect(wrapper.get('[role="alert"]').text()).toContain('4096 octets')
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      renderedMessage('fr', 'account.setPassword.errors.tooLong', { max: 4096 }),
+    )
   })
 
   it('relie le champ mot de passe à la règle de longueur, puis au message d\'erreur quand il apparaît (a11y)', async () => {
@@ -344,9 +363,9 @@ describe('SetPasswordPage', () => {
 
     const passwordInput = wrapper.get('#set-password-password')
     const describedBy = (): string[] => (passwordInput.attributes('aria-describedby') ?? '').split(' ').filter(Boolean)
-    // Avant toute saisie : l'indication « Au moins 8 caractères » seule.
+    // Avant toute saisie : l'indication de longueur minimale seule.
     expect(describedBy()).toHaveLength(1)
-    expect(wrapper.get(`#${describedBy()[0]}`).text()).toContain('Au moins 8 caractères')
+    expect(wrapper.get(`#${describedBy()[0]}`).text()).toContain(renderedMessage('fr', 'account.setPassword.hint', { min: 8 }))
 
     await passwordInput.setValue('🔑🔑🔑🔑')
     await wrapper.get('#set-password-confirmation').setValue('🔑🔑🔑🔑')

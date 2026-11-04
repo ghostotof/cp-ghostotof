@@ -100,4 +100,66 @@ final class AuthCookieAttributesTest extends WebTestCase
         self::assertTrue($baseAccess[AuthCookieFactory::BEARER]->isSecure(), 'Le JWT doit être posé `Secure` hors de `dev`.');
         self::assertTrue($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isSecure(), 'Le jeton CSRF doit être posé `Secure` hors de `dev`.');
     }
+
+    /**
+     * #748 (F1, décision de l'auteur du 2026-10-29, qui remplace celle de CR3) :
+     * `BEARER` et `XSRF-TOKEN` sont des cookies de **session** au login — aucun
+     * `Expires` ni `Max-Age` : fermer le navigateur (sans restauration de
+     * session) finit la session, en lecture comme en écriture. Le JWT garde son
+     * `exp` (`token_ttl`) : c'est lui, non le cookie, qui borne la session.
+     *
+     * Les cookies sont lus sur la réponse, jamais dans le jar (`Secure` perdu
+     * en http, cf. {@see ReadsResponseCookies}).
+     */
+    public function testTheLoginCookiesAreSessionCookies(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(
+            self::USERNAME,
+            TestCredentials::plainPassword(),
+            [CpgUser::ROLE_TRUSTED],
+        );
+
+        $client->request(
+            'POST',
+            '/api/login_check',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'],
+            content: self::jsonBody([
+                'username' => self::USERNAME,
+                'password' => TestCredentials::plainPassword(),
+            ]),
+        );
+        self::assertResponseIsSuccessful();
+
+        $this->assertBothAreSessionCookies($this->cookiesByName($client), 'login');
+    }
+
+    /** Même exigence à l'accès de base : les quinze minutes sont dans le JWT, pas dans le cookie. */
+    public function testTheBaseAccessCookiesAreSessionCookies(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+        self::assertResponseIsSuccessful();
+
+        $this->assertBothAreSessionCookies($this->cookiesByName($client), 'accès de base');
+    }
+
+    /**
+     * @param array<string, Cookie> $cookies
+     */
+    private function assertBothAreSessionCookies(array $cookies, string $site): void
+    {
+        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
+            self::assertArrayHasKey($name, $cookies, \sprintf('%s absent de la réponse (%s).', $name, $site));
+            self::assertSame(
+                0,
+                $cookies[$name]->getExpiresTime(),
+                \sprintf('%s : %s doit être un cookie de session (aucune échéance), il a une échéance persistante.', $site, $name),
+            );
+            self::assertFalse($cookies[$name]->isCleared(), \sprintf('%s : %s ne doit pas être expiré.', $site, $name));
+        }
+    }
 }

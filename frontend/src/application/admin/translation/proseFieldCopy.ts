@@ -1,11 +1,11 @@
 import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 
 /**
- * Les deux gestes que toute page admin répète autour de l'assistant de
+ * Les deux gestes que tout formulaire admin fait autour de l'assistant de
  * traduction : extraire de son formulaire les champs de prose à envoyer, puis
- * y reporter la proposition reçue. Partagés plutôt que recopiés page par page —
- * une correction (un champ blanc envoyé, un champ écrasé par erreur)
- * s'applique alors partout d'un coup.
+ * y reporter la proposition reçue. Écrits une fois — `useTranslatedForm`
+ * (`proposeFrom`) et les réglages « À propos » les appellent — : une correction
+ * (un champ blanc envoyé, un champ écrasé par erreur) s'applique partout d'un coup.
  *
  * La page reste seule à décider *quels* champs sont de la prose (spec 0002,
  * D2) et ce qu'elle fait du formulaire ensuite (bascule en création, bannière).

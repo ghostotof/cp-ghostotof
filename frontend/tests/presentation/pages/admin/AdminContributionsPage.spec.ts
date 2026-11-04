@@ -13,6 +13,14 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import { createVersionLabel, ENTRY_FORM_TEXTS, ENTRY_TITLES, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import { proposalNoticeFrom, TRANSLATION_RATE_LIMITED_FR } from '../../../support/adminTranslationTexts'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
+import { HttpAdminContributionRepository } from '../../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
+import { BACKOFFICE_TEST_API_URL, stubBackofficeJson } from '../../../support/backofficeFetch'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -136,17 +144,12 @@ function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> 
   return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
-
-function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
-}
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; le « Modifier »
+// de la ligne, propre à la section, se lit ici : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = ENTRY_FORM_TEXTS.contributions
+const TITLES = ENTRY_TITLES.contributions
+const CREATE_EN_LABEL: string = createVersionLabel('en')
+const EDIT_FR: string = fr.admin.contributions.editAction
 
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -159,6 +162,19 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
 describe('AdminContributionsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // Le dépôt HTTP réel juge la langue de la réponse à la frontière : la page montre son alerte de chargement et l'entrée
+  // dans une langue que le site ne porte pas n'atteint ni le tableau ni un formulaire (#748, R229, Sp18-3).
+  it("une liste répondue avec une entrée en langue 'de' montre l'alerte de chargement, sans l'entrée (#748, R229)", async () => {
+    const unsupportedEntry = { ...FR_ONE, locale: 'de' }
+    stubBackofficeJson([unsupportedEntry])
+
+    const { wrapper } = await mountPage(new HttpAdminContributionRepository(BACKOFFICE_TEST_API_URL))
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.contributions.loadError)
+    expect(wrapper.text()).not.toContain(unsupportedEntry.title)
   })
 
   it('affiche une ligne par groupe, un badge par langue, et la traduction manquante', async () => {
@@ -172,8 +188,8 @@ describe('AdminContributionsPage', () => {
     expect(badges).toEqual(['FR', 'EN'])
 
     const missing = rows(wrapper)[1]
-    expect(missing.text()).toContain('Traduction manquante')
-    expect(buttonLabelled(missing, 'Créer la version EN').exists()).toBe(true)
+    expect(missing.text()).toContain(ORDER_TEXTS.missingTranslation)
+    expect(buttonLabelled(missing, CREATE_EN_LABEL).exists()).toBe(true)
   })
 
   it('n\'affiche plus aucune colonne ni champ de position', async () => {
@@ -188,15 +204,15 @@ describe('AdminContributionsPage', () => {
     const { wrapper } = await mountPage(contributions)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
 
     vi.mocked(contributions.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(contributions.reorder).toHaveBeenCalledWith([GROUP_TWO, GROUP_THREE, GROUP_ONE])
     expect(contributions.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -210,7 +226,7 @@ describe('AdminContributionsPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Un lock npm dans le manifeste')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -225,31 +241,31 @@ describe('AdminContributionsPage', () => {
     // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
     // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
-    const edit = buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Supprimer').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), FORM_TEXTS.delete).attributes('disabled'),
     ).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, CREATE_EN_LABEL).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
-    expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
     // Le seul bouton dont la désactivation n'a aucun rapport visible avec l'ordre :
     // c'est celui qui a le plus besoin de l'aide.
-    expect(translateButton(wrapper).attributes('aria-describedby')).toBe('admin-order-locked-hint')
+    expect(translateEntryButton(wrapper, 0).attributes('aria-describedby')).toBe('admin-order-locked-hint')
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
     expect(
-      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR).attributes('disabled'),
     ).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('recharge la liste et annonce un ordre obsolète quand le serveur refuse l\'ensemble envoyé', async () => {
@@ -260,21 +276,21 @@ describe('AdminContributionsPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(contributions.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(contributions.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('« Créer la version EN » ouvre une création rattachée, projet / référence / URL recopiés, prose vide', async () => {
     const { wrapper } = await mountPage()
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-contribution-project')).toBe('grafana-stack')
@@ -289,7 +305,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -309,7 +325,7 @@ describe('AdminContributionsPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -322,7 +338,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(wrapper, 'Créer la version EN').trigger('click')
+    await buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click')
     await wrapper.get('#admin-contribution-title').setValue('A homemade observability dashboard')
     await wrapper.get('#admin-contribution-summary').setValue('Summary.')
     await wrapper.get('#admin-contribution-body').setValue('Body.')
@@ -338,8 +354,8 @@ describe('AdminContributionsPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createContributionRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -353,13 +369,13 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    expect(wrapper.get('h2').text()).toBe('Modifier la contribution')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
 
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
+    expect(wrapper.get('h2').text()).toBe(TITLES.create)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('en')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_TWO)
     expect(valueOf(wrapper, '#admin-contribution-title')).toBe(TRANSLATED.title)
@@ -368,16 +384,59 @@ describe('AdminContributionsPage', () => {
     expect(contributions.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Proposition générée par IA')
-    expect(banner.text()).toContain('FR')
+    expect(banner.text()).toContain(proposalNoticeFrom('fr'))
+  })
+
+  // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
+  let repositoryUnderLock = createContributionRepository()
+
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois, pour tous les
+  // formulaires par entrée, dans `tests/support/entryFormLock.ts` (#748, R91).
+  describeEntryFormLock({
+    name: '',
+    createTranslation: () => createTranslationRepository(),
+    mount: async (translation) => {
+      repositoryUnderLock = createContributionRepository()
+      return (await mountPage(repositoryUnderLock, translation)).wrapper
+    },
+    form: 0,
+    ids: {
+      locale: 'admin-contribution-locale',
+      group: 'admin-contribution-translation-group',
+      title: 'admin-contribution-title',
+      hint: 'admin-contribution-entry-lock-help',
+    },
+    proseFields: CONTRIBUTION_PROSE_FIELDS,
+    heading: TITLES.create,
+    startEdit: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
+    },
+    deleteEditedEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), FORM_TEXTS.delete).trigger('click')
+    },
+    startEditOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), EDIT_FR).trigger('click')
+    },
+    // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+    deleteSiblingOfOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'An npm lock in the manifest'), FORM_TEXTS.delete).trigger('click')
+    },
+    startCreateVersion: (wrapper) => buttonLabelled(wrapper, CREATE_EN_LABEL).trigger('click'),
+    propose: async (wrapper) => {
+      await translateEntryButton(wrapper, 0).trigger('click')
+      await flushPromises()
+    },
+    holdNextSave: () => {
+      vi.mocked(repositoryUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
+    },
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -402,12 +461,12 @@ describe('AdminContributionsPage', () => {
     })
     const { wrapper } = await mountPage(createContributionRepository(), translation)
 
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), EDIT_FR).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')
-    expect(wrapper.get('h2').text()).toBe('Modifier la contribution')
+    expect(wrapper.get('form [role="alert"]').text()).toContain(TRANSLATION_RATE_LIMITED_FR)
+    expect(wrapper.get('h2').text()).toBe(TITLES.edit)
     expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('fr')
     expect(valueOf(wrapper, '#admin-contribution-title')).toBe(FR_TWO.title)
   })

@@ -14,7 +14,7 @@ defineProps<{
     id="hero"
     class="container-xl py-5 py-lg-6"
   >
-    <div class="row align-items-center g-5">
+    <div class="row align-items-center g-4 g-lg-5">
       <div class="col-lg-6">
         <p
           class="text-eyebrow text-uppercase small fw-semibold mb-3"

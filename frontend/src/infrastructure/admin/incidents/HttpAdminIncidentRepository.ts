@@ -9,7 +9,9 @@ import {
 } from '../../../domain/admin/incidents/errors/AdminIncidentError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
+import { hasProblemType } from '../../http/problemJson'
+import { STALE_ORDER_PROBLEM_TYPES } from '../shared/orderProblems'
+import { supportedLocaleOf, UNSUPPORTED_LOCALE_MESSAGE } from '../shared/supportedLocale'
 
 interface BackofficeIncidentApiResponse {
   id: string
@@ -26,6 +28,10 @@ interface BackofficeIncidentApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/incidents'
+
+function unsupportedLocaleError(): AdminIncidentError {
+  return new AdminIncidentError('unknown', UNSUPPORTED_LOCALE_MESSAGE)
+}
 
 /**
  * Implémentation HTTP de AdminIncidentRepository. Toutes les méthodes exigent
@@ -88,7 +94,7 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
   private toEntity(incident: BackofficeIncidentApiResponse): AdminIncident {
     return {
       id: incident.id,
-      locale: incident.locale,
+      locale: supportedLocaleOf(incident.locale, unsupportedLocaleError),
       translationGroup: incident.translationGroup,
       title: incident.title,
       version: incident.version,

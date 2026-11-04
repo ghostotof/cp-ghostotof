@@ -31,7 +31,7 @@ const { principles: qualityPrinciples, traits: qualityTraits, isLoading: isQuali
     class="container-xl py-4"
   >
     <p
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('quality.error') }}

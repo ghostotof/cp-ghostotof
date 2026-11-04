@@ -348,9 +348,31 @@ paths:
   nothing. It follows the returned URL with **`window.location.replace`**, never `assign` (the page must
   not stay in history: « Back » would offer to grant the same request again), and only an `http:`/`https:`
   URL whose **`hostname`** (not `host`: the backend's `redirectHost` has no port, a loopback redirect has an
-  ephemeral one) is the host shown — defence in depth, the server already validated it. 401 **and 403**
-  (a CSRF refusal included) read as an expired session (`markSessionExpired`, like `useAssistant`):
-  accepted, a re-login gives fresh cookies. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
+  ephemeral one) is the host shown — defence in depth, the server already validated it. **A 401, or a 403 to
+  the `POST` sent without a CSRF token, is an ended session** (`SessionEndedError`, judged by `sessionAwareFetch`;
+  the rule and its facts are in `.claude/rules/frontend-session.md`): `markSessionExpired()`, failure `session-ended`,
+  a « Sign in again » link (`login?redirect=<fullPath>&expired=1`, `signInAgainLocation`). **The links in the page body stay in
+  the same tab, on purpose** (#748, R6) — this one and « Changer de compte » (`switchAccountLocation`, no `target`) —
+  the header's « Connexion » too (`meta.signInInSameTab`, R16): the page is a
+  step of an OAuth flow that ends in `window.location.replace` towards the client, so a second tab would leave the
+  request open in the first and the person could decide it twice; `.claude/rules/frontend-session.md` says why
+  every other page opens a new tab. **Any other 403** — the `GET` (never subject to
+  the CSRF guard: it is `access_control` refusing an account
+  without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
+  `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4, R7): the request is no longer
+  shown, the session is **not** marked expired (it holds for the rest of the site), `/api/me` is re-read once
+  (`rereadAfterRefusal()`, so the header returns to the tier the server now recognises), and the page says the **neutral**
+  `common.accessRefused` — the account may not have, or may no longer have, trusted access, **or the session needs to be
+  reopened** (a stale `XSRF-TOKEN` signature is also a 403 with the token sent, S8: the message must not accuse the
+  account) — and offers « Changer de compte » (`common.switchAccount`, `login?redirect=<fullPath>&reauth=1`) — the only
+  link that opens the login to a signed-in person, whose `beforeEnter` otherwise sends them home; a plain « Se
+  reconnecter » link would not open. It also mends the rare stale `XSRF-TOKEN` signature (an `APP_SECRET` rotation): the
+  sign-in sets new cookies. **Rejected**: returning to `ready` to retry (the same decision, the same refusal). The
+  login page opened by `reauth=1` shows the **neutral** `auth.reauthNotice` (« Confirm your identity or sign in with
+  another account: you will then return to the page you left. ») — it used to talk about the ten-minute rule of this
+  page alone, wrong for « Changer de compte » from a refusal, « Mes connexions MCP » or the assistant; the reason of the
+  ten minutes is still said by this page's own alert (`reauthenticationRequired`), before the link. 422 is
+  terminal (`malformed-decision`), a 400 whose `type` is the
   rejection is `invalid`. **A 401 whose `type` is `reauthentication-required`** (only on the approval) is
   its own failure, terminal, the session **not** marked expired: the page says why and links to the login
   with `redirect` (the full path) and **`reauth=1`** (`presentation/router/reauthentication.ts`, one value only),

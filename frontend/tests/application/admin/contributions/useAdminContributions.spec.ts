@@ -17,7 +17,7 @@ const CONTRIBUTION: AdminContribution = {
   reference: 'PR #42', url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
+  locale: 'fr' as const, translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
   url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.',
 }
 

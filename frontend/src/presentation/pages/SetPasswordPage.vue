@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAccountPasswordSetup } from '../../application/account/useAccountPasswordSetup'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import {
   MAX_PASSWORD_BYTES,
   MIN_PASSWORD_LENGTH,
@@ -11,7 +11,8 @@ import {
 } from '../../domain/account/services/passwordLength'
 import BaseTextInput from '../ui/BaseTextInput.vue'
 
-const { t, locale: i18nLocale } = useI18n()
+const { t } = useI18n()
+const pageLocale = useRouteLocale()
 const route = useRoute()
 const router = useRouter()
 const { state, errorReason, validate, submit } = useAccountPasswordSetup()
@@ -56,7 +57,7 @@ async function takeTokenFromUrl(): Promise<string> {
 
   if ('' !== route.hash) {
     try {
-      await router.replace({ name: 'set-password', params: { locale: currentLocale() }, hash: '' })
+      await router.replace({ name: 'set-password', params: { locale: pageLocale.value }, hash: '' })
     } catch {
       // Un échec de navigation ne doit pas priver la personne de son
       // formulaire : le jeton est lu, on continue avec.
@@ -66,12 +67,7 @@ async function takeTokenFromUrl(): Promise<string> {
   return found
 }
 
-function currentLocale(): Locale {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (i18nLocale.value as Locale)
-}
-
-const loginPath = computed(() => `/${currentLocale()}/login`)
+const loginPath = computed(() => `/${pageLocale.value}/login`)
 
 const showForm = computed(() => 'ready' === state.value || 'submitting' === state.value)
 
@@ -149,7 +145,7 @@ async function handleSubmit(): Promise<void> {
 
       <p
         v-else-if="'incomplete' === state"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('account.setPassword.incomplete') }}
@@ -163,7 +159,7 @@ async function handleSubmit(): Promise<void> {
       -->
       <div v-else-if="'unusable' === state">
         <p
-          class="text-danger"
+          class="text-danger-emphasis"
           role="alert"
         >
           {{ t('account.setPassword.unusable') }}
@@ -178,7 +174,7 @@ async function handleSubmit(): Promise<void> {
 
       <div v-else-if="'error' === state">
         <p
-          class="text-danger"
+          class="text-danger-emphasis"
           role="alert"
         >
           {{ apiErrorText ?? t('account.setPassword.errors.unknown') }}
@@ -242,7 +238,7 @@ async function handleSubmit(): Promise<void> {
           <p
             v-if="localFormError"
             :id="ERROR_ID"
-            class="text-danger small"
+            class="text-danger-emphasis small"
             role="alert"
           >
             {{ localFormError }}
@@ -250,7 +246,7 @@ async function handleSubmit(): Promise<void> {
           <p
             v-else-if="apiErrorText"
             :id="ERROR_ID"
-            class="text-danger small"
+            class="text-danger-emphasis small"
             role="alert"
           >
             {{ apiErrorText }}

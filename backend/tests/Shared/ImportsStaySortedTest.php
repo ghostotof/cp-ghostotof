@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Support\InterpolatedStrings;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\UnsortedImports;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -73,5 +74,21 @@ final class ImportsStaySortedTest extends TestCase
         yield 'use function, interdit' => ["<?php\nnamespace App;\nuse function sprintf;\n", ['3 use function interdit']];
         yield 'use const, interdit' => ["<?php\nnamespace App;\nuse const PHP_EOL;\n", ['3 use const interdit']];
         yield 'import groupé, interdit' => ["<?php\nnamespace App;\nuse App\\{Beta, Alpha};\n", ['3 import groupé interdit']];
+        // La capture `use (` d'une fonction anonyme se reconnaît à l'identifiant de sa parenthèse : le fragment `(` ou `)`
+        // d'une chaîne interpolée écrite avant elle (`"$x("`) n'y change rien. Aucune chaîne ne suit le `use` lui-même.
+        foreach (InterpolatedStrings::PARENTHESES as $label => $string) {
+            yield 'use de fonction anonyme après '.$label => [
+                "<?php\nnamespace App;\n\$s = ".$string.";\n\$f = function () use (\$b, \$a) {};\n",
+                [],
+            ];
+        }
+        // Le texte d'un fragment de chaîne interpolée n'est pas une accolade du code : le bloc d'imports qui suit une
+        // fonction reste au premier niveau, et jugé (C15-2).
+        foreach (InterpolatedStrings::BRACES as $label => $string) {
+            yield 'imports en désordre après '.$label => [
+                "<?php\nnamespace App;\nfunction f(): string { return ".$string."; }\nuse Zed;\nuse Alpha;\n",
+                ['5 Alpha doit précéder Zed'],
+            ];
+        }
     }
 }

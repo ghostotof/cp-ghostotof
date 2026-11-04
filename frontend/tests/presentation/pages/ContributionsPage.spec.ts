@@ -7,6 +7,7 @@ import type { ContributionRepository } from '../../../src/domain/contributions/r
 import type { Contribution } from '../../../src/domain/contributions/entities/Contribution'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const CONTRIBUTION: Contribution = {
   title: 'Retry de transport, re-prompt de validation : deux mécanismes, un seul mot',
@@ -46,7 +47,7 @@ describe('ContributionsPage', () => {
   })
 
   it('affiche un message de chargement pendant la récupération', () => {
-    expect(mountPage().text()).toContain('Chargement des contributions')
+    expect(mountPage().text()).toContain(fr.contributions.loading)
   })
 
   it('affiche le projet, la référence, le titre et le chapeau une fois chargée', async () => {
@@ -123,7 +124,7 @@ describe('ContributionsPage', () => {
     const wrapper = mountPage(repository)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Aucune contribution publiée')
+    expect(wrapper.text()).toContain(fr.contributions.empty)
     expect(wrapper.find('article').exists()).toBe(false)
   })
 

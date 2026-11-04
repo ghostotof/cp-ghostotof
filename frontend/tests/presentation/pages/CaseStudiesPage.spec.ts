@@ -14,6 +14,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
 import { sessionFor } from '../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const CASE_STUDY: CaseStudy = {
   title: 'Un cache partagé qui servait des réponses à la mauvaise organisation',
@@ -76,6 +77,7 @@ async function primeAnonymous(): Promise<void> {
         [AUTH_REPOSITORY as symbol]: {
           login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
           logout: vi.fn(async () => undefined),
+          hasWriteToken: () => true,
           me: vi.fn(async () => sessionFor(null)),
         },
       },
@@ -93,7 +95,7 @@ describe('CaseStudiesPage', () => {
   })
 
   it('affiche un message de chargement pendant la récupération', () => {
-    expect(mountPage().text()).toContain('Chargement des études de cas')
+    expect(mountPage().text()).toContain(fr.caseStudies.loading)
   })
 
   it('affiche titre, problème, solution, compromis et résultat mesuré une fois chargée', async () => {
@@ -122,7 +124,7 @@ describe('CaseStudiesPage', () => {
     const wrapper = mountPage(repository)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Aucune étude de cas publiée')
+    expect(wrapper.text()).toContain(fr.caseStudies.empty)
   })
 
   it('affiche un message d\'erreur générique si la récupération échoue pour une autre raison', async () => {
@@ -173,7 +175,7 @@ describe('CaseStudiesPage', () => {
       await wrapper.get('button').trigger('click')
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Trop de tentatives')
+      expect(wrapper.text()).toContain(fr.caseStudies.needsAccess.rateLimited)
     })
 
     it("l'accès obtenu ailleurs (CTA de l'en-tête) recharge le contenu sans clic sur la page", async () => {

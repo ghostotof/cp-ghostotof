@@ -35,7 +35,7 @@ const { contributions, isLoading, hasError } = useContributions()
 
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('contributions.error') }}

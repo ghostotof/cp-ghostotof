@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { NavigationGroup } from '../../domain/portfolio/entities/NavigationGroup'
 import { isNavigationGroup, type NavigationEntry } from '../../domain/portfolio/entities/NavigationEntry'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import AccountMenu from './AccountMenu.vue'
+import { usePublishedHeight } from './usePublishedHeight'
+import { useRouteLocale } from '../router/useRouteLocale'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
@@ -24,6 +26,11 @@ defineProps<{
 }>()
 
 const isMobileMenuOpen = ref(false)
+
+// L'en-tête est collant : sa hauteur (menu mobile ouvert, alerte) est publiée pour que le bandeau de session
+// finie du backoffice se colle juste dessous et que le défilement réserve sa place (#748, constat 7).
+const header = useTemplateRef<HTMLElement>('header')
+usePublishedHeight(header, '--app-header-height')
 
 /**
  * Sous-menu desktop d'un groupe (issue #70) : même mécanique que le menu
@@ -113,8 +120,9 @@ function handleAccountMenuCvDownload(): void {
 }
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
-const { tier, isChecking, isSuperAdmin, logout } = useAuth()
+const { t } = useI18n()
+const pageLocale = useRouteLocale()
+const { tier, isChecking, isSuperAdmin, logout, hasSessionEnded } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
 
@@ -153,6 +161,17 @@ async function handleInstantAccess(): Promise<void> {
   }
 }
 
+/**
+ * Session finie sur une page qui l'exige (backoffice, MCP, assistant : celles qui ont fait finir la session) —
+ * #748, constat 16. L'en-tête est alors anonyme alors que la page garde sa saisie : « Connexion » dans l'onglet
+ * courant la quitterait, et « Accès instantané » remplacerait le cookie puis mènerait aux études de cas. On
+ * propose donc le lien du bandeau (`SessionEndedBanner`) : un nouvel onglet qui ramène ici, et pas le CTA — sauf
+ * sur une route `meta.signInInSameTab` (le consentement OAuth, étape d'un flux qui finit par un redirect vers le
+ * client), où `SignInAgainLink` reste dans l'onglet (R16, F7). Sur une route publique, rien ne change : `sessionEnded` y survit jusqu'à une
+ * connexion, et un nouvel onglet y serait incompréhensible.
+ */
+const sessionEndedHere = computed(() => hasSessionEnded.value && true === route.meta.requiresAuth)
+
 const baseAccessErrorMessage = computed(() => {
   if (null === baseAccessErrorReason.value) {
     return null
@@ -163,15 +182,10 @@ const baseAccessErrorMessage = computed(() => {
 })
 
 /**
- * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
- * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
- * `/:pathMatch(.*)*` sans segment `:locale`).
+ * L'accueil dans la langue de la page (`useRouteLocale()`) : celle de la route, sinon, sur la page 404
+ * (`/:pathMatch(.*)*`, sans segment `:locale`), la langue d'interface.
  */
-const homeLink = computed(() => {
-  const routeLocale = route.params.locale
-  const currentLocale = typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-  return `/${currentLocale}`
-})
+const homeLink = computed(() => `/${pageLocale.value}`)
 
 /**
  * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance
@@ -199,23 +213,29 @@ function navLinkClass(link: NavigationLink) {
 
 <template>
   <header
+    ref="header"
     class="sticky-top border-bottom"
     style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)"
   >
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
       <RouterLink
         :to="homeLink"
-        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold text-nowrap"
+        class="brand-link d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold text-nowrap"
       >
-        <!-- Glyphe décoratif du logo, pas du texte à traduire -->
+        <!-- Glyphe décoratif du logo, pas du texte à traduire. flex-shrink-0 : c'est le libellé qui cède (320 px). -->
         <span
-          class="d-inline-flex align-items-center justify-content-center rounded-circle text-white small"
+          class="d-inline-flex align-items-center justify-content-center flex-shrink-0 rounded-circle text-white small"
           style="width: 2rem; height: 2rem; background: linear-gradient(135deg, #7c3aed, #4338ca)"
           aria-hidden="true"
         >
           &lt;/&gt;
         </span>
-        {{ siteIdentity.brandName }}
+        <!-- À 320 px, le groupe de droite demandait 331 px au palier de confiance et 389 px en anonyme et en EN, pour
+             301 px utiles (mesures de #748) : la marque se tronque la première, avec une ellipse, jamais les
+             actions ; si le groupe seul dépasse encore, sa largeur se mesure dans un vrai navigateur à 320 px (jsdom ne
+             fait aucune mise en page) : `.claude/rules/frontend-a11y.md`, « The header at 320 px ». Le nom accessible du lien
+             reste le libellé entier (la troncature est visuelle). -->
+        <span class="text-truncate">{{ siteIdentity.brandName }}</span>
       </RouterLink>
 
       <!-- flex-wrap + text-nowrap : si la barre déborde malgré le
@@ -302,7 +322,7 @@ function navLinkClass(link: NavigationLink) {
         </template>
       </nav>
 
-      <div class="d-flex align-items-center gap-2">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0">
         <LocaleSwitcher />
 
         <template v-if="!isChecking">
@@ -317,33 +337,45 @@ function navLinkClass(link: NavigationLink) {
                et le propriétaire du site n'a pas besoin de son propre CV à
                chaque page. -->
           <template v-if="'anonymous' === tier">
-            <button
-              type="button"
-              class="btn btn-gradient btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-              :disabled="isGranting"
-              @click="handleInstantAccess"
+            <template v-if="!sessionEndedHere">
+              <button
+                type="button"
+                class="btn btn-gradient btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+                :disabled="isGranting"
+                @click="handleInstantAccess"
+              >
+                {{ isGranting ? t('common.instantAccessGranting') : t('common.instantAccess') }}
+                <IconZap
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+              <button
+                type="button"
+                class="btn btn-gradient btn-sm d-sm-none d-inline-flex align-items-center"
+                :disabled="isGranting"
+                :aria-label="isGranting ? t('common.instantAccessGranting') : t('common.instantAccess')"
+                @click="handleInstantAccess"
+              >
+                <IconZap
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+            </template>
+            <!--
+              Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748), le même onglet sur le consentement.
+            -->
+            <SignInAgainLink
+              v-if="sessionEndedHere"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
             >
-              {{ isGranting ? t('common.instantAccessGranting') : t('common.instantAccess') }}
-              <IconZap
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
-            <button
-              type="button"
-              class="btn btn-gradient btn-sm d-sm-none d-inline-flex align-items-center"
-              :disabled="isGranting"
-              :aria-label="isGranting ? t('common.instantAccessGranting') : t('common.instantAccess')"
-              @click="handleInstantAccess"
-            >
-              <IconZap
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
+              {{ t('common.login') }}
+            </SignInAgainLink>
             <RouterLink
+              v-else
               :to="`${homeLink}/login`"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
             >
@@ -437,6 +469,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/login`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('common.login') }}
@@ -448,6 +481,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/assistant`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('nav.assistant') }}
@@ -457,6 +491,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/admin`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('common.administration') }}
@@ -476,6 +511,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/mcp-connections`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('nav.mcpConnections') }}
@@ -521,7 +557,7 @@ function navLinkClass(link: NavigationLink) {
 
     <p
       v-if="hasCvDownloadError"
-      class="container-xl text-danger small mb-2"
+      class="container-xl text-danger-emphasis small mb-2"
       role="alert"
     >
       {{ t('common.downloadCvError') }}
@@ -529,7 +565,7 @@ function navLinkClass(link: NavigationLink) {
 
     <p
       v-if="baseAccessErrorMessage"
-      class="container-xl text-danger small mb-2"
+      class="container-xl text-danger-emphasis small mb-2"
       role="alert"
     >
       {{ baseAccessErrorMessage }}
@@ -609,6 +645,12 @@ function navLinkClass(link: NavigationLink) {
 </template>
 
 <style scoped>
+/* Un élément flex ne descend pas sous la largeur de son contenu (`min-width: auto`) : sans cette ligne, le lien de
+   marque garderait sa largeur entière et le `text-truncate` de son libellé ne couperait jamais (#748, constat 6). */
+.brand-link {
+  min-width: 0;
+}
+
 .nav-group {
   position: relative;
 }

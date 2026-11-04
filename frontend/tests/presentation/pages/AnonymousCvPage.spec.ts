@@ -14,6 +14,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
 import { sessionFor } from '../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const SECTION: AnonymousCvSection = {
   title: 'Backend PHP / Symfony',
@@ -70,6 +71,7 @@ async function primeAnonymous(): Promise<void> {
         [AUTH_REPOSITORY as symbol]: {
           login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
           logout: vi.fn(async () => undefined),
+          hasWriteToken: () => true,
           me: vi.fn(async () => sessionFor(null)),
         },
       },
@@ -87,7 +89,7 @@ describe('AnonymousCvPage', () => {
   })
 
   it('affiche un message de chargement pendant la récupération', () => {
-    expect(mountPage().text()).toContain('Chargement du CV sans identité')
+    expect(mountPage().text()).toContain(fr.anonymousCv.loading)
   })
 
   it("affiche domaine, ancienneté (pluriel), compétences et réalisations en paragraphes une fois chargée", async () => {
@@ -124,7 +126,7 @@ describe('AnonymousCvPage', () => {
     const wrapper = mountPage(createStubAnonymousCvRepository({ list: vi.fn(async () => []) }))
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Aucune section publiée')
+    expect(wrapper.text()).toContain(fr.anonymousCv.empty)
   })
 
   it("affiche un message d'erreur générique si la récupération échoue pour une autre raison", async () => {
@@ -172,7 +174,7 @@ describe('AnonymousCvPage', () => {
       await wrapper.get('button').trigger('click')
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Trop de tentatives')
+      expect(wrapper.text()).toContain(fr.anonymousCv.needsAccess.rateLimited)
     })
 
     it("l'accès obtenu ailleurs (CTA de l'en-tête) recharge le contenu sans clic sur la page", async () => {

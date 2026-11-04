@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { CaseStudy } from '../../domain/caseStudies/entities/CaseStudy'
 import type { CaseStudyRepository } from '../../domain/caseStudies/repositories/CaseStudyRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { CaseStudiesAccessNotGrantedError } from '../../domain/caseStudies/errors/CaseStudiesAccessNotGrantedError'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 import { markBaseAccessExpired } from '../auth/useAuth'
@@ -35,7 +34,7 @@ export function useCaseStudies(): UseCaseStudiesResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const caseStudies = ref<readonly CaseStudy[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -49,7 +48,7 @@ export function useCaseStudies(): UseCaseStudiesResult {
     needsAccess.value = false
 
     try {
-      const loaded = await repository.list(locale.value as Locale)
+      const loaded = await repository.list(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       caseStudies.value = loaded
     } catch (error) {
@@ -68,7 +67,7 @@ export function useCaseStudies(): UseCaseStudiesResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { caseStudies, isLoading, hasError, needsAccess, reload: load }
 }

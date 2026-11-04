@@ -4,7 +4,9 @@ import { WatchUnavailableError } from '../../domain/watch/errors/WatchUnavailabl
 
 /**
  * Implémentation HTTP de WatchRepository. Endpoint public (GET /api/watch, cf.
- * App\Portfolio\Watch) : pas de `credentials: 'include'` nécessaire.
+ * App\Portfolio\Watch).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  *
  * Côté backend, cette route ne déclenche aucun appel sortant — elle sert un
  * instantané déjà calculé. La page ne dépend donc jamais de la disponibilité

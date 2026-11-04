@@ -237,7 +237,7 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         // … puis Lexik crée le jeton, bien après : `iat` est postérieur au changement, de plus d'une seconde.
         sleep(2);
         $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->create($readByTheLogin);
-        $this->putTheBearer($jwt);
+        $this->replaceTheSignedInBearer($jwt);
 
         $this->client->request('GET', self::ME);
 
@@ -310,18 +310,31 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
     }
 
     /**
-     * Le cookie refusé est **effacé** par la réponse du refus (les deux cookies
-     * d'authentification, avec les attributs de la pose, comme la déconnexion) :
-     * le firewall `api` authentifie dès qu'un cookie est présent, **même sur une
-     * route publique** — un `BEARER` mort resterait une heure dans le navigateur
-     * et ferait répondre 401 à tout `/api`, le contenu public compris. Après le
-     * refus, le navigateur n'en envoie plus : la requête suivante est anonyme.
+     * Une route publique sert une session close **comme l'anonyme** (R35 de la quatrième
+     * relecture) : le firewall `api` authentifie dès qu'un cookie est présent, mais
+     * l'écouteur de `LoginFailureEvent` rend la main à une route que l'`access_control`
+     * laisse à tous. Le refus est **audité à chaque requête** (le signal « quelqu'un
+     * rejoue une session close » reste), le cookie n'est ni posé ni effacé. La première
+     * route protégée le refuse (401) et **efface** les deux cookies (les attributs de la
+     * pose, comme la déconnexion) : la personne n'est jamais bloquée, et le palier de
+     * base reste accessible ensuite.
      */
-    public function testTheRefusalClearsTheDeadCookiesSoThePublicRoutesStayServed(): void
+    public function testAClosedSessionIsServedAsAnonymousOnAPublicRouteAndClearedByTheFirstProtectedOne(): void
     {
         $account = $this->registerTrusted();
         $this->setCredentialsVersion($account, 1);
         $this->replaceTheBearerWith($account, version: 0);
+        $jwt = $this->client->getCookieJar()->get('BEARER')?->getValue() ?? self::fail('Aucun cookie BEARER.');
+
+        $this->client->request('GET', '/api/contributions/fr');
+
+        self::assertResponseStatusCodeSame(200, 'Une session close sert l\'anonyme sur une route publique.');
+        self::assertSame([], $this->client->getResponse()->headers->getCookies(), 'Une route publique ne pose ni n\'efface rien.');
+        self::assertSame($jwt, $this->client->getCookieJar()->get('BEARER')?->getValue(), 'Le cookie reste dans le navigateur.');
+        $lines = self::securityAuditEvents('session-refused-after-credentials-change');
+        self::assertCount(1, $lines, 'Le refus est audité même quand la route publique est servie.');
+        self::assertSame('/api/contributions/fr', $lines[0]['path'] ?? null);
+        self::assertSame($account->getId()->toRfc4122(), $lines[0]['userId'] ?? null);
 
         $this->client->request('GET', self::ME);
 
@@ -435,11 +448,14 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
             $payload[CredentialsVersionClaim::NAME] = $version;
         }
 
-        $this->putTheBearer(self::getContainer()->get(JWTEncoderInterface::class)->encode($payload));
+        $this->replaceTheSignedInBearer(self::getContainer()->get(JWTEncoderInterface::class)->encode($payload));
     }
 
-    /** Dépose ce JWT dans le cookie `BEARER`, avec les attributs de la vraie connexion. */
-    private function putTheBearer(string $jwt): void
+    /**
+     * Dépose ce JWT dans le cookie `BEARER`, avec les attributs de la vraie connexion — ce qui le
+     * distingue de `PutsTheBearerCookie::putTheBearer()`, aux attributs fixes (St6-8).
+     */
+    private function replaceTheSignedInBearer(string $jwt): void
     {
         $jar = $this->client->getCookieJar();
         $issued = $jar->get('BEARER');

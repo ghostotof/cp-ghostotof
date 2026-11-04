@@ -19,6 +19,7 @@ paths:
   - "tools/lib/security-headers.sh"
   - "tools/smoke-login-throttling.sh"
   - "tools/tests/security-headers.test.sh"
+  - "tools/tests/audit-prod.test.sh"
   - "tools/tests/smoke-login-throttling.test.sh"
   - "tools/smoke-mcp.sh"
   - "tools/tests/smoke-mcp.test.sh"
@@ -90,8 +91,8 @@ paths:
   before #675: the third simultaneous `listen` got the 429. Accepted: hosted connectors sharing an egress IP may
   meet the bound when calls overlap — they last milliseconds, and the `mcp` zone binds first; both bounds are to
   be measured again against the real clients in phase 2. The location has its own
-  `client_max_body_size 16k` **and its own `fastcgi_pass`** (like `/api/assistant/`): through `try_files …
-  /index.php`, a `Transfer-Encoding: chunked` body was read after the internal redirect, under `~ ^/index\.php`,
+  `client_max_body_size 16k` **and its own `fastcgi_pass`** (like `/api/assistant/`): through
+  `try_files … /index.php`, a `Transfer-Encoding: chunked` body was read after the internal redirect, under `~ ^/index\.php`,
   which only has the server's 1 MB — the bound held for a `Content-Length` body only (a 480 KB session measured).
   `tools/check-backend-nginx-rate-limits.sh` probes both framings. **What the client can still make the database
   keep** (measured on 2026-10-20, dev): `InboundMessageRefusalListener` refuses batches, client responses and an
@@ -110,8 +111,8 @@ paths:
   (`Content-Length` over the bound) is rendered at find-config, before any zone: an unlimited flow of them
   costs nginx only. Its 413 is nginx's HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT
   connectors call from their providers' egress addresses, which their users share — fine at this site's
-  audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod`
-  (its own `timeout-minutes: 3`), proves it on the real pod: an `initialize` on the public host (a 403 there
+  audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh` is run by `smoke-test-preprod` (its
+  own `timeout-minutes: 3`). The smoke proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
   status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in
   `chunked` (under a fake session id: no zone of session creations, no PHP), then `GET`s without a session (they
@@ -130,8 +131,8 @@ paths:
   an empty header, `<TAB>0`, `x<0x01>y` and a UUID followed by a tab counted; a well-formed UUID and a 2026-07-28
   POST not counted (the witnesses that the zone does not count everything); a 2025-06-18 one counted. The guard
   sees nginx only, never what PHP reads: the reading chain above is why the key is an allow-list.
-  `publicapi` (600 r/m, burst 200, on
-  `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
+  The smokes' and the audit's plumbing (the library, the Basic Auth, the guards) is `.claude/rules/outillage-smoke.md`.
+  `publicapi` (600 r/m, burst 200, on `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
   the very DoS audit C7 was about. `/healthz` uses an exact-match `location =`, so kubelet probes are
@@ -217,8 +218,8 @@ paths:
   preaccess too (measured). It would take a precontent refusal (`try_files` to a named location chosen by a
   `map`), which `= /api/mcp` and `/api/assistant/` cannot use without an internal redirect that reads the body
   under another location's bound (#644's trap). **In preprod and prod the ingress-nginx in front buffers the
-  whole body before reaching the sidecar** (issue #712): `proxy-request-buffering: "on"`, `proxy-body-size:
-  "1m"` and `allowSnippetAnnotations: false`, the controller's and the chart's defaults, are pinned in
+  whole body before reaching the sidecar** (issue #712): `proxy-request-buffering: "on"`,
+  `proxy-body-size: "1m"` and `allowSnippetAnnotations: false`, the controller's and the chart's defaults, are pinned in
   `k8s/ingress-nginx-values.yaml` — read on the cluster on 2026-10-26, read-only: the controller's ConfigMap
   set none of them, no Ingress overrode them by annotation; applied the same day by `helm upgrade` (release
   revision 3), the ConfigMap now carries both, checked read-only. `helm upgrade --reuse-values` keeps a value

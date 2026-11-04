@@ -12,7 +12,17 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import { ADMIN_VULNERABILITY_REPOSITORY } from '../../../../src/application/admin/watch/useAdminVulnerabilities'
 import type { AdminVulnerabilityRepository } from '../../../../src/domain/admin/watch/repositories/AdminVulnerabilityRepository'
 import type { AdminVulnerability } from '../../../../src/domain/admin/watch/entities/AdminVulnerability'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { authState, markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { HttpAdminWatchedProductRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminWatchedProductRepository'
+import { HttpAdminVulnerabilityRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'
+import { setBackofficeSessionReaction } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { createBackofficeSessionReaction } from '../../../../src/presentation/router/backofficeSessionExpiry'
+import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { buttonLabelled } from '../../../support/buttonLabelled'
+import { ENTRY_FORM_TEXTS, ORDER_TEXTS, orderMovedLabel } from '../../../support/adminButtonTexts'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const VULNERABILITY: AdminVulnerability = {
   id: 'GHSA-h7vf-5wrv-9fhv',
@@ -115,11 +125,10 @@ function rowContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
   return row
 }
 
-function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
-  const button = scope.findAll('button').find((candidate) => candidate.text() === label)
-  if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
-  return button as DOMWrapper<HTMLButtonElement>
-}
+// Les libellés des boutons viennent du catalogue par `tests/support/adminButtonTexts.ts`, écrits une fois ; les textes propres
+// à cette page se lisent ici de `fr.json` : retoucher un libellé ne fait pas rougir le fichier.
+const FORM_TEXTS = ENTRY_FORM_TEXTS.watch
+const EDIT_FR: string = fr.admin.watch.editAction
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
@@ -183,7 +192,7 @@ describe('AdminWatchPage', () => {
     const { wrapper } = await mountPage(repository)
 
     await dragRow(wrapper, 0, 2)
-    expect(wrapper.text()).toContain('Ordre · modifié, non enregistré')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusDirty)
     expect(rows(wrapper).map((row) => row.text())).toEqual([
       expect.stringContaining('php'),
       expect.stringContaining('rabbitmq'),
@@ -191,12 +200,12 @@ describe('AdminWatchPage', () => {
     ])
 
     vi.mocked(repository.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(repository.reorder).toHaveBeenCalledWith([PHP_ID, RABBITMQ_ID, POSTGRES_ID])
     expect(repository.list).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('déplace une ligne au clavier, garde le focus sur sa poignée et annonce la position', async () => {
@@ -210,7 +219,7 @@ describe('AdminWatchPage', () => {
     expect(rows(wrapper)[1].text()).toContain('postgresql')
     // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
     expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    expect(wrapper.get('[role="status"]').text()).toBe(orderMovedLabel(2, 3))
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()
@@ -222,21 +231,21 @@ describe('AdminWatchPage', () => {
     await dragRow(wrapper, 0, 2)
 
     const hint = wrapper.get('#admin-order-locked-hint')
-    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(hint.text()).toBe(ORDER_TEXTS.lockedHint)
 
-    const edit = buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier')
+    const edit = buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR)
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
-    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Supprimer').attributes('disabled')).toBeDefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), FORM_TEXTS.delete).attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeDefined()
 
-    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.cancel).trigger('click')
 
-    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier').attributes('disabled')).toBeUndefined()
-    expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(wrapper, FORM_TEXTS.save).attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(rows(wrapper)[0].text()).toContain('postgresql')
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   it('recharge la liste et annonce un ordre obsolète quand le serveur refuse l\'ensemble envoyé', async () => {
@@ -247,13 +256,13 @@ describe('AdminWatchPage', () => {
 
     await dragRow(wrapper, 0, 2)
     vi.mocked(repository.list).mockClear()
-    await buttonLabelled(wrapper, "Enregistrer l'ordre").trigger('click')
+    await buttonLabelled(wrapper, ORDER_TEXTS.save).trigger('click')
     await flushPromises()
 
     expect(repository.list).toHaveBeenCalledOnce()
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
-    expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
-    expect(wrapper.text()).toContain('Ordre · à jour')
+    expect(alerts.some((text) => text.includes(ORDER_TEXTS.staleOrder))).toBe(true)
+    expect(wrapper.text()).toContain(ORDER_TEXTS.statusClean)
   })
 
   /**
@@ -267,10 +276,10 @@ describe('AdminWatchPage', () => {
 
     expect(wrapper.find('#admin-watch-slug').exists()).toBe(true)
 
-    await buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Modifier').trigger('click')
+    await buttonLabelled(rowContaining(wrapper, 'postgresql'), EDIT_FR).trigger('click')
 
     expect(wrapper.find('#admin-watch-slug').exists()).toBe(false)
-    expect(wrapper.get('h2').text()).toBe('Modifier le produit surveillé')
+    expect(wrapper.get('h2').text()).toBe(fr.admin.watch.edit)
   })
 
   /**
@@ -327,9 +336,9 @@ describe('AdminWatchPage', () => {
     const { wrapper } = await mountPage(repository)
 
     const row = rowContaining(wrapper, 'nginx')
-    expect(row.text()).toContain('Version déployée, relevée au build')
+    expect(row.text()).toContain(fr.admin.watch.sources.deployed)
 
-    await buttonLabelled(row, 'Modifier').trigger('click')
+    await buttonLabelled(row, EDIT_FR).trigger('click')
 
     expect((wrapper.get('#admin-watch-version-source').element as HTMLSelectElement).value).toBe('deployed')
     expect(wrapper.find('#admin-watch-version').exists()).toBe(false)
@@ -349,7 +358,7 @@ describe('AdminWatchPage', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const { wrapper } = await mountPage(repository)
 
-    await buttonLabelled(rowContaining(wrapper, 'postgresql'), 'Supprimer').trigger('click')
+    await buttonLabelled(rowContaining(wrapper, 'postgresql'), FORM_TEXTS.delete).trigger('click')
     await flushPromises()
 
     expect(confirmSpy).toHaveBeenCalled()
@@ -373,7 +382,7 @@ describe('AdminWatchPage', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('déjà surveillé')
+    expect(wrapper.text()).toContain(fr.admin.watch.errors.conflict)
   })
 
   it('demande confirmation avant de quitter la route avec un ordre modifié, et reste sur place si on refuse', async () => {
@@ -443,7 +452,99 @@ describe('AdminWatchPage', () => {
     it('annonce l’absence de vulnérabilité connue', async () => {
       const { wrapper } = await mountPage()
 
-      expect(wrapper.text()).toContain('Aucune vulnérabilité connue')
+      expect(wrapper.text()).toContain(fr.admin.watch.vulnerabilities.empty)
+    })
+
+    describe('plusieurs lectures en 401 au chargement (#748, R14, Sp-c1)', () => {
+      let mountedPage: VueWrapper | undefined
+      afterEach(async () => {
+        mountedPage?.unmount()
+        mountedPage = undefined
+        setBackofficeSessionReaction(null)
+        vi.unstubAllGlobals()
+        await signInAgain()
+      })
+
+      it("deux lectures en 401 arrivées dans deux ticks : le bandeau n'est annoncé qu'une fois", async () => {
+        // La vraie chaîne : dépôts HTTP, client du backoffice et réaction branchée comme `main.ts` le fait.
+        // Aucun refus réel dans ce cas : la relecture du palier (R17) est un double, la page ne fournit pas `AUTH_REPOSITORY`.
+        setBackofficeSessionReaction(createBackofficeSessionReaction({ rereadAfterRefusal: async () => 'session-held' }))
+        const answers: ((response: Response) => void)[] = []
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(
+            () =>
+              new Promise<Response>((resolve) => {
+                answers.push(resolve)
+              }),
+          ),
+        )
+        const before = authState.sessionEndedCount
+        const { wrapper } = await mountPage(
+          new HttpAdminWatchedProductRepository('https://api.example.test'),
+          new HttpAdminVulnerabilityRepository('https://api.example.test'),
+        )
+        mountedPage = wrapper
+        expect(answers).toHaveLength(2)
+
+        // Deux lectures parties sous la même génération ; leurs 401 arrivent dans des ticks distincts.
+        answers[0](new Response('{}', { status: 401 }))
+        await flushPromises()
+        expect(authState.sessionEndedCount).toBe(before + 1)
+        answers[1](new Response('{}', { status: 401 }))
+        await flushPromises()
+
+        expect(authState.sessionEnded).toBe(true)
+        expect(authState.sessionEndedCount).toBe(before + 1)
+      })
+    })
+
+    describe('non chargées (#748, R4)', () => {
+      let mountedPage: VueWrapper | undefined
+      afterEach(async () => {
+        mountedPage?.unmount()
+        mountedPage = undefined
+        await signInAgain()
+      })
+
+      it("première lecture en session finie : pas de « Aucune vulnérabilité connue », la mention « non chargé »", async () => {
+        const vulnerabilities: AdminVulnerabilityRepository = {
+          list: vi.fn(async () => {
+            markSessionExpired()
+            throw new SessionEndedError()
+          }),
+        }
+        const { wrapper } = await mountPage(createStubRepository(), vulnerabilities)
+        mountedPage = wrapper
+
+        // Ce que le volet dirait sinon est une affirmation (« aucune vulnérabilité ») que personne n'a vérifiée.
+        expect(wrapper.text()).not.toContain(fr.admin.watch.vulnerabilities.empty)
+        expect(wrapper.text()).toContain(fr.admin.notLoaded)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      })
+
+      it('au retour de la session, le volet se lit', async () => {
+        await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
+        let ended = true
+        const vulnerabilities: AdminVulnerabilityRepository = {
+          list: vi.fn(async () => {
+            if (ended) {
+              markSessionExpired()
+              throw new SessionEndedError()
+            }
+
+            return [VULNERABILITY]
+          }),
+        }
+        const { wrapper } = await mountPage(createStubRepository(), vulnerabilities)
+        mountedPage = wrapper
+
+        ended = false
+        await signInAgain()
+
+        expect(wrapper.text()).toContain(VULNERABILITY.id)
+        expect(wrapper.text()).not.toContain(fr.admin.notLoaded)
+      })
     })
 
     it('signale un échec de chargement des vulnérabilités', async () => {
@@ -451,7 +552,7 @@ describe('AdminWatchPage', () => {
         list: vi.fn(async () => Promise.reject(new Error('unavailable'))),
       })
 
-      expect(wrapper.text()).toContain('chargement des vulnérabilités a échoué')
+      expect(wrapper.text()).toContain(fr.admin.watch.vulnerabilities.loadError)
     })
   })
 })

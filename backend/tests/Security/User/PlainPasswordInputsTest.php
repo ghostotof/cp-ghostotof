@@ -356,6 +356,7 @@ final class PlainPasswordInputsTest extends TestCase
         yield 'importée sans appel' => [$import."\$this->administrator->delete(\$id, \$user);\n", false];
         yield 'appel sans l\'interface' => ["<?php\nnamespace App\\Other;\n\$this->other->changePassword(\$id, \$password);\n", false];
         yield 'homonyme dans un autre espace de noms' => ["<?php\nnamespace App\\Other;\nfinal class X { public function __construct(private CpgUserAdministratorInterface \$a) {} public function f(): void { \$this->a->changePassword(\$i, \$p); } }\n", false];
+        yield 'appel statique de même nom' => [$import."Other::changePassword(\$id, \$password);\n", false];
         yield 'déclaration de la méthode' => [$import."function changePassword(): void {}\n", false];
     }
 

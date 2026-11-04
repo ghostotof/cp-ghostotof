@@ -2,11 +2,13 @@
 import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMcpConnections } from '../../application/mcp/useMcpConnections'
+import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { formatInstant } from '../format/instant'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
+import { switchAccountLocation } from '../router/reauthentication'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
+import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
 
 /**
  * « Mes connexions MCP » (#650, spec 0007 tâche 11) : les assistants que la
@@ -35,26 +37,28 @@ import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded
  * backoffice) qui nomme l'assistant : l'action coupe un accès que la personne
  * devra autoriser de nouveau. L'issue est annoncée dans la seule région
  * `role="status"` de la page, un échec dans une alerte.
+ *
+ * Focus et annonces (#748) : quand un geste déplace le focus ET annonce une
+ * issue, le focus part d'abord et l'annonce est écrite ensuite — le patron et ses
+ * raisons sont dans `useFocusThenAnnounce`. Le focus ne part au titre que si le
+ * bouton cliqué a disparu (révoquée, déjà terminée) ou si le serveur a refusé (session finie, refus réel) ;
+ * sur un échec il revient au bouton, qui existe encore et que la personne peut
+ * réessayer. Une lecture relancée (« Réessayer ») efface l'issue déjà annoncée :
+ * elle ne dit rien d'une révocation.
  */
 
-const { t, locale: i18nLocale } = useI18n()
-const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
+const { t } = useI18n()
+const { status, connections, terminatedTruncated, revokingId, lastOutcome, refusal, load, revoke } = useMcpConnections()
 const route = useRoute()
 
-const currentLocale = computed(() => i18nLocale.value as Locale)
+const currentLocale = useCurrentLocale()
 
-/**
- * Le lien de reconnexion quand le serveur a refusé la session : la connexion,
- * avec un retour à cette page (`redirect`, jugé par LoginPage : chemin interne
- * seulement) et l'annonce qu'elle s'ouvre parce que la session a pris fin.
- * Un lien plutôt qu'une redirection automatique : la personne lit d'abord
- * pourquoi, et rien ne la déplace pendant qu'elle lit.
- */
-const signInAgainLocation = computed(() => ({
-  name: 'login',
-  params: { locale: currentLocale.value },
-  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
-}))
+// Deux refus, deux liens (#748, R7). Une session finie : `SignInAgainLink`, un nouvel onglet qui ramène à cette
+// page. Un refus réel (le compte n'a pas, ou plus, l'accès de confiance ; une signature CSRF périmée) :
+// « Changer de compte », dans le même onglet, la connexion s'ouvrant à une personne connectée (`reauth=1`) — la
+// page ne porte aucune saisie à garder. Un lien plutôt qu'une redirection automatique : la personne lit d'abord
+// pourquoi, et rien ne la déplace pendant qu'elle lit.
+const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /**
  * Correspondances explicites plutôt qu'une clé construite à la volée : une
@@ -102,10 +106,25 @@ function date(iso: string): string {
   return formatInstant(iso, currentLocale.value)
 }
 
+/**
+ * L'id de la mention d'historique coupé, que le tableau référence par `aria-describedby`
+ * (#748, constat 19) : seulement quand la mention est rendue, une référence vers un id
+ * absent est une faute.
+ */
+const TRUNCATED_NOTE_ID = 'mcp-connections-truncated'
+
 const isLoading = computed(() => 'loading' === status.value)
 /** La liste reste affichée pendant qu'elle est relue après une révocation : elle ne clignote pas. */
 const showTable = computed(() => 'error' !== status.value && connections.value.length > 0)
 const showEmpty = computed(() => 'ready' === status.value && 0 === connections.value.length)
+
+/** L'issue que la région d'état dit : copie différée de `lastOutcome`, vide tant que le focus n'a pas bougé. */
+const {
+  announced: announcedOutcome,
+  focusThenAnnounce,
+  cancel: cancelAnnouncement,
+  isUnmounted,
+} = useFocusThenAnnounce<McpRevocationOutcome>()
 
 /** Le seul `role="status"` de la page : vide hors chargement, révocation et issue à annoncer. */
 const statusMessage = computed<string>(() => {
@@ -115,7 +134,8 @@ const statusMessage = computed<string>(() => {
   if (isLoading.value && 0 === connections.value.length) {
     return t('mcpConnections.loading')
   }
-  switch (lastOutcome.value) {
+  // L'issue annoncée, pas `lastOutcome` : elle n'est écrite qu'après le déplacement du focus.
+  switch (announcedOutcome.value) {
     case 'revoked':
       return t('mcpConnections.outcome.revoked')
     case 'already-gone':
@@ -126,17 +146,59 @@ const statusMessage = computed<string>(() => {
 })
 
 const heading = useTemplateRef<HTMLHeadingElement>('heading')
+const retryButton = useTemplateRef<HTMLButtonElement>('retryButton')
 
-async function onRevoke(connection: McpConnectionSummary): Promise<void> {
-  if (!window.confirm(t('mcpConnections.confirm', { client: connection.client.name }))) {
+async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Promise<void> {
+  if (!window.confirm(t('mcpConnections.confirm', { client: connection.client.name, date: date(connection.grantedAt) }))) {
     return
   }
 
+  // Le navigateur retire le focus d'un bouton qui devient `disabled` pendant l'appel :
+  // on garde l'élément pour le lui rendre si la révocation échoue.
+  const clicked = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  cancelAnnouncement()
+
   await revoke(connection.id)
-  // Le bouton cliqué vient de disparaître (la connexion n'est plus active) : le
-  // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend.
+  if (isUnmounted()) {
+    return
+  }
   await nextTick()
-  heading.value?.focus()
+
+  const outcome = lastOutcome.value
+  if ('revoked' === outcome || 'already-gone' === outcome) {
+    // Le bouton cliqué vient de disparaître (la connexion n'est plus active) : le
+    // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend,
+    // puis l'issue est annoncée une fois le focus posé.
+    focusThenAnnounce(heading.value, outcome)
+  } else if (null !== refusal.value) {
+    // Un refus (session finie ou refus réel) : l'alerte et son lien sont lus depuis le titre.
+    heading.value?.focus()
+  } else {
+    // Échec : le bouton existe encore, la personne peut réessayer là où elle était.
+    clicked?.focus()
+  }
+}
+
+/**
+ * « Réessayer » : le bouton disparaît pendant la relecture (l'alerte est remplacée
+ * par l'état de chargement) et le focus tomberait sur <body>. Au succès il passe
+ * au titre ; au nouvel échec, au nouveau bouton — un second échec ne change pas le
+ * texte de l'alerte, qu'aucune annonce ne signalerait. Session finie : le titre.
+ */
+async function onRetry(): Promise<void> {
+  // Une lecture relancée ne dit rien d'une révocation : l'issue déjà annoncée s'efface (CR10).
+  cancelAnnouncement()
+  await load()
+  if (isUnmounted()) {
+    return
+  }
+  await nextTick()
+
+  if ('error' === status.value && null === refusal.value) {
+    retryButton.value?.focus()
+  } else {
+    heading.value?.focus()
+  }
 }
 
 onMounted(() => {
@@ -145,10 +207,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section
-    class="container-xl py-5 d-flex flex-column gap-4"
-    :aria-busy="isLoading"
-  >
+  <section class="container-xl py-5 d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
       <h1
         ref="heading"
@@ -170,40 +229,49 @@ onMounted(() => {
     </p>
 
     <!--
-      La session a pris fin : réessayer renverrait la même requête sans session.
-      Le message et le lien de reconnexion remplacent l'erreur générique et son
-      bouton, au chargement comme à la révocation.
+      Le serveur a refusé la session ou la demande : réessayer renverrait la même requête avec le même verdict.
+      Le message et son lien remplacent l'erreur générique et son bouton, au chargement comme à la révocation.
     -->
     <p
-      v-if="sessionExpired"
+      v-if="'session-ended' === refusal"
       role="alert"
-      class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.sessionEnded') }}
-      <RouterLink :to="signInAgainLocation">
-        {{ t('mcpConnections.errors.signInAgain') }}
+      <SignInAgainLink>{{ t('mcpConnections.errors.signInAgain') }}</SignInAgainLink>
+    </p>
+
+    <p
+      v-else-if="'forbidden' === refusal"
+      role="alert"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
+    >
+      {{ t('common.accessRefused') }}
+      <RouterLink :to="switchAccountTarget">
+        {{ t('common.switchAccount') }}
       </RouterLink>
     </p>
 
     <p
       v-else-if="'error' === status"
       role="alert"
-      class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.load') }}
       <button
+        ref="retryButton"
         type="button"
         class="btn btn-outline-light btn-sm"
-        @click="load"
+        @click="onRetry"
       >
         {{ t('mcpConnections.errors.retry') }}
       </button>
     </p>
 
     <p
-      v-if="'failed' === lastOutcome && !sessionExpired"
+      v-if="'failed' === lastOutcome && null === refusal"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ t('mcpConnections.errors.revoke') }}
     </p>
@@ -218,11 +286,21 @@ onMounted(() => {
       </RouterLink>
     </p>
 
+    <!--
+      Le tableau est occupé pendant la relecture, jamais un ancêtre de la région d'état (#748).
+      `position-relative` : les textes `visually-hidden` (position absolue) de l'en-tête « Actions »
+      et de « Sans échéance » trouvent leur ancêtre positionné dans ce conteneur défilant, au lieu de
+      se placer hors de lui et d'élargir la page à 320 px (#748, constat 5).
+    -->
     <div
       v-if="showTable"
-      class="table-responsive"
+      class="table-responsive position-relative"
+      :aria-busy="isLoading"
     >
-      <table class="table table-dark table-hover align-middle mb-0">
+      <table
+        class="table table-dark table-hover align-middle mb-0"
+        :aria-describedby="terminatedTruncated ? TRUNCATED_NOTE_ID : undefined"
+      >
         <caption class="visually-hidden">
           {{ t('mcpConnections.caption') }}
         </caption>
@@ -298,9 +376,9 @@ onMounted(() => {
                 v-if="'active' === connection.state"
                 type="button"
                 class="btn btn-outline-danger btn-sm"
-                :disabled="null !== revokingId"
+                :disabled="null !== refusal || null !== revokingId"
                 :aria-label="t('mcpConnections.revokeAria', { client: connection.client.name, date: date(connection.grantedAt) })"
-                @click="onRevoke(connection)"
+                @click="onRevoke(connection, $event)"
               >
                 {{ t('mcpConnections.revoke') }}
               </button>
@@ -312,6 +390,7 @@ onMounted(() => {
 
     <p
       v-if="terminatedTruncated"
+      :id="TRUNCATED_NOTE_ID"
       class="text-body-secondary small mb-0"
       data-testid="terminated-truncated"
     >
@@ -319,3 +398,14 @@ onMounted(() => {
     </p>
   </section>
 </template>
+
+<style scoped>
+/*
+ * Un conteneur sans hauteur imposée n'a jamais à défiler à la verticale. Bootstrap pose
+ * `overflow-x: auto` ; l'autre axe passe alors de `visible` à `auto` (règle CSS) et une barre
+ * parasite d'un pixel peut apparaître dès que le contenu déborde d'un sous-pixel (#748, constat 18).
+ */
+.table-responsive {
+  overflow-y: hidden;
+}
+</style>

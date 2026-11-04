@@ -1,34 +1,27 @@
-import { readCsrfToken } from '../../auth/csrfCookie'
+import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../../domain/admin/shared/BackofficeSessionReaction'
+import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
+import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
+import type { ApiProblemBody } from '../../http/problemJson'
+import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
 
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-export interface ApiProblemBody {
-  /** Slug stable `/errors/<slug>` posé par les exceptions métier implémentant ProblemExceptionInterface — à privilégier sur `detail` (localisé, instable) pour discriminer un conflit. */
-  type?: string
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
-
-/** Réaction à un 401 du backoffice, posée une fois à la racine de composition. */
-export type BackofficeUnauthorizedHandler = () => void
-
-let unauthorizedHandler: BackofficeUnauthorizedHandler | null = null
+let sessionReaction: BackofficeSessionReaction | null = null
 
 /**
- * Enregistre (ou, avec `null`, retire) la réaction à un 401 du backoffice.
- * La couche infrastructure ne connaît ni la session ni le routeur : la racine
- * de composition (`main.ts`) lui fournit la réaction.
+ * Enregistre (ou, avec `null`, retire) la réaction du backoffice à ses réponses (`domain/admin/shared/`).
+ * La couche infrastructure ne connaît ni la session ni le routeur : la racine de composition (`main.ts`) lui
+ * fournit la réaction.
  */
-export function setBackofficeUnauthorizedHandler(handler: BackofficeUnauthorizedHandler | null): void {
-  unauthorizedHandler = handler
+export function setBackofficeSessionReaction(reaction: BackofficeSessionReaction | null): void {
+  sessionReaction = reaction
 }
 
 /**
  * Plomberie HTTP commune aux repositories admin (backoffice `/api/backoffice/*`) :
- * cookie httpOnly BEARER (`credentials: 'include'`), header CSRF X-XSRF-TOKEN
- * sur les mutations (double-submit cookie), et parsing RFC7807-ish des
- * réponses d'erreur. Chaque repository garde son propre mapping
- * statut -> AdminXxxError (les codes 404/409/422 n'ont pas la même
- * signification selon la ressource), seul le transport est partagé.
+ * l'envoi (cookies, header CSRF, verdict « session finie ») est celui de
+ * `infrastructure/http/sessionAwareFetch.ts`, qui porte la règle ; ce client y ajoute la
+ * réaction globale du backoffice, la levée de `SessionEndedError` et le parsing RFC7807-ish
+ * des réponses d'erreur. Chaque repository garde son propre mapping statut -> AdminXxxError (les codes 404/409/422 n'ont
+ * pas la même signification selon la ressource).
  */
 export class BackofficeHttpClient {
   private readonly apiBaseUrl: string
@@ -38,43 +31,58 @@ export class BackofficeHttpClient {
   }
 
   async get(path: string): Promise<Response> {
-    return this.notifyIfUnauthorized(
-      await fetch(`${this.apiBaseUrl}${path}`, {
-        method: 'GET',
-        credentials: 'include',
-      }),
-    )
+    // Le timbre est lu avant l'envoi, jamais à la réception (voir `react`).
+    const sentAt = sessionReaction?.stampAtSend('read')
+
+    return this.react(await sessionAwareFetch(`${this.apiBaseUrl}${path}`, { method: 'GET' }), sentAt)
   }
 
   async mutate(method: string, path: string, body?: unknown): Promise<Response> {
-    const csrfToken = readCsrfToken()
+    const sentAt = sessionReaction?.stampAtSend('write')
 
-    return this.notifyIfUnauthorized(
-      await fetch(`${this.apiBaseUrl}${path}`, {
+    return this.react(
+      await sessionAwareFetch(`${this.apiBaseUrl}${path}`, {
         method,
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       }),
+      sentAt,
     )
   }
 
   /**
-   * Un 401 sur le backoffice est une session finie, quelle qu'en soit la cause
-   * (JWT expiré, ouverte avant un changement de mot de passe) : la réaction est
-   * commune, ici, plutôt que reprise dans chacun des dépôts. Un 403 (non
-   * autorisé, jeton CSRF refusé) n'est pas un 401 et reste au dépôt, qui le lit
-   * selon sa ressource. La réponse est rendue telle quelle dans les deux cas.
+   * Une session finie (règle : `infrastructure/http/sessionAwareFetch.ts`) appelle la réaction commune,
+   * ici, une fois, avec le timbre lu à l'envoi ; si elle confirme que la session est finie, **lève**
+   * `SessionEndedError` : aucun dépôt ne la traduit, elle traverse jusqu'aux composables, que `useAdminLoad` et
+   * `visibleMutationError` (`application/admin/shared/`) taisent, le bandeau de session finie étant alors la seule
+   * annonce. Si la réaction dit au contraire que la session a été rétablie depuis l'envoi (`ended` faux), la
+   * réponse est d'une session révolue : elle est rendue au dépôt comme un refus ordinaire, et ne refinit rien.
+   * Sans réaction enregistrée, `SessionEndedError` comme toujours. Un autre statut est rendu tel quel : le
+   * dépôt lui donne le sens qu'il a pour sa ressource — **sauf un 403** (#748, R17) : une lecture, ou une écriture
+   * qui portait son jeton, refusée, est un refus réel. Le client appelle `refused` (une fois) puis **lève**
+   * `AccessForbiddenError`, que les composables taisent comme `SessionEndedError` : aucun dépôt n'a à le traduire, et
+   * l'alerte d'`AdminLayout` est la seule annonce. Sans réaction enregistrée, il lève aussi.
    */
-  private notifyIfUnauthorized(response: Response): Response {
-    if (401 === response.status) {
-      unauthorizedHandler?.()
+  private react(judged: SessionAwareResponse, sentAt: BackofficeSendStamp | undefined): Response {
+    if (judged.endedTheSession) {
+      const reaction = sessionReaction
+      if (null !== reaction && undefined !== sentAt && !reaction.ended(sentAt)) {
+        return judged.response
+      }
+
+      throw new SessionEndedError()
     }
 
-    return response
+    if (403 === judged.response.status) {
+      // Le timbre de l'envoi : une lecture partie avant une navigation est jugée périmée par la réaction (CR3-8), pas une écriture (R38).
+      if (undefined !== sentAt) {
+        sessionReaction?.refused(sentAt)
+      }
+
+      throw new AccessForbiddenError()
+    }
+
+    return judged.response
   }
 
   async parseProblem(response: Response): Promise<ApiProblemBody> {

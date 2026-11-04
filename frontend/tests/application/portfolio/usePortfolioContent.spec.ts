@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { PORTFOLIO_CONTENT_REPOSITORY, usePortfolioContent } from '../../../src/application/portfolio/usePortfolioContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { setUnsupportedLocale } from '../../support/unsupportedLocale'
 import type { PortfolioContentRepository } from '../../../src/domain/portfolio/repositories/PortfolioContentRepository'
 
 function createStubRepository(): PortfolioContentRepository {
@@ -35,7 +36,7 @@ function createStubRepository(): PortfolioContentRepository {
   }
 }
 
-function mountWithComposable(repository?: PortfolioContentRepository) {
+function mountWithComposable(repository?: PortfolioContentRepository, i18n = createAppI18n()) {
   let captured: ReturnType<typeof usePortfolioContent> | undefined
 
   const TestComponent = defineComponent({
@@ -47,7 +48,7 @@ function mountWithComposable(repository?: PortfolioContentRepository) {
 
   mount(TestComponent, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [i18n],
       provide: repository ? { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: repository } : {},
     },
   })
@@ -68,5 +69,18 @@ describe('usePortfolioContent', () => {
     expect(result?.siteIdentity.value.brandName).toBe('Stub')
     expect(result?.navigationLinks.value).toHaveLength(1)
     expect(result?.heroContent.value).toEqual(repository.getHeroContent('fr'))
+  })
+
+  it("une langue d'interface hors du site appelle le dépôt avec la langue par défaut (#748, R228)", async () => {
+    const i18n = createAppI18n()
+    setUnsupportedLocale(i18n, 'de')
+    const getHeroContent = vi.fn(createStubRepository().getHeroContent)
+    const repository = { ...createStubRepository(), getHeroContent }
+
+    const result = mountWithComposable(repository, i18n)
+    expect(result?.heroContent.value).toBeDefined()
+
+    expect(getHeroContent).toHaveBeenCalledWith('fr')
+    expect(getHeroContent).not.toHaveBeenCalledWith('de')
   })
 })

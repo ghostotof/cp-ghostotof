@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useRouteLocale } from '../router/useRouteLocale'
 import { getAppVersion } from '../../infrastructure/config/getAppVersion'
 import IconDisc3 from '~icons/lucide/disc-3'
 import IconTag from '~icons/lucide/tag'
@@ -12,8 +11,7 @@ defineProps<{
   siteIdentity: SiteIdentity
 }>()
 
-const { t, locale } = useI18n()
-const route = useRoute()
+const { t } = useI18n()
 const year = new Date().getFullYear()
 
 /**
@@ -27,11 +25,8 @@ const versionTitle = computed(() =>
   appVersion?.build ? t('common.footerVersionBuild', { build: appVersion.build }) : t('common.footerVersionTitle'),
 )
 
-/** Même repli route → i18n que AppHeader.homeLink, pour rester correct sur la page 404. */
-const currentLocale = computed<Locale>(() => {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-})
+/** La langue de la page (`useRouteLocale()`), correcte aussi sur la page 404, sans segment `:locale`. */
+const pageLocale = useRouteLocale()
 </script>
 
 <template>
@@ -47,7 +42,8 @@ const currentLocale = computed<Locale>(() => {
             v-if="appVersion.releaseUrl"
             :href="appVersion.releaseUrl"
             :title="versionTitle"
-            class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1 font-monospace"
+            class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1
+                   font-monospace"
             data-testid="app-version"
             rel="noopener"
             target="_blank"
@@ -82,24 +78,24 @@ const currentLocale = computed<Locale>(() => {
         <ul class="list-unstyled d-flex flex-wrap align-items-center justify-content-center gap-3 mb-0">
           <li>
             <RouterLink
-              :to="`/${currentLocale}/connect-your-assistant`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              :to="`/${pageLocale}/connect-your-assistant`"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.connectAssistantLink') }}
             </RouterLink>
           </li>
           <li>
             <RouterLink
-              :to="`/${currentLocale}/legal-notice`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              :to="`/${pageLocale}/legal-notice`"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.legalNoticeLink') }}
             </RouterLink>
           </li>
           <li>
             <RouterLink
-              :to="`/${currentLocale}/privacy-policy`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              :to="`/${pageLocale}/privacy-policy`"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.privacyPolicyLink') }}
             </RouterLink>

@@ -2,12 +2,13 @@ import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey
 import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
+import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
-import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
-import { markSessionExpired } from '../auth/useAuth'
+import { markSessionExpired, sessionStamp, useAuth } from '../auth/useAuth'
 
 export const OAUTH_CONSENT_REPOSITORY: InjectionKey<OAuthConsentRepository> = Symbol('OAuthConsentRepository')
 
@@ -38,7 +39,13 @@ export const CLIENT_REDIRECT: InjectionKey<(url: string) => void> = Symbol('Clie
 export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' | 'error'
 
 /**
- * - `session-expired`    : 401/403, la session est marquée expirée ;
+ * - `session-ended`      : la session a pris fin (`SessionEndedError`, voir
+ *                          `infrastructure/http/sessionAwareFetch.ts`), elle est marquée expirée ;
+ * - `forbidden`          : `AccessForbiddenError`, tout autre 403 (le résumé, ou la décision partie avec son
+ *                          jeton) — ce compte n'a pas, ou plus, l'accès de confiance, ou sa signature CSRF est
+ *                          périmée. Terminal ici, la demande n'est plus montrée ; la session n'est pas marquée
+ *                          expirée, elle vaut pour le reste du site, `/api/me` est relu pour l'en-tête, et la
+ *                          page propose de changer de compte (#748, #732, R7) ;
  * - `reauthentication-required` : 401 typé à l'accord, l'authentification
  *                          date de plus de dix minutes — terminal ici, la page
  *                          propose de se reconnecter puis ramène à la même
@@ -55,7 +62,14 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          le même corps) ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-expired' | 'reauthentication-required' | 'account-changed' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
+export type OAuthConsentFailure =
+  | 'session-ended'
+  | 'forbidden'
+  | 'reauthentication-required'
+  | 'account-changed'
+  | 'unsafe-redirect'
+  | 'malformed-decision'
+  | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
@@ -85,6 +99,8 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     )
   }
 
+  // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
+  const { followRefusal, onSessionRestored } = useAuth()
   const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.replace(url))
 
   const state = ref<OAuthConsentState>('loading')
@@ -92,17 +108,38 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   const failure = ref<OAuthConsentFailure | null>(null)
   let params: ConsentParams | null = null
 
-  /** Range un échec dans l'état qui lui revient ; `onUnknown` dit où mène un échec générique. */
-  const fail = (caught: unknown, onUnknown: 'ready' | 'error'): void => {
+  /**
+   * Range un échec dans l'état qui lui revient ; `onUnknown` dit où mène un échec générique. `sentAt` est la
+   * génération de session lue **avant l'envoi** (#748, R14) : un verdict « session finie » d'une requête partie
+   * avant que la session soit rétablie est un échec ordinaire (`markSessionExpired` rend `false`), pas une
+   * nouvelle fin de session.
+   */
+  const fail = (caught: unknown, onUnknown: 'ready' | 'error', sentAt: number): void => {
     if (caught instanceof InvalidConsentRequestError) {
       state.value = 'invalid'
       failure.value = null
       return
     }
-    if (caught instanceof SessionExpiredError) {
-      markSessionExpired()
+    if (caught instanceof SessionEndedError && markSessionExpired(sentAt)) {
       state.value = 'error'
-      failure.value = 'session-expired'
+      failure.value = 'session-ended'
+      return
+    }
+    if (caught instanceof AccessForbiddenError) {
+      // Le résumé d'une demande qu'on ne peut pas décider n'a plus à rester affiché.
+      request.value = null
+      // Le refus peut venir d'un compte rétrogradé : `/api/me` remet l'en-tête au palier que le serveur
+      // reconnaît (une seule relecture en vol, sans l'attendre). Le refus lui-même ne marque pas la session
+      // expirée (R7) ; mais si `/api/me` répond « anonyme », la session est finie (marquée par la relecture) et la
+      // page le dit à la place — tant que l'échec affiché est encore ce `forbidden` (#748, R15, F).
+      followRefusal(
+        () => 'forbidden' === failure.value,
+        () => {
+          failure.value = 'session-ended'
+        },
+      )
+      state.value = 'error'
+      failure.value = 'forbidden'
       return
     }
     if (caught instanceof ReauthenticationRequiredError) {
@@ -135,11 +172,12 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     }
 
     state.value = 'loading'
+    const sentAt = sessionStamp()
     try {
       request.value = await repository.describe(received)
       state.value = 'ready'
     } catch (caught) {
-      fail(caught, 'error')
+      fail(caught, 'error', sentAt)
     }
   }
 
@@ -157,12 +195,13 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     // L'hôte annoncé à la personne, lu avant l'appel : c'est sur lui qu'elle a consenti.
     const announcedHost = request.value?.redirectHost ?? ''
 
+    const sentAt = sessionStamp()
     let url: string
     try {
       // Pour le compte que le résumé a nommé, pas pour celui du cookie à l'envoi (F5).
       url = await repository.decide(params, approved, shown.account.id)
     } catch (caught) {
-      fail(caught, 'ready')
+      fail(caught, 'ready', sentAt)
       return
     }
 
@@ -174,6 +213,16 @@ export function useOAuthConsent(): UseOAuthConsentResult {
 
     redirect(url)
   }
+
+  // Au retour de la session (`onSessionRestored`), la demande que la session finie avait refusée se relit,
+  // sous le compte revenu (#748, R8) — `reload()` : la même requête. Les autres échecs terminaux ne se relisent
+  // pas. Rétablir la session est l'affaire de `useAuth().recheckEndedSession()`, branchée par
+  // `useSessionRecheckOnFocus` (AppLayout), pas d'ici.
+  onSessionRestored(() => {
+    if ('session-ended' === failure.value) {
+      void load(params)
+    }
+  })
 
   return {
     state: readonly(state),

@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminContributions } from '../../../application/admin/contributions/useAdminContributions'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -23,17 +21,25 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { useEntryFormState } from '../../ui/admin/entryFormState'
+import { switchToProposedCreation } from '../../ui/admin/proposedCreation'
+import { CONTRIBUTION_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminContribution } from '../../../domain/admin/contributions/entities/AdminContribution'
 
 const { t } = useI18n()
-const { contributions, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { contributions, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminContributions()
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
-const editingId = ref<string | null>(null)
+const formState = useEntryFormState()
+const { editingId, isSubmitting, sourceGroup, proposalSourceLocale } = formState
 
 /**
  * Typé explicitement : sans annotation, `reactive` infère `locale` au type
@@ -64,48 +70,13 @@ const form = reactive<ContributionForm>({
   summary: '',
   body: '',
 })
-const isSubmitting = ref(false)
-
-/**
- * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
- * version XX »), `null` sur une page blanche. Distinct de
- * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant de traduction bascule le formulaire vers l'autre locale et doit
- * y rattacher la proposition au groupe de la **source** (D9), y compris quand
- * ce groupe n'avait aucune traduction et que le sélecteur affichait donc
- * « aucune ».
- */
-const sourceGroup = ref<string | null>(null)
-
-/**
- * Locale de l'entrée dont le formulaire courant est une proposition traduite,
- * `null` sinon : porte la bannière « proposition générée par IA ». Effacée dès que
- * le formulaire repart d'une entrée réelle ou d'une page blanche.
- */
-const proposalSourceLocale = ref<Locale | null>(null)
-
-/**
- * Les champs que l'assistant traduit — la prose. Le complément de cette liste
- * (`project`, `reference`, `url`) est ce que « Créer la version XX » recopie
- * de l'entrée existante : un nom de projet, une référence de PR ou une URL
- * n'ont pas de traduction (spec 0002, D2 ; spec 0004 §7). Une seule source de
- * vérité par page.
- */
-const PROSE_FIELDS = ['title', 'summary', 'body'] as const
 
 const isEditing = computed(() => null !== editingId.value)
-
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
-
-const errorText = computed(() =>
-  errorMessage.value ? t(`admin.contributions.errors.${errorMessage.value.reason}`) : null,
-)
-
-const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
+const lock = useEntryFormLock({
+  hintId: 'admin-contribution-entry-lock-help',
+  isEditing,
+  proposalSourceLocale,
+})
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const rows = computed(() => groupByTranslationGroup(contributions.value, SUPPORTED_LOCALES))
@@ -123,6 +94,37 @@ const {
   reorder,
   reload: load,
 })
+
+const {
+  isTranslating,
+  isExpiredCallPending,
+  isRefused: isTranslationRefused,
+  translationErrorText,
+  proposeFrom,
+  removeEntry,
+  renewForm,
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-contribution',
+  form,
+  proseFields: CONTRIBUTION_PROSE_FIELDS,
+  isRefused: () => isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
+  identity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+  }),
+})
+
+const errorText = computed(() => {
+  const reason = errorMessage.value?.reason
+
+  return reason ? t(`admin.contributions.errors.${reason}`) : null
+})
+
+const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
 
@@ -162,6 +164,7 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -176,10 +179,11 @@ function resetForm(): void {
 }
 
 function startEdit(contribution: AdminContribution): void {
+  renewForm()
   editingId.value = contribution.id
   proposalSourceLocale.value = null
   sourceGroup.value = contribution.translationGroup
-  form.locale = contribution.locale as Locale
+  form.locale = contribution.locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
   // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
@@ -197,10 +201,11 @@ function startEdit(contribution: AdminContribution): void {
 /**
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante, avec les champs non-prose recopiés de l'entrée
- * existante (cf. PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
+ * existante (cf. CONTRIBUTION_PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminContribution>, locale: Locale): void {
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -232,40 +237,17 @@ async function handleSubmit(): Promise<void> {
     body: form.body,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }
 
-/**
- * Demande une proposition dans l'autre locale, puis bascule le formulaire en
- * **création** avec cette proposition : la prose est remplacée, le reste conservé —
- * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
- * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
- * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
- * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
- */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const sourceLocale = form.locale
-
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!proposal) {
-    return
-  }
-
-  editingId.value = null
-  form.locale = targetLocale
-  form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
-  proposalSourceLocale.value = sourceLocale
+  await proposeFrom(targetLocale, switchToProposedCreation(formState, form, targetLocale))
 }
 
 async function handleDelete(contribution: AdminContribution): Promise<void> {
@@ -273,7 +255,7 @@ async function handleDelete(contribution: AdminContribution): Promise<void> {
     return
   }
 
-  await remove(contribution.id)
+  await removeEntry(contribution, () => remove(contribution.id))
 }
 
 useUnsavedOrderGuard(isOrderDirty)
@@ -290,22 +272,31 @@ useUnsavedOrderGuard(isOrderDirty)
         novalidate
         @submit.prevent="handleSubmit"
       >
+        <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
         <BaseSelect
           id="admin-contribution-locale"
           v-model="form.locale"
-          :disabled="isEditing"
+          :disabled="lock.isEntryLocked"
+          :aria-describedby="lock.localeDescribedBy"
           :label="t('admin.contributions.localeLabel')"
           :options="localeOptions"
+        />
+        <EntryFormLockHint
+          :id="lock.hintId"
+          :state="lock.state"
         />
         <BaseSelect
           id="admin-contribution-translation-group"
           v-model="form.translationGroup"
+          :disabled="lock.isProposalLocked"
+          :aria-describedby="lock.proposalDescribedBy"
           :label="t('admin.contributions.translationOfLabel')"
           :options="translationOptions"
         />
         <BaseTextInput
           id="admin-contribution-title"
           v-model="form.title"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.contributions.titleLabel')"
           required
         />
@@ -330,6 +321,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-contribution-summary"
           v-model="form.summary"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.contributions.summaryLabel')"
           :rows="3"
           required
@@ -337,10 +329,10 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-contribution-body"
           v-model="form.body"
+          v-bind="proseFieldAttrs('admin-contribution-body-help')"
           :label="t('admin.contributions.bodyLabel')"
           :rows="14"
           required
-          aria-describedby="admin-contribution-body-help"
         />
         <div
           id="admin-contribution-body-help"
@@ -358,11 +350,18 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
-            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty"
-            :aria-describedby="lockedHintId"
+            :is-expired-call-pending="isExpiredCallPending"
+            :hint-id="translationHintId"
+            :disabled="isTranslationRefused"
+            :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
           />
         </div>
+
+        <TranslationReadonlyHint
+          :id="proseReadonlyHintId"
+          :shown="isTranslating"
+        />
 
         <p
           v-if="proposalSourceLocale"
@@ -374,7 +373,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="translationErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ translationErrorText }}
@@ -382,7 +381,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -398,7 +397,7 @@ useUnsavedOrderGuard(isOrderDirty)
             {{ t('admin.contributions.save') }}
           </button>
           <button
-            v-if="isEditing"
+            v-if="lock.isEntryLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetForm"
@@ -422,10 +421,16 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.contributions.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

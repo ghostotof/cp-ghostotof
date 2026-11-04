@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { MCP_CONNECTIONS_REPOSITORY, useMcpConnections } from '../../../src/application/mcp/useMcpConnections'
-import { authState, markBaseAccessGranted, markSessionExpired } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
+import { sessionFor } from '../../support/authSession'
 import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositories/McpConnectionsRepository'
 import type { McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { listOf } from '../../support/mcpConnectionList'
-
-enableAutoUnmount(afterEach)
 
 function connection(id: string, state: McpConnectionSummary['state'] = 'active'): McpConnectionSummary {
   return {
@@ -29,7 +31,41 @@ function connection(id: string, state: McpConnectionSummary['state'] = 'active')
 const A = connection('a')
 const B = connection('b')
 
+/**
+ * `/api/me`, que le composable relit sur un refus réel (#748, R7). Remis à neuf par chaque montage : il répond
+ * le palier de base, celui d'un compte qui n'a plus l'accès de confiance.
+ */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
+/** Un compte de confiance connu de l'application : l'annonce de session finie des tests précédents est refermée. */
+async function signInTrusted(): Promise<void> {
+  const probe = mount(
+    defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    }),
+    {
+      global: {
+        provide: {
+          [AUTH_REPOSITORY as symbol]: {
+            login: vi.fn(),
+            logout: vi.fn(),
+            hasWriteToken: () => true,
+            me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+          },
+        },
+      },
+    },
+  )
+  await probe.vm.auth.checkAuth()
+  probe.unmount()
+}
+
 function mountComposable(repository: McpConnectionsRepository) {
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
   let captured: ReturnType<typeof useMcpConnections> | undefined
   const Probe = defineComponent({
     setup() {
@@ -37,7 +73,7 @@ function mountComposable(repository: McpConnectionsRepository) {
       return () => h('div')
     },
   })
-  mount(Probe, { global: { provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository } } })
+  mount(Probe, { global: { provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository, [AUTH_REPOSITORY as symbol]: authRepository } } })
 
   if (!captured) {
     throw new Error('useMcpConnections() did not run during mount')
@@ -73,7 +109,7 @@ describe('useMcpConnections', () => {
     expect(connections.revokingId.value).toBeNull()
     expect(connections.lastOutcome.value).toBeNull()
     expect(connections.terminatedTruncated.value).toBe(false)
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
   })
 
   it('load() charge la liste puis passe à ready', async () => {
@@ -126,7 +162,7 @@ describe('useMcpConnections', () => {
   })
 
   it('load() sur une session expirée marque la session expirée', async () => {
-    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionExpiredError()), revoke: vi.fn() })
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionEndedError()), revoke: vi.fn() })
 
     await connections.load()
 
@@ -134,33 +170,71 @@ describe('useMcpConnections', () => {
     expect(authState.tier).toBe('anonymous')
   })
 
-  it('load() sur une session expirée le dit à la page (sessionExpired), qu\'un autre échec ne dit pas', async () => {
-    const list = vi.fn().mockRejectedValueOnce(new SessionExpiredError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
+  it('load() sur une session expirée le dit à la page (refusal session-ended), qu\'un autre échec ne dit pas', async () => {
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(new SessionEndedError())
+      .mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+      .mockResolvedValue(listOf([A]))
     const connections = mountComposable({ list, revoke: vi.fn() })
 
     await connections.load()
-    expect(connections.sessionExpired.value).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
 
     // La lecture suivante échoue pour une autre raison : l'indication ne survit pas à la lecture qui la corrige.
     await connections.load()
     expect(connections.status.value).toBe('error')
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
 
     await connections.load()
     expect(connections.status.value).toBe('ready')
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
+  })
+
+  // R8 (#748) : le retour de la session est le signal qui relance la lecture que la session finie avait interrompue.
+  it('au retour de la session, la liste se relit et le refus tombe', async () => {
+    await signInTrusted() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
+    const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockResolvedValueOnce(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    await connections.load()
+    expect(connections.refusal.value).toBe('session-ended')
+    expect(list).toHaveBeenCalledTimes(1)
+
+    await signInTrusted()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(connections.status.value).toBe('ready')
+    expect(connections.connections.value).toEqual([A])
+    expect(connections.refusal.value).toBeNull()
+  })
+
+  it("au retour de la session, un refus réel n'est pas relu : la même requête aurait le même verdict", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    await connections.load()
+    await flushPromises()
+    markSessionExpired()
+    await flushPromises()
+
+    await signInTrusted()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(connections.refusal.value).toBe('forbidden')
   })
 
   it('une session expirée pendant la révocation est dite à la page aussi', async () => {
     const connections = mountComposable({
       list: vi.fn().mockResolvedValue(listOf([A])),
-      revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
+      revoke: vi.fn().mockRejectedValue(new SessionEndedError()),
     })
     await connections.load()
 
     await connections.revoke('a')
 
-    expect(connections.sessionExpired.value).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
     expect(connections.lastOutcome.value).toBe('failed')
   })
 
@@ -191,14 +265,156 @@ describe('useMcpConnections', () => {
     const newer = connections.load()
     settle[1]?.resolve(listOf([B]))
     await newer
-    settle[0]?.reject(new SessionExpiredError())
+    settle[0]?.reject(new SessionEndedError())
     await older
 
     expect(connections.status.value).toBe('ready')
     expect(connections.connections.value).toEqual([B])
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
     // Une réponse périmée ne ferme pas la session de l'application non plus.
     expect(authState.tier).toBe('base')
+  })
+
+  it("lecture refusée : refusal 'forbidden', /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    await signInTrusted()
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(connections.status.value).toBe('error')
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("révocation refusée avec jeton : refusal 'forbidden', la liste reste, /api/me relu", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockResolvedValue(listOf([A, B]))
+    const connections = mountComposable({ list, revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()) })
+    await connections.load()
+
+    await connections.revoke('a')
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(connections.lastOutcome.value).toBe('failed')
+    expect(connections.connections.value).toEqual([A, B])
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(connections.revokingId.value).toBeNull()
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("session finie : refusal 'session-ended', /api/me n'est pas relu par le composable", async () => {
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionEndedError()), revoke: vi.fn() })
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('session-ended')
+    expect(me).not.toHaveBeenCalled()
+  })
+
+  it('un refus remis à null au début de chaque load() et de chaque revoke()', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new AccessForbiddenError()).mockResolvedValue(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()) })
+    await connections.load()
+    expect(connections.refusal.value).toBe('forbidden')
+
+    await connections.load()
+    expect(connections.refusal.value).toBeNull()
+
+    await connections.revoke('a')
+    expect(connections.refusal.value).toBe('forbidden')
+    const pending = connections.revoke('a')
+    expect(connections.refusal.value).toBeNull()
+    await pending
+  })
+
+  it(
+    "le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte le palier de confiance d'un compte rétrogradé",
+    async () => {
+      // Un compte de confiance, tel que l'en-tête l'affichait avant le refus.
+      await signInTrusted()
+      expect(authState.tier).toBe('trusted')
+      const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+
+      await connections.load()
+      await flushPromises()
+
+      expect(authState.tier).toBe('base')
+      expect(authState.user).toBeNull()
+    },
+  )
+
+  it("/api/me qui échoue à son tour ne boucle pas et ne casse pas le refus", async () => {
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+    me.mockRejectedValue(new Error('network'))
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("lecture et révocation refusées ensemble : un seul /api/me", async () => {
+    await signInTrusted()
+    const connections = mountComposable({
+      list: vi.fn().mockRejectedValue(new AccessForbiddenError()),
+      revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()),
+    })
+    let settle: () => void = () => undefined
+    me.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = () => resolve(BASE_ACCESS_SESSION)
+        }),
+    )
+
+    const reading = connections.load()
+    const revoking = connections.revoke('a')
+    await flushPromises()
+    settle()
+    await Promise.all([reading, revoking])
+    await flushPromises()
+
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("refus réel puis /api/me en 401 : refusal 'session-ended', session finie", async () => {
+    await signInTrusted()
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+    me.mockResolvedValue(sessionFor(null))
+
+    await connections.load()
+    await flushPromises()
+
+    expect(authState.sessionEnded).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
+  })
+
+  it("refus réel puis /api/me en 401 : une relecture lancée entre-temps n'est pas écrasée par le verdict", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockRejectedValueOnce(new AccessForbiddenError()).mockResolvedValue(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    let settle: () => void = () => undefined
+    me.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = () => resolve(sessionFor(null))
+        }),
+    )
+
+    await connections.load()
+    // La personne relit avant que /api/me réponde : le refus affiché n'est plus ce forbidden-là.
+    await connections.load()
+    settle()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBeNull()
+    expect(connections.status.value).toBe('ready')
   })
 
   it('revoke() révoque puis recharge la liste depuis le serveur, outcome revoked', async () => {
@@ -249,7 +465,7 @@ describe('useMcpConnections', () => {
   it('une session expirée pendant la révocation marque la session expirée, outcome failed', async () => {
     const connections = mountComposable({
       list: vi.fn().mockResolvedValue(listOf([A])),
-      revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
+      revoke: vi.fn().mockRejectedValue(new SessionEndedError()),
     })
     await connections.load()
 
@@ -312,5 +528,41 @@ describe('useMcpConnections', () => {
     void connections.revoke('a')
 
     expect(connections.lastOutcome.value).toBeNull()
+  })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('load() dont le refus de session est parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const list = vi.fn(() => new Promise<ReturnType<typeof listOf>>((_resolve, rejectList) => (reject = rejectList)))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+
+    const pending = connections.load()
+    markSessionExpired()
+    await signInTrusted()
+    expect(authState.sessionEnded).toBe(false)
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(authState.user).not.toBeNull()
+    expect(connections.status.value).toBe('error')
+    expect(connections.refusal.value).toBeNull()
+  })
+
+  it('revoke() dont le refus de session est parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const revoke = vi.fn(() => new Promise<void>((_resolve, rejectRevoke) => (reject = rejectRevoke)))
+    const connections = mountComposable({ list: vi.fn().mockResolvedValue(listOf([A])), revoke })
+    await connections.load()
+
+    const pending = connections.revoke('a')
+    markSessionExpired()
+    await signInTrusted()
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(connections.lastOutcome.value).toBe('failed')
+    expect(connections.refusal.value).toBeNull()
   })
 })

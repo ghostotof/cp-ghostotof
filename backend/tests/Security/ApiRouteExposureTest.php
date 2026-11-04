@@ -4,13 +4,21 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
+use App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Shared\Infrastructure\Http\CanonicalPath;
+use App\Tests\Support\ConcreteApiUrl;
 use App\Tests\Support\HttpJson;
-use App\Tests\Support\ReadsResponseCookies;
+use App\Tests\Support\RefusedBearerCookie;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie as BrowserKitCookie;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
@@ -24,7 +32,7 @@ use Symfony\Component\Routing\RouterInterface;
  * servie sans authentification, il faut l'inscrire **explicitement** dans
  * PUBLIC_PATHS avec sa justification — un choix conscient, jamais un oubli.
  *
- * Sept invariants :
+ * Dix invariants :
  *  1. toute route hors PUBLIC_PATHS refuse un appelant anonyme (401 ou 403) ;
  *  2. aucune route /api/backoffice ne peut être inscrite dans PUBLIC_PATHS ;
  *  3. tout le backoffice refuse un compte authentifié mais sans ROLE_SUPER
@@ -39,12 +47,33 @@ use Symfony\Component\Routing\RouterInterface;
  *     après chaque requête de ce test, et sur chaque route publique. Le
  *     pendant à l'exécution d'AuthCookiesComeFromTheFactoryTest, qui ne lit
  *     que `src/` : il voit aussi le vendor, la configuration et les appels
- *     dynamiques, sur les seules réponses produites ici.
+ *     dynamiques, sur les seules réponses produites ici ;
+ *  8. un cookie `BEARER` refusé (invalide, expiré) ne donne jamais **plus ni autre
+ *     chose** que l'anonyme : sur chaque route et chaque méthode, la réponse a le
+ *     statut de celle d'un appelant sans cookie (#748, R35 — une route publique
+ *     ne répond plus 401 à un cookie mort ; une route protégée garde son refus),
+ *     et une route publique ne pose aucun cookie que l'anonyme ne pose pas ;
+ *     sur le pare-feu `api`, une route qui exige un rôle (`requiresAccess()`, la source de
+ *     vérité du listener) répond 401 à l'anonyme (C7-10) — jamais la réciproque : le 401
+ *     métier d'une route publique n'est pas une session refusée (CR6-6) —, et ce 401 expire
+ *     `BEARER` et `XSRF-TOKEN` aux attributs exacts d'`AuthCookieFactory::expired()` (#748,
+ *     R46, R59 ; `mcp` et `oauth` ne lisent pas le cookie, ils n'ont rien à effacer). Les
+ *     écritures portent une paire CSRF valide (cookie et en-tête) : sans elle, le
+ *     double-submit répond 403 avant le pare-feu et l'égalité des statuts serait triviale ;
+ *  9. sur le pare-feu `api`, une route publique est exactement une route sans règle
+ *     d'`access_control` : `requiresAccess()` vaut vrai si et seulement si le chemin n'est ni
+ *     dans PUBLIC_PATHS ni dans RULELESS_OUTSIDE_PUBLIC_PATHS (#748, R73), à l'exécution sur
+ *     le routeur et l'`AccessMap` : c'est la prémisse « route publique = route sans règle ».
+ *     Les témoins de cette prémisse sont listés une fois, dans
+ *     `.claude/rules/security-authentication-sessions.md` (puce de
+ *     `PublicRouteIgnoresRefusedSessionListener`) ;
+ * 10. chaque route de `/api` déclare ses méthodes, et chacune est jugée par le double-submit : `GET`, `HEAD`,
+ *     `OPTIONS` ou l'une des `UNSAFE_METHODS` de `CsrfCookieRequestSubscriber` (#748, R89).
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
     use HttpJson;
-    use ReadsResponseCookies;
+    use RefusedBearerCookie;
 
     private const string PLAIN_USERNAME = 'jane';
 
@@ -101,6 +130,10 @@ final class ApiRouteExposureTest extends WebTestCase
      * une route revient à affirmer qu'elle ne porte aucune donnée
      * identifiante (D2 : le palier de base est publiable par construction).
      *
+     * `/api/logout` figure ici et dans RULELESS_OUTSIDE_PUBLIC_PATHS : chaque liste pose sa question (ce que le
+     * palier de base ouvre ; ce qui n'a pas de règle), pour la même substance — aucune donnée servie, les seuls
+     * cookies de l'appelant touchés (St8-13).
+     *
      * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
      */
     private const array BASE_TIER_PATHS = [
@@ -108,6 +141,31 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/anonymous-cv/{locale}' => 'ADR 0003 D5 : CV sans identité — compétences, ancienneté et réalisations par domaine, sans nom, employeur, client ni chronologie (D5 amendée le 2026-09-13).',
         '/api/logout' => '« Terminer cet accès » (issue #65) : expire les cookies, quel que soit le porteur. Ne sert aucune donnée.',
     ];
+
+    /**
+     * Routes du pare-feu `api` hors de PUBLIC_PATHS qui n'ont pourtant aucune règle d'`access_control`, chacune
+     * justifiée (invariant n° 9). La liste est fermée : une route sans règle qui n'est ni publique ni ici fait
+     * rougir l'invariant, et une entrée devenue inutile aussi. `/api/logout` y figure et dans BASE_TIER_PATHS, pour
+     * la même substance (aucune donnée, les seuls cookies de l'appelant) : voir cette liste.
+     *
+     * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
+     */
+    private const array RULELESS_OUTSIDE_PUBLIC_PATHS = [
+        '/api/logout' => '« Terminer cet accès » (#65, R35) : sans règle par construction, il expire les deux '
+            .'cookies de l\'appelant, y compris d\'un porteur dont le cookie est refusé (2xx) ; une règle '
+            .'lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée, et le double-submit le garde de '
+            .'la déconnexion forcée — un formulaire tiers part sans `X-XSRF-TOKEN`, et son 403 (priorité 20, avant le '
+            .'`LogoutListener`) est la seule barrière, `SameSite=Lax` n\'empêchant pas le navigateur d\'accepter les '
+            .'`Set-Cookie` expirés de la réponse. Jamais dans `EXCLUDED_PATHS` (témoin : '
+            .'`AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`).',
+    ];
+
+    /**
+     * Les méthodes qu'une route de `/api` peut déclarer en dehors de `CsrfCookieRequestSubscriber::UNSAFE_METHODS` :
+     * celles que le double-submit laisse passer et qu'une route peut servir sans écrire (invariant n° 10). Une autre
+     * — `QUERY`, une méthode propre — sortirait du double-submit sans qu'aucune garde le voie (C8-6).
+     */
+    private const array SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT = ['GET', 'HEAD', 'OPTIONS'];
 
     protected function setUp(): void
     {
@@ -122,10 +180,57 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * Invariant n° 10 (#748, R89, C8-6, C8-4) : chaque route de `/api` déclare ses méthodes, et chacune est jugée par
+     * le double-submit — `GET`, `HEAD`, `OPTIONS` (SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT) ou l'une des
+     * `CsrfCookieRequestSubscriber::UNSAFE_METHODS`. Une route sans méthode déclarée les accepte toutes et les autres
+     * invariants ne la sondent qu'en GET ; une route `QUERY` ou d'une méthode propre sortirait du double-submit sans
+     * qu'aucune garde le voie.
+     * « Sûre » est une convention : l'invariant juge les méthodes déclarées, pas qu'une route `GET` n'écrit rien ;
+     * une écriture servie en `GET` échapperait au double-submit, la relecture tient ce point (C9-7).
+     */
+    public function testEveryApiRouteDeclaresMethodsTheDoubleSubmitJudges(): void
+    {
+        $judged = [...self::SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT, ...CsrfCookieRequestSubscriber::UNSAFE_METHODS];
+        $checked = 0;
+
+        foreach ($this->router()->getRouteCollection() as $route) {
+            $path = $route->getPath();
+            if (!CanonicalPath::isPathUnder($path, '/api')) {
+                continue;
+            }
+
+            self::assertNotSame(
+                [],
+                $route->getMethods(),
+                \sprintf('%s ne déclare aucune méthode : elle les accepte toutes, et l\'invariant n° 1 ne la sonde qu\'en GET.', $path),
+            );
+            foreach ($route->getMethods() as $method) {
+                self::assertContains(
+                    $method,
+                    $judged,
+                    \sprintf(
+                        '%s déclare %s, que le double-submit ne juge pas : ni sûre (GET, HEAD, OPTIONS) ni dans '
+                        .'CsrfCookieRequestSubscriber::UNSAFE_METHODS.',
+                        $path,
+                        $method,
+                    ),
+                );
+            }
+            ++$checked;
+        }
+
+        self::assertGreaterThan(0, $checked, 'Aucune route de /api sondée : le test ne vérifie plus rien.');
+    }
+
+    /**
      * Invariant n°1 — la règle de fond. Une route absente de PUBLIC_PATHS doit
      * être refusée à un anonyme : 401 (firewall JWT) pour les lectures, 403
      * (CsrfCookieRequestSubscriber, qui s'exécute au-dessus du firewall) pour
      * les méthodes d'écriture. Dans les deux cas : aucune donnée servie.
+     *
+     * Limite (C8-4) : un paramètre de chemin n'y prend qu'une valeur (`ConcreteApiUrl`). Exact tant qu'aucune règle
+     * d'`access_control` ne nomme un segment qu'une route paramètre — vérifié le 2026-10-30. Une route sans méthode
+     * déclarée (sondée en GET seul) est refusée par l'invariant n° 10.
      */
     public function testEveryRouteOutsideThePublicAllowListRefusesAnonymousCallers(): void
     {
@@ -135,7 +240,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route protégée détectée : le test ne vérifie plus rien.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path));
+            $client->request($method, ConcreteApiUrl::of($path));
             $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
             self::assertContains(
@@ -200,12 +305,270 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach (array_keys(self::PUBLIC_PATHS) as $path) {
             foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
-                $client->request($method, $this->concreteUrl($path), server: [
+                $client->request($method, ConcreteApiUrl::of($path), server: [
                     'CONTENT_TYPE' => 'application/json',
                     'HTTP_ACCEPT' => 'application/json',
                     'HTTP_X_REQUESTED_WITH' => 'fetch',
                 ], content: self::jsonBody([]));
                 $this->assertOnlyFactoryCookies($client, $method.' '.$path);
+            }
+        }
+    }
+
+    /**
+     * Invariant n°8 (#748, R35) : un cookie `BEARER` **refusé** ne change pas la réponse
+     * de l'anonyme. Sur chaque chemin de `/api` et chaque méthode, trois appels sur un
+     * pot de cookies vidé et des quotas remis à zéro : sans cookie, avec une valeur
+     * invalide, avec un JWT expiré signé par l'encodeur du conteneur. Les statuts des
+     * deux derniers **égalent** celui du premier — une route publique répond à un
+     * cookie mort comme à l'anonyme, une route protégée garde son refus, jamais plus
+     * que l'anonyme n'obtiendrait —, et pour une route de PUBLIC_PATHS la réponse
+     * n'ajoute aucun cookie à ceux de l'anonyme (le cookie refusé y est laissé, la
+     * première route protégée l'efface). Sur le pare-feu `api`, une route qui exige un rôle
+     * (`requiresAccess()`) répond 401 à l'anonyme (C7-10, jamais la réciproque : le 401 métier
+     * d'une route publique reste toléré, CR6-6), et les deux cookies sont expirés dans la
+     * réponse à un cookie refusé (`StaleSessionCookiesClearingListener`), aux attributs exacts
+     * de la fabrique : sans quoi une session morte resterait dans le navigateur jusqu'à sa
+     * fermeture. Une route sans règle n'y est pas jugée : l'invariant n° 9 voit qu'une route
+     * hors de PUBLIC_PATHS en a une : c'est la prémisse « route publique = route sans règle ».
+     * Les témoins de cette prémisse sont listés une fois, dans
+     * `.claude/rules/security-authentication-sessions.md` (puce de
+     * `PublicRouteIgnoresRefusedSessionListener`).
+     * Mêmes corps et en-têtes que l'invariant n°7 ; les méthodes non sûres portent en plus
+     * une paire `XSRF-TOKEN` valide, sans quoi le 403 du double-submit répondrait avant le
+     * pare-feu dans les trois variantes (R59, C6-1).
+     */
+    public function testARefusedSessionCookieNeverChangesTheAnonymousAnswer(): void
+    {
+        $client = self::createClient();
+        $cookies = ['anonyme' => null, 'invalide' => bin2hex(random_bytes(16)), 'expiré' => self::expiredJwt()];
+
+        $checked = 0;
+        foreach ($this->allApiRoutePaths() as $path) {
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                $answers = [];
+                foreach ($cookies as $label => $bearer) {
+                    $answers[$label] = $this->answerWithBearer($client, $method, $path, $bearer);
+                }
+
+                $statuses = \sprintf(
+                    '%s %s : statuts anonyme/invalide/expiré = %d/%d/%d.',
+                    $method,
+                    $path,
+                    $answers['anonyme']['status'],
+                    $answers['invalide']['status'],
+                    $answers['expiré']['status'],
+                );
+                self::assertSame($answers['anonyme']['status'], $answers['invalide']['status'], $statuses);
+                self::assertSame($answers['anonyme']['status'], $answers['expiré']['status'], $statuses);
+
+                if (isset(self::PUBLIC_PATHS[$path])) {
+                    foreach (['invalide', 'expiré'] as $label) {
+                        self::assertSame(
+                            $answers['anonyme']['cookies'],
+                            $answers[$label]['cookies'],
+                            \sprintf('%s %s pose avec un cookie %s d\'autres cookies que pour l\'anonyme.', $method, $path, $label),
+                        );
+                    }
+                }
+
+                // Une route du pare-feu api qui exige un rôle répond 401 à l'anonyme (C7-10), jamais la
+                // réciproque : le 401 métier d'une route publique n'est pas une session refusée (CR6-6) et
+                // reste toléré. Ce 401, celui du pare-feu, efface les deux cookies.
+                if ('api' === $this->firewallOf($path, $method) && $this->requiresAccess($path, $method)) {
+                    self::assertSame(
+                        401,
+                        $answers['anonyme']['status'],
+                        \sprintf(
+                            '%s %s exige un rôle (requiresAccess) : un appelant anonyme doit y recevoir 401, pas %d.',
+                            $method,
+                            $path,
+                            $answers['anonyme']['status'],
+                        ),
+                    );
+
+                    $factory = self::getContainer()->get(AuthCookieFactory::class);
+                    foreach (['invalide', 'expiré'] as $label) {
+                        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
+                            self::assertSame(
+                                $this->attributes($factory->expired($name)),
+                                $answers[$label]['cleared'][$name] ?? null,
+                                \sprintf(
+                                    '%s %s : le 401 du pare-feu api doit expirer %s aux attributs de la fabrique '
+                                    .'avec un cookie %s (expirés : %s).',
+                                    $method,
+                                    $path,
+                                    $name,
+                                    $label,
+                                    [] === $answers[$label]['cleared'] ? 'aucun' : implode(', ', array_keys($answers[$label]['cleared'])),
+                                ),
+                            );
+                        }
+                    }
+                }
+                ++$checked;
+            }
+        }
+
+        self::assertGreaterThan(0, $checked, 'Aucune route sondée : le test ne vérifie plus rien.');
+    }
+
+    /**
+     * Un appel isolé : pot de cookies vidé, quotas remis à zéro, `BEARER` éventuel posé
+     * comme un navigateur le garderait. Une méthode non sûre porte une paire `XSRF-TOKEN`
+     * valide (cookie et en-tête, signée par le signataire du conteneur), dans les trois
+     * variantes : sans elle, le double-submit répond 403 avant le pare-feu. Rend le statut,
+     * les noms des cookies posés et, par nom, les attributs de ceux que la réponse efface
+     * (`Cookie::isCleared()` : échéance strictement positive et passée ; un cookie de session
+     * a une échéance nulle).
+     *
+     * @return array{status: int, cookies: list<string>, cleared: array<string, array<string, mixed>>}
+     */
+    private function answerWithBearer(KernelBrowser $client, string $method, string $path, ?string $bearer): array
+    {
+        $client->getCookieJar()->clear();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        if (null !== $bearer) {
+            self::putTheBearer($client, $bearer);
+        }
+
+        $server = [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'fetch',
+        ];
+        // La même liste que la garde du double-submit (une seule source) : une méthode qu'elle
+        // contrôle porte la paire valide, sans quoi la requête répond 403 avant le pare-feu.
+        if (\in_array($method, CsrfCookieRequestSubscriber::UNSAFE_METHODS, true)) {
+            $csrfToken = self::getContainer()->get(CsrfCookieTokenSigner::class)->issue();
+            $client->getCookieJar()->set(
+                new BrowserKitCookie(AuthCookieFactory::XSRF_TOKEN, $csrfToken, null, '/', 'localhost', false, false, false, 'lax'),
+            );
+            $server['HTTP_X_XSRF_TOKEN'] = $csrfToken;
+        }
+
+        $client->request($method, ConcreteApiUrl::of($path), server: $server, content: self::jsonBody([]));
+
+        $names = [];
+        $cleared = [];
+        foreach ($client->getResponse()->headers->getCookies() as $cookie) {
+            $names[] = $cookie->getName();
+            if ($cookie->isCleared()) {
+                $cleared[$cookie->getName()] = $this->attributes($cookie);
+            }
+        }
+        sort($names);
+        ksort($cleared);
+
+        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names, 'cleared' => $cleared];
+    }
+
+    /**
+     * La route exige-t-elle un rôle ? Le prédicat que le listener des routes publiques lit, sur la
+     * requête que le pare-feu verrait : la même source de vérité, aucune seconde liste.
+     */
+    private function requiresAccess(string $path, string $method): bool
+    {
+        return self::getContainer()->get(PublicRouteIgnoresRefusedSessionListener::class)
+            ->requiresAccess(Request::create(ConcreteApiUrl::of($path), $method));
+    }
+
+    /**
+     * Le pare-feu que Symfony retient pour cette requête, comme le fait le `FirewallMap` ; `null` hors de tous.
+     */
+    private function firewallOf(string $path, string $method): ?string
+    {
+        return self::getContainer()->get('security.firewall.map')
+            ->getFirewallConfig(Request::create(ConcreteApiUrl::of($path), $method))
+            ?->getName();
+    }
+
+    /**
+     * Invariant n°9 (#748, R73, C7-1) : sur le pare-feu `api`, une route publique est **exactement** une route
+     * sans règle d'`access_control`. Sur chaque chemin et chaque méthode du routeur que ce pare-feu retient,
+     * `requiresAccess()` — le prédicat que `PublicRouteIgnoresRefusedSessionListener` lit pour servir un cookie
+     * refusé comme l'anonyme — vaut vrai si et seulement si le chemin n'est ni dans PUBLIC_PATHS ni dans
+     * RULELESS_OUTSIDE_PUBLIC_PATHS (`/api/logout`, avec sa raison). Une route hors de PUBLIC_PATHS gardée
+     * autrement que par une règle (un `#[CurrentUser]` non nullable, un refus levé à la main) y est vue à
+     * l'exécution, ce que le détecteur par jetons ne peut pas toujours faire ; l'invariant n° 1 s'en contente,
+     * un 401 lui suffit. Lecture du routeur et de l'`AccessMap` seulement : aucune requête HTTP.
+     *
+     * Les pare-feux `login`, `mcp` et `oauth` n'ont pas de règle d'`access_control` et ne lisent pas le cookie :
+     * hors du contrôle.
+     */
+    public function testOnTheApiFirewallAPublicRouteIsExactlyARouteWithoutRule(): void
+    {
+        $withoutRule = [];
+        $withRule = [];
+        $checked = 0;
+
+        foreach ($this->allApiRoutePaths() as $path) {
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                if ('api' !== $this->firewallOf($path, $method)) {
+                    continue;
+                }
+
+                ++$checked;
+                $expectedRule = !isset(self::PUBLIC_PATHS[$path]) && !isset(self::RULELESS_OUTSIDE_PUBLIC_PATHS[$path]);
+                if ($expectedRule === $this->requiresAccess($path, $method)) {
+                    continue;
+                }
+
+                if ($expectedRule) {
+                    $withoutRule[] = $method.' '.$path;
+                } else {
+                    $withRule[] = $method.' '.$path;
+                }
+            }
+        }
+
+        self::assertGreaterThan(0, $checked, 'Aucune route du pare-feu api sondée : le test ne vérifie plus rien.');
+        self::assertSame(
+            [],
+            $withoutRule,
+            'Routes hors de PUBLIC_PATHS, sans règle d\'access_control : ajouter la règle dans security.yaml '
+            .'(la source de l\'autorisation de /api), ou, si la route est publique, une entrée justifiée de PUBLIC_PATHS.',
+        );
+        self::assertSame(
+            [],
+            $withRule,
+            'Routes de PUBLIC_PATHS ou de RULELESS_OUTSIDE_PUBLIC_PATHS qui ont une règle d\'access_control : '
+            .'retirer la règle, ou sortir la route de la liste (une route à règle n\'est pas publique).',
+        );
+    }
+
+    /**
+     * Garde d'hygiène de RULELESS_OUTSIDE_PUBLIC_PATHS : chaque entrée existe au routeur, relève du pare-feu
+     * `api`, n'est pas dans PUBLIC_PATHS et n'a pas de règle, pour chacune de ses méthodes. Une entrée qui
+     * ne remplit plus ces conditions est un reste de refactor ou une route devenue protégée : la liste
+     * donnerait une fausse impression de couverture.
+     */
+    public function testEveryRulelessExceptionIsStillNeeded(): void
+    {
+        $declaredPaths = $this->allApiRoutePaths();
+
+        foreach (array_keys(self::RULELESS_OUTSIDE_PUBLIC_PATHS) as $path) {
+            self::assertContains(
+                $path,
+                $declaredPaths,
+                \sprintf('RULELESS_OUTSIDE_PUBLIC_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path),
+            );
+            self::assertArrayNotHasKey(
+                $path,
+                self::PUBLIC_PATHS,
+                \sprintf('"%s" est déjà dans PUBLIC_PATHS : inutile dans RULELESS_OUTSIDE_PUBLIC_PATHS.', $path),
+            );
+
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                self::assertSame(
+                    'api',
+                    $this->firewallOf($path, $method),
+                    \sprintf('%s %s ne relève plus du pare-feu api : retirer l\'entrée.', $method, $path),
+                );
+                self::assertFalse(
+                    $this->requiresAccess($path, $method),
+                    \sprintf('%s %s a désormais une règle d\'access_control : retirer l\'entrée.', $method, $path),
+                );
             }
         }
     }
@@ -228,7 +591,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route de backoffice détectée.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path), server: [
+            $client->request($method, ConcreteApiUrl::of($path), server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
@@ -314,7 +677,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route hors palier de base détectée : le test ne vérifie plus rien.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path), server: [
+            $client->request($method, ConcreteApiUrl::of($path), server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
@@ -354,7 +717,7 @@ final class ApiRouteExposureTest extends WebTestCase
             $csrfToken = $this->obtainBaseAccess($client);
 
             foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
-                $client->request($method, $this->concreteUrl($path), server: [
+                $client->request($method, ConcreteApiUrl::of($path), server: [
                     'CONTENT_TYPE' => 'application/json',
                     'HTTP_X_XSRF_TOKEN' => $csrfToken,
                 ], content: self::jsonBody([]));
@@ -397,7 +760,7 @@ final class ApiRouteExposureTest extends WebTestCase
         foreach ($this->router()->getRouteCollection() as $route) {
             $path = $route->getPath();
 
-            if (!str_starts_with($path, '/api') || isset(self::PUBLIC_PATHS[$path])) {
+            if (!CanonicalPath::isPathUnder($path, '/api') || isset(self::PUBLIC_PATHS[$path])) {
                 continue;
             }
 
@@ -417,7 +780,7 @@ final class ApiRouteExposureTest extends WebTestCase
         $paths = [];
 
         foreach ($this->router()->getRouteCollection() as $route) {
-            if (str_starts_with($route->getPath(), '/api')) {
+            if (CanonicalPath::isPathUnder($route->getPath(), '/api')) {
                 $paths[$route->getPath()] = true;
             }
         }
@@ -438,35 +801,6 @@ final class ApiRouteExposureTest extends WebTestCase
         $requestable = array_values(array_filter($methods, static fn (string $method): bool => 'HEAD' !== $method));
 
         return [] === $requestable ? ['GET'] : $requestable;
-    }
-
-    /**
-     * Substitue des valeurs plausibles aux paramètres d'URL : la ressource
-     * visée n'a pas besoin d'exister, le contrôle d'accès s'applique bien avant
-     * que le provider ne cherche quoi que ce soit.
-     */
-    private function concreteUrl(string $path): string
-    {
-        $url = str_replace(['.{_format}', '{_format}'], '', $path);
-
-        return (string) preg_replace_callback(
-            '/\{(\w+)\}/',
-            static fn (array $matches): string => match ($matches[1]) {
-                'locale' => 'fr',
-                'token' => str_repeat('a', 64),
-                'status' => '404',
-                'index' => 'index',
-                // UUID fixe et valide au sens de `Requirement::UUID` (nibble de
-                // version 7, variante 8) : les tâches suivantes posent des
-                // `requirements: ['id' => Requirement::UUID]` sur les
-                // opérations d'item, et un `1` y serait un 404 du routeur
-                // (RouterListener, priorité 32) avant même le firewall
-                // (priorité 8) — le test perdrait sa portée sur ces routes.
-                'id' => '019968a0-0000-7000-8000-000000000001',
-                default => '1',
-            },
-            $url,
-        );
     }
 
     /**

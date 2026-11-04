@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 
-const { t, locale } = useI18n()
-const homeLink = computed(() => `/${locale.value as Locale}`)
+const { t } = useI18n()
+const currentLocale = useCurrentLocale()
+const homeLink = computed(() => `/${currentLocale.value}`)
 </script>
 
 <template>

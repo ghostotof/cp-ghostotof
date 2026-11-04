@@ -83,9 +83,13 @@ use Symfony\Component\Security\Http\Event\CheckPassportEvent;
  * **Chaque refus est audité** (F-C, `session-refused-after-credentials-change`,
  * {@see SecurityAuditLoggerInterface::sessionRefusedAfterCredentialsChange()}) :
  * le compte, les deux versions, l'IP et le chemin, jamais le jeton ni le nom
- * d'utilisateur. **Pas de dédoublonnage** : après le premier 401 le navigateur
- * efface les cookies (StaleSessionCookiesClearingListener), seul un rejeu en
- * boucle d'un jeton gardé écrit plusieurs lignes — et il écrit déjà autant de
+ * d'utilisateur. **Pas de dédoublonnage** : le navigateur efface les cookies au
+ * premier 401 d'une route qui exige un rôle (StaleSessionCookiesClearingListener) ;
+ * une route publique sert la session close comme l'anonyme et audite chaque
+ * requête (#748 R35), donc un onglet légitime écrit une ligne par lecture
+ * publique jusqu'à son prochain `/api/me` (limite acceptée, C5-1). Hors de ce
+ * cas, seul un rejeu en boucle d'un jeton gardé écrit plusieurs lignes — et il
+ * écrit déjà autant de
  * `Authenticator failed.` sur le canal `security`. Un dédoublonnage par le
  * `cache.app` (en base, donc conforme à l'ADR 0005) coûterait une lecture et
  * une écriture SQL par requête refusée pour retirer une ligne parmi plusieurs

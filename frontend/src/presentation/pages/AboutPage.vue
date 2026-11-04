@@ -22,7 +22,7 @@ const { aboutContent, isLoading, hasError } = useAboutContent()
 
     <p
       v-else-if="hasError || !aboutContent"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('about.error') }}

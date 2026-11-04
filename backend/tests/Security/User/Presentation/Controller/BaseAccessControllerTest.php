@@ -14,6 +14,7 @@ use Monolog\Level;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie;
 
 /**
  * ADR 0003 D6 : POST /api/account/base-access émet un jeton ROLE_USER sans
@@ -71,7 +72,12 @@ final class BaseAccessControllerTest extends WebTestCase
         $remaining = $expiresAt->getTimestamp() - time();
         self::assertGreaterThan(14 * 60, $remaining);
         self::assertLessThanOrEqual(15 * 60, $remaining);
-        self::assertSame($expiresAt->getTimestamp(), (int) $bearerCookie->getExpiresTime(), 'Le corps et le cookie doivent annoncer la même échéance.');
+        // #748 (F1) : le cookie est de session (aucune échéance), c'est le JWT qui porte
+        // les quinze minutes ; le corps doit annoncer l'`exp` du jeton, lu par l'encodeur.
+        self::assertNull($bearerCookie->getExpiresTime(), 'Le cookie BEARER de l\'accès de base est un cookie de session.');
+        self::assertNull($csrfCookie->getExpiresTime(), 'Le cookie XSRF-TOKEN de l\'accès de base est un cookie de session.');
+        $claims = self::getContainer()->get(JWTEncoderInterface::class)->decode($bearerCookie->getValue());
+        self::assertSame($expiresAt->getTimestamp(), $claims['exp'] ?? null, 'Le corps doit annoncer l\'échéance (`exp`) du JWT.');
 
         // Le cookie authentifie bien la requête suivante (403, pas 401) : la
         // mécanique de ré-authentification via BaseAccessUserProvider fonctionne.
@@ -205,5 +211,31 @@ final class BaseAccessControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
         self::assertNull($client->getCookieJar()->get('BEARER'));
         self::assertNull($client->getCookieJar()->get('XSRF-TOKEN'));
+    }
+
+    /**
+     * R35 de la quatrième relecture : cette route est publique, un cookie `BEARER` refusé
+     * n'y fait plus répondre 401 (le firewall `api` rend la main à l'anonyme). Le SPA n'a
+     * donc plus à rejouer l'appel (R24 retiré), et **un seul** jeton du limiteur est
+     * consommé — le quota par IP lu sur la fabrique avant et après la requête.
+     */
+    public function testADeadCookieDoesNotStopTheBaseAccess(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+        $factory = self::getContainer()->get('limiter.base_access');
+        // Le client de test a toujours la même IP, clé du limiteur (BaseAccessRateLimitRequestListener).
+        $limiter = $factory->create('127.0.0.1');
+        $before = $limiter->consume(0)->getRemainingTokens();
+        $deadCookie = bin2hex(random_bytes(16));
+        $client->getCookieJar()->set(new Cookie('BEARER', $deadCookie, null, '/', 'localhost', false, true, false, 'lax'));
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+
+        self::assertResponseIsSuccessful();
+        $issued = $client->getCookieJar()->get('BEARER');
+        self::assertNotNull($issued);
+        self::assertNotSame($deadCookie, $issued->getValue(), 'Le cookie mort est remplacé par le jeton neuf.');
+        self::assertNotNull($client->getCookieJar()->get('XSRF-TOKEN'));
+        self::assertSame($before - 1, $limiter->consume(0)->getRemainingTokens(), 'Un seul jeton du limiteur est consommé.');
     }
 }

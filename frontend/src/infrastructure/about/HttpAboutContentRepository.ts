@@ -36,7 +36,9 @@ function toAboutCard(card: AboutCardApiResponse): AboutCard {
 /**
  * Implémentation HTTP de AboutContentRepository. Endpoint public (GET
  * /api/about/{locale}, cf. App\Portfolio\About, aucune restriction dans
- * access_control côté backend) : pas de `credentials: 'include'` nécessaire.
+ * access_control côté backend).
+ *
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpAboutContentRepository implements AboutContentRepository {
   private readonly apiBaseUrl: string

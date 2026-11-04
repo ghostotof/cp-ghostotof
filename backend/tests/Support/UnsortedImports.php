@@ -73,10 +73,12 @@ final class UnsortedImports
             $token = $tokens[$index];
             if (PhpSources::opensBrace($token)) {
                 ++$depth;
-            } elseif ('}' === $token->text) {
+            } elseif (PhpSources::closesBrace($token)) {
                 --$depth;
             }
-            if (0 !== $depth || !$token->is(\T_USE) || '(' === ($tokens[$index + 1] ?? null)?->text) {
+            $next = $tokens[$index + 1] ?? null;
+            // `use (` : la capture d'une fonction anonyme, lue par l'identifiant du `(` comme le reste du fichier.
+            if (0 !== $depth || !$token->is(\T_USE) || (null !== $next && PhpSources::isChar($next, '('))) {
                 continue;
             }
 

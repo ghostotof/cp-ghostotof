@@ -6,6 +6,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import type { AboutContentRepository } from '../../../src/domain/about/repositories/AboutContentRepository'
 import type { AboutContent } from '../../../src/domain/portfolio/entities/AboutContent'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const STUB_ABOUT_CONTENT: AboutContent = {
   site: {
@@ -115,7 +116,7 @@ describe('AboutPage', () => {
     })
 
     expect(wrapper.find('h1').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Chargement')
+    expect(wrapper.text()).toContain(fr.about.loading)
   })
 
   it('affiche un message d\'erreur générique si la récupération du contenu échoue', async () => {

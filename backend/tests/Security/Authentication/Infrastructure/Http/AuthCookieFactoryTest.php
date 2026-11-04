@@ -8,6 +8,7 @@ use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\UnknownAuthCookieException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Symfony\Component\HttpFoundation\Cookie;
 
 /**
@@ -78,13 +79,25 @@ final class AuthCookieFactoryTest extends TestCase
         self::assertSame(0, $factory->xsrf('csrf')->getExpiresTime());
     }
 
-    public function testExpiryIsHonoured(): void
+    /**
+     * F1 (#748, St3-3) : aucun cookie persistant ne peut être demandé à la fabrique. Un paramètre
+     * d'échéance « pour un appelant futur » invitait à en poser un — et un `XSRF-TOKEN` persistant
+     * survivant à un `BEARER` de session, ou l'inverse, est exactement le 403 en boucle que F1 a
+     * supprimé. Seul `expired()` date un cookie, par le privé `create()`.
+     */
+    #[DataProvider('provideIssuingMethods')]
+    public function testNeitherCookieTakesAnExpiry(string $method): void
     {
-        $factory = new AuthCookieFactory('test');
-        $expiresAt = time() + 900;
+        self::assertSame(1, new ReflectionMethod(AuthCookieFactory::class, $method)->getNumberOfParameters());
+    }
 
-        self::assertSame($expiresAt, $factory->bearer('jwt', $expiresAt)->getExpiresTime());
-        self::assertSame($expiresAt, $factory->xsrf('csrf', $expiresAt)->getExpiresTime());
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function provideIssuingMethods(): iterable
+    {
+        yield 'bearer' => ['bearer'];
+        yield 'xsrf' => ['xsrf'];
     }
 
     /**

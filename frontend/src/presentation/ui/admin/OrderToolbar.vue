@@ -39,6 +39,9 @@ const saveDisabled = computed(() => !props.isDirty || props.isSaving)
 // « Annuler » reste actif tant qu'une erreur est posée (#170 F4) : après un
 // 422 obsolète, `useOrderDraft` a resynchronisé le brouillon — plus
 // « modifié » — mais l'alerte, elle, ne s'efface que par `reset()`.
+//
+// Une session finie (#748) n'arrive jamais ici : `useOrderDraft` ne pose aucune raison pour elle, le bandeau de
+// la page l'annonce seul, et le brouillon reste actif pour être rejoué après la reconnexion.
 const cancelDisabled = computed(() => (!props.isDirty && null === props.errorReason) || props.isSaving)
 
 const announcement = computed(() =>
@@ -69,7 +72,7 @@ const announcement = computed(() =>
     <p
       v-if="errorReason"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ t(`admin.order.errors.${errorReason}`) }}
     </p>

@@ -25,12 +25,26 @@ import IconChevronDown from '~icons/lucide/chevron-down'
  * n'importe quelle suite de liens, sans `aria-haspopup`.
  *
  * Fermeture : un second clic sur le bouton, Échap (le focus revient alors au
- * bouton, pour que la tabulation reprenne là où la personne était), un clic en
- * dehors (le focus reste où elle l'a mis), une navigation quelle qu'en soit
- * l'origine, et le choix d'une entrée — y compris le lien vers la page où l'on
- * est déjà, qui ne navigue pas. Pas de fermeture à la sortie du focus : Safari
- * ne donne pas le focus à un bouton cliqué, un `focusout` fermerait la liste
- * avant que le clic n'arrive.
+ * bouton **s'il était dans le menu, ou si personne ne le détenait** — `body`, ce
+ * qu'est l'élément actif sous Safari après une ouverture à la souris, #748 —, pour
+ * que la tabulation reprenne là où la personne était ; s'il était ailleurs, un
+ * autre menu de l'en-tête par exemple, le menu se ferme sans lui voler le focus,
+ * #748. **« Personne » ne vaut que si aucun focus n'est parti ailleurs depuis
+ * l'ouverture** (G, R19) : un élément focalisé ailleurs puis retiré du DOM — un
+ * menu « Contenu » refermé — laisse aussi `body`, et le bouton ne doit pas le
+ * prendre ; le menu retient donc par `focusin` si le focus est allé hors de lui),
+ * un clic en dehors (le focus
+ * reste où elle l'a mis), une navigation quelle qu'en soit l'origine, le choix
+ * d'une entrée — y compris le lien vers la page où l'on est déjà, qui ne navigue
+ * pas — et la sortie du focus **quand la cible reçoit le focus et se trouve hors
+ * du menu** (Tab ou Maj+Tab au-delà de la liste, #748).
+ *
+ * Limite acceptée de cette dernière : on ne ferme **que si `relatedTarget` est
+ * non nul**. Safari ne donne pas le focus à un bouton cliqué, `relatedTarget` y
+ * est nul, et fermer à tout `focusout` ferait disparaître la liste avant que le
+ * clic n'arrive. Sous Safari, le focus qui part sans cible (clic sur une zone
+ * sans élément focalisable) laisse donc le menu ouvert ; le clic en dehors, lui,
+ * le ferme déjà.
  *
  * Le composant ne connaît ni l'authentification ni le téléchargement du CV : il
  * affiche des entrées et émet `logout` / `downloadCv`, que `AppHeader` branche.
@@ -69,10 +83,45 @@ function onDocumentClick(event: MouseEvent): void {
   }
 }
 
+/**
+ * Vrai si un élément hors du menu a reçu le focus depuis son ouverture (G, R19). Sans cela, `body` comme élément
+ * actif est ambigu : « personne n'a rien focalisé » (Safari après un clic à la souris, le focus doit revenir au
+ * bouton) ou « l'élément focalisé ailleurs vient d'être retiré » (le focus ne doit pas lui être volé).
+ */
+let focusWentElsewhere = false
+
+function onDocumentFocusin(event: FocusEvent): void {
+  if (isOpen.value && !(container.value?.contains(event.target as Node) ?? false)) {
+    focusWentElsewhere = true
+  }
+}
+
 function onDocumentKeydown(event: KeyboardEvent): void {
   if ('Escape' === event.key && isOpen.value) {
+    // Lu avant la fermeture : le focus n'est rendu au bouton que s'il était dans le menu, ou si personne ne le
+    // détenait. Un autre menu de l'en-tête peut le détenir pendant que celui-ci est resté ouvert, et le lui prendre
+    // serait voler le focus (#748, constat 12). `body` (ou `null`) n'est le focus de personne : c'est l'état de
+    // Safari après une ouverture à la souris, qui ne focalise pas un bouton cliqué (#748, CR8) — sauf si un focus
+    // est parti ailleurs depuis l'ouverture, puis a disparu avec son élément (G, R19).
+    const active = document.activeElement
+    const focusWasFree = (null === active || document.body === active) && !focusWentElsewhere
+    const focusWasInside = focusWasFree || (container.value?.contains(active) ?? false)
     close()
-    toggle.value?.focus()
+    if (focusWasInside) {
+      toggle.value?.focus()
+    }
+  }
+}
+
+/**
+ * Ferme le menu quand le focus part vers un élément hors du composant (#748,
+ * constat 13). `relatedTarget` nul (Safari, clic sans cible focalisable) ne ferme
+ * pas : voir le docblock du composant.
+ */
+function onFocusOut(event: FocusEvent): void {
+  const next = event.relatedTarget
+  if (isOpen.value && next instanceof Node && !container.value?.contains(next)) {
+    close()
   }
 }
 
@@ -93,6 +142,21 @@ watch(
   () => close(),
 )
 
+// L'écouteur n'existe que pendant l'ouverture (retiré à la fermeture et au démontage) ; le repère repart à faux à
+// chaque ouverture et à chaque fermeture : un focus parti ailleurs avant l'ouverture n'est pas celui de celle-ci.
+watch(
+  isOpen,
+  (open) => {
+    focusWentElsewhere = false
+    if (open) {
+      document.addEventListener('focusin', onDocumentFocusin)
+    } else {
+      document.removeEventListener('focusin', onDocumentFocusin)
+    }
+  },
+  { flush: 'sync' },
+)
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKeydown)
@@ -101,6 +165,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onDocumentKeydown)
+  document.removeEventListener('focusin', onDocumentFocusin)
 })
 </script>
 
@@ -108,6 +173,7 @@ onBeforeUnmount(() => {
   <div
     ref="container"
     class="account-menu-root"
+    @focusout="onFocusOut"
   >
     <button
       ref="toggle"
@@ -139,6 +205,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/assistant`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('nav.assistant') }}
@@ -148,6 +215,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/admin`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('common.administration') }}
@@ -167,6 +235,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/mcp-connections`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('nav.mcpConnections') }}

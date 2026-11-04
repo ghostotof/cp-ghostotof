@@ -1,8 +1,7 @@
 import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { Incident } from '../../domain/incidents/entities/Incident'
 import type { IncidentRepository } from '../../domain/incidents/repositories/IncidentRepository'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../shared/useCurrentLocale'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const INCIDENT_REPOSITORY: InjectionKey<IncidentRepository> = Symbol('IncidentRepository')
@@ -24,7 +23,7 @@ export function useIncidents(): UseIncidentsResult {
     )
   }
 
-  const { locale } = useI18n()
+  const currentLocale = useCurrentLocale()
   const incidents = ref<readonly Incident[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
@@ -36,7 +35,7 @@ export function useIncidents(): UseIncidentsResult {
     hasError.value = false
 
     try {
-      const loaded = await repository.list(locale.value as Locale)
+      const loaded = await repository.list(currentLocale.value)
       if (!requestGuard.isCurrent(token)) return
       incidents.value = loaded
     } catch {
@@ -46,7 +45,7 @@ export function useIncidents(): UseIncidentsResult {
     }
   }
 
-  watch(locale, load, { immediate: true })
+  watch(currentLocale, load, { immediate: true })
 
   return { incidents, isLoading, hasError }
 }

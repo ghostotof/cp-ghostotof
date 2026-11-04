@@ -12,12 +12,10 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
- * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
- * MisqualifiedNativeCalls, AnonymousClassesAndFreeFunctions) : quels fichiers
- * ils lisent, quels jetons ils ignorent, et lesquels ouvrent une déclaration
- * de classe. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre
- * que son voisin.
+ * Ce que les recenseurs par jetons ont en commun : quels fichiers ils lisent,
+ * quels jetons ils ignorent, et lesquels ouvrent une déclaration de classe.
+ * Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que son
+ * voisin.
  */
 final class PhpSources
 {
@@ -78,11 +76,95 @@ final class PhpSources
     }
 
     /**
-     * Un jeton qui ouvre une accolade, que `}` refermera. `"{$a}"` l'ouvre par
-     * T_CURLY_OPEN, dont le texte est `{`, et `"${a}"` par `${`.
+     * Un jeton qui ouvre une accolade, que {@see self::closesBrace()} refermera :
+     * l'accolade du code (identifiant `{`), `"{$a}"` par T_CURLY_OPEN et `"${a}"`
+     * par `${`. Lu par l'identifiant, jamais par le texte : le fragment d'une
+     * chaîne interpolée (T_ENCAPSED_AND_WHITESPACE) peut avoir le texte `{`, et
+     * `"$x{"` ou `"{\"id\":$id}"` n'ouvrent rien (issue #748, C15-2).
      */
     public static function opensBrace(PhpToken $token): bool
     {
-        return '{' === $token->text || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES);
+        return self::isChar($token, '{') || \T_CURLY_OPEN === $token->id || \T_DOLLAR_OPEN_CURLY_BRACES === $token->id;
+    }
+
+    /**
+     * Un jeton qui ferme une accolade ouverte par {@see self::opensBrace()} : le
+     * `}` du code, jamais le fragment `}` d'une chaîne interpolée
+     * (`"$x}"`, `"{\"id\":$id}"`, `"\{$a}"`), dont le texte seul est le même.
+     */
+    public static function closesBrace(PhpToken $token): bool
+    {
+        return self::isChar($token, '}');
+    }
+
+    /**
+     * Le jeton ouvre-t-il un niveau d'imbrication : `(`, `[` ou une accolade
+     * ({@see self::opensBrace()}) ? Lu par l'identifiant : le fragment `(` d'une
+     * chaîne interpolée n'en ouvre aucun.
+     */
+    public static function opensALevel(PhpToken $token): bool
+    {
+        return self::isAnyChar($token, '(', '[') || self::opensBrace($token);
+    }
+
+    /** Le jeton ferme-t-il un niveau ouvert par {@see self::opensALevel()} : `)`, `]` ou `}` du code ? */
+    public static function closesALevel(PhpToken $token): bool
+    {
+        return self::isAnyChar($token, ')', ']') || self::closesBrace($token);
+    }
+
+    /**
+     * Le jeton est-il ce caractère du code (`(`, `)`, `[`, `]`, `,`, `;`, `$`…) ?
+     * Lu par l'identifiant, que seul le jeton d'un caractère du code porte :
+     * `PhpToken::is('(')` compare le texte, que le fragment `(` d'une chaîne
+     * interpolée (`"$x("`) a aussi. Pas pour `&` : depuis PHP 8.1 il a deux
+     * identifiants propres (`T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG` et
+     * `T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG`), jamais le sien.
+     *
+     * @param non-empty-string $char un seul caractère, jugé avant la lecture
+     *
+     * @throws NotASingleCharacterException si l'argument fait plus d'un octet, quel que soit `zend.assertions`
+     */
+    public static function isChar(PhpToken $token, string $char): bool
+    {
+        self::requireASingleCharacter($char);
+
+        return self::hasCharIdentifier($token, $char);
+    }
+
+    /**
+     * Le jeton est-il l'un de ces caractères du code ? Lu par l'identifiant,
+     * comme {@see self::isChar()}, au même contrat : chaque argument est jugé
+     * avant la lecture, une seule fois, y compris ceux qu'`array_any`
+     * n'atteindrait pas après une correspondance.
+     *
+     * @param non-empty-string ...$chars un seul caractère chacun
+     *
+     * @throws NotASingleCharacterException si l'un d'eux fait plus d'un octet
+     */
+    public static function isAnyChar(PhpToken $token, string ...$chars): bool
+    {
+        foreach ($chars as $char) {
+            self::requireASingleCharacter($char);
+        }
+
+        return array_any($chars, static fn (string $char): bool => self::hasCharIdentifier($token, $char));
+    }
+
+    /** L'identifiant du jeton est-il celui de ce caractère, déjà jugé d'un seul octet ? */
+    private static function hasCharIdentifier(PhpToken $token, string $char): bool
+    {
+        return \ord($char[0]) === $token->id;
+    }
+
+    /**
+     * Une exception, non un `\assert()` : `zend.assertions=-1` (le
+     * `php.ini-production` de la CI) retirerait la vérification du code.
+     */
+    private static function requireASingleCharacter(string $char): void
+    {
+        if (1 !== \strlen($char)) {
+            throw NotASingleCharacterException::forArgument($char);
+        }
     }
 }

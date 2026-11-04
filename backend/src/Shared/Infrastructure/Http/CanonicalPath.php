@@ -62,11 +62,26 @@ final class CanonicalPath
      */
     public static function isUnder(Request $request, string $prefix): bool
     {
+        return self::isPathUnder(self::of($request), $prefix);
+    }
+
+    /**
+     * La même règle d'ancrage sur un chemin déjà canonique (`of()`, ou un chemin de route tel que le routeur le
+     * déclare) : pour les tests qui parcourent le routeur et n'ont pas de requête. Rien n'est décodé ici.
+     * Hors des tests, une requête passe par `isUnder()` (le chemin décodé par `of()`) ; `PathIsDecidedCanonicallyTest`
+     * le tient : aucun fichier de `src/` hors de cette classe n'appelle `isPathUnder()` ni `getPathInfo()`.
+     *
+     * @param string $path   chemin absolu, déjà décodé
+     * @param string $prefix chemin absolu, sans `/` final (`/api/assistant`)
+     *
+     * @throws MalformedPathPrefixException sur un préfixe vide, relatif ou
+     *                                      terminé par `/`
+     */
+    public static function isPathUnder(string $path, string $prefix): bool
+    {
         if (!str_starts_with($prefix, '/') || str_ends_with($prefix, '/')) {
             throw MalformedPathPrefixException::forPrefix($prefix);
         }
-
-        $path = self::of($request);
 
         return $prefix === $path || str_starts_with($path, $prefix.'/');
     }

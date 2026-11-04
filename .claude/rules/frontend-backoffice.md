@@ -9,7 +9,12 @@ paths:
   - "frontend/tests/infrastructure/admin/shared/BackofficeHttpClient.spec.ts"
   - "frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts"
   - "frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts"
+  - "frontend/tests/presentation/layout/usePublishedHeight.spec.ts"
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
+  - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
+  - "frontend/tests/application/admin/sessionEndedLoad.spec.ts"
+  - "frontend/tests/presentation/pages/admin/emptyStateNeedsLoaded.spec.ts"
+  - "frontend/tests/presentation/pages/admin/translatedFormDeclarationOrder.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -21,8 +26,10 @@ paths:
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `anonymousCv`,
-`caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
+Existing resources: `technologies`, `quality` (principles + traits, one generic section instantiated twice,
+`AdminQualityEntrySection`, which `AdminQualityPage` gives each content's fields (`qualityEntrySection.ts`), labels and texts, under a
+page that keeps the shared order lock, as `about` does), `contributions`, `incidents`,
+`anonymousCv`, `caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
 form: no client or employer name — no filter does it for you), `about` (settings + site cards +
 me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
@@ -70,7 +77,8 @@ status announcement) that a fork would silently lose:
   `.claude/rules/portfolio-ordre-ecritures.md`): `unknown-order-entry` (a key the server no longer
   knows, an entry deleted since the load) and `incomplete-order` (a key missing, an entry created
   since), listed once in `STALE_ORDER_PROBLEM_TYPES` and matched on the problem+json `type` by
-  `hasProblemType`, never on the localized `detail`. Every ordered repository reads a 422 carrying
+  `hasProblemType` (which lives in `infrastructure/http/problemJson.ts` with `ApiProblemBody`, shared with the MCP
+  repositories), never on the localized `detail`. Every ordered repository reads a 422 carrying
   either as `AdminOrderError('stale-order')`, anything else as `unknown`. A slug renamed on the backend
   is renamed here in the same change: otherwise a concurrent edit reads as a failed save that the
   admin retries in vain instead of a reload.
@@ -100,7 +108,8 @@ status announcement) that a fork would silently lose:
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
   `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
-  in its own spec with `enableAutoUnmount` (a page left mounted keeps its listener); a page calls it,
+  in its own spec (unmounted by the global `enableAutoUnmount` of
+  `tests/support/setup.ts`; a page left mounted keeps its listener); a page calls it,
   never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
@@ -108,24 +117,32 @@ status announcement) that a fork would silently lose:
 - **What a `PUT` cannot change is disabled in edit, not hidden**: the locale of every per-entry form
   (#170 R2; the server refuses another one with a 409 of type `locale-immutable` since #582, which no
   repository maps — nothing in the UI can send it, so it would read as `translation-already-exists`) and
-  the **category of a me-card**
-  (issue #578). The category used to stay active: changing it emptied « Version de » (the
+  the **category of a me-card** (issue #578). The category used to stay active: changing it emptied « Version de » (the
   `flush: 'sync'` watcher, meant for creation), the `PUT` left with `translationGroup: null`, and the
   server, which ignored the category, detached the card from its translation and sent it to the end of
-  its category, under a 200. It is now `:disabled="isEditing"`, with a visible hint
-  (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
-  referenced by `aria-describedby` **only while editing** — the hint is not rendered otherwise, and an
-  IDREF to a missing element is an a11y fault. The server refuses another category with a 409 of type
+  its category, under a 200. It is now disabled in editing (and, since R79b, while the form holds a translation
+  proposal), with a visible hint (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
+  referenced by `aria-describedby` **only while the lock holds** (editing; during a translation proposal the
+  category is described by the form's proposal text instead, R93) — the hint is not rendered otherwise, and an IDREF to a missing element
+  is an a11y fault. The server refuses another category with a 409 of type
   `me-card-category-immutable` (`.claude/rules/portfolio-ordre-ecritures.md`), which
   `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
   other 409 of the cards staying `translation-already-exists`; only a SPA cached from before #578 can
   still send that body. `AdminAboutPage.spec.ts` pins the gesture (red before: `category: 'hobby'`,
   `translationGroup: null`), the release on « Annuler » and the message;
   `HttpAdminAboutMeCardRepository.spec.ts` the mapping.
-- **A locale selector that has a help text references it** (#582): the text is always rendered, so a
-  static `aria-describedby="<select id>-help"` on the selector and that `id` on the text — About's
-  settings, site and me cards, Quality's principles and traits; `AdminAboutPage.spec.ts` and
-  `AdminQualityPage.spec.ts` pin it.
+- **A locale selector says why it is locked, and the help it always has** (#582; #748, R79b D-a, R92): About's settings
+  selector (`AdminAboutPage.vue`) carries a static `aria-describedby` to its always-rendered help; the per-entry forms
+  (site and me cards, Quality's principles and traits, which also always render a help, and the four others) bind it.
+  Every per-entry form's lock goes through `presentation/ui/admin/useEntryFormLock.ts` (`state`:
+  `'none' | 'editing' | 'proposal'`), whose `EntryFormLockHint.vue` text is rendered **only during the lock** and referenced by
+  `aria-describedby` only then, after the permanent help when there is one (`localeDescribedBy`: one or two ids); one
+  text per state. A proposal is born of an edit, of « Créer la version XX » or of a blank form, and the language lock
+  holds in the three (the proposed prose is in the target language). `tests/support/entryFormLock.ts`
+  (`describedTexts()`, `describeEntryFormLock()`) reads the texts an `aria-describedby` designates, fails on a dangling
+  IDREF and runs the lock cases on each form (it creates each case's translation repository and counts its
+  calls); `AdminAboutPage.spec.ts` and `AdminQualityPage.spec.ts` pin the
+  permanent help.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories
@@ -159,29 +176,126 @@ status announcement) that a fork would silently lose:
   through « aucune »; it turns red if `startEdit` looks for a sibling in the form's category only, which would
   make a text edit detach the card.
 
-**Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
-(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
-→ `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
-→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and
-exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
-`proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
-`applyTranslationProposal` leaves a field absent from the proposal untouched) → `presentation/ui/admin/
-TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
-**Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the proposal. Since spec 0004 every per-entry form (Incidents, Contributions, CV sans identité,
-Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
-the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
-entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
-value, so a lone source still attaches its proposal) so saving the proposed version links it with no
-extra gesture, and a `role="status"` banner names the proposal's source locale. The old "page-locale"
-semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
-the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
-return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
-would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
-not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
-through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
-closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
-version" copies nothing and the assistant sends all five fields.
+The translation assistant (ADR 0004 phase 1, spec 0002) is one more admin slice, `domain/admin/translation`
+(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`) →
+`infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`) →
+`application/admin/translation/useAdminTranslation.ts` (`translate(…, accept)` hands the proposal to `accept`, called
+synchronously in the very checkpoint that judges the response current, and returns whether it was accepted; it exposes
+`errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
+`application/admin/translation/proseFieldCopy.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
+`applyTranslationProposal` leaves a field absent from the proposal untouched) →
+`presentation/ui/admin/TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits
+`translate`) and, per form, `presentation/ui/admin/useTranslatedForm.ts`, which wraps `useAdminTranslation` and writes once
+what every form shares. Each page alone decides which of its fields are prose (spec D2 — the backend is content-agnostic)
+and what to do with the proposal.
+
+- `useTranslatedForm({ hintIdPrefix, form, proseFields, identity, isRefused })` (`form` is the reactive object itself, so the page
+  declares it **before** the call: `vue-tsc` refuses a use before its declaration, TS2448, which a getter would not show) returns
+  `hasProse`, `translationErrorText` (`admin.translation.errors.<reason>`), `requestProposal(target, accept)`,
+  `proposeFrom(target, switchForm)`, `removeEntry(entry, remove)`, `renewForm()`, `proseFieldAttrs()`, the two hint ids and what
+  `useAdminTranslation` exposes bar `expire` and `translate` (R153, D4 of the thirteenth review). Whatever `isRefused` and
+  `identity` read, the order draft (`rows`, `useOrderDraft`) above all, is declared before the call too: their closures hide a
+  later declaration from the compiler, so that order is an order a source guard checks (R189b, `translatedFormDeclarationOrder.spec.ts`:
+  every file of `presentation/pages/admin` that calls `useTranslatedForm`, the constants those two options read and, step by step, the
+  ones their initialisers read). The page keeps its form and its gestures
+  (`startEdit`, `startCreateVersion`, the save), the `window.confirm` of a delete and the template block — `TranslateEntryButton`,
+  `TranslationReadonlyHint`, the error alert —, which each form component writes because each of its bindings carries a value of
+  the form (the form's locale, the lock's help, its `describedBy`); the generic section of Quality writes it once for its two
+  instances, its bindings reading its props (R190). A form new to the assistant writes its list of prose fields
+  (`proseFields.ts`), its state (`useEntryFormState()` of `presentation/ui/admin/entryFormState.ts`: `editingId`, `isSubmitting`,
+  `sourceGroup`, `proposalSourceLocale`, one object kept whole for the switch and destructured **before** the `useTranslatedForm`
+  call, whose options read it), its `identity`, its `isRefused` terms, its `switchForm`
+  (`switchToProposedCreation(state, form, target)` of `presentation/ui/admin/proposedCreation.ts`, written once: it empties
+  `editingId`, sets the target locale, the source's group and `proposalSourceLocale`), its template block and its
+  `EntryFormLockCase` (`tests/support/entryFormLock.ts`); the About settings, whose proposal is deferred, read `hasProse` and
+  `translationErrorText` and call `requestProposal` themselves.
+  A form's `locale` is never set from an entry with `as Locale`, and `startEdit` carries no guard (#748, R214, D2): the entities of
+  the backoffice and their `…Input` hold `locale: Locale`, and the repository judges the language of every response at the border,
+  `supportedLocaleOf(value, unsupportedLocaleError)` (`infrastructure/admin/shared/supportedLocale.ts`) in its `toEntity`, where
+  `unsupportedLocaleError(): Admin…Error` is the repository's own function (its context's error, reason `unknown`, message
+  `UNSUPPORTED_LOCALE_MESSAGE`, written once in that module). A language the site does not carry (the backend only emits `fr` and
+  `en`) raises that error on a list as on a write response: the page shows its usual loading or saving error, no form opens in
+  another language, and no translation key is needed. The me-card **category** is judged the same way
+  (`isAdminAboutMeCardCategory`, next to `ME_CARD_CATEGORIES`; #748, R229): a value outside the three raises
+  `AdminAboutError('unknown', …)`, never an `as AdminAboutMeCardCategory`. Accepted (Q1 (A) of the seventeenth review): one faulty
+  entry fails the whole list, and a refused write response arrives after the server wrote, so the person who tries again creates
+  a duplicate, which they remove by hand. A new repository of a localized content calls `supportedLocaleOf` in `toEntity`, and a
+  closed field of a response (a category, a kind) is judged by a guard, never converted by `as`.
+- `proposeFrom` sends the prose, then calls the page's `switchForm(source)` before it replaces it; the proposal is applied
+  inside the call that judges it current, never a micro-task later (R172), so a reset or a deletion resolved at the same
+  checkpoint as the response cannot slip between the judgment and the application. An exception of `accept` (of `switchForm`)
+  is no translation failure: it rises to the page's `@translate` handler, whose rejection Vue hands to `app.config.errorHandler`
+  (measured, `useTranslatedForm.spec.ts`, R187), so no rejection goes unhandled and `isTranslating` falls; the form may stay
+  half switched, an accepted limit: a programming fault, which the error handler makes visible. Since spec 0004 every
+  per-entry form (Incidents, Contributions, CV sans identité, Quality principles/traits, About site/me cards) behaves the
+  same way: the form switches to *creation* in the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…)
+  are kept, **the source entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
+  value, so a lone source still attaches its proposal) so saving the proposed version links it with no extra gesture, and a
+  `role="status"` banner names the proposal's source locale; while the form holds the proposal its locale selector is locked,
+  as in editing (R78, R79, Sp7-1: the kept group would make a second version of the source locale). « Proposer la version XX »
+  (R93), « Version de » (R94) and the me-card **category** selector (R79b, D-b) are locked too. One text,
+  `admin.entryLock.proposal`, describes them all: « Annuler » drops the proposal and empties the form (R93, CR8-4). Why each
+  one: a second translation took the form back to the source locale, group kept (decision 1 of the eighth review); « aucune »
+  would detach the proposal from its source (decision 3); a version in the other language does not change category
+  (#501/#561), and « Créer la version XX » keeps the category free, by decision.
+- The refusal is written once. `useAdminTranslation` refuses the call itself, not only the disabled button, whenever that
+  button is disabled and while a call is in flight. The page gives it the `isRefused` option, one term per condition: a save
+  in flight, a dirty order draft or the page's order lock, the form's proposal lock (for the About settings, a proposal
+  shown, R127, R127b); each Quality section and each About card section reads its own order draft at once (the me-card section
+  its three) and the others' through `isLocked`, up to date only after the section's `emit` and the page's render — a
+  one-micro-task limit no gesture crosses (R173, R173b); the composable adds the absence of prose (`hasProse`). The button's
+  `:disabled` reads the `isRefused` the composable exposes (R137), never a copy of the predicate.
+- A response is expired when its form changed. The form's identity is `FormIdentity` (`application/admin/translation/`, an
+  interface state the domain does not carry, R154): the entry, the locale, the source group and the form's generation,
+  compared field by field by `sameFormIdentity`, never the prose. A response whose form no longer has the identity read at
+  send time is expired, whatever gesture replaced it and even if the form later regains that identity (R124). Every gesture
+  that fills or empties the form (a reset, « Modifier », « Créer la version XX ») advances its generation, `renewForm()` of
+  `useTranslatedForm`, called first by each `resetForm`, `startEdit` and `startCreateVersion` (R139, decision 1 of the
+  twelfth review; R152, D1 of the thirteenth): a blank form saved during a translation, or a « Modifier » or a
+  « Créer la version XX » clicked again on the same entry or line, keeps its entry, locale and group, and only the
+  generation tells it from the form the call left. What no identity sees, a deletion, goes through `removeEntry(entry, remove)` of
+  `useTranslatedForm` (the entry being edited, or the source of a creation attached to its group, R124, R140), which expires
+  the translation first and then awaits `remove`: a refused deletion still expires the
+  translation (accepted, D7 of the thirteenth review: expiring after the success would let an answer that arrived during the
+  `DELETE` land on a deleted entry); deleting another member of the edited entry's group changes nothing.
+- One model call in flight per mounted form: an expired call still running refuses the next one (`isExpiredCallPending`, R125,
+  decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened,
+  or a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a
+  text referenced by `aria-describedby` only while it waits, `admin.translation.expiredCallPending`. « Expire » is the word for
+  a translation made stale (`expire`, the expiry of `removeEntry`); « discard » names only the settings' dropped proposal (R154, Q7).
+- While a translation runs, the form's prose fields are `readonly` (not `disabled`: readable and focusable), each described
+  by `admin.translation.proseReadonly` (`TranslationReadonlyHint`), rendered only then — `useTranslatedForm` writes that once
+  (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one `hintIdPrefix`), the field lists
+  living in `presentation/pages/admin/proseFields.ts`, read by the page, which hands its list to `useTranslatedForm` (for
+  Quality, `qualityEntrySection.ts` derives each field's `prose` from it), and by its spec (the spec derives each field's id with
+  `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the templates write the ids literally, no production code
+  reads it, bar Quality's generic section, which builds `admin-quality-<kind>-<field in kebab>` itself): the answer replaces
+  prose nobody could change meanwhile, which is why the prose is out of `formIdentity` and a failed translation's message (429,
+  503) survives typing, cleared by any change of identity or the next translation, never brought back by a return to it (R126,
+  R139, decision 3 of the eleventh review). A proposal whose target locale the group already has (from « Créer la version XX »,
+  or from an entry whose group has both) ends on the server's 409 `translation-already-exists` at save, « Annuler » being the
+  way out (accepted, Q1 of the eighth review: detecting it would copy the server's uniqueness rule, as #573 refused). The old
+  "page-locale" semantics is gone with the page-level selector (one locale per form, see above).
+- About *settings* is the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on
+  the return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
+  overwrite it), dropped as soon as the language asked for is not its target — shown by the page (the `watch`) or chosen by
+  the person on the selector (`AdminAboutPage`'s `chooseLocale`, which calls the form's exposed `dropPendingProposalNotFor`,
+  so a FR → EN → FR played before the render, which the form never sees, drops it too, R187b, the author's decision), the
+  only way out after a read of the target that failed or was refused (no page of the backoffice has a « Réessayer », so a
+  change of language is the only road to a new load) — and kept through an ended session, which runs the read again on
+  return and applies it then (R157, D6 of the thirteenth review; R157b, the author's decision: no guard on the end of a read).
+  The button is disabled while an order draft is dirty (a proposal the locked form could not save would burn
+  quota for nothing) and, for the settings, while a proposal is shown (a second translation would replace it with no
+  « Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
+  (`admin.about.settings.proposalDiscard`, R127c, R141): a `type="button"` shown only during the proposal, no confirmation,
+  that drops it and re-reads the shown language's form (saved values back, focus to the first field, not announced like the
+  per-entry « Annuler »); any arrival of settings drops the proposal, whatever its language — invisible, the notice being
+  under its target only and the return to it re-reading its settings (R141b, the author's decision revising decision 2 of the
+  ninth review).
+
+Never use `v-html` on text coming back from the model: it goes through the form fields, then `RichText.vue`. The case-studies
+admin page (`/admin/case-studies`, issue #104, closed 2026-09-14) is wired exactly like the CV sans identité one — every
+field is prose, so "Create the XX version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
@@ -198,38 +312,76 @@ version" copies nothing and the assistant sends all five fields.
   wrongly redirect an actually-authenticated user to `/login` (regression-tested in
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
-- **A 401 mid-page ends the session on the interface, and moves nobody** (#650, R1c, then S2 of the second review): the
-  route guard plays at navigation only, it never sees a session that dies while a page is open (the JWT expiring, or
-  a password change cutting every session opened before it, `.claude/rules/security-authentication-sessions.md`).
-  So `BackofficeHttpClient` (`get` and `mutate`) calls, on any 401, a reaction registered once through
-  `setBackofficeUnauthorizedHandler()` and returns the response as it came — repositories keep their own mapping,
-  **none repeats the reaction**. `main.ts` registers `onBackofficeUnauthorized`
-  (`presentation/router/backofficeSessionExpiry.ts`), which is `markSessionExpired()` and nothing else: **no
-  `router.replace`** (R1c's navigation unmounted the page at the very click of « Enregistrer », and a case study written
-  for more than an hour — the JWT's lifetime — was lost with it). It is idempotent, a state and not an event: several
-  lists of a page answering 401 together need no de-duplication. The state is `sessionEnded` in `useAuth`'s shared
-  state (`hasSessionEnded`), **raised** by `markSessionExpired()` (the header also turns anonymous) and **lowered when a
-  session of an account is applied** (login, a `/api/me` re-read that finds one); a re-read still anonymous or base
-  does not lower it. `presentation/ui/admin/SessionEndedBanner.vue`, rendered **once** by `AdminLayout` above the
-  `RouterView`, shows « Votre session a pris fin » while it holds: a `role="alert"` **inserted by `v-if`** (announced;
-  see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), and a
-  « Se reconnecter » link to `login?redirect=<current fullPath>&expired=1` with `target="_blank" rel="noopener"` and the
-  opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5): in the same tab
-  the typed text would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the
-  page. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
-  account found clears the banner and « Enregistrer » works again (the CSRF token is read from the cookie at each call);
-  a network failure leaves the banner. **The route guard still redirects to `login` at the next navigation** — the
-  input is saved or abandoned by then. `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an
-  announcement that opens nothing) makes `LoginPage` say why it opened. The registry lives in the module, so
-  `infrastructure/` imports neither the session nor the router. **A new administration client goes through
-  `BackofficeHttpClient`**, or reproduces that wiring. **The 403 keeps its meaning** (not authorized, CSRF refused): no
-  repository reads it as a finished session, it stays the repository's error. The `Mcp` repositories
-  (`HttpMcpConnectionsRepository`, `HttpOAuthConsentRepository`) have their own `fetch` and mark the session expired in
-  their composable without redirecting (the page shows the error, `.claude/rules/frontend.md`). No dedicated « your
-  password changed » message: Lexik's 401 body carries `{code, message}` and no stable `type`, and reading the text
-  would be fragile. `BackofficeHttpClient.spec.ts` (401 on read and write, 200/204/403/404/409/422/500 with no reaction,
-  no handler registered), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
-  no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link, the re-read on
-  `focus`), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
-  is reintroduced), `useAuth.spec.ts`.
+- **No `requiresAuth` route carries a secret in its query or its fragment** (#748, R6, S6). When a session ends on a
+  protected page, the sign-in-again link (`SignInAgainLink`, `.claude/rules/frontend-session.md`) opens a new tab whose URL
+  holds `redirect=<the page's fullPath>`: that path, query and fragment included, reaches the frontend's web server (nginx
+  logs the request line) and the browser history. A protected route whose query or fragment held a secret (an invitation
+  token, a code, a key) would send it there. The guard is `tests/presentation/router/protectedRoutesCarryNoSecret.spec.ts`:
+  `REVIEWED_PROTECTED_ROUTES` names every `requiresAuth` route (the router's, read-only, merged `meta` of the parent
+  included, so the `admin-*` children) with the reason its query and fragment carry no secret; a route added without that
+  review turns the suite red, and the message says why. `oauth-consent` is the one whose query matters (`client_id`,
+  `redirect_uri`, `state`, `code_challenge`): none is a secret (the PKCE challenge is a digest, `state` the client's own
+  anti-CSRF value) and the navigation that opened the page already sent them to the web server. `set-password`, whose
+  fragment holds the invitation token, is **not** protected (see above), and the same spec pins that: giving it
+  `requiresAuth` would put its token in a logged URL.
+- **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
+  nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
+  `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`
+  (`setBackofficeSessionReaction()`: `markSessionExpired(sentAt.session)`, judged by session generation, and no navigation) and **raises
+  `SessionEndedError`** (or, for a response sent before the session was restored, hands it back as an ordinary failure, #748 R14): no
+  repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
+  (mutations), the banner being the only announcement. **A new administration client goes through
+  `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
+  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises
+  `AccessForbiddenError` after the reaction's `refused()` (#748, R17; a read sent before a navigation is not counted, R28; a write always
+  is, R38): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte »
+  in the same tab). The rule, its backend facts, the shared errors, the
+  banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.
+- **Not loaded is not empty, a new key empties the old value, and what an ended session interrupted is read again on
+  return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the
+  first read, after a first read that ended on `SessionEndedError`, and as soon as a new key starts reading); an
+  administration page says « aucune … » **only when `isLoaded`**, and shows `admin.notLoaded` (« Contenu non chargé… »,
+  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise.
+  Without it a first read in an ended session left the list at `[]`
+  with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
+  guard: every file of `presentation/pages/admin` that composes a `…empty` state in its template (`t('admin.….empty')`, or
+  `{{ texts.empty }}` in Quality's generic section, whose page translates the text) reads `isLoaded` at least as many times in that
+  template. A new list page adds the `isLoaded` guard before its empty state.
+  **The About settings are the one composable with a key** (the locale), hence `clear`: a `load(key)` with a key other
+  than the held value's empties it (`settings = null`) *before* reading. Otherwise the form of one locale stayed under
+  the header of another when the read of the new one ended in an ended session, and « Enregistrer » sent `save(props.locale)`
+  — the French texts over the English record, silently (CR2). `AdminAboutSettingsForm` renders the form only if `isLoaded`,
+  and a pending translation proposal is set by a synchronous watcher of `isLoaded` (not after `await load()`: the read
+  that ended the session never resolves a value), so it lands on the form it targets, at the return if need be.
+  **The key guards the writes too, and it has one source** (#748, R11, R20): the current key is the last one given to
+  `load()`, held by `useAdminLoad` (`isCurrentKey(key)`, reactive; no composable keeps a copy). A save's response goes
+  through `write(key, value)`: it replaces the value only under the current key, and then **invalidates the reads in
+  flight of that key** — a `GET` served before the `PUT`'s COMMIT answers the old values and would put them back over
+  the new ones (FR saved slowly, EN, back to FR: F10-1). A save sent in French and answered after the page went to
+  English has succeeded server-side (`save()` returns `true`), but must not put the French values under the English
+  header: the next « Enregistrer » would overwrite the English record. **The error stays with its language** (F10-2):
+  `errorMessage` is the failure of the current locale's last save (R31, Sp3-4: **one error per locale**, `failures`), and
+  comes back on returning to that locale, until **that locale's** next save: a save of one locale neither clears nor
+  replaces the other's error (a failed FR save, then a successful or failed EN one, leaves the FR error for the way back).
+  **One save per locale in flight** (R50, the author's decision of 2026-10-30, CR5-3/CR5-4): `save(locale)` refuses a
+  second save of a locale while its first is in flight (no request, `false`), so the response that arrives is always the
+  only one of its locale. The form disables « Enregistrer » for the locale shown only (`isSaving`, the current key's: an English save is not
+  held by a French one), and « Proposer la traduction » while any locale — with two, the one shown or the target — has a save in
+  flight (`isAnySaving`, R67, R86, R98, decision 3 of the sixth review: the target's response would overwrite the proposal it
+  lands on; a save of the target started while the translation runs still does, and the notice goes with it, R66).
+  Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
+  **A proposal notice is its target locale's** (F11, R50, R66, decision 4 of the sixth review): `proposal`
+  (`{ source, target }`) shows under the form of `target` only, survives a refused save, and goes whenever
+  settings arrive from the server — the response of a successful save, a reload, a return to a language —, which loses
+  the proposal, the other locale's included (R141b, the author's decision of 2026-10-31 revising decision 2 of the
+  ninth review: invisible, no spec pins it); it is rendered inside the form, which exists only once loaded, so a refused
+  or interrupted re-read of its target shows nothing (R113, R128). The About settings are the only keyed composable, so
+  the only one with these races.
+  **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
+  descent of `authState.sessionEnded` by the same account (another one replays the
+  navigation instead, R18). `useAdminLoad` subscribes to it; if its
+  last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the
+  interrupted one; a read that succeeded leaves nothing to replay. A mechanism that re-reads the session (the shared
+  re-check on focus) only has to restore it: it never re-reads lists itself, so nothing is doubled. A page does not
+  `watch` `authState.sessionEnded` for this.
 

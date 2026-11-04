@@ -18,6 +18,14 @@ use Symfony\Component\HttpFoundation\Cookie;
  * ne correspondent pas à la pose n'est pas supprimé par le navigateur : ces
  * attributs ne se recalculent donc plus ailleurs qu'ici.
  *
+ * - Aucune échéance ne peut être demandée (#748, F1, St3-3). `BEARER` et
+ *   `XSRF-TOKEN` sont des cookies de session — le login par
+ *   `set_cookies.BEARER.lifetime: 0` —, et seul `expired()` date un cookie.
+ *   `bearer()` et `xsrf()` n'ont donc qu'un paramètre : un paramètre d'échéance
+ *   « pour un appelant futur » invitait à poser un cookie persistant, qui
+ *   survivrait à son jumeau de session (ou l'inverse) et referait le 403 en
+ *   boucle que F1 a supprimé. `AuthCookieFactoryTest` épingle ce paramètre
+ *   unique.
  * - `Path=/`, aucun `Domain` : le cookie vaut pour tout le site, et pour lui
  *   seul (un `Domain` explicite l'enverrait aux sous-domaines).
  * - `SameSite=Lax` : non envoyé sur une sous-requête cross-site (le double-submit
@@ -59,20 +67,16 @@ final readonly class AuthCookieFactory
     ) {
     }
 
-    /**
-     * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
-     */
-    public function bearer(#[SensitiveParameter] string $jwt, ?int $expiresAt = null): Cookie
+    /** Un cookie de session : sans `Expires` ni `Max-Age`. */
+    public function bearer(#[SensitiveParameter] string $jwt): Cookie
     {
-        return $this->create(self::BEARER, $jwt, $expiresAt);
+        return $this->create(self::BEARER, $jwt, null);
     }
 
-    /**
-     * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
-     */
-    public function xsrf(#[SensitiveParameter] string $token, ?int $expiresAt = null): Cookie
+    /** Un cookie de session, comme {@see self::bearer()}. */
+    public function xsrf(#[SensitiveParameter] string $token): Cookie
     {
-        return $this->create(self::XSRF_TOKEN, $token, $expiresAt);
+        return $this->create(self::XSRF_TOKEN, $token, null);
     }
 
     /**
@@ -101,6 +105,9 @@ final readonly class AuthCookieFactory
      * bearer() et xsrf(), bien que son nom échappe au recensement de
      * {@see \App\Tests\Security\SecretParametersTest}, qui l'épingle
      * (issue #414).
+     *
+     * `$expiresAt` n'est donné que par `expired()` (une date passée) : le seul
+     * moyen de dater un cookie, et il ne sert qu'à l'effacer.
      *
      * @param self::BEARER|self::XSRF_TOKEN $name
      */

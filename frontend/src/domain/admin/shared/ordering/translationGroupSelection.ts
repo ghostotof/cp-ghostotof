@@ -40,9 +40,9 @@ export interface TranslationGroupOption {
  * `${locale} · ${titre}`), différent selon le champ qui nomme l'entrée d'une
  * page à l'autre.
  */
-export function translationGroupOptions<T extends { id: string; locale: string; translationGroup: string }>(
+export function translationGroupOptions<T extends { id: string; locale: Locale; translationGroup: string }>(
   entries: readonly T[],
-  formLocale: string,
+  formLocale: Locale,
   formTranslationGroup: string,
   editingId: string | null,
   labelOf: (entry: T) => string,

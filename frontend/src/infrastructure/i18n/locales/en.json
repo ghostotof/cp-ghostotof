@@ -44,19 +44,27 @@
     "baseAccessBadge": "Base access",
     "endBaseAccess": "End this access",
     "accountMenu": "Account menu",
-    "myAccount": "My account"
+    "myAccount": "My account",
+    "accessRefused": "The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.",
+    "earlierSaveRefused": "An earlier save was refused by the server: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.",
+    "switchAccount": "Switch account"
   },
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "notLoaded": "Content not loaded: see the message at the top of the page.",
     "sessionEnded": {
       "message": "Your session has ended: what you typed is still here, but saving is refused until you sign in again.",
       "signInAgain": "Sign in again",
-      "newTab": "(opens in a new tab)"
+      "restored": "Session restored, you can save again."
     },
     "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
+    "entryLock": {
+      "editing": "The language of an existing entry cannot be changed.",
+      "proposal": "Locked by the current translation proposal; “Cancel” drops it and clears the form."
+    },
     "nav": {
       "content": "Content",
       "technologies": "Technologies",
@@ -155,7 +163,9 @@
         "meEyebrowLabel": "\"About me\" section title",
         "technicalSubtitleLabel": "\"Technically\" subtitle",
         "personalSubtitleLabel": "\"Personally\" subtitle",
-        "hobbiesSubtitleLabel": "\"Outside work\" subtitle"
+        "hobbiesSubtitleLabel": "\"Outside work\" subtitle",
+        "proposalLockedHelp": "Locked by the translation proposal shown: save it, or “Discard” to remove it.",
+        "proposalDiscard": "Discard"
       },
       "siteCard": {
         "listTitle": "\"About this site\" cards",
@@ -386,6 +396,8 @@
     "translation": {
       "proposeVersion": "Suggest the {locale} version",
       "inProgress": "Translating…",
+      "expiredCallPending": "The previous translation, abandoned, is still finishing on the server: this button comes back as soon as it answers, and the answer changes nothing in the form.",
+      "proseReadonly": "Translation in progress: the text fields are read-only until the answer, which may open a proposal in the target language; nothing is saved.",
       "proposalNotice": "AI-generated suggestion from the {locale} version: review and correct it before saving. Nothing is saved until you click Save.",
       "errors": {
         "validation": "The content to translate is invalid (empty or too long field).",
@@ -479,7 +491,7 @@
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
     "genericError": "Something went wrong, please try again.",
-    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request.",
+    "reauthNotice": "Confirm your identity or sign in with another account: you will then return to the page you left.",
     "sessionEnded": "Your session has ended, please sign in again."
   },
   "contact": {
@@ -787,7 +799,6 @@
     "reset": "New conversation",
     "errors": {
       "unauthenticated": "Your session has expired.",
-      "forbidden": "Your session can no longer use the assistant. Please sign in again.",
       "relogin": "Sign in again",
       "validation": "The conversation could not be sent. Try again.",
       "tooLarge": "The conversation is too long: start a new one.",
@@ -805,8 +816,7 @@
     "submitting": "Sending your decision…",
     "account": {
       "heading": "The account",
-      "grantingAs": "You are granting this access as {username}",
-      "switch": "Switch account"
+      "grantingAs": "You are granting this access as {username}"
     },
     "client": {
       "heading": "The client",
@@ -828,7 +838,7 @@
     "deny": "Deny",
     "errors": {
       "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
-      "sessionExpired": "Your session has expired or does not allow you to authorize this connection.",
+      "sessionEnded": "Your session has expired.",
       "relogin": "Sign in again",
       "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
       "reauthenticate": "Sign in again to authorize",
@@ -875,7 +885,7 @@
     },
     "revoke": "Revoke",
     "revokeAria": "Revoke the connection of {client}, granted on {date}",
-    "confirm": "Revoke the connection of \"{client}\"? It will stop working at the assistant's next request.",
+    "confirm": "Revoke the connection of \"{client}\", granted on {date}? It will stop working at the assistant's next request.",
     "outcome": {
       "revoked": "The connection has been revoked. It stops working at the assistant's next request.",
       "alreadyGone": "This connection had already ended: nothing to revoke. The list has been refreshed."

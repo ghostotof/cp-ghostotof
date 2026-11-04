@@ -11,6 +11,8 @@ import type { AuthRepository } from '../../../../src/domain/auth/repositories/Au
 import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/AuthenticatedUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 import { sessionFor } from '../../../support/authSession'
+import { renderedMessage } from '../../../support/renderedMessage'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 
 const SUPER_ID = '019968a0-0000-7000-8000-000000000001'
 const JANE_ID = '019968a0-0000-7000-8000-000000000002'
@@ -55,6 +57,7 @@ function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepositor
   return {
     login: vi.fn(async () => user ?? { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(user)),
   }
 }
@@ -117,7 +120,7 @@ describe('AdminUsersPage', () => {
 
     expect(repository.invite).toHaveBeenCalledWith('jean.dupont@example.com', 'fr')
     expect(wrapper.text()).toContain('newcomer')
-    expect(wrapper.text()).toContain('Invitation envoyée')
+    expect(wrapper.text()).toContain(renderedMessage('fr', 'admin.users.invite.success', { username: 'newcomer' }))
   })
 
   it('affiche un message d\'erreur si l\'invitation échoue (email déjà pris) sans casser la liste', async () => {
@@ -131,7 +134,7 @@ describe('AdminUsersPage', () => {
     await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Un compte existe déjà avec cette adresse e-mail.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.users.errors['email-taken'])
     expect(wrapper.text()).toContain('jane')
   })
 
@@ -146,7 +149,7 @@ describe('AdminUsersPage', () => {
     await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Adresse e-mail invalide.')
+    expect(wrapper.get('[role="alert"]').text()).toBe(fr.admin.users.errors['email-invalid'])
   })
 
   it('le menu d\'actions n\'est ouvert que pour une ligne à la fois', async () => {
@@ -206,21 +209,21 @@ describe('AdminUsersPage', () => {
     await openRowMenu(wrapper, 'newcomer')
     await rowButton(wrapper, 'newcomer', 'Renvoyer')?.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Invitation renvoyée.')
+    expect(wrapper.text()).toContain(fr.admin.users.resendSuccess)
 
     await openRowMenu(wrapper, 'jane')
     await rowButton(wrapper, 'jane', 'Promouvoir')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Invitation renvoyée.')
+    expect(wrapper.text()).not.toContain(fr.admin.users.resendSuccess)
   })
 
   it('affiche le statut En attente / Actif', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const wrapper = await mountPage()
 
-    expect(rowFor(wrapper, 'newcomer')?.text()).toContain('En attente')
-    expect(rowFor(wrapper, 'jane')?.text()).toContain('Actif')
+    expect(rowFor(wrapper, 'newcomer')?.text()).toContain(fr.admin.users.statusPending)
+    expect(rowFor(wrapper, 'jane')?.text()).toContain(fr.admin.users.statusActive)
   })
 
   it('affiche l\'e-mail lié dans une colonne dédiée, ou un tiret quand il n\'y en a pas', async () => {
@@ -228,7 +231,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage()
 
     const headers = wrapper.findAll('thead th').map((th) => th.text())
-    expect(headers).toContain('E-mail')
+    expect(headers).toContain(fr.admin.users.emailLabel)
 
     expect(rowFor(wrapper, 'newcomer')?.text()).toContain('newcomer@example.com')
     expect(rowFor(wrapper, 'jane')?.get('td:nth-child(2)').text()).toBe('—')
@@ -247,7 +250,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage()
 
     await openRowMenu(wrapper, 'super')
-    expect(rowButton(wrapper, 'super', 'Supprimer')?.attributes('disabled')).toBeDefined()
+    expect(rowButton(wrapper, 'super', fr.admin.users.delete)?.attributes('disabled')).toBeDefined()
   })
 
   it('supprime un autre utilisateur après confirmation', async () => {
@@ -257,7 +260,7 @@ describe('AdminUsersPage', () => {
     const wrapper = await mountPage(repository)
 
     await openRowMenu(wrapper, 'jane')
-    await rowButton(wrapper, 'jane', 'Supprimer')?.trigger('click')
+    await rowButton(wrapper, 'jane', fr.admin.users.delete)?.trigger('click')
     await flushPromises()
 
     expect(repository.remove).toHaveBeenCalledWith(JANE_ID)
@@ -276,7 +279,7 @@ describe('AdminUsersPage', () => {
     await flushPromises()
 
     expect(repository.changePassword).toHaveBeenCalledWith(SUPER_ID, 'NewPassword123')
-    expect(wrapper.text()).toContain('Mot de passe mis à jour.')
+    expect(wrapper.text()).toContain(fr.admin.users.passwordChanged)
   })
 
   it('un 422 au changement de mot de passe nomme les trois causes possibles, pas seulement la longueur minimale (#410)', async () => {

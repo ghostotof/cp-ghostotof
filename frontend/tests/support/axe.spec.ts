@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import axe from 'axe-core'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import { expectNoAccessibilityViolation } from './axe'
+import { accessibleNameOf, expectLabelInName, expectNoAccessibilityViolation } from './axe'
+import { proposeVersionLabel } from './adminButtonTexts'
 
 /**
  * L'adaptateur se teste lui-même, et ce n'est pas de la coquetterie : un audit
@@ -31,6 +33,31 @@ describe('expectNoAccessibilityViolation', () => {
     await expect(expectNoAccessibilityViolation(mount(Saut))).rejects.toThrow(/heading-order/)
   })
 
+  // R243 de la vingtième relecture : règle expérimentale (éteinte par défaut dans axe), que jsdom ne conclut qu'en « à vérifier ».
+  it('expectLabelInName : détecte un nom accessible qui ne contient pas le texte visible (WCAG 2.5.3)', async () => {
+    const SansLeTexte = defineComponent({
+      template: '<main><button type="button" aria-label="Français">FR</button></main>',
+    })
+
+    await expect(expectLabelInName(mount(SansLeTexte))).rejects.toThrow(/label-content-name-mismatch/)
+  })
+
+  it('expectLabelInName : accepte un nom accessible qui commence par le texte visible (WCAG 2.5.3)', async () => {
+    const AvecLeTexte = defineComponent({
+      template: '<main><button type="button">FR<span class="visually-hidden"> (Français)</span></button></main>',
+    })
+
+    await expect(expectLabelInName(mount(AvecLeTexte))).resolves.toBeUndefined()
+  })
+
+  it("expectLabelInName : l'audit commun reste muet sur la règle, éteinte par défaut", async () => {
+    const SansLeTexte = defineComponent({
+      template: '<main><button type="button" aria-label="Français">FR</button></main>',
+    })
+
+    await expect(expectNoAccessibilityViolation(mount(SansLeTexte))).resolves.toBeUndefined()
+  })
+
   it('détecte une image sans alternative textuelle', async () => {
     const SansAlt = defineComponent({
       template: '<main><img src="x.png"></main>',
@@ -58,5 +85,57 @@ describe('expectNoAccessibilityViolation', () => {
     })
 
     await expect(expectNoAccessibilityViolation(mount(SansAlt))).rejects.toThrow(/coupable\.png/)
+  })
+})
+
+/**
+ * `accessibleNameOf` sert à retrouver un bouton par son nom, celui que lit un lecteur d'écran, plutôt que par le texte du DOM :
+ * les deux diffèrent dès qu'un bouton porte une étiquette ARIA ou un contenu masqué.
+ */
+describe('accessibleNameOf', () => {
+  it("rend le contenu d'un bouton sans ce qu'il masque aux lecteurs d'écran", () => {
+    const label = proposeVersionLabel('en')
+    const Bouton = defineComponent({
+      template: `<button type="button"><span aria-hidden="true">chargement</span><span>${label}</span></button>`,
+    })
+
+    expect(accessibleNameOf(mount(Bouton).element)).toBe(label)
+  })
+
+  it("préfère l'étiquette ARIA au contenu, comme le fait un lecteur d'écran", () => {
+    const Etiquette = defineComponent({
+      template: '<button type="button" aria-label="Fermer"><span>×</span></button>',
+    })
+
+    expect(accessibleNameOf(mount(Etiquette).element)).toBe('Fermer')
+  })
+
+  it("laisse l'élément et le document tels qu'ils étaient : l'élément reste détaché", () => {
+    const Bouton = defineComponent({ template: '<button type="button">Texte</button>' })
+    const wrapper = mount(Bouton)
+    const before = document.body.innerHTML
+
+    accessibleNameOf(wrapper.element)
+
+    expect(document.body.contains(wrapper.element)).toBe(false)
+    expect(document.body.innerHTML).toBe(before)
+  })
+
+  // CR16-9 : la copie est rattachée au document avant `axe.setup` ; si `setup` lève, elle ne doit pas y rester, sinon elle
+  // s'ajoute au DOM de tous les cas suivants du fichier de spec.
+  it("ne laisse aucune copie dans le document, même si axe.setup lève (#748, R200)", () => {
+    const Bouton = defineComponent({ template: '<button type="button">Texte</button>' })
+    const wrapper = mount(Bouton)
+    const before = document.body.innerHTML
+    const setup = vi.spyOn(axe, 'setup').mockImplementation(() => {
+      throw new Error('setup refusé')
+    })
+
+    try {
+      expect(() => accessibleNameOf(wrapper.element)).toThrow('setup refusé')
+      expect(document.body.innerHTML).toBe(before)
+    } finally {
+      setup.mockRestore()
+    }
   })
 })

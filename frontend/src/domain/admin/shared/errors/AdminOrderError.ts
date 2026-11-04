@@ -6,7 +6,9 @@
  * rechargement automatique ; `unknown` laisse le brouillon en l'état pour
  * que l'admin puisse réessayer.
  */
-export type AdminOrderErrorReason = 'stale-order' | 'unknown'
+export type AdminOrderErrorReason =
+  | 'stale-order'
+  | 'unknown'
 
 export class AdminOrderError extends Error {
   readonly reason: AdminOrderErrorReason

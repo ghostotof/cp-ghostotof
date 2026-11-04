@@ -17,7 +17,7 @@ const INCIDENT: AdminIncident = {
   impact: 'Impact.', rootCause: 'Cause.', resolution: 'Résolution.', invariant: 'Règle.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', translationGroup: null, title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
+  locale: 'fr' as const, translationGroup: null, title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
   impact: 'Impact.', rootCause: 'Cause.', resolution: 'Résolution.', invariant: 'Règle.',
 }
 

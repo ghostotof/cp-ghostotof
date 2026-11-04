@@ -1,21 +1,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAssistant } from '../../application/assistant/useAssistant'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import { MAX_QUESTION_LENGTH } from '../../domain/assistant/services/conversationWindow'
-import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import BaseTextarea from '../ui/BaseTextarea.vue'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import RichText from '../ui/RichText.vue'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
+import { switchAccountLocation } from '../router/reauthentication'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const route = useRoute()
 const { messages, state, error, draft, draftLength, canSend, send, reset } = useAssistant()
 const { downloadCv, isDownloading, hasError: hasCvDownloadError } = useCvDownload()
 
-const currentLocale = computed(() => locale.value as Locale)
+const currentLocale = useCurrentLocale()
 const isStreaming = computed(() => 'streaming' === state.value)
-const needsLogin = computed(() => 'unauthenticated' === error.value?.reason || 'forbidden' === error.value?.reason)
+// Deux liens (#748, R7). Session finie : « Se reconnecter », la route `login` accueillant un anonyme, dans un
+// nouvel onglet (la question tapée est gardée). Refus réel (`forbidden`) : la personne est toujours connectée,
+// la route `login` la renverrait à l'accueil sans `reauth=1` ; « Changer de compte » l'ouvre dans le même
+// onglet, la conversation perdue est acceptée.
+const needsLogin = computed(() => 'unauthenticated' === error.value?.reason)
+const needsSwitchAccount = computed(() => 'forbidden' === error.value?.reason)
+const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /** Un message par raison ; le 429 se lit avec ou sans délai (nginx n'en fournit pas). */
 const errorMessage = computed<string>(() => {
@@ -36,7 +46,7 @@ const errorMessage = computed<string>(() => {
     case 'unauthenticated':
       return t('assistant.errors.unauthenticated')
     case 'forbidden':
-      return t('assistant.errors.forbidden')
+      return t('common.accessRefused')
     case 'unavailable':
       return t('assistant.errors.unavailable')
     case 'network':
@@ -141,7 +151,7 @@ function handleKeydown(event: KeyboardEvent): void {
     <!-- Second role="alert", distinct de celui de l'assistant : un échec de téléchargement n'est pas une erreur de conversation. -->
     <p
       v-if="hasCvDownloadError"
-      class="text-danger small mb-0"
+      class="text-danger-emphasis small mb-0"
       role="alert"
     >
       {{ t('common.downloadCvError') }}
@@ -150,14 +160,18 @@ function handleKeydown(event: KeyboardEvent): void {
     <p
       v-if="null !== error"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ errorMessage }}
-      <RouterLink
-        v-if="needsLogin"
-        :to="{ name: 'login', params: { locale: currentLocale }, query: { redirect: `/${currentLocale}/assistant` } }"
-      >
+      <!-- Un nouvel onglet : dans le même, la question tapée serait perdue (#748, R6). -->
+      <SignInAgainLink v-if="needsLogin">
         {{ t('assistant.errors.relogin') }}
+      </SignInAgainLink>
+      <RouterLink
+        v-if="needsSwitchAccount"
+        :to="switchAccountTarget"
+      >
+        {{ t('common.switchAccount') }}
       </RouterLink>
     </p>
 
@@ -177,7 +191,7 @@ function handleKeydown(event: KeyboardEvent): void {
       <p
         id="assistant-counter"
         class="small mb-3"
-        :class="draftLength > MAX_QUESTION_LENGTH ? 'text-danger' : 'text-body-secondary'"
+        :class="draftLength > MAX_QUESTION_LENGTH ? 'text-danger-emphasis' : 'text-body-secondary'"
       >
         {{ t('assistant.counter', { count: draftLength, max: MAX_QUESTION_LENGTH }) }}
       </p>

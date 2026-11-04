@@ -49,6 +49,10 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
 | `frontend-backoffice.md` | `/admin`, set-password, route guard | touching an admin page or the router |
 | `frontend-a11y.md` | accessibility | adding or changing UI |
+| `frontend-session.md` | an ended session and a refusal on the frontend: the rule (`sessionAwareFetch`, « with a token »), its accepted limits, the two shared errors, one section per client — and the index of the three below | touching a call that sends the session cookie, a 401/403 mapping, a `credentials`, a client's error translation |
+| `frontend-session-bandeau.md` | the session-ended banner (sticky height, two roots, re-announcement), the sign-in-again link (`loginLocation`, `SignInAgainLink`, the flags), the header that follows the banner | touching the banner, `AdminLayout`'s notices, `AppHeader`'s « Connexion », a link to the login, `usePublishedHeight` |
+| `frontend-session-retour.md` | the shared session state (`application/auth/`), the re-check on return, `onSessionRestored` / `onAccountSwitched`, the replay of the navigation, the session generation | touching `useAuth` or an `application/auth/` module, `useSessionRecheckOnFocus`, `AppLayout`'s replay, `tests/support/setup.ts` |
+| `frontend-session-refus.md` | the backoffice's session reaction, a real refusal (403 that is not an ended session): `AccessForbiddenError`, the `/api/me` re-read, `AccessRefusedNotice`, « Changer de compte » | touching a refusal, `followRefusal`, `backofficeSessionExpiry.ts`, `backofficeAccessRefusal.ts`, `common.accessRefused` |
 | `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
 | `deploiement.md` | Kubernetes manifests, ConfigMaps, pod security, stateful PVCs — and the index of the four below | touching `k8s/`, `docker/`, a workflow |
 | `deploiement-pipeline.md` | deploy Jobs, `kubectl exec` boundary, migration before rollout, deploy waits | touching a Job, `pipeline.yml`'s deploy jobs, `run-job.sh`, `wait-rollout.sh`, a migration |
@@ -56,6 +60,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `deploiement-etat-hors-pod.md` | no state on the pod (ADR 0005) | touching `cache`/`lock`/rate limiters, a volume, `lock_timeout` |
 | `deploiement-nginx.md` | nginx rate limits, headers, `security.txt` | touching an nginx conf, a rate-limit zone, a response header |
 | `release.md` | release flow, pipeline internals | touching `pipeline.yml`, a release script, `RELEASE_NOTES.md` |
+| `outillage-smoke.md` | the smokes' and the audit's shared library: the Basic Auth, `smoke_fetch`'s refusals, the guards of `smoke-http.test.sh` | touching `tools/lib/smoke-http.sh`, a `tools/smoke-*.sh`, `tools/audit-prod.sh`'s Basic Auth or their tests |
 
 ## Goals
 
@@ -272,9 +277,9 @@ flagged a disposable `JWT_PASSPHRASE` placeholder value as an exposed secret; on
 value, `APP_SECRET=` empty) stays tracked now. `CONTACT_SENDER_EMAIL` / `CONTACT_RECIPIENT_EMAIL` are empty
 there too (audit I4 — real addresses in a public repo feed harvesters and reveal the Scaleway TEM sending
 identity); their values come from outside the repo: `.env.local` in dev, Secret Manager in preprod/prod, and
-**`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — with `force="true"`, without
-which Dotenv overwrites them with the empty value from `.env`. `ANTHROPIC_API_KEY` (ADR 0004) follows the
-exact same route, with a dummy forced value in test: no test may reach the real API. `backend/composer.json` is
+**`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — by `<server>` and `<env force="true">`:
+Symfony reads `$_ENV` first, where a value exported in the container would win. `ANTHROPIC_API_KEY` (ADR 0004)
+follows the exact same route, with a dummy forced value in test: no test may reach the real API. `backend/composer.json` is
 tracked, so `init-symfony.sh` skips the project creation on every clone, but since #481 it still **creates
 `.env.local` / `.env.test.local` when missing** (never overwriting them) and sets `APP_SECRET`; an existing
 `.env.local` older than a new line (those two, say) still needs it added by hand. `make init` runs the copy
@@ -394,7 +399,8 @@ ADRs (status, dates and amendments live in each ADR):
   `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
   2026-09-21; reduced on 2026-10-28, #650: a JWT opened before the account's last password
-  change — its credentials version is no longer the account's — is refused by the whole `api` firewall).
+  change — its credentials version is no longer the account's — is refused by every route of the `api` firewall that requires a role; amended
+  2026-10-29, #748: `BEARER` and `XSRF-TOKEN` are session cookies, and any refused cookie is cleared by the first 401 of a protected route — a public route serves the request as anonymous).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
   interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
   leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base

@@ -5,7 +5,9 @@ import { WATCH_REPOSITORY } from '../../../src/application/watch/useWatch'
 import type { WatchRepository } from '../../../src/domain/watch/repositories/WatchRepository'
 import type { WatchContent, WatchedProduct } from '../../../src/domain/watch/entities/WatchContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { renderedMessage } from '../../support/renderedMessage'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import fr from '../../../src/infrastructure/i18n/locales/fr.json'
 
 const PHP: WatchedProduct = {
   slug: 'php',
@@ -54,7 +56,7 @@ describe('StackPage', () => {
   })
 
   it('affiche un message de chargement pendant la récupération', () => {
-    expect(mountPage().text()).toContain('Chargement')
+    expect(mountPage().text()).toContain(fr.stack.loading)
   })
 
   it('signale une erreur de chargement dans une région annoncée aux lecteurs d’écran', async () => {
@@ -81,7 +83,7 @@ describe('StackPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.find('tbody .badge').text()).toBe('Supporté')
+    expect(wrapper.find('tbody .badge').text()).toBe(fr.stack.status.supported)
   })
 
   /**
@@ -107,9 +109,9 @@ describe('StackPage', () => {
 
     const badges = wrapper.findAll('tbody .badge').map((badge) => badge.text())
 
-    expect(badges).toContain('Fin de vie')
-    expect(badges).toContain('Sécurité uniquement')
-    expect(badges).toContain('Inconnu')
+    expect(badges).toContain(fr.stack.status.eol)
+    expect(badges).toContain(fr.stack.status.securityOnly)
+    expect(badges).toContain(fr.stack.status.unknown)
   })
 
   /**
@@ -121,7 +123,7 @@ describe('StackPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.find('tbody .badge.text-bg-info').text()).toContain('correctif')
+    expect(wrapper.find('tbody .badge.text-bg-info').text()).toContain(fr.stack.patchAvailable)
   })
 
   /**
@@ -141,7 +143,7 @@ describe('StackPage', () => {
 
     expect(latest.text()).toBe('8.5.10')
     expect(latest.find('.badge').exists()).toBe(false)
-    expect(update.find('.badge').text()).toContain('correctif')
+    expect(update.find('.badge').text()).toContain(fr.stack.patchAvailable)
   })
 
   it('n’annonce pas de correctif quand l’installation est à jour', async () => {
@@ -185,7 +187,7 @@ describe('StackPage', () => {
     )
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Aucun rafraîchissement')
+    expect(wrapper.text()).toContain(fr.stack.neverRefreshed)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 
@@ -249,7 +251,7 @@ describe('StackPage', () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Aucune vulnérabilité connue sur les 99 paquets')
+      expect(wrapper.text()).toContain(renderedMessage('fr', 'stack.vulnerabilities.healthy', { scanned: 99 }))
     })
 
     it('signale les vulnérabilités trouvées dans une région annoncée', async () => {
@@ -261,7 +263,9 @@ describe('StackPage', () => {
       )
       await flushPromises()
 
-      expect(wrapper.find('[role="status"]').text()).toContain('vulnérabilités connues')
+      expect(wrapper.find('[role="status"]').text()).toContain(
+        renderedMessage('fr', 'stack.vulnerabilities.affected', { count: 3, scanned: 99 }, 3),
+      )
       expect(wrapper.find('.badge.text-bg-danger').text()).toBe('3')
     })
 
@@ -278,8 +282,12 @@ describe('StackPage', () => {
       )
       await flushPromises()
 
-      expect(wrapper.find('[role="status"]').text()).toContain('vulnérabilité connue')
-      expect(wrapper.find('[role="status"]').text()).not.toContain('vulnérabilités')
+      expect(wrapper.find('[role="status"]').text()).toContain(
+        renderedMessage('fr', 'stack.vulnerabilities.affected', { count: 1, scanned: 99 }, 1),
+      )
+      expect(wrapper.find('[role="status"]').text()).not.toContain(
+        renderedMessage('fr', 'stack.vulnerabilities.affected', { count: 2, scanned: 99 }, 2),
+      )
     })
 
     /**
@@ -295,8 +303,8 @@ describe('StackPage', () => {
       )
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Analyse non effectuée')
-      expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
+      expect(wrapper.text()).toContain(fr.stack.vulnerabilities.notScanned)
+      expect(wrapper.text()).not.toContain(renderedMessage('fr', 'stack.vulnerabilities.healthy', { scanned: '' }))
     })
 
     /**
@@ -312,7 +320,7 @@ describe('StackPage', () => {
       )
       await flushPromises()
 
-      expect(wrapper.text()).toContain('administration')
+      expect(wrapper.text()).toContain(fr.stack.vulnerabilities.detailRestricted)
     })
   })
 
@@ -333,7 +341,7 @@ describe('StackPage', () => {
 
       const warnings = wrapper.findAll('[role="status"]').map((element) => element.text())
 
-      expect(warnings.some((text) => text.includes('Relevé en retard'))).toBe(true)
+      expect(warnings.some((text) => text.includes(fr.stack.stale))).toBe(true)
       // Le tableau reste affiché : la donnée est datée, pas fausse.
       expect(wrapper.find('table').exists()).toBe(true)
     })
@@ -354,14 +362,15 @@ describe('StackPage', () => {
 
       const warnings = wrapper.findAll('[role="status"]').map((element) => element.text())
 
-      expect(warnings.some((text) => text.includes('Analyse en retard'))).toBe(true)
+      expect(warnings.some((text) => text.includes(fr.stack.vulnerabilities.stale))).toBe(true)
     })
 
     it('n’avertit de rien quand tout est à jour', async () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      expect(wrapper.text()).not.toContain('en retard')
+      expect(wrapper.text()).not.toContain(fr.stack.stale)
+      expect(wrapper.text()).not.toContain(fr.stack.vulnerabilities.stale)
     })
   })
 

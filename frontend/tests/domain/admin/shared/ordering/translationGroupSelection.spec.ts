@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { groupByTranslationGroup, type TranslationGroupRow } from '../../../../../src/domain/admin/shared/ordering/groupByTranslationGroup'
 import { firstEntry, hasSibling, rowLines, translationGroupOptions } from '../../../../../src/domain/admin/shared/ordering/translationGroupSelection'
-import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES } from '../../../../../src/domain/portfolio/entities/Locale'
+import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../../../src/domain/portfolio/entities/Locale'
 
 interface Entry {
   id: string
-  locale: string
+  locale: Locale
   translationGroup: string
   title: string
   position: number

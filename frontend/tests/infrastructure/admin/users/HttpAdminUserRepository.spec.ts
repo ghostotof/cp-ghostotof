@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setBackofficeUnauthorizedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { setBackofficeSessionReaction } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import { HttpAdminUserRepository } from '../../../../src/infrastructure/admin/users/HttpAdminUserRepository'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
+import type { BackofficeSendStamp } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 
 const API_BASE_URL = 'https://api.example.test'
 const USER_ID = '019968a0-0000-7000-8000-000000000001'
@@ -10,6 +13,9 @@ const SUPER_ADMIN_TARGET_ID = '019968a0-0000-7000-8000-000000000003'
 const RESEND_TARGET_ID = '019968a0-0000-7000-8000-000000000004'
 const INVITED_USER_ID = '019968a0-0000-7000-8000-000000000009'
 const MISSING_USER_ID = '019968a0-0000-7000-8000-000000000999'
+
+/** Le timbre d'envoi d'une lecture partie avant tout compte et tout refus : ce que ces tests ont besoin que la réaction rende. */
+const readStamp = (): BackofficeSendStamp => ({ session: 0, account: null, refusal: { kind: 'read', scope: 0, epoch: 0 } })
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -23,37 +29,43 @@ describe('HttpAdminUserRepository', () => {
   afterEach(() => {
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     vi.unstubAllGlobals()
-    setBackofficeUnauthorizedHandler(null)
+    setBackofficeSessionReaction(null)
   })
 
   it('un 401 sur le changement de mot de passe (session antérieure, #650 R1c) appelle la réaction du backoffice', async () => {
-    const onUnauthorized = vi.fn()
-    setBackofficeUnauthorizedHandler(onUnauthorized)
+    const onSessionEnded = vi.fn(() => true)
+    setBackofficeSessionReaction({ stampAtSend: readStamp, ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Session closed by a password change.' })))
 
-    await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password')).rejects.toBeInstanceOf(AdminUserError)
+    await expect(
+      new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password'),
+    ).rejects.toBeInstanceOf(SessionEndedError)
 
-    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+    expect(onSessionEnded).toHaveBeenCalledTimes(1)
   })
 
   it('un 401 sur la lecture de la liste appelle la réaction du backoffice', async () => {
-    const onUnauthorized = vi.fn()
-    setBackofficeUnauthorizedHandler(onUnauthorized)
+    const onSessionEnded = vi.fn(() => true)
+    setBackofficeSessionReaction({ stampAtSend: readStamp, ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Expired JWT Token' })))
 
-    await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(AdminUserError)
+    await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(SessionEndedError)
 
-    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+    expect(onSessionEnded).toHaveBeenCalledTimes(1)
   })
 
-  it('un 403 reste une erreur du dépôt : la réaction du backoffice n\'est pas appelée', async () => {
-    const onUnauthorized = vi.fn()
-    setBackofficeUnauthorizedHandler(onUnauthorized)
+  it('un 403 est un refus réel du client, jamais traduit par le dépôt : ni session finie, ni AdminUserError (#748, R17)', async () => {
+    const onSessionEnded = vi.fn(() => true)
+    const onRefused = vi.fn()
+    setBackofficeSessionReaction({ stampAtSend: readStamp, ended: onSessionEnded, refused: onRefused })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(403, { detail: 'Forbidden' })))
 
-    await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(AdminUserError)
+    const refused = new HttpAdminUserRepository(API_BASE_URL).list()
 
-    expect(onUnauthorized).not.toHaveBeenCalled()
+    await expect(refused).rejects.toBeInstanceOf(AccessForbiddenError)
+    await expect(refused).rejects.not.toBeInstanceOf(AdminUserError)
+    expect(onSessionEnded).not.toHaveBeenCalled()
+    expect(onRefused).toHaveBeenCalledTimes(1)
   })
 
   it('list() appelle GET avec credentials include, sans header CSRF, et mappe email + status', async () => {

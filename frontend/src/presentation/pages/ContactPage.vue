@@ -1,19 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
 import { useContactForm } from '../../application/contact/useContactForm'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useRouteLocale } from '../router/useRouteLocale'
 
-const { t, locale } = useI18n()
-const route = useRoute()
+const { t } = useI18n()
 const { name, email, message, honeypot, isSubmitting, isSuccess, errorReason, fieldErrors, submit } = useContactForm()
 
-/** Même repli route → i18n que AppHeader.homeLink, pour construire le lien vers la politique de confidentialité. */
-const currentLocale = computed<Locale>(() => {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-})
+/** La langue de la page (`useRouteLocale()`), celle du lien vers la politique de confidentialité. */
+const pageLocale = useRouteLocale()
 
 /** Les champs auxquels la page sait rattacher un libellé, sous le champ concerné. */
 const KNOWN_FIELDS = ['name', 'email', 'message'] as const
@@ -136,7 +131,7 @@ const globalErrorText = computed<string | null>(() => {
           >
             {{ t('contact.form.hints.name') }}
           </p>
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('name')"
             id="contact-name-error"
@@ -165,7 +160,7 @@ const globalErrorText = computed<string | null>(() => {
             required
           >
           <!-- Pas d'aide de saisie ici : « une adresse e-mail valide » n'ajoute rien au libellé du champ. -->
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('email')"
             id="contact-email-error"
@@ -199,7 +194,7 @@ const globalErrorText = computed<string | null>(() => {
           >
             {{ t('contact.form.hints.message') }}
           </p>
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('message')"
             id="contact-message-error"
@@ -232,7 +227,7 @@ const globalErrorText = computed<string | null>(() => {
 
         <p class="text-body-secondary small mb-3">
           {{ t('contact.form.privacyNoticePrefix') }}
-          <RouterLink :to="`/${currentLocale}/privacy-policy`">
+          <RouterLink :to="`/${pageLocale}/privacy-policy`">
             {{ t('common.privacyPolicyLink') }}
           </RouterLink>
         </p>
@@ -249,7 +244,7 @@ const globalErrorText = computed<string | null>(() => {
           Pas de déplacement du focus après un refus : `role="alert"` fait
           annoncer le message par le lecteur d'écran sans voler le focus au
           visiteur, qui peut être en train de relire un champ. text-danger-emphasis,
-          pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA.
+          pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA.
         -->
         <p
           v-if="globalErrorText"

@@ -8,43 +8,91 @@
 # domaines.
 #
 # Usage :  ./tools/audit-prod.sh cp-ghostotof.com
+# Env :    la variable de la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (son nom, les
+#          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
+#          le couple passe par un fichier de configuration curl en 600.
 # ---------------------------------------------------------------------------
 
 set -uo pipefail   # -u : variable non définie = erreur / -o pipefail : remonte l'erreur d'un pipe
                    # (pas de -e : on veut continuer même si un test échoue)
 
 FAILURES=0   # compteur global, à déclarer en haut du script
+# Vrai (1) quand l'audit porte la Basic Auth (préprod) : posé plus bas, après smoke_use_auth_config. Ce que dit l'indice du 401
+# d'une sonde (section 3) lit ce drapeau, jamais SMOKE_AUTH_CONFIG, qu'une valeur héritée de l'environnement peut poser sans
+# que l'audit porte quoi que ce soit (CR14-3).
+audit_carries_basic_auth=0
 DOMAIN="${1:-cp-ghostotof.com}"
 BASE="https://${DOMAIN}"
 
+# Chaque appel de curl commence par `-q` (R169, Q6) : curl ne lit alors aucun `.curlrc` (sous `CURL_HOME`, `XDG_CONFIG_HOME` ou
+# `HOME`), qui pourrait porter `location-trusted` et faire suivre l'identifiant par une redirection. Il ne vaut qu'en premier
+# argument (curl 8.5.0, mesuré) ; tools/tests/audit-prod.test.sh le lit sur chaque appel et sur le source, sondes anonymes comprises.
+#
 # Timeout court sur chaque requête : un domaine qui ne répond pas ne doit pas
 # faire tourner le job en boucle jusqu'au timeout du runner CI.
 CURL_OPTS=(--connect-timeout 5 --max-time 15)
 
-# Les mêmes options, sans jamais la Basic Auth ci-dessous : pour les seuls
-# chemins qui doivent répondre SANS elle, même en préprod (section 6ter, les
-# métadonnées OAuth qu'un client MCP lit sans savoir répondre à une Basic Auth).
+# Les mêmes options, sans jamais la Basic Auth ci-dessous : pour les seuls appels
+# qui doivent partir SANS elle, même en préprod. Deux lecteurs : les sondes de
+# redirection (section 3, qui en dit la raison) et les métadonnées OAuth (section 6ter,
+# qu'un client MCP lit sans savoir répondre à une Basic Auth).
 CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 
 # Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
 # chaque requête de cet audit recevrait 401 au lieu du vrai contenu, et les
 # sections 6/7 ci-dessous interpréteraient ce 401 comme des chemins
-# sensibles exposés — des dizaines de faux échecs bloquants. AUDIT_BASIC_AUTH
-# ("utilisateur:mot_de_passe") est optionnelle : absente contre la vraie
-# prod (non protégée), fournie par le job audit-preprod du pipeline via le
-# secret GitHub PREPROD_BASIC_AUTH.
+# sensibles exposés — des dizaines de faux échecs bloquants. La variable de la Basic Auth
+# (« utilisateur:mot_de_passe », décrite dans tools/lib/smoke-http.sh) est optionnelle :
+# absente contre la vraie prod (non protégée), fournie par le job audit-preprod du pipeline
+# via le secret GitHub PREPROD_BASIC_AUTH.
 #
 # Jamais via `-u` : les arguments d'un processus sont lisibles dans `ps` par
 # tout utilisateur de la machine pendant la requête (revue de sécurité du
 # 2026-09-13, #78 pt 6). Le couple passe par un fichier de configuration curl
-# (`-K`), créé en 600 par mktemp et supprimé à la sortie ; seul son chemin
-# apparaît dans les arguments. Les guillemets et antislashs sont échappés au
-# format attendu par curl, donc n'importe quel mot de passe convient.
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  CURL_AUTH_CONFIG="$(mktemp)"
-  trap 'rm -f "$CURL_AUTH_CONFIG"' EXIT
-  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$CURL_AUTH_CONFIG"
-  CURL_OPTS+=(-K "$CURL_AUTH_CONFIG")
+# (`-K`), créé en 600 dans un dossier privé que `smoke_cleanup` retire à la sortie ;
+# seul son chemin apparaît dans les arguments. Les guillemets et antislashs sont
+# échappés au format attendu par curl, donc n'importe quel mot de passe convient.
+# Le fichier et son échappement sont dans tools/lib/smoke-http.sh, partagée avec les
+# scripts de fumée.
+#
+# Trois cas, jugés sur le nom, jamais sur la valeur : `[[ -v … ]]` ne la développe pas,
+# et développée ici, hors de tout `set +x`, un `bash -x` l'imprimerait (C8-1).
+#   - non définie : l'audit de la vraie prod (non protégée). Il ne source pas la
+#     bibliothèque et n'envoie aucune Basic Auth ;
+#   - définie et vide : le secret de préprod manquant. `smoke_use_auth_config` sort 2
+#     avant toute requête, faute de quoi chaque 401 de la préprod se lirait comme des
+#     chemins exposés ;
+#   - définie et pleine : le fichier `-K` est écrit une fois, ici, avant tout appel.
+#     Un retour à la ligne (ou un CR) dans la valeur, l'absence de « : », un utilisateur
+#     ou un mot de passe vide ou fait de blancs sont refusés par `smoke_use_auth_config` avant tout dossier
+#     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
+# Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
+# le fichier, donc aucun `-K` n'y est périmé. `--proto =https` et `--proto-redir =https` l'accompagnent : un appel
+# authentifié n'envoie sa première requête qu'à une URL en https (une URL sans schéma, que curl devine en
+# `http://`, est refusée par curl lui-même) et ne suit une redirection (`-L`) que vers https, jamais vers http://
+# ni un autre schéma, où l'identifiant partirait en clair ; sans `-K`, les trois options n'ont pas lieu d'être
+# (les sondes de la section 3 visent des URL en `http://` exprès). `--noproxy '*'` les suit : un proxy d'environnement exporté
+# après `smoke_use_auth_config` (la bibliothèque n'en retire qu'une fois) ne reçoit pas l'identifiant (R183, C15-4).
+# Le `trap` précède la création du dossier : un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
+# privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
+# `trap` (#748, C7-8).
+if [[ -v AUDIT_BASIC_AUTH ]]; then
+  # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+  # Le dossier se calcule sans `dirname` (la variable est encore exportée ici, un fils la recevrait) : `cd` et `pwd` sont des
+  # commandes internes de bash. `CDPATH=''` et `--` : ni un CDPATH hérité ni un dossier qui commence par `-` ne changent le
+  # dossier trouvé ; un script à la racine (`_audit_dir` vide) vaut `/` (C14-11).
+  _audit_dir="${BASH_SOURCE[0]}"
+  case "$_audit_dir" in */*) _audit_dir="${_audit_dir%/*}" ;; *) _audit_dir=. ;; esac
+  [ -n "$_audit_dir" ] || _audit_dir=/
+  # shellcheck source=tools/lib/smoke-http.sh
+  source "$(CDPATH='' cd -- "$_audit_dir" && pwd)/lib/smoke-http.sh" || {
+    echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
+    exit 2
+  }
+  trap 'smoke_cleanup' EXIT
+  smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https" --noproxy '*')
+  audit_carries_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
@@ -69,7 +117,7 @@ dig "${DIG_TIMEOUT[@]}" +short "$DOMAIN" TXT | head -5 # SPF / vérifications di
 #    -o /dev/null jette le body, -L suit les redirections.
 # ---------------------------------------------------------------------------
 section "En-têtes HTTP (avec redirections)"
-HEADERS_RAW="$(curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L "$BASE")"
+HEADERS_RAW="$(curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L "$BASE")"
 echo "$HEADERS_RAW"
 
 # ---------------------------------------------------------------------------
@@ -77,11 +125,24 @@ echo "$HEADERS_RAW"
 #    Un site qui répond en 200 sur http:// sans redirect = point à corriger.
 # ---------------------------------------------------------------------------
 section "Redirections"
+# Ces sondes partent sans Basic Auth (CURL_OPTS_ANONYMOUS) : curl envoie
+# `Authorization: Basic` dès la première requête, quel que soit le schéma, donc
+# l'identifiant de la préprod partirait en clair sur http://. Une redirection
+# se juge sans authentification (#750). Conséquence : contre la préprod (l'audit porte la
+# Basic Auth), l'hôte répond 401 à la sonde, ce que la ligne dit au lieu de passer pour une
+# redirection cassée ; contre la vraie prod, un 401 s'imprime seul, sans l'indice.
 for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
-  # %{http_code} = code de la 1re réponse, %{redirect_url} = cible du Location
-  printf '%-32s -> %s %s\n' "$url" \
-    "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "$url")" \
-    "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{redirect_url}' "$url")"
+  # Un seul appel par sonde : le code de la 1re réponse (%{http_code}) et la cible de son
+  # Location (%{redirect_url}) viennent de la même réponse, jamais de deux requêtes
+  # qui pourraient différer. La réponse est assignée, puis lue en deux champs.
+  probe="$(curl -q -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' "$url")"
+  read -r code target <<< "$probe"
+  hint=""
+  # `audit_carries_basic_auth` vaut 1 seulement si l'audit porte la Basic Auth (préprod) : l'indice du 401 en dépend.
+  if [ "$code" = "401" ] && [ "$audit_carries_basic_auth" -eq 1 ]; then
+    hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
+  fi
+  printf '%-32s -> %s %s%s\n' "$url" "$code" "$target" "$hint"
 done
 
 # ---------------------------------------------------------------------------
@@ -96,17 +157,19 @@ done
 #    voir, et c'est exactement ce que cette section corrige.
 # ---------------------------------------------------------------------------
 
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
 # shellcheck source=tools/lib/security-headers.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" 2> /dev/null || {
-  echo "bibliothèque introuvable : tools/lib/security-headers.sh" >&2
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" || {
+  echo "bibliothèque introuvable ou invalide : tools/lib/security-headers.sh" >&2
   exit 2
 }
-# Section 5 ci-dessous. Sans -e, un `source` en échec ne s'arrête pas : la
-# fonction manquerait, FAILURES ne compterait rien, et l'audit lancé hors du
-# dépôt (sans tools/lib/) passerait au vert sans avoir rien vérifié.
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+# Section 5 ci-dessous : sans la sortie, la fonction manquerait, FAILURES ne
+# compterait rien, et l'audit lancé hors du dépôt (sans tools/lib/) passerait au
+# vert sans avoir rien vérifié.
 # shellcheck source=tools/lib/tls-certificate.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" 2> /dev/null || {
-  echo "bibliothèque introuvable : tools/lib/tls-certificate.sh" >&2
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
+  echo "bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh" >&2
   exit 2
 }
 
@@ -114,7 +177,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" 2>
 # Le préfixe `x-audit-` ne peut entrer en collision avec aucun en-tête
 # vérifié : les tests ci-dessous ancrent leurs grep sur `^<nom>:`.
 fetch_headers() {
-  curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L -w 'x-audit-http-code: %{http_code}\n' "$1"
+  curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L -w 'x-audit-http-code: %{http_code}\n' "$1"
 }
 
 section "En-têtes de sécurité"
@@ -133,7 +196,7 @@ check_security_headers "/healthz" "$(fetch_headers "${BASE}/healthz")"
 # place un hash de contenu dans chaque nom de fichier, un chemin figé ici
 # cesserait de correspondre à quoi que ce soit dès le déploiement suivant et
 # vérifierait alors les en-têtes d'un 404 en croyant vérifier ceux d'un asset.
-ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$(curl -sS "${CURL_OPTS[@]}" -L "$BASE")" | head -1)"
+ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$(curl -q -sS "${CURL_OPTS[@]}" -L "$BASE")" | head -1)"
 if [ -n "$ASSET_PATH" ]; then
   check_security_headers "$ASSET_PATH" "$(fetch_headers "${BASE}${ASSET_PATH}")"
 else
@@ -171,7 +234,7 @@ check_tls_certificate "$DOMAIN" 14 "$CERT"
 # ---------------------------------------------------------------------------
 section "Fichiers publics"
 for path in /robots.txt /sitemap.xml /favicon.ico /humans.txt; do
-  printf '%-16s %s\n' "$path" "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
+  printf '%-16s %s\n' "$path" "$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
 done
 
 # ---------------------------------------------------------------------------
@@ -217,7 +280,7 @@ case "$SECURITY_TXT_TYPE" in
     FAILURES=$((FAILURES + 1)) ;;
 esac
 
-SECURITY_TXT_BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
+SECURITY_TXT_BODY="$(curl -q -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
 
 # Champs obligatoires de la RFC 9116. Les noms de champs y sont
 # insensibles à la casse, d'où le grep -i, ancré en début de ligne pour ne pas
@@ -288,7 +351,7 @@ section "Métadonnées OAuth de la connexion MCP (RFC 9728, RFC 8414)"
 check_oauth_metadata() {
   local path="$1" field="$2" expected="$3" response meta body code content_type value
   # Code et type à la suite du corps, sur une dernière ligne à part.
-  response="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
+  response="$(curl -q -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
   meta="${response##*$'\n'}"
   body="${response%$'\n'*}"
   read -r code content_type <<< "$meta"
@@ -334,7 +397,7 @@ check_oauth_metadata() {
 check_oauth_metadata /.well-known/oauth-protected-resource/api/mcp resource "${BASE}/api/mcp"
 check_oauth_metadata /.well-known/oauth-authorization-server/api/oauth issuer "${BASE}/api/oauth"
 
-OIDC_CODE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
+OIDC_CODE="$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
 if [ "$OIDC_CODE" = "404" ]; then
   printf '  \033[32mOK\033[0m      HTTP 404 sur /.well-known/openid-configuration (aucun document OIDC)\n'
 else
@@ -357,10 +420,10 @@ fi
 #    priorité (ex. vrai fichier .env, page phpinfo()...).
 # ---------------------------------------------------------------------------
 section "Chemins sensibles (attendu : 404, ou le même fallback SPA que /)"
-BASE_SIZE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{size_download}' -L "$BASE")"
+BASE_SIZE="$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{size_download}' -L "$BASE")"
 for path in /.env /.env.local /.git/config /_profiler /app_dev.php /index.php/_profiler \
             /composer.json /composer.lock /vendor/ /docker-compose.yml /phpinfo.php; do
-  read -r code size <<< "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code} %{size_download}' "${BASE}${path}")"
+  read -r code size <<< "$(curl -q -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code} %{size_download}' "${BASE}${path}")"
   if [ "$code" = "404" ] || [ "$code" = "403" ]; then
     printf '  \033[32m%s\033[0m  %s\n' "$code" "$path"
   elif [ "$code" = "200" ] && [ "$size" = "$BASE_SIZE" ]; then
@@ -376,7 +439,7 @@ done
 #    Pour une SPA Vue non SSR, on trouve souvent une div vide -> impact SEO.
 # ---------------------------------------------------------------------------
 section "Contenu HTML brut (avant JS)"
-BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$BASE")"
+BODY="$(curl -q -sS "${CURL_OPTS[@]}" -L "$BASE")"
 echo "Taille du HTML : $(wc -c <<< "$BODY") octets"
 echo "Balises <script> : $(grep -o '<script' <<< "$BODY" | wc -l)"
 echo "Texte visible approximatif :"
@@ -386,7 +449,7 @@ sed -e 's/<[^>]*>//g' <<< "$BODY" | tr -s '[:space:]' ' ' | cut -c1-300
 # 9. Compression et cache des assets : perf.
 # ---------------------------------------------------------------------------
 section "Compression / cache"
-curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -H 'Accept-Encoding: gzip, br' -L "$BASE" \
+curl -q -sS "${CURL_OPTS[@]}" -D - -o /dev/null -H 'Accept-Encoding: gzip, br' -L "$BASE" \
   | grep -iE '^(content-encoding|cache-control|etag|last-modified|vary)' || echo "  aucun en-tête de cache/compression"
 
 echo -e "\nTerminé."

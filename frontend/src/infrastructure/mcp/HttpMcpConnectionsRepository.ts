@@ -2,10 +2,10 @@ import { MCP_CONNECTION_STATES, type McpConnectionList, type McpConnectionState,
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
-import { readCsrfToken } from '../auth/csrfCookie'
-import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
-import { hasProblemType } from '../admin/shared/orderProblems'
+import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
+import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
+import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/me/mcp-connections'
 
@@ -20,9 +20,12 @@ export const MCP_CONNECTION_NOT_FOUND = 'mcp-connection-not-found'
 
 /**
  * Implémentation HTTP de McpConnectionsRepository : `GET` puis `DELETE
- * /api/me/mcp-connections[/{id}]` (#650). Cookie httpOnly BEARER (`credentials:
- * 'include'`) sur les deux, double-submit CSRF (`X-XSRF-TOKEN`) sur le `DELETE`,
- * comme toute mutation de l'API.
+ * /api/me/mcp-connections[/{id}]` (#650). L'envoi (cookies, CSRF du `DELETE`) et le
+ * verdict « session finie » sont ceux de `infrastructure/http/sessionAwareFetch.ts`,
+ * qui porte la règle : un 401, ou un 403 à la révocation partie sans jeton, est une
+ * `SessionEndedError` ; tout autre 403 (la lecture, ou la révocation qui portait son jeton) est un refus réel,
+ * `AccessForbiddenError` : la page le dit et propose de changer de compte, au lieu de proposer de réessayer
+ * (#748, #732 point 4, R7).
  *
  * Le corps de la liste est vérifié champ par champ : une réponse d'une autre
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
@@ -40,11 +43,7 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   }
 
   async list(): Promise<McpConnectionList> {
-    const response = await this.send(`${this.apiBaseUrl}${PATH}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    })
+    const response = await this.send(`${this.apiBaseUrl}${PATH}`, { method: 'GET', headers: { Accept: 'application/json' } })
 
     let body: unknown
     try {
@@ -57,47 +56,42 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   }
 
   async revoke(id: string): Promise<void> {
-    const csrfToken = readCsrfToken()
-    await this.send(`${this.apiBaseUrl}${PATH}/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-      },
-    })
+    await this.send(`${this.apiBaseUrl}${PATH}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Accept: 'application/json' } })
   }
 
   /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: RequestInit): Promise<Response> {
-    let response: Response
+  private async send(url: string, init: SessionAwareInit): Promise<Response> {
+    let judged: SessionAwareResponse
     try {
-      response = await fetch(url, init)
+      judged = await sessionAwareFetch(url, init)
     } catch {
       throw new McpConnectionsRequestFailedError('The MCP connections request could not reach the server')
     }
 
-    if (!response.ok) {
-      throw await this.httpError(response)
+    if (!judged.response.ok) {
+      throw await this.httpError(judged)
     }
 
-    return response
+    return judged.response
   }
 
-  private async httpError(response: Response): Promise<Error> {
-    const status = response.status
-    switch (status) {
-      case 401:
+  private async httpError(judged: SessionAwareResponse): Promise<Error> {
+    // Le verdict de session passe avant le statut ; un autre 403 est un refus réel : le lire comme une session
+    // finie ferait se reconnecter pour rien, et comme un échec générique proposerait un « Réessayer » sans fin.
+    if (judged.endedTheSession) {
+      return new SessionEndedError()
+    }
+
+    const response = judged.response
+    switch (response.status) {
       case 403:
-        // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
-        // repose un cookie de session et un jeton CSRF neufs.
-        return new SessionExpiredError()
+        return new AccessForbiddenError()
       case 404:
         return (await this.hasType(response, MCP_CONNECTION_NOT_FOUND))
           ? new McpConnectionNotFoundError()
           : new McpConnectionsRequestFailedError('The MCP connections request failed with an unrecognised 404')
       default:
-        return new McpConnectionsRequestFailedError(`The MCP connections request failed with status ${status}`)
+        return new McpConnectionsRequestFailedError(`The MCP connections request failed with status ${response.status}`)
     }
   }
 

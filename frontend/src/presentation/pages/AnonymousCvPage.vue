@@ -72,7 +72,7 @@ async function handleGrantAccess(): Promise<void> {
 
       <p
         v-if="errorReason"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ 'rate-limited' === errorReason ? t('anonymousCv.needsAccess.rateLimited') : t('anonymousCv.needsAccess.error') }}
@@ -81,7 +81,7 @@ async function handleGrantAccess(): Promise<void> {
 
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('anonymousCv.error') }}
