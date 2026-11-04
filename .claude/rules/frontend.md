@@ -140,7 +140,7 @@ first path segment so the 404 page itself stays in the right language.
 to `fr`. **The language switcher** (`presentation/ui/LocaleSwitcher.vue`, #748, R227) replaces the first segment
 (`swapLocalePrefix()`) and keeps the query and the hash (a consent request's `client_id`/`state`/`code_challenge`, the
 login's flags; an internal `redirect` follows the new language); on a path with no locale prefix (the 404 `/frogs`) it
-navigates nowhere: it calls `applyInterfaceLocale()`, then `applySeoMeta(route)` for the title (D4).
+navigates nowhere: it calls `applyInterfaceLocale()`, then `applySeoMeta(route)` for the title (D4 of the eighteenth review).
 
 **The interface language is read as a `Locale` by `useCurrentLocale()`** (`application/shared/useCurrentLocale.ts`, #748, R213):
 vue-i18n's `locale` is a `string`, so the accessor judges it (`isSupportedLocale`) and brings a language the site does not

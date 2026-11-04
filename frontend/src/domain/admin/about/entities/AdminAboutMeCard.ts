@@ -12,7 +12,8 @@ export type AdminAboutMeCardCategory = (typeof ME_CARD_CATEGORIES)[number]
 
 /**
  * Juge une catégorie reçue du backend : le dépôt la dit à la frontière (raison `unknown`) plutôt que de la convertir par `as`,
- * qui ne juge rien et ferait entrer dans une entité typée une carte qu'aucun des trois tableaux ne range (#748, R229, CR18-4).
+ * qui ne juge rien et ferait entrer dans une entité typée une carte qu'aucun des trois tableaux ne range (#748, R229 de la
+ * dix-huitième relecture, CR18-4).
  */
 export function isAdminAboutMeCardCategory(value: string): value is AdminAboutMeCardCategory {
   return (ME_CARD_CATEGORIES as readonly string[]).includes(value)

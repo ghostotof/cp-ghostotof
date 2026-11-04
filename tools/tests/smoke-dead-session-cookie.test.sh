@@ -22,7 +22,7 @@ fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1));
 
 # run_case (check_empty_basic_auth, check_non_https_refused, check_no_child_sees_basic_auth, check_finds_library_under_cdpath,
 # check_root_script_dir_is_slash, check_http_base_served_without_basic_auth, check_hollow_basic_auth_values),
-# generated_basic_auth : communs aux smokes (write_env_noting est appelé par le cas des fils, plus d'ici).
+# generated_basic_auth : communs aux smokes (`write_env_noting`, que le cas des fils appelle, n'est pas appelé ici).
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -339,7 +339,7 @@ run_case check_empty_basic_auth \
   "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
   "${CASE_VARS[@]}"
 
-# Le lanceur des trois cas qui lancent le smoke (CASE_RUNNER, smoke-cases.sh) : ses réponses nominales sous le nom que le cas
+# Le lanceur des cas qui lancent le smoke (CASE_RUNNER, smoke-cases.sh) : ses réponses nominales sous le nom que le cas
 # donne, le code de sortie du smoke rendu (St18-23), jamais lu dans `rc` par le cas.
 run_nominal() { run "$1" "$witness_ok" "$public_ok" "$me_cleared"; return "$rc"; }
 

@@ -29,7 +29,7 @@ export const ORDER_TEXTS: {
   staleOrder: fr.admin.order.errors['stale-order'],
 }
 
-/** Enregistrer, annuler, supprimer : les boutons du formulaire d'une entrée (non ceux de la barre d'ordre). */
+/** Les boutons du formulaire d'une entrée, non ceux de la barre d'ordre. */
 type EntryFormTexts = { readonly save: string; readonly cancel: string; readonly delete: string }
 
 /**

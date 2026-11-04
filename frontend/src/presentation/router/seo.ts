@@ -32,9 +32,9 @@ function upsertLink(rel: string, href: string, hreflang?: string): void {
  * SPA sans SSR : ces balises ne sont donc visibles qu'aux crawlers qui exécutent le
  * JS (Googlebot le fait). On applique malgré tout les bonnes pratiques multilingues :
  * <title>/description par page et par langue, canonical, hreflang (dont x-default).
- * Appelé depuis un `router.afterEach`, donc après que la locale a déjà été synchronisée
- * par le `beforeEach` de `presentation/router/index.ts` ; et par le sélecteur de langue
- * sur une page sans préfixe, qui ne navigue pas, juste après `applyInterfaceLocale` (#748, R227).
+ * Traduit avec la langue d'interface courante : à appeler une fois `applyInterfaceLocale` passé (le `beforeEach`
+ * de `presentation/router/index.ts` l'a déjà fait quand un `router.afterEach` l'appelle) (#748, R227 de la dix-huitième
+ * relecture).
  */
 export function applySeoMeta(to: RouteLocationNormalized): void {
   const { titleKey, descriptionKey } = to.meta

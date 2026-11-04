@@ -27,7 +27,7 @@ interface BackofficeAboutMeCardApiResponse {
 
 const BASE_PATH = '/api/backoffice/about/me-cards'
 
-/** Le message de l'erreur `unknown` pour une catégorie hors des trois, que ce dépôt lève (#748, R236 de la vingtième relecture). */
+/** Le message de l'erreur `unknown` pour une catégorie hors des trois, que ce dépôt lève (#748, R236 de la dix-neuvième relecture). */
 export const UNKNOWN_CATEGORY_MESSAGE = 'Unknown category in response'
 
 function unsupportedLocaleError(): AdminAboutError {

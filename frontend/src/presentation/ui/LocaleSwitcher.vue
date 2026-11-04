@@ -15,7 +15,7 @@ const router = useRouter()
 const pageLocale = useRouteLocale()
 
 /**
- * Change de langue en restant sur la même page (#748, R227, D4).
+ * Change de langue en restant sur la même page (#748, R227, D4 de la dix-huitième relecture).
  *
  * Sous un préfixe de langue, le **premier** segment est remplacé (`swapLocalePrefix` : `/fr/about` → `/en/about`, jamais
  * `/frogs` → `/engs`), la query et le fragment gardés : la demande d'un consentement OAuth (`client_id`, `state`,

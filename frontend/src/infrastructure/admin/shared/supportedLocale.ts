@@ -1,13 +1,14 @@
 import { isSupportedLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
 
 /**
- * Le message de l'erreur `unknown` que chaque dépôt du backoffice lève pour une langue hors du site (#748, R229, St18-8) :
- * écrit ici une fois, les neuf dépôts le portent dans l'erreur de leur contexte.
+ * Le message de l'erreur `unknown` que chaque dépôt du backoffice lève pour une langue hors du site (#748, R229 de la
+ * dix-huitième relecture, St18-8) : écrit ici une fois, chaque dépôt le porte dans l'erreur de son contexte.
  */
 export const UNSUPPORTED_LOCALE_MESSAGE = 'Unsupported locale in response'
 
 /**
- * Lit la langue d'une réponse du backoffice comme une `Locale`, ou lève l'erreur de son contexte (#748, R214, D2).
+ * Lit la langue d'une réponse du backoffice comme une `Locale`, ou lève l'erreur de son contexte (#748, R214, D2 de la
+ * dix-septième relecture).
  *
  * Le backend n'émet que `fr` et `en` (value object `Locale`) : une autre valeur est une rupture du contrat de l'API, que le
  * dépôt dit **à la frontière** plutôt que de la laisser entrer dans une entité typée `Locale` par une assertion (`as Locale`

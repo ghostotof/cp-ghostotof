@@ -2,7 +2,6 @@ import en from '../../src/infrastructure/i18n/locales/en.json'
 import fr from '../../src/infrastructure/i18n/locales/fr.json'
 import type { Locale } from '../../src/domain/portfolio/entities/Locale'
 
-/** Les catalogues par langue, lus tels que les fichiers JSON les écrivent. */
 const CATALOGUES = { fr, en } as const satisfies Record<Locale, unknown>
 
 export interface AccessRefusalTexts {

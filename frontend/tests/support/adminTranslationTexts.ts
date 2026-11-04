@@ -3,10 +3,11 @@ import type { Locale } from '../../src/domain/portfolio/entities/Locale'
 import { renderedMessage } from './renderedMessage'
 
 /**
- * Les textes FR de la traduction assistée (attente d'un appel abandonné, prose en lecture seule, échec), lus de `fr.json`
- * par leur clé et jamais recopiés (même principe qu'`accessRefusalTexts.ts`) : un libellé retouché dans le catalogue ne
- * fait pas rougir une dizaine de specs pour une virgule. Les specs les comparent entiers (`toEqual` sur
- * `describedTexts()`) : c'est l'identité du texte que désigne un `aria-describedby` qu'elles jugent, pas sa rédaction.
+ * Les textes FR de la traduction assistée (attente d'un appel abandonné, prose en lecture seule, bouton en cours d'appel,
+ * échecs 503 et 429, mention d'une proposition), lus de `fr.json` par leur clé et jamais recopiés (même principe
+ * qu'`accessRefusalTexts.ts`) : un libellé retouché dans le catalogue ne fait pas rougir une dizaine de specs pour une
+ * virgule. Les specs les comparent entiers (`toEqual` sur `describedTexts()`) : c'est l'identité du texte que désigne un
+ * `aria-describedby` qu'elles jugent, pas sa rédaction.
  * La justesse des mots eux-mêmes se juge à un seul endroit, `tests/infrastructure/i18n/adminTranslationTexts.spec.ts`.
  * Ceux du verrou d'un formulaire sont dans `entryFormLockTexts.ts`.
  */

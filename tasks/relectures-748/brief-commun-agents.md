@@ -9,21 +9,24 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R222 et suivantes**, la section « Corrections de la
-  dix-huitième relecture (2026-11-03) » en entier jusqu'à la première tâche (ce que la série précédente a réellement fait, décisions
-  D1 à D5, vérification des constats, ordre, choix tranchés, questions Q1 à Q4, Review Focus, contraintes d'exécution, table des
-  fichiers), puis **ta tâche**. (R209–R221, R216b, R219b, R219c, R220b : « … dix-septième relecture » ; R196–R208 : « … seizième
-  relecture » ; R182–R195, R187b, R189b : « … quinzième relecture » ; R168–R181, R173b : « … quatorzième relecture » ; R152–R167,
-  R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « … douzième relecture » ; R121–R136 : « … onzième relecture » ;
-  R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième
-  relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième
-  relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ;
-  R1–R11 : « Corrections de relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-18-constats.md`
-  (R209–R221 : `relecture-17-constats.md` ; R196–R208 : `relecture-16-constats.md` ; R182–R195 : `relecture-15-constats.md` ;
-  R168–R181 : `relecture-14-constats.md` ; R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ;
-  R121–R136 : `relecture-11-constats.md`). Les sections passées sont l'archive de leur moment : une note « *(rectifié le …)* » y dit
-  ce que les séries ont rendu faux. Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte
-  au plus près de son intention et note l'écart, ou rends la question.
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R235 et suivantes**, la section « Corrections de la
+  dix-neuvième relecture (2026-11-04) » en entier jusqu'à la première tâche (ce que la série précédente a réellement fait,
+  décisions E1 à E4, vérification des constats, ordre, choix pris à la recommandation, Review Focus, contraintes d'exécution, table
+  des fichiers), puis **ta tâche**. (R222–R234 : « … dix-huitième relecture » ; R209–R221, R216b, R219b, R219c, R220b : « …
+  dix-septième relecture » ; R196–R208 : « … seizième relecture » ; R182–R195, R187b, R189b : « … quinzième relecture » ;
+  R168–R181, R173b : « … quatorzième relecture » ; R152–R167, R157b : « … treizième relecture » ; R137–R151, R141b, R148b : « …
+  douzième relecture » ; R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « …
+  neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ;
+  R59–R72 : « … sixième relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « …
+  troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la
+  série : `tasks/relectures-748/relecture-19-constats.md` (R222–R234 : `relecture-18-constats.md` ; R209–R221 :
+  `relecture-17-constats.md` ; R196–R208 : `relecture-16-constats.md` ; R182–R195 : `relecture-15-constats.md` ; R168–R181 :
+  `relecture-14-constats.md` ; R152–R167 : `relecture-13-constats.md` ; R137–R151 : `relecture-12-constats.md` ; R121–R136 :
+  `relecture-11-constats.md`). Les sections passées sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les
+  séries ont rendu faux. Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus
+  près de son intention et note l'écart, ou rends la question.
+- **Les conventions d'écriture** (numéro avec sa série, présent, sans décompte ni appelant, ≤ 140) valent pour ce que la tâche écrit ;
+  une relecture ne les relève qu'au diff de la série relue, au plus en « faible » (E3).
 - **Une décision de l'auteur listée au plan ou ici ne se contourne pas par une interprétation** : R166 a coupé des `echo`
   que l'auteur avait décidé de garder d'un seul tenant. Si une décision te semble contredire ta tâche, arrête-toi et rends
   la question.
@@ -160,7 +163,7 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R234 écrit la sous-section « Ce que la dix-neuvième
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` (seule exception : R240 écrit la sous-section « Ce que la vingtième
 série a réellement fait » du plan, avec les commandes et les nombres de son balayage) ; ne coche rien —
 **aucune case `- [ ]` de `tasks/plan-748.md`**,
 même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le

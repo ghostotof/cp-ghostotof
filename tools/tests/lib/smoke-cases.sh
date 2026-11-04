@@ -43,9 +43,8 @@
 # sorties sous ce nom comme le `run` du test (les fichiers que l'appel donne en CASE_CALLS, CASE_ERR… sont ceux de ce nom) et **rend**
 # le code de sortie du script : le cas lit ce code, jamais une variable globale. Le cas pose devant l'appel l'environnement qu'il juge
 # (AUDIT_BASIC_AUTH, FAKE_TOOL_ENV, PATH, CDPATH, RUN_SCRIPT) ; le lanceur lance `${RUN_SCRIPT:-<son script>}`. Les cas l'appellent
-# sous `||` : un code non nul ne fait pas sortir le test (`set -e`). Trois cas le prennent, chacun sous son nom de lancement :
-# check_no_child_sees_basic_auth (`witness`), check_finds_library_under_cdpath (`cdpath`), check_hollow_basic_auth_values (`creuse`).
-# Un test leur donne le plus souvent la même fonction (`run_nominal`).
+# sous `||` : un code non nul ne fait pas sortir le test (`set -e`). Un cas qui lance le script le prend sous son nom de lancement
+# (`witness`, `cdpath`, `creuse`). La fonction que chaque test leur donne (`run_nominal`) lance son script avec ses réponses nominales.
 # ---------------------------------------------------------------------------
 
 # generated_basic_auth
@@ -387,12 +386,13 @@ check_http_base_served_without_basic_auth() {
 
 # check_hollow_basic_auth_values  (CASE_LABEL, CASE_RUNNER, CASE_ERR, CASE_OUT, CASE_CALLS ; CASE_ARGS et CASE_TMPDIR facultatifs)
 #
-# Un utilisateur ou un mot de passe vide n'est pas une Basic Auth (C11-8, R212, St17-23) : pour chacune des trois valeurs creuses
-# (`:`, `<repère>:` et `:<repère>`, le repère étant généré), sortie 2 avant tout appel de curl, « Basic Auth sans utilisateur ou sans
-# mot de passe » en tête d'une ligne du stderr, rien sur stdout, rien dans TMPDIR si le dossier est donné, et le repère nulle part
-# (stdout, stderr, et le fichier des arguments s'il est donné). Le cas lance le script par `AUDIT_BASIC_AUTH=<valeur> $CASE_RUNNER creuse`
-# et juge le code que le lanceur rend. Un `pass` par valeur, le libellé suivi de la forme de la valeur (St18-33 : `<repère>:` et
-# `:<repère>` ont la même longueur, un nombre de caractères ne les distinguait pas), jamais du repère.
+# Un utilisateur ou un mot de passe vide n'est pas une Basic Auth (C11-8, R212 de la dix-septième relecture, St17-23) : pour
+# chacune des trois valeurs creuses (`:`, `<repère>:` et `:<repère>`, le repère étant généré), sortie 2 avant tout appel de curl,
+# « Basic Auth sans utilisateur ou sans mot de passe » en tête d'une ligne du stderr, rien sur stdout, rien dans TMPDIR si le
+# dossier est donné, et le repère nulle part (stdout, stderr, et le fichier des arguments s'il est donné). Le cas lance le script
+# par `AUDIT_BASIC_AUTH=<valeur> $CASE_RUNNER creuse` et juge le code que le lanceur rend. Un `pass` par valeur, le libellé suivi
+# de la forme de la valeur (`<repère>:` et `:<repère>` ont la même longueur : un nombre de caractères ne les distinguerait pas),
+# jamais du repère.
 check_hollow_basic_auth_values() {
   local token hollow form code detail calls tmpdir="${CASE_TMPDIR:-}" searched
   _case_incomplete CASE_LABEL CASE_RUNNER CASE_ERR CASE_OUT CASE_CALLS && return 0

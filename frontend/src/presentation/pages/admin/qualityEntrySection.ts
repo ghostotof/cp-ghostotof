@@ -47,8 +47,8 @@ export type EntryForm<F extends string> = EntryFormPlacement & Record<F, string>
  * Un champ par clé de `options`, sa valeur lue par `valueOf` : le formulaire à blanc (`() => ''`), le corps d'écriture
  * (`(name) => form[name]`). Seules les clés de `options` sont lues, jamais ses valeurs.
  *
- * C'est **la seule assertion de ce module** (`as Record<F, string>`) : un objet bâti à l'exécution est indexé
- * par une chaîne quelconque, et TypeScript n'accepte pas un `{ [clé: string]: string }` comme `Record<F, string>`. Elle est sûre
+ * C'est **la seule assertion de type de ce module**, hors `as const` (`as Record<F, string>`) : un objet bâti à l'exécution est
+ * indexé par une chaîne quelconque, et TypeScript n'accepte pas un `{ [clé: string]: string }` comme `Record<F, string>`. Elle est sûre
  * parce que les clés de `options` sont `F` (`options: Record<F, …>`, exhaustif par le `satisfies` de chaque instance) et que la
  * fonction ne fait que les recopier, une valeur chacune.
  */
@@ -186,5 +186,4 @@ export const QUALITY_TRAIT_FIELD_OPTIONS = {
 /** Les noms de champs d'un principe, lus du record : une clé ajoutée ou retirée du record change ce type, et ses lecteurs avec. */
 export type QualityPrincipleField = keyof typeof QUALITY_PRINCIPLE_FIELD_OPTIONS
 
-/** Les noms de champs d'un trait, lus du record. */
 export type QualityTraitField = keyof typeof QUALITY_TRAIT_FIELD_OPTIONS

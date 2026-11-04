@@ -12,8 +12,8 @@ const StubPage = { template: '<div />' }
 
 /**
  * `i18n` : une instance isolée par défaut ; l'instance de l'application (`appI18n`) pour les cas où le sélecteur pose la
- * langue d'interface lui-même (page sans préfixe, D4) : `applyInterfaceLocale` écrit celle-là, comme le routeur, et
- * `applySeoMeta` traduit le titre avec elle. Ces cas la remettent en `fr` en `afterEach`.
+ * langue d'interface lui-même (page sans préfixe, D4 de la dix-huitième relecture) : `applyInterfaceLocale` écrit celle-là,
+ * comme le routeur, et `applySeoMeta` traduit le titre avec elle. Ces cas la remettent en `fr` en `afterEach`.
  */
 async function mountSwitcher(initialPath = '/fr/about', i18n = createAppI18n()) {
   const router = createRouter({
@@ -113,7 +113,8 @@ describe('LocaleSwitcher', () => {
     expect(router.currentRoute.value.path).toBe('/frogs')
   })
 
-  // D4 (CR18-2) : sur `/frogs`, pousser le même chemin ne changeait rien ; le sélecteur pose la langue sans naviguer.
+  // D4 de la dix-huitième relecture (CR18-2) : sur `/frogs`, pousser le même chemin ne change rien ;
+  // le sélecteur pose la langue sans naviguer.
   it('sur une page sans préfixe, change la langue sans naviguer (#748, R227)', async () => {
     const { wrapper, router } = await mountSwitcher('/frogs', appI18n)
     const push = vi.spyOn(router, 'push')

@@ -28,7 +28,8 @@ describe('supportedLocaleOf', () => {
 })
 
 describe('UNSUPPORTED_LOCALE_MESSAGE', () => {
-  // Le message que les neuf dépôts portent dans leur erreur `unknown` : écrit une fois, ici (#748, R229, St18-8).
+  // Le message que chaque dépôt du backoffice porte dans son erreur `unknown` : écrit une fois, ici (#748, R229 de la dix-huitième
+  // relecture, St18-8).
   it('dit la rupture du contrat, en anglais, sans citer la valeur reçue du serveur (#748, R229)', () => {
     expect(UNSUPPORTED_LOCALE_MESSAGE).toBe('Unsupported locale in response')
   })
