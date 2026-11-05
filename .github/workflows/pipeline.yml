@@ -444,6 +444,7 @@ jobs:
           tools/tests/d8-guard-step.test.sh
           tools/tests/summary-phpunit.test.sh
           tools/tests/tls-certificate.test.sh
+          tools/tests/audit-prod.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
@@ -580,7 +581,7 @@ jobs:
       TAG: ${{ needs.release-version.outputs.image_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

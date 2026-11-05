@@ -124,7 +124,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
         - name: nginx
-          image: nginx:1.30.4-alpine # garder synchronisé avec NGINX_TAG dans ../.env
+          image: nginx:1.30.6-alpine # garder synchronisé avec NGINX_TAG dans ../.env
           ports:
             - containerPort: 8080
           volumeMounts:

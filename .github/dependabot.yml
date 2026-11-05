@@ -31,6 +31,20 @@ updates:
     groups:
       backend-minor-patch:
         update-types: ['minor', 'patch']
+    # API Platform : la majeure est écartée tant que sa migration n'est pas
+    # faite (#735). Sans cette ligne, Dependabot ne regarde que la
+    # *dernière* version publiée : dès la sortie de la 5.0 (2026-09-16), le
+    # groupe `backend-minor-patch` rejetait `api-platform/symfony` et
+    # `api-platform/doctrine-orm` (« la dernière version est une majeure »),
+    # sans jamais examiner les 4.3.20/4.3.21 ni les 4.4.x ; et la PR
+    # individuelle qui en résulte vise la 5.0.x, que la résolution refuse
+    # (`api-platform/metadata ^5.0` en conflit avec le reste du lock). Le
+    # silence a duré de la 5.0.0 à la correction. Avec l'ignore, la « dernière
+    # version » devient la dernière 4.x, que le groupe accepte. À retirer
+    # quand on migre vers la 5.0.
+    ignore:
+      - dependency-name: 'api-platform/*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /frontend

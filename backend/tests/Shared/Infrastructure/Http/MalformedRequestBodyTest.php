@@ -216,7 +216,8 @@ final class MalformedRequestBodyTest extends WebTestCase
     /**
      * Un `id` dans le corps d'un PUT (issue #373). Un PUT « standard »
      * d'API Platform 4 ne peuple aucun objet existant : sans réglage, la clé
-     * partait en résolution d'IRI (ItemNormalizerTrait::updateObjectToPopulate)
+     * partait en résolution d'IRI (ItemNormalizerTrait::updateObjectToPopulate,
+     * appelé par l'ItemDenormalizer que le bundle câble depuis la 4.4)
      * et sortait en ItemNotFoundException — 400 sous l'entrée large
      * `ApiPlatform\Metadata\Exception\InvalidArgumentException`, mais
      * journalisée `critical`, sur les vingt-deux PUT du backoffice. Aucune

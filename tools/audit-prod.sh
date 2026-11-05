@@ -20,6 +20,8 @@ BASE="https://${DOMAIN}"
 # Timeout court sur chaque requête : un domaine qui ne répond pas ne doit pas
 # faire tourner le job en boucle jusqu'au timeout du runner CI.
 CURL_OPTS=(--connect-timeout 5 --max-time 15)
+# Les mêmes options, sans identifiants : copiées avant l'ajout de `-K` ci-dessous.
+CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 
 # Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
 # chaque requête de cet audit recevrait 401 au lieu du vrai contenu, et les
@@ -72,11 +74,15 @@ echo "$HEADERS_RAW"
 #    Un site qui répond en 200 sur http:// sans redirect = point à corriger.
 # ---------------------------------------------------------------------------
 section "Redirections"
+# Ces sondes partent sans Basic Auth (CURL_OPTS_ANONYMOUS) : curl envoie
+# `Authorization: Basic` dès la première requête, quel que soit le schéma, donc
+# l'identifiant de la préprod partirait en clair sur http://. Une redirection
+# se juge sans authentification (#750).
 for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
   # %{http_code} = code de la 1re réponse, %{redirect_url} = cible du Location
   printf '%-32s -> %s %s\n' "$url" \
-    "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "$url")" \
-    "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{redirect_url}' "$url")"
+    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code}' "$url")" \
+    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{redirect_url}' "$url")"
 done
 
 # ---------------------------------------------------------------------------

@@ -39,14 +39,14 @@ api_platform:
     #
     #  1. déclarer `exception_to_status` **remplace** la valeur par défaut
     #     d'API Platform, elle ne la complète pas (`->defaultValue([...])` dans
-    #     Configuration::addExceptionToStatusSection, vendor/api-platform/symfony/
-    #     Bundle/DependencyInjection/Configuration.php:622). Deux des trois
+    #     Configuration::addExceptionToStatusSection, dans vendor/api-platform/symfony/
+    #     Bundle/DependencyInjection/Configuration.php). Deux des trois
     #     entrées par défaut sont donc rétablies en fin de liste ci-dessous,
     #     la troisième retirée à dessein (issue #373) ;
     #  2. la résolution prend la **première** entrée qui correspond, dans
     #     l'ordre de déclaration, et `is_a($exception, $class, true)` reconnaît
     #     aussi les interfaces et les classes parentes (ErrorListener::getStatusCode,
-    #     vendor/api-platform/symfony/EventListener/ErrorListener.php:167). Une
+    #     dans vendor/api-platform/symfony/EventListener/ErrorListener.php). Une
     #     entrée large doit donc rester **après** les entrées précises — d'où la
     #     place des défauts, tout en bas.
     #
@@ -242,7 +242,9 @@ api_platform:
         # Issue #373 : aucune ressource ne se met à jour par IRI. Sans ce
         # réglage, un `id` dans le corps d'un PUT (« standard » en API
         # Platform 4 : aucun objet à peupler) partait en résolution d'IRI
-        # (ItemNormalizerTrait::updateObjectToPopulate) et sortait en
+        # (ItemNormalizerTrait::updateObjectToPopulate, que l'ItemDenormalizer
+        # câblé par le bundle depuis la 4.4 appelle — ItemNormalizer::denormalize()
+        # est déprécié, ApiPlatformRaisesNoDeprecationTest y veille) et sortait en
         # ItemNotFoundException pour un `id` inconnu, 400 sous l'entrée large
         # d'API Platform mais journalisée `critical`. Avec lui, le Serializer
         # refuse la clé (« Update is not allowed for this operation »), d'où

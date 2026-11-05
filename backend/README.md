@@ -2,7 +2,7 @@
 
 API seule (aucune page rendue côté serveur), consommée par le frontend Vue de `../frontend/`.
 
-- **Framework** : Symfony 8.1, API Platform 4.3, Doctrine ORM 3 sur PostgreSQL, Messenger sur
+- **Framework** : Symfony 8.1, API Platform 4.4, Doctrine ORM 3 sur PostgreSQL, Messenger sur
   RabbitMQ, LexikJWT (cookie httpOnly), Symfony AI (assistant de traduction du backoffice).
 - **Structure** : un dossier par contexte borné sous `src/` (`Security/`, `Portfolio/*`, `Ai/`,
   `Contact/`, `Shared/`), chacun découpé en `Domain/Application/Infrastructure/Presentation`. Les

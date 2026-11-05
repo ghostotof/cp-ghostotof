@@ -6,12 +6,14 @@ namespace App\Tests\Security\Authentication;
 
 use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\FreezesTheWholeClock;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
 use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -30,20 +32,17 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class LoginThrottlingTest extends WebTestCase
 {
+    use FreezesTheWholeClock;
     use HttpJson;
     use ReadsAllChannelsLog;
 
-    /** La fenêtre de `login_throttling` (security.yaml) : l'échéance ne peut pas la dépasser. */
-    private const int THROTTLING_INTERVAL_SECONDS = 15 * 60;
-
     /**
-     * Les six tentatives tiennent en quelques secondes, la fenêtre fixe vient
-     * donc de s'ouvrir : l'échéance réelle est à une minute près de sa fin.
-     * Une borne basse à 14 minutes distingue ce vrai chemin du repli à une
-     * minute de LoginThrottlingRefusalListener, que `> 0` laissait passer —
-     * si Symfony cessait de fournir `%minutes%`, le test le verrait.
+     * Le `Retry-After` d'un refus de login sous l'horloge figée : l'échéance est
+     * `now + 15 minutes`, exactement. Une valeur exacte distingue ce vrai chemin
+     * du repli à une minute de LoginThrottlingRefusalListener (60), que `> 0`
+     * laissait passer, comme d'une 16e minute non plafonnée (960).
      */
-    private const int MINIMAL_RETRY_AFTER_SECONDS = 14 * 60;
+    private const int EXPECTED_RETRY_AFTER_SECONDS = 15 * 60;
 
     /**
      * Le compteur de `login_throttling` est indexé par (IP, identifiant) et
@@ -73,9 +72,29 @@ final class LoginThrottlingTest extends WebTestCase
         parent::tearDown();
     }
 
-    public function testAttemptsBeyondLimitAreBlockedEvenWithValidCredentials(): void
+    /**
+     * Les deux instants figés prennent les deux branches (issue #743) : à `.999`
+     * la fenêtre s'ouvre dans la même seconde que le refus, Symfony lit 901 s,
+     * donc 16 minutes, et le plafond ramène à 15 ; pile sur la seconde, il lit
+     * 900 s et le plafond ne sert pas. Le `Retry-After` vaut 900 dans les deux
+     * cas (le calcul est dans le docblock de LoginThrottlingRefusalListener).
+     * Le limiteur et `LoginThrottlingListener` lisent l'heure réelle,
+     * `LoginThrottlingRefusalListener` et `RetryAfterListener` celle de
+     * `ClockInterface` : l'horloge est donc figée tout entière.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideTheTwoFrozenInstants(): iterable
+    {
+        yield 'fenêtre ouverte à .999, branche plafonnée (16 -> 15)' => [self::FROZEN_INSTANT];
+        yield 'fenêtre ouverte pile sur la seconde, sans plafond (15)' => [self::FROZEN_INSTANT_ON_THE_SECOND];
+    }
+
+    #[DataProvider('provideTheTwoFrozenInstants')]
+    public function testAttemptsBeyondLimitAreBlockedEvenWithValidCredentials(string $frozenInstant): void
     {
         $client = $this->clientWithAccount();
+        self::freezeTheWholeClock($frozenInstant);
         $this->exhaustTheAllowedFailures($client);
 
         // 6e tentative : le throttling prend le relais, sans vérification du mot de passe.
@@ -134,9 +153,7 @@ final class LoginThrottlingTest extends WebTestCase
         self::assertSame(429, $response->getStatusCode());
         self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
 
-        $retryAfter = (int) $response->headers->get('Retry-After');
-        self::assertGreaterThanOrEqual(self::MINIMAL_RETRY_AFTER_SECONDS, $retryAfter, 'Retry-After ne suit plus l\'échéance du limiteur : le repli à une minute a pris le relais.');
-        self::assertLessThanOrEqual(self::THROTTLING_INTERVAL_SECONDS, $retryAfter);
+        self::assertSame((string) self::EXPECTED_RETRY_AFTER_SECONDS, $response->headers->get('Retry-After'), 'Retry-After n\'est pas l\'échéance de la fenêtre de login_throttling.');
 
         $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($problem);
@@ -147,6 +164,9 @@ final class LoginThrottlingTest extends WebTestCase
     private function clientWithAccount(): KernelBrowser
     {
         $client = self::createClient();
+        // Avant de figer l'horloge : un compteur écrit à l'heure réelle puis lu
+        // sous l'heure figée (dans le passé) ne s'éteint jamais.
+        self::getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($this->username, TestCredentials::plainPassword());
 
         return $client;
