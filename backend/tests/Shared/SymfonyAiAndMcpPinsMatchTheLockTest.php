@@ -47,11 +47,11 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
         $lock = self::decoded('composer.lock');
 
         // Sans ces deux-là, le test lirait un autre lock que celui du projet.
-        $locked = self::lockedVersions($lock);
+        $locked = $this->lockedVersions($lock);
         self::assertArrayHasKey('symfony/ai-bundle', $locked, 'composer.lock ne contient plus symfony/ai-bundle : le test lit-il le bon lock ?');
         self::assertArrayHasKey('symfony/mcp-bundle', $locked, 'composer.lock ne contient plus symfony/mcp-bundle : le test lit-il le bon lock ?');
 
-        self::assertSame([], self::violations($composer, $lock), self::failure(self::violations($composer, $lock)));
+        self::assertSame([], $this->violations($composer, $lock), $this->failure($this->violations($composer, $lock)));
     }
 
     /**
@@ -101,15 +101,12 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
     #[DataProvider('composerFiles')]
     public function testItNamesEveryPackageThatIsNotPinnedAtItsLockedVersion(array $composer, array $lock, array $expected): void
     {
-        self::assertSame($expected, array_keys(self::violations($composer, $lock)));
+        self::assertSame($expected, array_keys($this->violations($composer, $lock)));
     }
 
     public function testTheFailureNamesThePackageTheLockedVersionAndTheConstraintFound(): void
     {
-        $message = self::failure(self::violations(
-            self::composer(['symfony/ai-bundle' => '^0.15']),
-            self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1']),
-        ));
+        $message = $this->failure($this->violations(self::composer(['symfony/ai-bundle' => '^0.15']), self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1'])));
 
         self::assertStringContainsString('symfony/ai-bundle : verrouillé en 0.15.0, contrainte « ^0.15 »', $message);
         self::assertStringContainsString('mcp/sdk : verrouillé en 0.8.1, absent du require', $message);
@@ -125,10 +122,10 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
      *
      * @return array<string, string> paquet => raison
      */
-    private static function violations(array $composer, array $lock): array
+    private function violations(array $composer, array $lock): array
     {
         $require = \is_array($composer['require'] ?? null) ? $composer['require'] : [];
-        $locked = self::lockedVersions($lock);
+        $locked = $this->lockedVersions($lock);
         $violations = [];
 
         foreach ($locked as $package => $version) {
@@ -145,7 +142,7 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
 
         // Un pin des familles dont le paquet n'est pas dans le lock : lock désynchronisé.
         foreach (array_keys($require) as $package) {
-            if (\is_string($package) && self::isPinnedFamily($package) && !\array_key_exists($package, $locked)) {
+            if (\is_string($package) && $this->isPinnedFamily($package) && !\array_key_exists($package, $locked)) {
                 $violations[$package] = \sprintf('%s : exigé par composer.json mais absent de composer.lock — lancer composer update %s.', $package, $package);
             }
         }
@@ -161,7 +158,7 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
      *
      * @return array<string, string>
      */
-    private static function lockedVersions(array $lock): array
+    private function lockedVersions(array $lock): array
     {
         $versions = [];
         foreach (['packages', 'packages-dev'] as $section) {
@@ -173,7 +170,7 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
                 $version = $package['version'] ?? null;
                 self::assertIsString($name);
                 self::assertIsString($version);
-                if (self::isPinnedFamily($name)) {
+                if ($this->isPinnedFamily($name)) {
                     $versions[$name] = str_starts_with($version, 'v') ? substr($version, 1) : $version;
                 }
             }
@@ -182,21 +179,15 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
         return $versions;
     }
 
-    private static function isPinnedFamily(string $package): bool
+    private function isPinnedFamily(string $package): bool
     {
-        foreach (self::PINNED_PREFIXES as $prefix) {
-            if (str_starts_with($package, $prefix)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(self::PINNED_PREFIXES, static fn (string $prefix): bool => str_starts_with($package, $prefix));
     }
 
     /**
      * @param array<string, string> $violations
      */
-    private static function failure(array $violations): string
+    private function failure(array $violations): string
     {
         $lines = [];
         foreach ($violations as $reason) {
