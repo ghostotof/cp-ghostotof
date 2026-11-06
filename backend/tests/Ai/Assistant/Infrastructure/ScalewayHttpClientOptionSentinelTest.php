@@ -37,6 +37,8 @@ use Symfony\Component\DependencyInjection\Reference;
  */
 final class ScalewayHttpClientOptionSentinelTest extends TestCase
 {
+    use ReadsTheScalewayPlatformNode;
+
     /** Client demandé par la configuration, qui n'existe nulle part ailleurs. */
     private const string REQUESTED_HTTP_CLIENT = 'app.sentinel.scaleway_http_client';
 
@@ -52,6 +54,17 @@ final class ScalewayHttpClientOptionSentinelTest extends TestCase
 
     public function testTheBundleStillIgnoresTheHttpClientOptionOfAScalewayPlatform(): void
     {
+        // Une option retirée du nœud ferait échouer le chargement en erreur de
+        // configuration, sans dire laquelle des deux raisons est en jeu : on le
+        // dit d'abord, lisiblement.
+        foreach (['api_key', 'http_client'] as $option) {
+            self::assertContains(
+                $option,
+                self::scalewayNodeOptions(),
+                \sprintf('Le nœud `ai.platform.scaleway` n\'accepte plus l\'option `%s`, que cette sentinelle configure : suivre .claude/rules/ai.md, « Moving the Scaleway platform back into `ai.yaml` », cas d\'une option retirée.', $option),
+            );
+        }
+
         $container = $this->loadAiExtension([
             'platform' => [
                 'scaleway' => [

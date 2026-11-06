@@ -147,8 +147,14 @@ paths:
   platform back into `ai.yaml` » below: `ScalewayHttpClientOptionSentinelTest` loads the bundle's extension alone
   with a `scaleway` platform asking for a named client and turns red the day the option is honoured;
   `ScalewayPlatformOptionListSentinelTest` reads the bundle's configuration tree and requires the `scaleway` node's
-  options to be exactly its closed list (`KNOWN_OPTIONS`: `api_key`, `http_client`), so it turns red on **any** new
-  option — a pattern guessing the base URL's name (`url`, `host`, `endpoint`…) missed `completions_path`, measured;
+  options to be exactly its closed list (`KNOWN_OPTIONS`: `api_key`, `http_client`, compared as a set by
+  `assertEqualsCanonicalizing`, so the list need not stay sorted), so it turns red on **any** new or removed option —
+  the pattern it replaced, which guessed the base URL's name (`url`, `host`, `endpoint`…), was measured on the
+  `generic` node (a base URL plus path options), not on `scaleway`: it saw `base_url` and missed
+  `completions_path` and `embeddings_path`; the `scaleway` node has none of the three. Both sentinels read the node
+  through the trait `ReadsTheScalewayPlatformNode`, and `ScalewayHttpClientOptionSentinelTest` first checks that the
+  two options it configures are still there, so a removed one fails on a readable assertion instead of the
+  extension's configuration error;
   `ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from
@@ -219,13 +225,20 @@ paths:
      other sentinel is still there and green, the base URL is still missing: remove this sentinel, keep
      `services.yaml`, and say here and in its comment that one reason remains. If the base URL's reason has fallen too
      (the other sentinel red and confirmed by step 2, or already removed): step 3.
-  2. **`ScalewayPlatformOptionListSentinelTest` red**: the `scaleway` node gained an option (or lost one). Read it in
-     the bundle (`config/platform/scaleway.php`, and what the `'scaleway' === $type` block of `src/AiBundle.php` does
-     with it): **does it carry the project**, i.e. a base URL `https://api.scaleway.ai/<project>` handed to the
-     `Factory`'s `$baseUrl`? **If not**, add its name to `KNOWN_OPTIONS`, say here what it is, keep `services.yaml`:
-     the sentinel goes green and keeps guarding. **If it does**, the base URL's reason has fallen: if the other
-     sentinel is still there and green, remove this one, keep `services.yaml`, and say here and in its comment that
-     one reason remains; if it is red too, or already removed, step 3.
+  2. **`ScalewayPlatformOptionListSentinelTest` red**: the `scaleway` node gained or lost an option. Read it in the
+     bundle (`config/platform/scaleway.php`, and what the `'scaleway' === $type` block of `src/AiBundle.php` does with
+     it). **An option gained**: does it carry the project, i.e. a base URL `https://api.scaleway.ai/<project>` handed to
+     the `Factory`'s `$baseUrl`? **If not**, add its name to `KNOWN_OPTIONS`, say here what it is, keep
+     `services.yaml`: the sentinel goes green and keeps guarding. **If it does**, the base URL's reason has fallen: if
+     the other sentinel is still there and green, remove this one, keep `services.yaml`, and say here and in its
+     comment that one reason remains; if it is red too, or already removed, step 3. **An option lost**: no reason
+     falls by it — `services.yaml` builds the platform through the `Factory`, not through the node, and
+     `ScalewayPlatformWiringTest` stays the proof that it works. Remove the name from `KNOWN_OPTIONS`, say here what
+     the bundle did instead, keep `services.yaml`. `ScalewayHttpClientOptionSentinelTest` then fails too, on its
+     readable « n'accepte plus l'option » assertion (it configures both options): `api_key` lost, drop the key from
+     its configuration and its check; `http_client` lost, the bundle offers no way to pass a client at all — the
+     first reason holds in a stronger form —, so rewrite that sentinel to turn red the day the node accepts the
+     option again, and say so here.
   3. **The move back**: declare the platform in `ai.yaml` (`http_client: ai.scaleway.http_client`, the key, the base
      URL carrying `%env(SCALEWAY_AI_PROJECT_ID)%`), remove `app.ai.platform.scaleway` from `services.yaml`, point the
      `career_assistant` agent at `ai.platform.scaleway`, keep `ScalewayPlatformWiringTest` green (its mock must still
