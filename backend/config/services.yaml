@@ -104,17 +104,18 @@ services:
     App\Ai\Assistant\Application\CareerAssistantInterface: '@App\Ai\Assistant\Infrastructure\SymfonyAi\SymfonyAiCareerAssistant'
 
     # Plateforme Scaleway Generative APIs de l'assistant de carrière (spec 0005 D2,
-    # ADR 0004 D7). Déclarée ici et non dans ai.yaml : symfony/ai-bundle, à la
-    # version épinglée (composer.json), passe le client `http_client` par défaut
-    # en dur dans son bloc `'scaleway' === $type` (src/AiBundle.php) et ignore
-    # l'option `http_client`, là où le bloc Anthropic l'honore. Or l'ADR exige
-    # le client dédié (timeout 40 s,
-    # max_redirects 0). Le même bloc n'offre pas non plus d'URL de base, où le
+    # ADR 0004 D7). Déclarée ici et non dans ai.yaml, pour deux raisons.
+    # symfony/ai-bundle, à la version épinglée (composer.json), passe le client
+    # `http_client` par défaut en dur dans son bloc `'scaleway' === $type`
+    # (src/AiBundle.php) et ignore l'option `http_client`, là où le bloc
+    # Anthropic l'honore ; or l'ADR exige le client dédié (timeout 40 s,
+    # max_redirects 0). Et son nœud `scaleway` n'offre pas d'URL de base, où le
     # projet doit figurer (voir `$baseUrl` ci-dessous). Le jour où le bundle
     # transmet l'option et accepte cette URL, cette déclaration retourne dans
-    # ai.yaml ; ScalewayHttpClientOptionSentinelTest rougit quand l'option est
-    # honorée. Paresseuse comme celle du bundle : aucun
-    # objet n'est construit tant que l'agent n'est pas appelé.
+    # ai.yaml : ScalewayHttpClientOptionSentinelTest et
+    # ScalewayBaseUrlOptionSentinelTest rougissent chacune quand l'une des deux
+    # raisons tombe. Paresseuse comme celle du bundle : aucun objet n'est
+    # construit tant que l'agent n'est pas appelé.
     app.ai.platform.scaleway:
         class: Symfony\AI\Platform\Platform
         factory: ['Symfony\AI\Platform\Bridge\Scaleway\Factory', 'createPlatform']

@@ -21,17 +21,20 @@ use Symfony\Component\DependencyInjection\Reference;
  * passe toujours la référence `http_client` en dur, alors que le nœud de
  * configuration accepte l'option (config/platform/scaleway.php). La seconde, le
  * nœud sans URL de base où porter le projet (sans lui, 403), a sa propre
- * sentinelle ({@see ScalewayBaseUrlOptionSentinelTest}).
+ * sentinelle
+ * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayBaseUrlOptionSentinelTest}).
  *
- * {@see ScalewayPlatformWiringTest} prouve que le contournement marche ; ce
- * test-ci prouve qu'il est encore nécessaire, et rougit le jour où une montée
- * du bundle honore l'option. La plateforme ne revient dans ai.yaml que si les
- * deux sentinelles ont rougi. Le rapatriement, alors : la plateforme dans
- * ai.yaml (`http_client: ai.scaleway.http_client`, la clé, l'URL de base avec
- * le projet), `app.ai.platform.scaleway` retiré de services.yaml, l'agent
- * `career_assistant` sur `ai.platform.scaleway`, ScalewayPlatformWiringTest
- * gardé vert, les deux sentinelles retirées, la règle ai.md et le commentaire
- * de services.yaml mis à jour.
+ * {@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayPlatformWiringTest}
+ * prouve que le contournement marche ; ce test-ci prouve qu'il est encore
+ * nécessaire, et rougit le jour où une montée du bundle honore l'option.
+ *
+ * La plateforme ne revient dans ai.yaml que si les deux sentinelles ont rougi.
+ * Le rapatriement, alors : la plateforme dans ai.yaml
+ * (`http_client: ai.scaleway.http_client`, la clé, l'URL de base avec le
+ * projet), `app.ai.platform.scaleway` retiré de services.yaml, l'agent
+ * `career_assistant` sur `ai.platform.scaleway`, le test de câblage gardé
+ * vert, les deux sentinelles retirées, la règle ai.md et le commentaire de
+ * services.yaml mis à jour.
  *
  * Il charge la seule extension du bundle, sur un conteneur vide, avec une
  * plateforme `scaleway` qui demande un client nommé, et lit l'argument

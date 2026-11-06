@@ -149,8 +149,8 @@ paths:
   move back), `ScalewayBaseUrlOptionSentinelTest` reads the bundle's configuration tree and turns red the day the
   `scaleway` node gains an address option (URL, host, endpoint, project, region); `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
-  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
-  `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
+  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from
+  `symfony/ai-generic-platform`, a dependency of the Scaleway bridge) were deleted — delete them again if a recipe update recreates them. The
   shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, and **every `symfony/ai-*` package
   of `composer.lock` is pinned in exact version in `composer.json`** (ADR 0004 D1, amended 2026-11-06), no `^` while
   0.x, a bump going through the upstream changelogs: `symfony/ai-bundle`, `symfony/ai-agent`,

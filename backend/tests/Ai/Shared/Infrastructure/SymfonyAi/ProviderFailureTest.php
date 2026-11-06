@@ -93,7 +93,7 @@ final class ProviderFailureTest extends TestCase
         )), null, null, ProviderFailureReason::MalformedResponse];
         yield 'scaleway, arguments d\'outil illisibles' => [static fn (): Throwable => self::convert($scaleway, 200, self::chatCompletionToolCall(self::SENTINEL, 'tool_calls')), null, null, ProviderFailureReason::MalformedResponse];
         // Le chemin réel de l'assistant : flux SSE servi par le client du bridge, converti par
-        // CompletionsConversionTrait::convertStream() (ai-generic-platform).
+        // Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait::convertStream().
         yield 'scaleway flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertScalewaySse($scaleway, self::scalewayToolCallStream(self::SENTINEL, 'tool_calls')), null, null, ProviderFailureReason::MalformedResponse];
 
         // Sorties coupées par le plafond `max_tokens`

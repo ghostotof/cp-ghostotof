@@ -18,11 +18,12 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  * `http_client` d'une plateforme Scaleway déclarée dans ai.yaml : elle
  * partirait par le client par défaut, sans le timeout de 40 s ni
  * `max_redirects: 0` qu'exige l'ADR 0004. La plateforme est donc déclarée
- * dans services.yaml avec le client scoped `ai.scaleway.http_client`. Ce test
- * remplace le client concret derrière ce
- * scope par un MockHttpClient : si la plateforme repassait par `http_client`,
- * le client scoped n'aurait plus de consommateur, Symfony le retirerait du
- * conteneur et le remplacement échouerait — le test casse avant tout appel.
+ * dans services.yaml avec le client scoped `ai.scaleway.http_client`.
+ *
+ * Ce test remplace le client concret derrière ce scope par un MockHttpClient :
+ * si la plateforme repassait par `http_client`, le client scoped n'aurait plus
+ * de consommateur, Symfony le retirerait du conteneur et le remplacement
+ * échouerait — le test casse avant tout appel.
  *
  * Aucun appel ne sort : le vrai bridge (URL, en-têtes, corps, conversion de la
  * réponse) est exercé, seul le transport est simulé.

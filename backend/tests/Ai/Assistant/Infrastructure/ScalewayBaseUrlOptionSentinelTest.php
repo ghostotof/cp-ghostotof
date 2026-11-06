@@ -16,17 +16,18 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
  *
  * La plateforme Scaleway de l'assistant est déclarée dans services.yaml pour
  * deux raisons. La première, l'option `http_client` ignorée, a sa sentinelle
- * ({@see ScalewayHttpClientOptionSentinelTest}). Celle-ci garde la seconde : le
- * nœud de configuration `ai.platform.scaleway` de symfony/ai-bundle, à la
- * version épinglée (composer.json), n'offre aucune option d'URL de base. Le
- * bundle laisse donc celle de
- * {@see \Symfony\AI\Platform\Bridge\Scaleway\Factory::createPlatform()} par
- * défaut, `https://api.scaleway.ai`, sans le projet que services.yaml met dans
- * le chemin ; l'API vise alors le projet par défaut de l'organisation et la
- * clé, limitée à un autre projet, reçoit un 403.
+ * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayHttpClientOptionSentinelTest}).
+ * Celle-ci garde la seconde : le nœud de configuration `ai.platform.scaleway`
+ * de symfony/ai-bundle, à la version épinglée (composer.json), n'offre aucune
+ * option d'URL de base. Le bundle laisse donc celle de
+ * {@see \Symfony\AI\Platform\Bridge\Scaleway\Factory::createPlatform()}
+ * par défaut, `https://api.scaleway.ai`, sans le projet que services.yaml met
+ * dans le chemin ; l'API vise alors le projet par défaut de l'organisation et
+ * la clé, limitée à un autre projet, reçoit un 403.
  *
- * Le test lit l'arbre de configuration du bundle (son TreeBuilder, rien n'est
- * chargé ni compilé) et rougit le jour où le nœud `scaleway` gagne une option
+ * Le test lit l'arbre de configuration du bundle, construit par son
+ * {@see \Symfony\Component\Config\Definition\Builder\TreeBuilder} (rien n'est
+ * chargé ni compilé), et rougit le jour où le nœud `scaleway` gagne une option
  * qui pourrait porter le projet.
  */
 final class ScalewayBaseUrlOptionSentinelTest extends TestCase
