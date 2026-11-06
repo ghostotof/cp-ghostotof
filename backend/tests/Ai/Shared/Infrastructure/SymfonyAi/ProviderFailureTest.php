@@ -54,7 +54,9 @@ final class ProviderFailureTest extends TestCase
      * plafond `max_tokens`), la sentinelle n'est que dans le contenu, et
      * l'assertion est vacante — la colonne le dit plutôt que de le taire.
      *
-     * Tout cas en flux passe par le vrai chemin SSE ({@see self::convertStream()}).
+     * Tout cas en flux passe par le vrai chemin SSE ({@see self::convertStream()}),
+     * au format de son fournisseur ({@see self::anthropicSse()},
+     * {@see self::openAiSse()}).
      *
      * @return iterable<string, array{Closure():Throwable, ?int, ?string, ProviderFailureReason, bool}>
      */
@@ -75,8 +77,8 @@ final class ProviderFailureTest extends TestCase
         yield 'anthropic 529' => [static fn (): Throwable => self::convert($anthropic, 529, self::anthropicError('overloaded_error')), 529, null, ProviderFailureReason::ServerError, true];
         // Anthropic, en flux.
         yield 'anthropic flux 404' => [static fn (): Throwable => self::convertStream($anthropic, self::anthropicError('not_found_error'), 404), 404, null, ProviderFailureReason::ModelNotFound, true];
-        yield 'anthropic flux, surcharge' => [static fn (): Throwable => self::convertStream($anthropic, self::sse([['type' => 'error', 'error' => ['type' => 'overloaded_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::ServerError, true];
-        yield 'anthropic flux, limite de débit' => [static fn (): Throwable => self::convertStream($anthropic, self::sse([['type' => 'error', 'error' => ['type' => 'rate_limit_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::RateLimited, true];
+        yield 'anthropic flux, surcharge' => [static fn (): Throwable => self::convertStream($anthropic, self::anthropicSse([['type' => 'error', 'error' => ['type' => 'overloaded_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::ServerError, true];
+        yield 'anthropic flux, limite de débit' => [static fn (): Throwable => self::convertStream($anthropic, self::anthropicSse([['type' => 'error', 'error' => ['type' => 'rate_limit_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::RateLimited, true];
 
         // Scaleway, hors flux.
         yield 'scaleway 403' => [static fn (): Throwable => self::convert($scaleway, 403, self::openAiError(['type' => 'permission_denied'])), null, 'permission_denied', ProviderFailureReason::PermissionDenied, true];
@@ -89,14 +91,14 @@ final class ProviderFailureTest extends TestCase
         yield 'scaleway flux 401' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiError(['type' => 'authentication_error']), 401), 401, null, ProviderFailureReason::Authentication, true];
         yield 'scaleway flux 403' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiError(['type' => 'permission_denied']), 403), 403, null, ProviderFailureReason::PermissionDenied, true];
         yield 'scaleway flux 429' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiError(['type' => 'rate_limit_error']), 429), 429, null, ProviderFailureReason::RateLimited, true];
-        yield 'scaleway flux, erreur serveur' => [static fn (): Throwable => self::convertStream($scaleway, self::sse([['error' => ['type' => 'server_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::ServerError, true];
-        yield 'scaleway flux, limite de débit' => [static fn (): Throwable => self::convertStream($scaleway, self::sse([['error' => ['type' => 'rate_limit_exceeded', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::RateLimited, true];
+        yield 'scaleway flux, erreur serveur' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiSse([['error' => ['type' => 'server_error', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::ServerError, true];
+        yield 'scaleway flux, limite de débit' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiSse([['error' => ['type' => 'rate_limit_exceeded', 'message' => self::SENTINEL]]])), null, null, ProviderFailureReason::RateLimited, true];
 
         // Arguments d'appel d'outil qui ne sont pas du JSON
         // (Symfony\AI\Platform\Exception\MalformedToolCallException) : le bridge cite le nom de
         // l'outil, qui porte ici la sentinelle. Les deux agents ont `tools: false`, le cas ne
         // devrait pas se produire ; il ne doit pas finir en `unknown`.
-        yield 'anthropic flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertStream($anthropic, self::sse(self::anthropicStream(
+        yield 'anthropic flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertStream($anthropic, self::anthropicSse(self::anthropicStream(
             ['type' => 'tool_use', 'id' => 'toolu_test', 'name' => self::SENTINEL],
             ['type' => 'input_json_delta', 'partial_json' => self::MALFORMED_JSON],
             'tool_use',
@@ -104,7 +106,7 @@ final class ProviderFailureTest extends TestCase
         yield 'scaleway, arguments d\'outil illisibles' => [static fn (): Throwable => self::convert($scaleway, 200, self::chatCompletionToolCall(self::SENTINEL, 'tool_calls')), null, null, ProviderFailureReason::MalformedResponse, true];
         // Le chemin réel de l'assistant : flux converti par
         // Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait::convertStream().
-        yield 'scaleway flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertStream($scaleway, self::sse(self::scalewayToolCallStream(self::SENTINEL, 'tool_calls'))), null, null, ProviderFailureReason::MalformedResponse, true];
+        yield 'scaleway flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiSse(self::scalewayToolCallStream(self::SENTINEL, 'tool_calls'))), null, null, ProviderFailureReason::MalformedResponse, true];
 
         // Sorties coupées par le plafond `max_tokens`
         // (Symfony\AI\Platform\Exception\MaxOutputTokensException) : le message du bridge est
@@ -116,13 +118,13 @@ final class ProviderFailureTest extends TestCase
             'usage' => ['input_tokens' => 10, 'output_tokens' => 1024],
         ], \JSON_THROW_ON_ERROR)), null, null, ProviderFailureReason::OutputTruncated, false];
         // En flux, le bridge Anthropic lève sur tout arrêt `max_tokens`, texte compris.
-        yield 'anthropic flux, texte coupé' => [static fn (): Throwable => self::convertStream($anthropic, self::sse(self::anthropicStream(
+        yield 'anthropic flux, texte coupé' => [static fn (): Throwable => self::convertStream($anthropic, self::anthropicSse(self::anthropicStream(
             ['type' => 'text', 'text' => ''],
             ['type' => 'text_delta', 'text' => self::SENTINEL],
             'max_tokens',
         ))), null, null, ProviderFailureReason::OutputTruncated, false];
         yield 'scaleway, appel d\'outil coupé' => [static fn (): Throwable => self::convert($scaleway, 200, self::chatCompletionToolCall(self::SENTINEL, 'length')), null, null, ProviderFailureReason::OutputTruncated, false];
-        yield 'scaleway flux, appel d\'outil coupé' => [static fn (): Throwable => self::convertStream($scaleway, self::sse(self::scalewayToolCallStream(self::SENTINEL, 'length'))), null, null, ProviderFailureReason::OutputTruncated, false];
+        yield 'scaleway flux, appel d\'outil coupé' => [static fn (): Throwable => self::convertStream($scaleway, self::openAiSse(self::scalewayToolCallStream(self::SENTINEL, 'length'))), null, null, ProviderFailureReason::OutputTruncated, false];
     }
 
     /**
@@ -248,13 +250,33 @@ final class ProviderFailureTest extends TestCase
     }
 
     /**
-     * Un corps SSE : un événement `data:` par morceau, puis `[DONE]` (que le
-     * décodeur ignore, et qu'Anthropic n'envoie pas). Les lignes `event:`
-     * d'Anthropic sont omises : le décodeur ne lit que `data`.
+     * Un flux SSE au format de l'API Anthropic : chaque événement porte une
+     * ligne `event:` du nom de son type, puis sa ligne `data:` ; le flux finit
+     * sur `message_stop`, sans `[DONE]`, qu'Anthropic n'envoie pas (« Streaming
+     * messages », documentation de l'API). Le décodeur du bridge ne lit que
+     * `data`, mais le flux reste celui que le fournisseur envoie.
+     *
+     * @param list<array<string, mixed>> $events
+     */
+    private static function anthropicSse(array $events): string
+    {
+        $body = '';
+        foreach ($events as $event) {
+            self::assertIsString($event['type'] ?? null, 'Un événement Anthropic porte son `type`.');
+            $body .= 'event: '.$event['type']."\n".'data: '.json_encode($event, \JSON_THROW_ON_ERROR)."\n\n";
+        }
+
+        return $body;
+    }
+
+    /**
+     * Un flux SSE compatible OpenAI (Chat Completions, celui de Scaleway) :
+     * une ligne `data:` par morceau, sans nom d'événement, puis `data: [DONE]`,
+     * que le décodeur ignore.
      *
      * @param list<array<string, mixed>> $chunks
      */
-    private static function sse(array $chunks): string
+    private static function openAiSse(array $chunks): string
     {
         $body = '';
         foreach ($chunks as $chunk) {
@@ -277,6 +299,8 @@ final class ProviderFailureTest extends TestCase
         return [
             ['type' => 'message_start', 'message' => ['model' => 'claude-test']],
             ['type' => 'content_block_start', 'index' => 0, 'content_block' => $contentBlock],
+            // L'API peut glisser des `ping` n'importe où dans le flux ; son exemple en place un ici.
+            ['type' => 'ping'],
             ['type' => 'content_block_delta', 'index' => 0, 'delta' => $delta],
             ['type' => 'content_block_stop', 'index' => 0],
             ['type' => 'message_delta', 'delta' => ['stop_reason' => $stopReason], 'usage' => ['output_tokens' => 1024]],
