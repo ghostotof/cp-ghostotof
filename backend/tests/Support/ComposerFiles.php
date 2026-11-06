@@ -44,8 +44,10 @@ final class ComposerFiles
     /**
      * Les paquets du lock, dans son ordre. Une section absente est vide ; une
      * entrée mal formée est ignorée ou fait échouer le test, selon
-     * `$malformed`. Un `require` qui n'est pas un objet se lit vide dans les
-     * deux cas.
+     * `$malformed`. En lecture stricte, une section présente qui n'est pas une
+     * liste JSON (`null`, un objet) échoue aussi ; la lecture tolérante lit
+     * `null` vide et un objet par ses valeurs. Un `require` qui n'est pas un
+     * objet se lit vide dans les deux cas.
      *
      * @param array<mixed> $lock le contenu décodé de `composer.lock`
      *
@@ -55,8 +57,12 @@ final class ComposerFiles
     {
         $packages = [];
         foreach (self::LOCK_SECTIONS as $section) {
-            $entries = $lock[$section] ?? [];
-            if (!\is_array($entries)) {
+            // Une section absente est vide. En lecture stricte, une section présente
+            // est une liste JSON : ni `null` (que `??` lirait vide), ni un objet (que
+            // `foreach` lirait par ses valeurs). La lecture tolérante reste inchangée.
+            $strict = MalformedLockEntry::Fails === $malformed;
+            $entries = $strict && \array_key_exists($section, $lock) ? $lock[$section] : ($lock[$section] ?? []);
+            if (!\is_array($entries) || ($strict && !array_is_list($entries))) {
                 self::malformed($malformed, \sprintf('la section « %s » de composer.lock n\'est pas une liste', $section));
 
                 continue;

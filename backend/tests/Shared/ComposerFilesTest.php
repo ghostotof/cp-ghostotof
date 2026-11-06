@@ -87,6 +87,46 @@ final class ComposerFilesTest extends TestCase
         ComposerFiles::lockedPackages($lock, MalformedLockEntry::Fails);
     }
 
+    /**
+     * Une section présente doit être une liste JSON : `null` ou un objet
+     * (`{"0": …}` décodé en tableau à clés) ne se lit pas comme une section
+     * vide ou comme une liste. Seule une section absente est vide.
+     *
+     * @return iterable<string, array{mixed}>
+     */
+    public static function sectionsThatAreNoList(): iterable
+    {
+        yield 'une section null' => [null];
+        yield 'une section objet JSON' => [['mcp/sdk' => ['name' => 'mcp/sdk', 'version' => '0.8.1']]];
+    }
+
+    #[DataProvider('sectionsThatAreNoList')]
+    public function testUnderFailsAPresentSectionThatIsNoListFailsTheTest(mixed $section): void
+    {
+        try {
+            ComposerFiles::lockedPackages(['packages' => [], 'packages-dev' => $section], MalformedLockEntry::Fails);
+        } catch (AssertionFailedError $failure) {
+            self::assertStringContainsString('la section « packages-dev » de composer.lock n\'est pas une liste', $failure->getMessage());
+
+            return;
+        }
+
+        self::fail('Une section présente qui n\'est pas une liste doit faire échouer la lecture stricte.');
+    }
+
+    /**
+     * La tolérance d'API Platform reste celle d'avant #731 : une section
+     * `null` se lit vide, un objet se lit par ses valeurs.
+     */
+    public function testUnderSkippedAPresentSectionThatIsNoListIsReadAsBefore(): void
+    {
+        self::assertSame([], ComposerFiles::lockedPackages(['packages' => null], MalformedLockEntry::Skipped));
+        self::assertEquals(
+            [new LockedPackage('packages', 'mcp/sdk', '0.8.1', [])],
+            ComposerFiles::lockedPackages(['packages' => ['mcp/sdk' => ['name' => 'mcp/sdk', 'version' => '0.8.1']]], MalformedLockEntry::Skipped),
+        );
+    }
+
     /** Un `require` qui n'est pas un objet ne fait échouer aucune des deux lectures : seuls le nom et la version comptent. */
     public function testAMalformedRequireIsReadAsEmptyUnderBothTolerances(): void
     {
