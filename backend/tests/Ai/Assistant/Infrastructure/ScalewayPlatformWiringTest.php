@@ -14,7 +14,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 /**
  * Fige le câblage de l'agent `career_assistant` sur Scaleway (spec 0005 D2).
  *
- * symfony/ai-bundle 0.13.0 ignore l'option `http_client` d'une plateforme
+ * symfony/ai-bundle 0.15.0 (comme 0.13.0) ignore l'option `http_client` d'une plateforme
  * Scaleway déclarée dans ai.yaml : elle partirait par le client par défaut,
  * sans le timeout de 40 s ni `max_redirects: 0` qu'exige l'ADR 0004. La
  * plateforme est donc déclarée dans services.yaml avec le client scoped

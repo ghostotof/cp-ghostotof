@@ -38,7 +38,8 @@ use Throwable;
  * statut, puis le type. C'est elle qui renseigne un échec en flux, où le
  * bridge ne transmet aucun type lisible.
  *
- * Ces formats sont ceux de symfony/ai-*-platform 0.13.0 : ProviderFailureTest
+ * Ces formats sont ceux de symfony/ai-*-platform 0.15.0, inchangés depuis
+ * 0.13.0 (montée de #731) : ProviderFailureTest
  * les obtient des vrais ResultConverter et rougit si une montée de version les
  * change. Importer Symfony\AI ici est admis par ADR 0004 D1 (amendée) : seules
  * les exceptions du bridge sont lues, jamais un message ni un agent.

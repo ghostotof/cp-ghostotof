@@ -28,7 +28,7 @@ use TypeError;
 
 /**
  * Les exceptions viennent des vrais ResultConverter des deux bridges
- * (symfony/ai-*-platform 0.13.0), nourris de réponses simulées : c'est le
+ * (symfony/ai-*-platform 0.15.0), nourris de réponses simulées : c'est le
  * format réellement levé qui est lu, et une montée de version qui le change
  * fait rougir ce test plutôt que de rendre le journal muet. Aucun appel ne sort.
  *
