@@ -9,6 +9,7 @@ use App\Ai\Shared\Infrastructure\SymfonyAi\ProviderFailureReason;
 use Closure;
 use Exception;
 use LogicException;
+use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -18,6 +19,7 @@ use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RetryableExceptionInterface;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\StreamResult;
+use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\ResultConverterInterface;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\Exception\ClientException;
@@ -219,6 +221,27 @@ final class ProviderFailureTest extends TestCase
         ], ProviderFailure::from($exception)->toLogContext());
     }
 
+    /**
+     * L'échec d'une assertion du scénario n'est pas l'échec du fournisseur :
+     * un convertisseur qui ne rend pas de flux fait échouer le test sur son
+     * assertion, au lieu de passer pour une exception rangée `unknown`.
+     */
+    public function testAnAssertionFailingInsideAScenarioIsNotTakenForTheProviderFailure(): void
+    {
+        $converter = self::createStub(ResultConverterInterface::class);
+        $converter->method('convert')->willReturn(new TextResult(self::SENTINEL));
+
+        try {
+            self::convertStream($converter, '');
+        } catch (AssertionFailedError $failure) {
+            self::assertStringContainsString(StreamResult::class, $failure->getMessage());
+
+            return;
+        }
+
+        self::fail('L\'échec de l\'assertion du scénario doit remonter, pas être rendu comme l\'erreur du fournisseur.');
+    }
+
     private static function convert(ResultConverterInterface $converter, int $status, string $body): Throwable
     {
         $response = (new MockHttpClient(new MockResponse($body, ['http_code' => $status])))->request('POST', 'https://ai.test/');
@@ -330,10 +353,18 @@ final class ProviderFailureTest extends TestCase
         ];
     }
 
+    /**
+     * L'exception que lève le scénario, celle du fournisseur. Une assertion du
+     * scénario qui échoue (un convertisseur qui ne rend pas de flux) remonte
+     * telle quelle : rendue ici, elle serait jugée comme une panne du
+     * fournisseur, rangée `unknown`, et le test échouerait pour une autre raison.
+     */
     private static function thrownBy(Closure $call): Throwable
     {
         try {
             $call();
+        } catch (AssertionFailedError $failure) {
+            throw $failure;
         } catch (Throwable $exception) {
             return $exception;
         }
