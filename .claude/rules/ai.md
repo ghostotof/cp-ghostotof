@@ -143,11 +143,13 @@ paths:
   client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
   way. Don't move it back into `ai.yaml` until a bundle version honours the option **and** accepts a base URL
   carrying the project (the `scaleway` node has no base URL either, the bundle leaves the factory's default, which
-  would 403). Two sentinels, one per reason, each saying in its message what to check and move:
-  `tests/Ai/Assistant/Infrastructure/ScalewayHttpClientOptionSentinelTest` loads the bundle's extension alone with a
-  `scaleway` platform asking for a named client and turns red the day the option is honoured (its docblock holds the
-  move back), `ScalewayBaseUrlOptionSentinelTest` reads the bundle's configuration tree and turns red the day the
-  `scaleway` node gains an address option (URL, host, endpoint, project, region); `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  would 403). Two sentinels, one per reason, whose messages and docblocks both point at « Moving the Scaleway
+  platform back into `ai.yaml` » below: `ScalewayHttpClientOptionSentinelTest` loads the bundle's extension alone
+  with a `scaleway` platform asking for a named client and turns red the day the option is honoured;
+  `ScalewayPlatformOptionListSentinelTest` reads the bundle's configuration tree and requires the `scaleway` node's
+  options to be exactly its closed list (`KNOWN_OPTIONS`: `api_key`, `http_client`), so it turns red on **any** new
+  option — a pattern guessing the base URL's name (`url`, `host`, `endpoint`…) missed `completions_path`, measured;
+  `ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from
   `symfony/ai-generic-platform`, a dependency of the Scaleway bridge) were deleted — delete them again if a recipe update recreates them. The
@@ -200,4 +202,25 @@ paths:
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
   delete it again if a recipe update recreates it.
+- **Moving the Scaleway platform back into `ai.yaml`** (#731): the one procedure both sentinels point at. Two reasons
+  keep `app.ai.platform.scaleway` in `services.yaml`, each with its sentinel — the ignored `http_client` option
+  (`ScalewayHttpClientOptionSentinelTest`) and the missing base URL (`ScalewayPlatformOptionListSentinelTest`) —, and
+  the platform moves back only once **both** have fallen. A reason has fallen when its sentinel turned red and the
+  step below confirmed it; a sentinel already **removed** means its reason fell earlier.
+  1. **`ScalewayHttpClientOptionSentinelTest` red**: the bundle honours `http_client`, its reason has fallen. If the
+     other sentinel is still there and green, the base URL is still missing: remove this sentinel, keep
+     `services.yaml`, and say here and in its comment that one reason remains. If the base URL's reason has fallen too
+     (the other sentinel red and confirmed by step 2, or already removed): step 3.
+  2. **`ScalewayPlatformOptionListSentinelTest` red**: the `scaleway` node gained an option (or lost one). Read it in
+     the bundle (`config/platform/scaleway.php`, and what the `'scaleway' === $type` block of `src/AiBundle.php` does
+     with it): **does it carry the project**, i.e. a base URL `https://api.scaleway.ai/<project>` handed to the
+     `Factory`'s `$baseUrl`? **If not**, add its name to `KNOWN_OPTIONS`, say here what it is, keep `services.yaml`:
+     the sentinel goes green and keeps guarding. **If it does**, the base URL's reason has fallen: if the other
+     sentinel is still there and green, remove this one, keep `services.yaml`, and say here and in its comment that
+     one reason remains; if it is red too, or already removed, step 3.
+  3. **The move back**: declare the platform in `ai.yaml` (`http_client: ai.scaleway.http_client`, the key, the base
+     URL carrying `%env(SCALEWAY_AI_PROJECT_ID)%`), remove `app.ai.platform.scaleway` from `services.yaml`, point the
+     `career_assistant` agent at `ai.platform.scaleway`, keep `ScalewayPlatformWiringTest` green (its mock must still
+     sit behind `ai.scaleway.http_client.scoping.inner`), remove the remaining sentinel, then update this rule, the
+     comment of `services.yaml` and ADR 0004 D1 (amendment of 2026-11-06).
 

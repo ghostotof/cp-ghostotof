@@ -12,7 +12,7 @@ use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Première sentinelle du contournement de services.yaml (spec 0005 D2, ADR
- * 0004 D1 amendée le 2026-11-06, règle ai.md).
+ * 0004 D1 amendée le 2026-11-06).
  *
  * La plateforme Scaleway de l'assistant est déclarée dans services.yaml, pas
  * dans ai.yaml, pour deux raisons. Celle que garde ce test : symfony/ai-bundle,
@@ -21,20 +21,14 @@ use Symfony\Component\DependencyInjection\Reference;
  * passe toujours la référence `http_client` en dur, alors que le nœud de
  * configuration accepte l'option (config/platform/scaleway.php). La seconde, le
  * nœud sans URL de base où porter le projet (sans lui, 403), a sa propre
- * sentinelle
- * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayBaseUrlOptionSentinelTest}).
+ * sentinelle, la liste fermée des options du nœud
+ * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayPlatformOptionListSentinelTest}).
  *
  * {@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayPlatformWiringTest}
  * prouve que le contournement marche ; ce test-ci prouve qu'il est encore
- * nécessaire, et rougit le jour où une montée du bundle honore l'option.
- *
- * La plateforme ne revient dans ai.yaml que si les deux sentinelles ont rougi.
- * Le rapatriement, alors : la plateforme dans ai.yaml
- * (`http_client: ai.scaleway.http_client`, la clé, l'URL de base avec le
- * projet), `app.ai.platform.scaleway` retiré de services.yaml, l'agent
- * `career_assistant` sur `ai.platform.scaleway`, le test de câblage gardé
- * vert, les deux sentinelles retirées, la règle ai.md et le commentaire de
- * services.yaml mis à jour.
+ * nécessaire, et rougit le jour où une montée du bundle honore l'option. La
+ * marche à suivre, alors, est dans la règle `.claude/rules/ai.md`,
+ * « Moving the Scaleway platform back into `ai.yaml` ».
  *
  * Il charge la seule extension du bundle, sur un conteneur vide, avec une
  * plateforme `scaleway` qui demande un client nommé, et lit l'argument
@@ -74,9 +68,7 @@ final class ScalewayHttpClientOptionSentinelTest extends TestCase
         self::assertNotSame(
             self::REQUESTED_HTTP_CLIENT,
             (string) $httpClient,
-            'symfony/ai-bundle honore désormais l\'option `http_client` d\'une plateforme `scaleway`. '
-            .'Voir ScalewayBaseUrlOptionSentinelTest : verte, garder services.yaml et retirer ce test ; '
-            .'rouge aussi, rapatrier la plateforme dans ai.yaml (marche à suivre dans le docblock de ce test).',
+            'symfony/ai-bundle honore désormais l\'option `http_client` d\'une plateforme `scaleway` : suivre la marche à suivre de .claude/rules/ai.md, « Moving the Scaleway platform back into `ai.yaml` ».',
         );
         self::assertSame(self::HARD_CODED_HTTP_CLIENT, (string) $httpClient, 'Le bloc `scaleway` du bundle passe un autre client que `http_client` sans honorer l\'option : relire ce bloc.');
     }

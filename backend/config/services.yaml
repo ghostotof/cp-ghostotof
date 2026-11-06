@@ -112,10 +112,12 @@ services:
     # max_redirects 0). Et son nœud `scaleway` n'offre pas d'URL de base, où le
     # projet doit figurer (voir `$baseUrl` ci-dessous). Le jour où le bundle
     # transmet l'option et accepte cette URL, cette déclaration retourne dans
-    # ai.yaml : ScalewayHttpClientOptionSentinelTest et
-    # ScalewayBaseUrlOptionSentinelTest rougissent chacune quand l'une des deux
-    # raisons tombe. Paresseuse comme celle du bundle : aucun objet n'est
-    # construit tant que l'agent n'est pas appelé.
+    # ai.yaml : ScalewayHttpClientOptionSentinelTest (l'option) et
+    # ScalewayPlatformOptionListSentinelTest (la liste fermée des options du
+    # nœud) rougissent chacune quand l'une des deux raisons peut tomber ; la
+    # marche à suivre est dans .claude/rules/ai.md, « Moving the Scaleway
+    # platform back into `ai.yaml` ». Paresseuse comme celle du bundle : aucun
+    # objet n'est construit tant que l'agent n'est pas appelé.
     app.ai.platform.scaleway:
         class: Symfony\AI\Platform\Platform
         factory: ['Symfony\AI\Platform\Bridge\Scaleway\Factory', 'createPlatform']

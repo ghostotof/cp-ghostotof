@@ -12,52 +12,53 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
 
 /**
  * Seconde sentinelle du contournement de services.yaml (spec 0005 D2, ADR 0004
- * D1 amendée le 2026-11-06, règle ai.md).
+ * D1 amendée le 2026-11-06) : la liste fermée des options du nœud
+ * `ai.platform.scaleway`.
  *
  * La plateforme Scaleway de l'assistant est déclarée dans services.yaml pour
  * deux raisons. La première, l'option `http_client` ignorée, a sa sentinelle
  * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayHttpClientOptionSentinelTest}).
  * Celle-ci garde la seconde : le nœud de configuration `ai.platform.scaleway`
  * de symfony/ai-bundle, à la version épinglée (composer.json), n'offre aucune
- * option d'URL de base. Le bundle laisse donc celle de
+ * URL de base. Le bundle laisse donc celle de
  * {@see \Symfony\AI\Platform\Bridge\Scaleway\Factory::createPlatform()}
  * par défaut, `https://api.scaleway.ai`, sans le projet que services.yaml met
  * dans le chemin ; l'API vise alors le projet par défaut de l'organisation et
  * la clé, limitée à un autre projet, reçoit un 403.
  *
- * Le test lit l'arbre de configuration du bundle, construit par son
- * {@see \Symfony\Component\Config\Definition\Builder\TreeBuilder} (rien n'est
- * chargé ni compilé), et rougit le jour où le nœud `scaleway` gagne une option
- * qui pourrait porter le projet.
+ * Le test exige que les options du nœud soient exactement celles qu'on lui
+ * connaît : il rougit sur **toute** option nouvelle, quel que soit son nom.
+ * Deviner le nom que prendrait une URL de base (un motif sur `url`, `host`,
+ * `endpoint`…) laisserait passer celui qu'on n'a pas prévu. Le jour où il
+ * rougit, la marche à suivre est dans la règle `.claude/rules/ai.md`,
+ * « Moving the Scaleway platform back into `ai.yaml` » : une option qui ne
+ * porte pas le projet entre dans la liste, une qui le porte fait tomber la
+ * raison.
+ *
+ * Il lit l'arbre de configuration du bundle, construit par son
+ * {@see \Symfony\Component\Config\Definition\Builder\TreeBuilder} : rien n'est
+ * chargé ni compilé, aucun appel ne sort.
  */
-final class ScalewayBaseUrlOptionSentinelTest extends TestCase
+final class ScalewayPlatformOptionListSentinelTest extends TestCase
 {
-    /** Noms d'option qui diraient « où envoyer » : URL, hôte, point d'accès, projet, région. */
-    private const string LOCATION_OPTION_PATTERN = '/url|uri|endpoint|host|project|region/i';
+    /**
+     * Les options du nœud à la version épinglée, triées : la clé, et le client
+     * HTTP (que le bundle ignore, voir l'autre sentinelle). Aucune ne porte
+     * d'URL de base.
+     */
+    private const array KNOWN_OPTIONS = ['api_key', 'http_client'];
 
-    public function testTheScalewayNodeStillOffersNoBaseUrl(): void
+    public function testTheScalewayNodeOffersExactlyTheKnownOptions(): void
     {
-        $addressOptions = preg_grep(self::LOCATION_OPTION_PATTERN, array_keys($this->scalewayNode()->getChildren()));
-        self::assertIsArray($addressOptions);
+        // L'ordre de déclaration dans le bundle ne dit rien : seul l'ensemble compte.
+        $options = array_keys($this->scalewayNode()->getChildren());
+        sort($options);
 
         self::assertSame(
-            [],
-            array_values($addressOptions),
-            'Le nœud `ai.platform.scaleway` accepte désormais une option d\'adresse : vérifier qu\'elle porte le projet (`https://api.scaleway.ai/<projet>`). '
-            .'Si oui, voir ScalewayHttpClientOptionSentinelTest : verte, garder services.yaml et retirer ce test ; '
-            .'rouge aussi, rapatrier la plateforme dans ai.yaml (marche à suivre dans son docblock).',
+            self::KNOWN_OPTIONS,
+            $options,
+            'Les options du nœud `ai.platform.scaleway` ont changé : suivre la marche à suivre de .claude/rules/ai.md, « Moving the Scaleway platform back into `ai.yaml` ».',
         );
-    }
-
-    /** Le motif reconnaît les noms que le bundle donne déjà à cette option sur d'autres plateformes. */
-    public function testThePatternRecognisesTheAddressOptionsOfOtherPlatforms(): void
-    {
-        foreach (['base_url', 'endpoint', 'host', 'host_url', 'project_id'] as $option) {
-            self::assertMatchesRegularExpression(self::LOCATION_OPTION_PATTERN, $option);
-        }
-
-        self::assertDoesNotMatchRegularExpression(self::LOCATION_OPTION_PATTERN, 'api_key');
-        self::assertDoesNotMatchRegularExpression(self::LOCATION_OPTION_PATTERN, 'http_client');
     }
 
     private function scalewayNode(): ArrayNode
