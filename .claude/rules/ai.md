@@ -135,10 +135,10 @@ paths:
   so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
   and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
-  0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
+  bridge (0.13.0, still 0.15.0) reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
   call the API directly and read the status before suspecting anything else.
   **The Scaleway platform is declared in `services.yaml` (`app.ai.platform.scaleway`, the bridge's
-  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0 hard-codes the
+  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0, and still 0.15.0 (#731), hard-codes the
   default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated
   client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
   way. Don't move it back into `ai.yaml` until a bundle version honours the option;
@@ -147,7 +147,7 @@ paths:
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
   `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
   shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
-  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
+  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, all `0.15.0` since #731 — `0.13.0` before —, no `^` while 0.x; a bump goes through the changelog, ADR 0004 D1); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,

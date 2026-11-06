@@ -14,8 +14,10 @@
   (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1) ;
   **D5 amendée le 2026-10-10** (issue #406 : 5 000 caractères par message de l'assistant renvoyé,
   voir l'encadré sous D5) ; **D1, D3 et les alternatives écartées amendées le 2026-10-19** (ADR 0006,
-  issue #379 : le serveur MCP est rouvert, voir les encadrés)
-- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04, le 2026-10-10 et le 2026-10-19
+  issue #379 : le serveur MCP est rouvert, voir les encadrés) ; **D1 amendée le 2026-11-06**
+  (issue #731 : `symfony/ai-*` montés en 0.15.0, toujours pinnés, voir l'encadré sous D1)
+- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04, le 2026-10-10, le 2026-10-19 et le
+  2026-11-06
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
   dédié à Scaleway), `config/packages/rate_limiter.yaml`, `k8s/overlays/*/external-secrets.yaml`
@@ -98,6 +100,19 @@ effet de bord d'un `composer update`.
 (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : même monorepo, même namespace `Symfony\AI\`, même
 absence de promesse de compatibilité. Le serveur MCP n'appelle aucun modèle et ne vit donc pas sous
 `src/Ai/` ; seule la règle de pin le concerne ici.
+
+**Amendement du 2026-11-06 (issue #731) — montée en 0.15.0.** Les quatre paquets `symfony/ai-*`
+de D1 passent de `0.13.0` à **`0.15.0`**, toujours pinnés en version exacte ; la règle elle-même ne
+change pas. La montée a suivi ce qu'elle exige : changelogs et `UPGRADE.md` de 0.14 et 0.15 relus, et
+aucune rupture ne touche le projet (note `docs/research/2026-11-06-montees-epinglees-731.md`,
+section 2). Le lecteur `ProviderFailure` lit les mêmes formats de message, et son test, nourri des
+vrais `ResultConverter`, reste vert. La plateforme Scaleway reste déclarée hors `ai.yaml`, car le
+bundle 0.15.0 ignore encore l'option `http_client` d'une plateforme `scaleway`. Montent avec eux, par
+dépendance, `symfony/ai-platform`, `symfony/ai-generic-platform` et
+`symfony/ai-open-responses-platform` (0.15.0). La `1.0.0-BETA1`, publiée depuis, est écartée : c'est
+une pré-version, et elle change `AgentInterface::call()`. Les paquets MCP de l'amendement précédent
+(`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée fait l'objet d'un
+changement distinct.
 
 ### D2 — Aucun appel à un fournisseur dans un chemin de rendu public
 
