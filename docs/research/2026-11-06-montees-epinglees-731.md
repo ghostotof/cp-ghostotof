@@ -20,22 +20,27 @@ faible) et, pour une rupture, une **sévérité** estimée (bloquante, haute, mo
 
 ## 0. Synthèse
 
-| Paquet | Épinglé | Dernière stable (2026-11-06) | Pré-version | Recommandation |
-|---|---|---|---|---|
-| `symfony/ai-bundle` | 0.13.0 | **0.15.0** (2026-10-22) | 1.0.0-BETA1 (2026-10-26) | monter en 0.15.0 |
-| `symfony/ai-agent` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
-| `symfony/ai-anthropic-platform` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
-| `symfony/ai-scaleway-platform` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
-| `symfony/ai-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
-| `symfony/ai-generic-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
-| `symfony/ai-open-responses-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
-| `symfony/mcp-bundle` | 0.14.1 | **0.15.0** (2026-10-22) | 1.0.0-BETA1 (même code) | monter en 0.15.0, **avec** `mcp/sdk` 0.9.0 |
-| `mcp/sdk` | 0.8.1 | **0.9.0** (2026-10-18) | — | monter en 0.9.0, **avec** le bundle 0.15.0 |
+Tableau au 2026-11-06 : « avant #731 » est l'état de la branche mère (contrainte de `composer.json`, ou
+version verrouillée pour un paquet seulement transitif), « après #731 » celui de la première PR de #731
+(`composer.json` et `composer.lock` de cette branche).
+
+| Paquet | Avant #731 | Après #731 (PR 1) | Dernière stable | Pré-version | Recommandation |
+|---|---|---|---|---|---|
+| `symfony/ai-bundle` | 0.13.0 | **0.15.0** | **0.15.0** (2026-10-22) | 1.0.0-BETA1 (2026-10-26) | monter en 0.15.0 (fait) |
+| `symfony/ai-agent` | 0.13.0 | **0.15.0** | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 (fait) |
+| `symfony/ai-anthropic-platform` | 0.13.0 | **0.15.0** | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 (fait) |
+| `symfony/ai-scaleway-platform` | 0.13.0 | **0.15.0** | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 (fait) |
+| `symfony/ai-platform` | transitif (0.13.0 verrouillé) | **0.15.0** (épinglé) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
+| `symfony/ai-generic-platform` | transitif (0.13.0 verrouillé) | **0.15.0** (épinglé) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
+| `symfony/ai-open-responses-platform` | transitif (0.13.0 verrouillé) | **0.15.0** (épinglé) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
+| `symfony/mcp-bundle` | 0.14.1 | 0.14.1 (inchangé) | **0.15.0** (2026-10-22) | 1.0.0-BETA1 (même code) | monter en 0.15.0, **avec** `mcp/sdk` 0.9.0 (PR 2) |
+| `mcp/sdk` | 0.8.1 | 0.8.1 (inchangé) | **0.9.0** (2026-10-18) | — | monter en 0.9.0, **avec** le bundle 0.15.0 (PR 2) |
 
 Les trois `symfony/ai-*` jusqu'ici transitifs sont épinglés depuis, par décision du 2026-11-06 (ADR 0004,
 amendement du 2026-11-06), et un garde commun aux deux familles, `SymfonyAiAndMcpPinsMatchTheLockTest`
 (`backend/tests/Shared/`), exige pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou une contrainte
-exacte dans le `require`, égale à la version verrouillée.
+exacte égale à la version verrouillée, dans la section que le verrou impose (`require`, ou `require-dev` pour
+un paquet installé en développement seulement).
 
 Constats principaux :
 
@@ -338,6 +343,11 @@ symfony/ai-scaleway-platform  0.13.0  ~ 0.15.0
 symfony/mcp-bundle            0.14.1  ~ 0.15.0
 ```
 
+Pour la veille à la main qui remplace les PR Dependabot (section 7, décision 11 ; issue #764) : `composer
+outdated` ne prend qu'un argument, un nom ou un motif (`composer outdated 'symfony/ai-*'` est admis, deux
+arguments sont refusés) [mesuré] ; pour les trois familles en une commande, on filtre sa sortie :
+`composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`.
+
 **PHPUnit `tests/Ai` + `tests/Mcp`** (1810 tests) : copie au lock **1809 verts, 1 échec** d'environnement
 (`McpEndpointPathTest::testTheFrontendPublishesThePath`, fichier du frontend non monté dans la copie) ; copie
 montée + correctif R1 **1803 verts, 7 échecs** : le même échec d'environnement et les six de la section 4.1
@@ -382,7 +392,8 @@ est la lecture du code). La session 0.9 est 27 octets plus grosse au repos (nouv
 10. **1.0.0-BETA1** : **pas de 1.0 dans cette montée** ; la montée vers la 1.0 stable est suivie par l'issue
     #763 (elle casse `FakeAgent`, `FakeStreamingAgent` et le typage `Execution` de l'assistant).
 11. **Dependabot** : **décidé : ignorer toute montée** de `symfony/ai-*`, `symfony/mcp-bundle` et `mcp/*`
-    (`.github/dependabot.yml`) — montée délibérée lue dans les changelogs amont, et une 0.x qui casse compterait
+    (`.github/dependabot.yml` ; `symfony/mcp-bundle` élargi ensuite à `symfony/mcp-*`, les trois motifs du
+    garde commun) — montée délibérée lue dans les changelogs amont, et une 0.x qui casse compterait
     en « minor » pour le groupe `backend-minor-patch` ; contrepartie : plus aucune PR automatique pour eux,
     suivi à la main. À réévaluer à la montée Symfony 8.2 (issue #764).
 
