@@ -229,7 +229,15 @@ final class ProviderFailureTest extends TestCase
     public function testAnAssertionFailingInsideAScenarioIsNotTakenForTheProviderFailure(): void
     {
         $converter = self::createStub(ResultConverterInterface::class);
-        $converter->method('convert')->willReturn(new TextResult(self::SENTINEL));
+        // Le convertisseur simulé lâche la réponse avant de rendre autre chose
+        // qu'un flux : jamais lue, elle resterait dans un cycle que le
+        // ramasse-miettes ne détruit qu'au démarrage d'un test suivant, qui
+        // échouait alors à sa place (mesuré sur tests/Ai).
+        $converter->method('convert')->willReturnCallback(static function (RawHttpResult $raw): TextResult {
+            $raw->getObject()->cancel();
+
+            return new TextResult(self::SENTINEL);
+        });
 
         try {
             self::convertStream($converter, '');
