@@ -204,7 +204,8 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
         $message = ExactlyPinnedFamilies::failure(ExactlyPinnedFamilies::violations(self::composer(['symfony/ai-bundle' => '^0.15']), self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1'], ['symfony/mcp-bundle' => 'v0.14.1'])));
 
         self::assertStringContainsString('symfony/ai-bundle : verrouillé en 0.15.0, contrainte « ^0.15 »', $message);
-        self::assertStringContainsString('mcp/sdk : verrouillé en 0.8.1, absent du require', $message);
+        // Le séparateur qui suit fait partie de l'attente : sans lui, « absent du require-dev » la satisferait aussi.
+        self::assertStringContainsString('mcp/sdk : verrouillé en 0.8.1, absent du require — ', $message, 'Le message nomme la section que le lock impose.');
         self::assertStringContainsString('"symfony/ai-bundle": "0.15.0"', $message, 'Le message donne la ligne à écrire.');
         self::assertStringContainsString('symfony/mcp-bundle : verrouillé en 0.14.1, absent du require-dev', $message, 'Le message nomme la section que le lock impose.');
     }
