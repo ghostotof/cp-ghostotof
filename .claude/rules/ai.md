@@ -178,7 +178,10 @@ paths:
   tool call, and on **any** `max_tokens` stop of an Anthropic stream) and `MalformedToolCallException` →
   `malformed-response`; neither can arise today (`tools: false`, the translator does not stream), and
   `ProviderFailureTest` obtains both from the real converters — on the assistant's real path too, an SSE stream read
-  by the Scaleway converter through `CompletionsConversionTrait::convertStream()`. The marker
+  by the Scaleway converter through `CompletionsConversionTrait::convertStream()`. Every stream case of that test, both
+  bridges, goes through one helper on that real path (`EventSourceHttpClient`, the converter's default `SseStream`), and
+  a column of its provider says whether the sentinel is in the bridge's message: « no » for a cut output, whose fixed
+  message makes « never by its message » vacuous, said rather than hidden. The marker
   `RetryableExceptionInterface` is not read: its two classes keep their own reason, « retryable » says nothing of the
   failure's nature, and an exception carrying the marker alone stays `unknown` (pinned); **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
