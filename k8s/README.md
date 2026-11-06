@@ -444,7 +444,7 @@ publier d'abord reste la règle, la garde ne fait que transformer l'oubli en un
 3. **L'identifiant de ce projet est le second secret.** Il entre dans le
    chemin des appels (`api.scaleway.ai/<projet>/v1`). Sans lui, l'API vise le
    projet par défaut de l'organisation, sur lequel la politique ne donne aucun
-   droit : réponse **403**, que le bridge 0.13.0 affiche comme « Unknown
+   droit : réponse **403**, que le bridge Scaleway affiche comme « Unknown
    error », et l'assistant répond 503. Ce n'est pas un secret au sens IAM. Il
    reste hors du dépôt public parce qu'il désigne le projet qui porte la
    facturation. Le lire dans la console (Project dashboard > Settings) ou par

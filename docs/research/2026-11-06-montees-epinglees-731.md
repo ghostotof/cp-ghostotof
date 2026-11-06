@@ -2,7 +2,10 @@
 
 - **Issue** : #731 (à traiter avant l'ouverture publique de la phase 2 de la spec 0007)
 - **Date** : 2026-11-06
-- **Statut** : **note de recherche**. Rien n'est décidé : les arbitrages sont listés en section 7.
+- **Statut** : **note de recherche, arbitrages rendus le 2026-11-06** (section 7). La famille AI est
+  tranchée et livrée dans la première PR de #731 : les quatre paquets en `0.15.0` exacts, plus
+  `symfony/ai-platform` désormais épinglé lui aussi (ADR 0004, amendement du 2026-11-06). La famille MCP
+  part dans une seconde PR, selon les décisions de la section 7.
 - **Question** : pour chacun des six paquets épinglés en version exacte (ADR 0004 D1, ADR 0006 D7), quelle est
   la dernière version, qu'est-ce qui casse dans le projet, et faut-il monter ?
 
@@ -132,7 +135,7 @@ ruptures, sévérité haute si l'on montait en 1.0 ; sans objet pour 0.15.
 
 **Monter les quatre paquets en `0.15.0` exacts**, dans une PR à part du MCP. Confiance élevée. Coût : les
 versions dans `composer.json`/`composer.lock`, `config/reference.php`, et les mentions de `0.13.0` dans
-l'ADR 0004 (D1 et son amendement du 2026-10-19, l. 31, 93), `.claude/rules/ai.md` (l. 137-150 : « the 0.13.0
+l'ADR 0004 (D1 et son amendement du 2026-10-19), `.claude/rules/ai.md` (l. 137-150 : « the 0.13.0
 bridge reports… », « symfony/ai-bundle 0.13.0 hard-codes… », la liste des pins), le commentaire de
 `config/services.yaml` (l. 107-108), et les docblocks qui citent 0.13.0 (`ProviderFailure`,
 `ReplayRefusingHttpClient`, `ProviderFailureTest`, `ScalewayPlatformWiringTest`). Le commentaire « Don't move it
@@ -282,13 +285,6 @@ suivi ni secret), dans des conteneurs `--rm` de l'image `cp-ghostotof-backend:la
 la base est un PostgreSQL 18.6 jetable sur un réseau dédié, jamais celui de la stack. Le dépôt et son `vendor/`
 n'ont pas été touchés.
 
-**État de la stack au moment de l'étude** : le `vendor/` monté dans le conteneur `backend` est **en retard sur
-le `composer.lock`** de la branche (installé à 12:58 depuis une autre branche, lock modifié à 13:20 ;
-`league/oauth2-server` et ses dépendances absents). `make back-lsp` échoue donc sur la stack actuelle (« Service
-id "League\OAuth2\Server\AuthorizationServer" looks like a FQCN but no corresponding class or interface
-exists ») et `make back-test` échouerait aussi. Un `composer install` dans le conteneur le corrige ; non lancé
-(installation : à valider par l'auteur).
-
 **`lsp:check`, ligne de base** (copie fidèle au lock, Language Tools 0.23.0 épinglé) — **6 avertissements**,
 0 bloquant :
 
@@ -340,33 +336,32 @@ est la lecture du code). La session 0.9 est 27 octets plus grosse au repos (nouv
 
 ---
 
-## 7. Questions ouvertes (décisions de l'auteur)
+## 7. Questions et décisions de l'auteur (2026-11-06)
 
-1. **Deux PR ou une ?** Les familles n'ont rien en commun (section 1) : la PR AI est triviale, la PR MCP porte
-   R1 à R11. Recommandation : deux PR, AI d'abord.
-2. **`allowed_origins`** (R4) : laisser vide (même origine seulement, le plus strict), ou y mettre l'origine du
-   frontend de dev (`http://localhost:5173`) ? Quelle origine le test `testAGetFromThePageOfTheSiteIsServed`
-   doit-il désormais prouver (même origine admise, autre port refusé) ? Faut-il vérifier en préprod que
-   l'Ingress fait reconnaître `https://<site>` comme même origine ?
-3. **La borne de la réponse nominative** (R2) : garder `QUEUED_ANSWER_MAX_BYTES` (devenue une borne arbitraire,
-   mais qui borne toujours la taille d'une réponse), la remplacer par une borne sur la réponse HTTP, ou la
-   retirer ? Et `QueuedAnswer` / les trois tests qui mesurent « ce que le SDK met en file » : renommer,
-   réécrire contre la vraie ligne `cache_items`, ou supprimer ?
-4. **Le lien session ↔ connexion** (R2) : il protégeait d'abord contre la vidange de la file à un `POST`
-   concurrent. Le garder en défense en profondeur (la session porte `clientInfo` et le dernier `_meta`), ou le
-   retirer ? Il coûte une lecture et complique `BoundedSessionStore`.
-5. **Journal de l'ère sans session** (R5) : lire `declaredClient` depuis `RequestMeta` dans la session, et
-   accepter que `durationMs` mesure désormais le traitement du message dans les deux ères (plus homogène), ou
-   garder la durée de la requête HTTP pour l'ère sans session (et alors ignorer les événements de cette ère) ?
-6. **Store injoignable** (R7) : suivre le SDK (503, le client réessaie) au `GET` aussi, ou garder un 404 ?
-7. **Session trop grosse** (R3) : accepter qu'un `initialize` refusé rende un identifiant mort (le client se
-   réinitialise au 404 suivant), ou retirer l'en-tête `Mcp-Session-Id` quand la session n'a pas été écrite ?
-8. **Verrou de session** du bundle 0.15 : l'adopter (avec `symfony/lock`) pour fermer la course acceptée, ou non ?
-9. **Les 6 `config.unknown_key`** : les laisser visibles (choix actuel), ou réécrire les modèles d'`ai.yaml` en
-   chaîne avec paramètres de requête pour les faire taire ?
-10. **1.0.0-BETA1** : attendre la 1.0 stable pour la montée suivante, en sachant qu'elle casse `FakeAgent`,
-    `FakeStreamingAgent` et le typage `Execution` de l'assistant ?
-11. **Le `vendor/` de la stack** : relancer `composer install` dans le conteneur avant la phase de construction.
+1. **Deux PR ou une ?** Les familles n'ont rien en commun (section 1). **Décidé : deux PR**, AI d'abord
+   (livrée), MCP ensuite, séparée.
+2. **`allowed_origins`** (R4) : laisser vide (même origine seulement), ou y mettre une origine ?
+   **Décidé : l'origine du site, lue dans une variable d'environnement** (une valeur par environnement, rien
+   en dur dans `mcp.yaml`).
+3. **La borne de la réponse nominative** (R2) : garder `QUEUED_ANSWER_MAX_BYTES`, la remplacer, ou la
+   retirer ? **Décidé : retirer `QueuedAnswer`, la borne et les trois tests devenus vacants**, remplacés par
+   un test qui épingle que la réponse **ne transite pas par la session** (la prémisse nouvelle, au lieu de
+   l'ancienne).
+4. **Le lien session ↔ connexion** (R2) : le garder ou le retirer ? **Décidé : le garder, en défense en
+   profondeur** (la session porte `clientInfo` et le dernier `_meta`) ; sa justification, en partie
+   devenue fausse (R2), est à réécrire dans la PR MCP.
+5. **Journal de l'ère sans session** (R5) : **décidé : lire `declaredClient` depuis `RequestMeta` dans la
+   session**, et accepter le nouveau sens de `durationMs` (traitement du message, dans les deux ères), écrit
+   dans `mcp-journaux.md`.
+6. **Store injoignable** (R7) : **décidé : suivre le SDK, 503 au `GET` aussi** (le client réessaie au lieu
+   de se réinitialiser).
+7. **Session trop grosse** (R3) : **décidé : suivre le SDK** (l'`initialize` refusé rend un identifiant qui
+   n'existe pas), avec un test qui prouve que cet identifiant n'est pas réutilisable.
+8. **Verrou de session** du bundle 0.15 : **pas dans cette montée** ; issue de suivi.
+9. **Les 6 `config.unknown_key`** : **laissés visibles** (choix actuel, faux positif documenté dans
+   `backend-outillage.md`).
+10. **1.0.0-BETA1** : **pas de 1.0 dans cette montée** ; la montée vers la 1.0 stable fera l'objet d'une
+    issue de suivi (elle casse `FakeAgent`, `FakeStreamingAgent` et le typage `Execution` de l'assistant).
 
 ---
 
