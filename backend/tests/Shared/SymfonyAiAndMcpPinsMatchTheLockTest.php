@@ -211,6 +211,61 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
     }
 
     /**
+     * Un pin écrit dans l'autre section que celle où le lock installe le
+     * paquet : le message dit de resynchroniser le lock quand c'est lui qui
+     * retarde, de déplacer le pin quand c'est le lock qui a raison.
+     *
+     * Un `require` racine est toujours installé en `packages` : s'il est en
+     * `packages-dev`, le lock est désynchronisé. Un `require-dev` racine est
+     * installé en `packages` quand un paquet de production l'exige — le pin
+     * va alors dans le `require` — et en `packages-dev` sinon : en
+     * `packages` sans paquet de production qui l'exige, le lock retarde.
+     *
+     * @return iterable<string, array{array<mixed>, array<mixed>, string, string}> un `composer.json`, un lock, ce que le message dit, ce qu'il ne dit pas
+     */
+    public static function pinsInTheOtherSection(): iterable
+    {
+        $pinned = ['symfony/ai-bundle' => '0.15.0', 'mcp/sdk' => '0.8.1'];
+        $resync = 'lock désynchronisé — lancer composer update --lock, sans déplacer le pin';
+
+        yield 'exigé en require, installé en packages-dev' => [
+            self::composer([...$pinned, 'symfony/mcp-bundle' => '0.14.1']),
+            self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1'], ['symfony/mcp-bundle' => 'v0.14.1']),
+            'symfony/mcp-bundle : verrouillé en 0.14.1 dans les packages-dev de composer.lock, mais exigé par le require de composer.json : '.$resync,
+            'dans le require-dev de composer.json',
+        ];
+        yield 'exigé en require-dev, installé en packages sans paquet de production qui l\'exige' => [
+            self::composer(['symfony/ai-bundle' => '0.15.0'], ['mcp/sdk' => '0.8.1']),
+            self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1']),
+            'mcp/sdk : verrouillé en 0.8.1 dans les packages de composer.lock, mais exigé par le require-dev de composer.json : '.$resync,
+            'dans le require de composer.json',
+        ];
+        yield 'exigé en require-dev, installé en packages parce qu\'un paquet de production l\'exige' => [
+            self::composer(['symfony/ai-bundle' => '0.15.0', 'symfony/mcp-bundle' => '0.14.1'], ['mcp/sdk' => '0.8.1']),
+            ['packages' => [
+                ['name' => 'symfony/ai-bundle', 'version' => 'v0.15.0'],
+                ['name' => 'symfony/mcp-bundle', 'version' => 'v0.14.1', 'require' => ['mcp/sdk' => '^0.8.1']],
+                ['name' => 'mcp/sdk', 'version' => 'v0.8.1'],
+            ], 'packages-dev' => []],
+            'mcp/sdk : verrouillé en 0.8.1, absent du require — écrire "mcp/sdk": "0.8.1" dans le require de composer.json.',
+            'composer update --lock',
+        ];
+    }
+
+    /**
+     * @param array<mixed> $composer
+     * @param array<mixed> $lock
+     */
+    #[DataProvider('pinsInTheOtherSection')]
+    public function testAPinInTheOtherSectionNamesWhatToFix(array $composer, array $lock, string $said, string $notSaid): void
+    {
+        $message = ExactlyPinnedFamilies::failure(ExactlyPinnedFamilies::violations($composer, $lock));
+
+        self::assertStringContainsString($said, $message);
+        self::assertStringNotContainsString($notSaid, $message);
+    }
+
+    /**
      * @param array<string, mixed> $require
      * @param array<string, mixed> $requireDev
      *

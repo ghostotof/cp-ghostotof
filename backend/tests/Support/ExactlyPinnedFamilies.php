@@ -18,9 +18,13 @@ use UnexpectedValueException;
  * la section que le lock impose (`packages` -> `require`, `packages-dev` ->
  * `require-dev`) par une version seule, sans `v` ni opérateur, que Composer
  * ({@see VersionParser}) lit comme sa version verrouillée ; tout pin de ces
- * familles absent du lock est un lock désynchronisé. Le lock se lit par
- * {@see ComposerFiles}, sans tolérance : une entrée mal formée fait échouer le
- * test ({@see MalformedLockEntry::Fails}).
+ * familles absent du lock est un lock désynchronisé. Un pin écrit dans
+ * l'autre section que celle où le lock installe le paquet l'est aussi quand
+ * Composer n'a pas pu l'y placer — un `require` en `packages-dev`, un
+ * `require-dev` en `packages` qu'aucun paquet de production n'exige — : le
+ * message dit alors de lancer `composer update --lock`, pas de déplacer le
+ * pin. Le lock se lit par {@see ComposerFiles}, sans tolérance : une entrée
+ * mal formée fait échouer le test ({@see MalformedLockEntry::Fails}).
  */
 final class ExactlyPinnedFamilies
 {
@@ -74,14 +78,18 @@ final class ExactlyPinnedFamilies
     public static function violations(array $composer, array $lock): array
     {
         $locked = self::locked($lock);
+        $requiredInProduction = self::requiredInProduction($lock);
         $violations = [];
 
         foreach ($locked as $package => ['section' => $section, 'version' => $version]) {
             $requireSection = self::REQUIRE_SECTION_OF[$section];
+            $otherSection = 'require' === $requireSection ? 'require-dev' : 'require';
             $constraint = self::requirements($composer, $requireSection)[$package] ?? null;
             $expected = \sprintf('écrire "%s": "%s" dans le %s de composer.json', $package, $version, $requireSection);
 
-            if (null === $constraint) {
+            if (null === $constraint && self::lockLagsBehind($composer, $package, $otherSection, $requiredInProduction)) {
+                $violations[$package] = \sprintf('%s : verrouillé en %s dans les %s de composer.lock, mais exigé par le %s de composer.json : lock désynchronisé — lancer composer update --lock, sans déplacer le pin.', $package, $version, $section, $otherSection);
+            } elseif (null === $constraint) {
                 $violations[$package] = \sprintf('%s : verrouillé en %s, absent du %s — %s.', $package, $version, $requireSection, $expected);
             } elseif (!\is_string($constraint) || !self::pinsExactly($constraint, $version)) {
                 $found = \is_string($constraint) ? $constraint : get_debug_type($constraint);
@@ -122,6 +130,48 @@ final class ExactlyPinnedFamilies
     private static function requirements(array $composer, string $section): array
     {
         return \is_array($composer[$section] ?? null) ? $composer[$section] : [];
+    }
+
+    /**
+     * Le paquet est exigé par l'autre section de `composer.json` que celle où
+     * le lock l'installe, et c'est le lock qui retarde : un `require` racine
+     * est toujours installé en `packages`, donc jamais en `packages-dev` ; un
+     * `require-dev` racine n'est installé en `packages` que si un paquet de
+     * production l'exige — sinon il appartient à `packages-dev`.
+     *
+     * @param array<mixed>            $composer
+     * @param 'require'|'require-dev' $otherSection
+     * @param array<string, true>     $requiredInProduction
+     */
+    private static function lockLagsBehind(array $composer, string $package, string $otherSection, array $requiredInProduction): bool
+    {
+        if (!\array_key_exists($package, self::requirements($composer, $otherSection))) {
+            return false;
+        }
+
+        return 'require' === $otherSection || !isset($requiredInProduction[$package]);
+    }
+
+    /**
+     * Les paquets qu'un paquet de `packages` exige : ceux que Composer installe
+     * en production quoi qu'en dise le `require-dev` de `composer.json`.
+     *
+     * @param array<mixed> $lock
+     *
+     * @return array<string, true>
+     */
+    private static function requiredInProduction(array $lock): array
+    {
+        $required = [];
+        foreach (ComposerFiles::lockedPackages($lock, MalformedLockEntry::Fails) as $package) {
+            if ('packages' === $package->section) {
+                foreach ($package->requires as $name) {
+                    $required[$name] = true;
+                }
+            }
+        }
+
+        return $required;
     }
 
     /**
