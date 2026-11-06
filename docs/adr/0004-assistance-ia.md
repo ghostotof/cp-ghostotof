@@ -135,7 +135,10 @@ premier `composer update`, sans qu'on écrive leur version ni qu'on lise leur ch
 montée de l'un est aussi délibérée que celle du bundle. Le pin ne change rien au verrou (les versions
 installées étaient déjà 0.15.0, seul le `content-hash` de `composer.lock` bouge). L'invariant devient :
 **tout paquet `symfony/ai-*` présent dans `composer.lock` est pinné en version exacte dans
-`composer.json`**.
+`composer.json`**. Il est gardé par `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`,
+commun aux paquets MCP (ADR 0006 D7) : pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou,
+une contrainte exacte dans le `require`, égale à la version verrouillée. Un paquet de ces familles que
+le bundle tirera demain le fait rougir tant qu'il n'est pas épinglé.
 
 **Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-bundle` et `mcp/*`
 (ADR 0006 D7) : une montée y est délibérée, lue dans les changelogs amont, et une version 0.x mineure
