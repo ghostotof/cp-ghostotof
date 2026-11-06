@@ -417,7 +417,7 @@ final class McpEndpointTest extends WebTestCase
      * commun le refuse, sauf un pin exact de pré-version égal au lock, admis
      * par décision.
      */
-    public function testTheMcpPackagesArePinnedExactly(): void
+    public function testTheOAuthDependenciesOutsideThePinnedFamiliesArePinnedExactly(): void
     {
         $require = ComposerFiles::decoded('composer.json')['require'] ?? null;
         self::assertIsArray($require);

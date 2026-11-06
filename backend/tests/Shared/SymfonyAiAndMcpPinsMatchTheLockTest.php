@@ -41,7 +41,7 @@ use PHPUnit\Framework\TestCase;
  * désynchronisé.
  *
  * Il est le seul garde de `symfony/mcp-*` et `mcp/*` :
- * {@see \App\Tests\Mcp\Presentation\McpEndpointTest::testTheMcpPackagesArePinnedExactly()}
+ * {@see \App\Tests\Mcp\Presentation\McpEndpointTest::testTheOAuthDependenciesOutsideThePinnedFamiliesArePinnedExactly()}
  * ne juge plus que les deux paquets pinnés à la main hors de ces familles,
  * `league/oauth2-server` et `defuse/php-encryption`. Ce que ce dernier
  * refusait sur les paquets MCP (une contrainte qui n'est pas une version

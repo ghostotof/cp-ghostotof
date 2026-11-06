@@ -37,7 +37,7 @@ paths:
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
   a bundle release moves), guarded with `symfony/ai-*` by `tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest` (#731:
   every `symfony/mcp-*` and `mcp/*` of the lock at exactly its locked version, the bundle and the SDK in `packages`);
-  `McpEndpointTest::testTheMcpPackagesArePinnedExactly` keeps only the two pins outside those families,
+  `McpEndpointTest::testTheOAuthDependenciesOutsideThePinnedFamiliesArePinnedExactly` keeps only the two pins outside those families,
   `league/oauth2-server` and `defuse/php-encryption`.
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;
   `php-http/discovery` is `false` in `allow-plugins`, so nothing gets installed behind our back. That package is
