@@ -143,9 +143,11 @@ paths:
   client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
   way. Don't move it back into `ai.yaml` until a bundle version honours the option **and** accepts a base URL
   carrying the project (the `scaleway` node has no base URL either, the bundle leaves the factory's default, which
-  would 403); `tests/Ai/Assistant/Infrastructure/ScalewayHttpClientOptionSentinelTest` loads the bundle's extension
-  alone with a `scaleway` platform asking for a named client and turns red the day the option is honoured (its
-  message says what to check and move); `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  would 403). Two sentinels, one per reason, each saying in its message what to check and move:
+  `tests/Ai/Assistant/Infrastructure/ScalewayHttpClientOptionSentinelTest` loads the bundle's extension alone with a
+  `scaleway` platform asking for a named client and turns red the day the option is honoured (its docblock holds the
+  move back), `ScalewayBaseUrlOptionSentinelTest` reads the bundle's configuration tree and turns red the day the
+  `scaleway` node gains an address option (URL, host, endpoint, project, region); `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
   `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
@@ -170,8 +172,10 @@ paths:
   → `output-truncated` (the site's `max_tokens` ceiling, a cost bound, not an outage — the bridge raises it on a cut
   tool call, and on **any** `max_tokens` stop of an Anthropic stream) and `MalformedToolCallException` →
   `malformed-response`; neither can arise today (`tools: false`, the translator does not stream), and
-  `ProviderFailureTest` obtains both from the real converters. The marker `RetryableExceptionInterface` is not
-  read: its two classes keep their own reason, and « retryable » says nothing of the failure's nature; **no model call from a public render
+  `ProviderFailureTest` obtains both from the real converters — on the assistant's real path too, an SSE stream read
+  by the Scaleway converter through `CompletionsConversionTrait::convertStream()`. The marker
+  `RetryableExceptionInterface` is not read: its two classes keep their own reason, « retryable » says nothing of the
+  failure's nature, and an exception carrying the marker alone stays `unknown` (pinned); **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a

@@ -11,23 +11,27 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
- * Sentinelle du contournement de services.yaml (spec 0005 D2, règle ai.md).
+ * Première sentinelle du contournement de services.yaml (spec 0005 D2, ADR
+ * 0004 D1 amendée le 2026-11-06, règle ai.md).
  *
  * La plateforme Scaleway de l'assistant est déclarée dans services.yaml, pas
- * dans ai.yaml, parce que symfony/ai-bundle, à la version épinglée
- * (composer.json), ignore l'option `http_client` d'une plateforme `scaleway` :
- * son bloc `'scaleway' === $type` (src/AiBundle.php) passe toujours la
- * référence `http_client` en dur, alors que le nœud de configuration accepte
- * l'option (config/platform/scaleway.php). ScalewayPlatformWiringTest prouve
- * que le contournement marche ; ce test-ci prouve qu'il est encore nécessaire,
- * et rougit le jour où une montée du bundle honore l'option.
+ * dans ai.yaml, pour deux raisons. Celle que garde ce test : symfony/ai-bundle,
+ * à la version épinglée (composer.json), ignore l'option `http_client` d'une
+ * plateforme `scaleway` ; son bloc `'scaleway' === $type` (src/AiBundle.php)
+ * passe toujours la référence `http_client` en dur, alors que le nœud de
+ * configuration accepte l'option (config/platform/scaleway.php). La seconde, le
+ * nœud sans URL de base où porter le projet (sans lui, 403), a sa propre
+ * sentinelle ({@see ScalewayBaseUrlOptionSentinelTest}).
  *
- * Ce n'est pas la seule raison du contournement : le même nœud n'a pas non plus
- * d'URL de base, et le bloc laisse celle de Factory::createPlatform() par
- * défaut (`https://api.scaleway.ai`), sans le projet que services.yaml met
- * dans le chemin (sans lui, 403). Le jour où ce test rougit, le rapatriement
- * dans ai.yaml n'est donc possible que si le bundle accepte aussi cette URL ;
- * le message d'échec le dit.
+ * {@see ScalewayPlatformWiringTest} prouve que le contournement marche ; ce
+ * test-ci prouve qu'il est encore nécessaire, et rougit le jour où une montée
+ * du bundle honore l'option. La plateforme ne revient dans ai.yaml que si les
+ * deux sentinelles ont rougi. Le rapatriement, alors : la plateforme dans
+ * ai.yaml (`http_client: ai.scaleway.http_client`, la clé, l'URL de base avec
+ * le projet), `app.ai.platform.scaleway` retiré de services.yaml, l'agent
+ * `career_assistant` sur `ai.platform.scaleway`, ScalewayPlatformWiringTest
+ * gardé vert, les deux sentinelles retirées, la règle ai.md et le commentaire
+ * de services.yaml mis à jour.
  *
  * Il charge la seule extension du bundle, sur un conteneur vide, avec une
  * plateforme `scaleway` qui demande un client nommé, et lit l'argument
@@ -42,7 +46,11 @@ final class ScalewayHttpClientOptionSentinelTest extends TestCase
     /** Ce que le bloc `scaleway` du bundle passe en dur. */
     private const string HARD_CODED_HTTP_CLIENT = 'http_client';
 
-    /** Position de `$httpClient` dans `Factory::createPlatform()` (après `$apiKey`). */
+    /**
+     * Position de `$httpClient` dans
+     * {@see \Symfony\AI\Platform\Bridge\Scaleway\Factory::createPlatform()}
+     * (après `$apiKey`).
+     */
     private const int HTTP_CLIENT_ARGUMENT = 1;
 
     public function testTheBundleStillIgnoresTheHttpClientOptionOfAScalewayPlatform(): void
@@ -56,18 +64,16 @@ final class ScalewayHttpClientOptionSentinelTest extends TestCase
             ],
         ]);
 
-        self::assertTrue($container->hasDefinition('ai.platform.scaleway'), 'Le bundle ne déclare plus `ai.platform.scaleway` : relire son bloc `scaleway` avant de conclure quoi que ce soit.');
+        self::assertTrue($container->hasDefinition('ai.platform.scaleway'), 'Le bundle ne déclare plus `ai.platform.scaleway` : relire son bloc `scaleway`.');
         $httpClient = $container->getDefinition('ai.platform.scaleway')->getArgument(self::HTTP_CLIENT_ARGUMENT);
-        self::assertInstanceOf(Reference::class, $httpClient, 'L\'argument « client HTTP » de `ai.platform.scaleway` n\'est plus une référence : la signature de Factory::createPlatform() a changé, relire le bloc `scaleway` du bundle.');
+        self::assertInstanceOf(Reference::class, $httpClient, 'Le client HTTP de `ai.platform.scaleway` n\'est plus une référence : la signature de la Factory a changé.');
 
         self::assertNotSame(
             self::REQUESTED_HTTP_CLIENT,
             (string) $httpClient,
-            'symfony/ai-bundle honore désormais l\'option `http_client` d\'une plateforme `scaleway` : le contournement de services.yaml est peut-être inutile. '
-            .'Vérifier d\'abord que le nœud `ai.platform.scaleway` accepte aussi une URL de base portant le projet (`https://api.scaleway.ai/<projet>`), sans quoi l\'API répond 403. '
-            .'Si oui : rapatrier la plateforme dans ai.yaml (`http_client: ai.scaleway.http_client`, la clé, l\'URL de base), supprimer `app.ai.platform.scaleway` de services.yaml, '
-            .'faire pointer l\'agent `career_assistant` sur `ai.platform.scaleway`, garder ScalewayPlatformWiringTest vert, retirer ce test, mettre à jour la règle ai.md et le commentaire de services.yaml. '
-            .'Si non : garder la déclaration de services.yaml et remplacer cette sentinelle par une sur l\'URL de base.',
+            'symfony/ai-bundle honore désormais l\'option `http_client` d\'une plateforme `scaleway`. '
+            .'Voir ScalewayBaseUrlOptionSentinelTest : verte, garder services.yaml et retirer ce test ; '
+            .'rouge aussi, rapatrier la plateforme dans ai.yaml (marche à suivre dans le docblock de ce test).',
         );
         self::assertSame(self::HARD_CODED_HTTP_CLIENT, (string) $httpClient, 'Le bloc `scaleway` du bundle passe un autre client que `http_client` sans honorer l\'option : relire ce bloc.');
     }
