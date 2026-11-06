@@ -410,7 +410,10 @@ judged by its own referrer — and `found()` starts over at each compilation. It
 `require` and `require-dev` — read from the file, never listed in the test, so a component added tomorrow is judged
 the day it is added —, not every package with the prefix (an `api-platform/*` tool outside the monorepo has its own
 versions, and nothing in the lock tells it apart by `source.url` or `homepage`); it fails citing
-`composer update <those packages>`. The collector, the lock family and the pass each have their own test
+`composer update <those packages>`. It and the 0.x pin guard (`SymfonyAiAndMcpPinsMatchTheLockTest`, rule in
+`tests/Support/ExactlyPinnedFamilies`) read both files through `tests/Support/ComposerFiles` (#731: `packages` then
+`packages-dev`, the version as the lock writes it, `v` included), each keeping its tolerance (`MalformedLockEntry`):
+this one ignores a malformed entry, the pin guard fails on it (`ComposerFilesTest`). The collector, the lock family and the pass each have their own test
 (`ApiPlatformDeprecationCollectorTest`, `ApiPlatformPackagesShareOneVersionTest`, `DeprecatedReferencesOfApiPlatformTest`).
 **Two traps measured while building it.** `@` is deliberately not looked at: `trigger_deprecation()` calls
 `@trigger_error()`, so every such deprecation arrives « suppressed » (and PHPUnit lowers `error_reporting()` during a

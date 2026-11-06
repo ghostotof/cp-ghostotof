@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
-use App\Tests\Support\RepositoryFiles;
+use App\Tests\Support\ComposerFiles;
+use App\Tests\Support\ExactlyPinnedFamilies;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -41,27 +42,15 @@ use PHPUnit\Framework\TestCase;
  * (`league/oauth2-server`, `defuse/php-encryption`) : ceux-là restent gardés
  * par {@see \App\Tests\Mcp\Presentation\McpEndpointTest::testTheMcpPackagesArePinnedExactly()}.
  *
- * Les aides du fournisseur de données (`composer()`, `lock()`) sont
- * statiques, comme lui par contrat PHPUnit ; les autres, appelées par les
- * seuls tests, sont d'instance (règle Rector du dépôt,
- * LocallyCalledStaticMethodToNonStaticRector).
+ * La règle elle-même est dans {@see ExactlyPinnedFamilies}, comme celle de
+ * la famille d'API Platform est dans
+ * {@see \App\Tests\Support\ApiPlatformLockFamily} ; les deux lisent les
+ * fichiers par {@see ComposerFiles}. Ce test-ci n'a donc que deux aides,
+ * les constructeurs de fixtures du fournisseur de données, statiques comme
+ * lui par contrat PHPUnit.
  */
 final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
 {
-    /** Les familles 0.x pinnées en version exacte (ADR 0004 D1, ADR 0006 D7). */
-    private const array PINNED_PREFIXES = ['symfony/ai-', 'symfony/mcp-', 'mcp/'];
-
-    /**
-     * Une version exacte, telle que la contrainte doit l'écrire : trois
-     * nombres, puis au plus un suffixe de pré-version `alpha`, `beta` ou `RC`
-     * (la casse que Composer admet). `dev-*`, `.x-dev` et `-dev` n'y entrent
-     * pas : ce sont des branches.
-     */
-    private const string EXACT_VERSION = '/^\d+\.\d+\.\d+(?:-(?:alpha|beta|RC)\.?\d*)?\z/i';
-
-    /** La section de `composer.json` où s'épingle un paquet, selon la section du lock qui l'installe. */
-    private const array REQUIRE_SECTION_OF = ['packages' => 'require', 'packages-dev' => 'require-dev'];
-
     /**
      * Paquets que le projet installe en production et qui doivent y rester.
      * Sans eux dans `packages`, le test lirait un autre lock que celui du
@@ -71,16 +60,16 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
 
     public function testEveryPackageOfTheFamiliesInTheLockIsPinnedAtItsLockedVersion(): void
     {
-        $composer = $this->decoded('composer.json');
-        $lock = $this->decoded('composer.lock');
+        $composer = ComposerFiles::decoded('composer.json');
+        $lock = ComposerFiles::decoded('composer.lock');
 
-        $locked = $this->lockedPackages($lock);
+        $locked = ExactlyPinnedFamilies::locked($lock);
         foreach (self::PRODUCTION_ANCHORS as $package) {
             self::assertSame('packages', $locked[$package]['section'] ?? null, \sprintf('%s n\'est plus dans les paquets de production de composer.lock : le test lit-il le bon lock ?', $package));
         }
 
-        $violations = $this->violations($composer, $lock);
-        self::assertSame([], $violations, $this->failure($violations));
+        $violations = ExactlyPinnedFamilies::violations($composer, $lock);
+        self::assertSame([], $violations, ExactlyPinnedFamilies::failure($violations));
     }
 
     /**
@@ -90,18 +79,18 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
      */
     public function testRemovingAnyRealPinNamesThatPackageAlone(): void
     {
-        $composer = $this->decoded('composer.json');
-        $lock = $this->decoded('composer.lock');
-        $locked = $this->lockedPackages($lock);
+        $composer = ComposerFiles::decoded('composer.json');
+        $lock = ComposerFiles::decoded('composer.lock');
+        $locked = ExactlyPinnedFamilies::locked($lock);
         self::assertNotSame([], $locked, 'composer.lock ne contient aucun paquet des familles.');
 
         foreach ($locked as $package => ['section' => $section]) {
-            $requireSection = self::REQUIRE_SECTION_OF[$section];
+            $requireSection = ExactlyPinnedFamilies::REQUIRE_SECTION_OF[$section];
             $requirements = $composer[$requireSection] ?? [];
             self::assertIsArray($requirements);
             unset($requirements[$package]);
 
-            self::assertSame([$package], array_keys($this->violations([...$composer, $requireSection => $requirements], $lock)), $package);
+            self::assertSame([$package], array_keys(ExactlyPinnedFamilies::violations([...$composer, $requireSection => $requirements], $lock)), $package);
         }
     }
 
@@ -177,125 +166,17 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
     #[DataProvider('composerFiles')]
     public function testItNamesEveryPackageThatIsNotPinnedAtItsLockedVersion(array $composer, array $lock, array $expected): void
     {
-        self::assertSame($expected, array_keys($this->violations($composer, $lock)));
+        self::assertSame($expected, array_keys(ExactlyPinnedFamilies::violations($composer, $lock)));
     }
 
     public function testTheFailureNamesThePackageTheLockedVersionAndTheConstraintFound(): void
     {
-        $message = $this->failure($this->violations(self::composer(['symfony/ai-bundle' => '^0.15']), self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1'], ['symfony/mcp-bundle' => 'v0.14.1'])));
+        $message = ExactlyPinnedFamilies::failure(ExactlyPinnedFamilies::violations(self::composer(['symfony/ai-bundle' => '^0.15']), self::lock(['symfony/ai-bundle' => 'v0.15.0', 'mcp/sdk' => 'v0.8.1'], ['symfony/mcp-bundle' => 'v0.14.1'])));
 
         self::assertStringContainsString('symfony/ai-bundle : verrouillé en 0.15.0, contrainte « ^0.15 »', $message);
         self::assertStringContainsString('mcp/sdk : verrouillé en 0.8.1, absent du require', $message);
         self::assertStringContainsString('"symfony/ai-bundle": "0.15.0"', $message, 'Le message donne la ligne à écrire.');
         self::assertStringContainsString('symfony/mcp-bundle : verrouillé en 0.14.1, absent du require-dev', $message, 'Le message nomme la section que le lock impose.');
-    }
-
-    /**
-     * Les paquets des familles qui ne respectent pas la règle, chacun avec sa
-     * raison, dans l'ordre du lock puis de `require` et `require-dev`.
-     *
-     * @param array<mixed> $composer le contenu décodé de `composer.json`
-     * @param array<mixed> $lock     le contenu décodé de `composer.lock`
-     *
-     * @return array<string, string> paquet => raison
-     */
-    private function violations(array $composer, array $lock): array
-    {
-        $locked = $this->lockedPackages($lock);
-        $violations = [];
-
-        foreach ($locked as $package => ['section' => $section, 'version' => $version]) {
-            $requireSection = self::REQUIRE_SECTION_OF[$section];
-            $constraint = $this->requirements($composer, $requireSection)[$package] ?? null;
-            $expected = \sprintf('écrire "%s": "%s" dans le %s de composer.json', $package, $version, $requireSection);
-
-            if (null === $constraint) {
-                $violations[$package] = \sprintf('%s : verrouillé en %s, absent du %s — %s.', $package, $version, $requireSection, $expected);
-            } elseif (!\is_string($constraint) || 1 !== preg_match(self::EXACT_VERSION, $constraint) || $constraint !== $version) {
-                $found = \is_string($constraint) ? $constraint : get_debug_type($constraint);
-                $violations[$package] = \sprintf('%s : verrouillé en %s, contrainte « %s » — %s.', $package, $version, $found, $expected);
-            }
-        }
-
-        // Un pin des familles dont le paquet n'est pas dans le lock : lock désynchronisé.
-        foreach (self::REQUIRE_SECTION_OF as $requireSection) {
-            foreach (array_keys($this->requirements($composer, $requireSection)) as $package) {
-                if (\is_string($package) && $this->isPinnedFamily($package) && !\array_key_exists($package, $locked)) {
-                    $violations[$package] = \sprintf('%s : exigé par le %s de composer.json mais absent de composer.lock — lancer composer update %s.', $package, $requireSection, $package);
-                }
-            }
-        }
-
-        return $violations;
-    }
-
-    /**
-     * @param array<mixed> $composer
-     *
-     * @return array<mixed>
-     */
-    private function requirements(array $composer, string $section): array
-    {
-        return \is_array($composer[$section] ?? null) ? $composer[$section] : [];
-    }
-
-    /**
-     * Les paquets des familles dans le lock, `packages` et `packages-dev`
-     * confondus : la section qui les installe et leur version, sans le `v`
-     * des tags. Une entrée mal formée fait échouer le test.
-     *
-     * @param array<mixed> $lock
-     *
-     * @return array<string, array{section: key-of<self::REQUIRE_SECTION_OF>, version: string}>
-     */
-    private function lockedPackages(array $lock): array
-    {
-        $locked = [];
-        foreach (array_keys(self::REQUIRE_SECTION_OF) as $section) {
-            $packages = $lock[$section] ?? [];
-            self::assertIsArray($packages);
-            foreach ($packages as $package) {
-                self::assertIsArray($package);
-                $name = $package['name'] ?? null;
-                $version = $package['version'] ?? null;
-                self::assertIsString($name);
-                self::assertIsString($version);
-                if ($this->isPinnedFamily($name)) {
-                    $locked[$name] = ['section' => $section, 'version' => str_starts_with($version, 'v') ? substr($version, 1) : $version];
-                }
-            }
-        }
-
-        return $locked;
-    }
-
-    private function isPinnedFamily(string $package): bool
-    {
-        return array_any(self::PINNED_PREFIXES, static fn (string $prefix): bool => str_starts_with($package, $prefix));
-    }
-
-    /**
-     * @param array<string, string> $violations
-     */
-    private function failure(array $violations): string
-    {
-        $lines = [];
-        foreach ($violations as $reason) {
-            $lines[] = '- '.$reason;
-        }
-
-        return "Paquets 0.x de Symfony AI ou du serveur MCP mal épinglés (ADR 0004 D1, ADR 0006 D7) :\n".implode("\n", $lines);
-    }
-
-    /**
-     * @return array<mixed>
-     */
-    private function decoded(string $file): array
-    {
-        $decoded = json_decode(RepositoryFiles::read(RepositoryFiles::backend($file)), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($decoded);
-
-        return $decoded;
     }
 
     /**
