@@ -145,14 +145,14 @@ développement. Un paquet de ces familles que le bundle tirera demain le fait ro
 **Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-*` et `mcp/*`
 (ADR 0006 D7), les trois motifs du garde : une montée y est délibérée, lue dans les changelogs amont, et
 une version 0.x mineure compterait pour Dependabot comme une montée `minor` du groupe
-`backend-minor-patch`, proposée en lot avec le reste. Cet `ignore` ne retire que les montées de version,
-jamais une PR de sécurité : la documentation de GitHub, « Dependabot options reference »
+`backend-minor-patch`, proposée en lot avec le reste. Cet `ignore` ne retire en principe que les montées de version,
+pas les PR de sécurité : la documentation de GitHub, « Dependabot options reference »
 (<https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference>), marque `ignore` comme agissant aussi sur les mises à jour de sécurité « except where
 `target-branch` is used » (section `ignore`, `#ignore--`), et sa section `target-branch` (`#target-branch-`)
 dit des options d'un tel bloc qu'elles « no longer apply to security updates », celles-ci visant toujours la
 branche par défaut. Le bloc Composer portant `target-branch: develop`, son `ignore` ne filtre donc pas les PR
 de sécurité, qu'elles restent coupées (aujourd'hui, `tools/github-settings.sh`, étape h : elles viseraient
-`main`, jamais fusionnables) ou soient réactivées ; lu, non mesuré. Les alertes de vulnérabilité restent
+`main`, jamais fusionnables) ou soient réactivées ; lu, non mesuré, à vérifier sur le dépôt avant toute réactivation des PR de sécurité. Les alertes de vulnérabilité restent
 actives, et `composer audit --no-dev` bloque déjà la CI (job `test-backend` de
 `.github/workflows/pipeline.yml`). Les nouvelles versions se
 lisent à la main : `composer outdated` ne prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`),
