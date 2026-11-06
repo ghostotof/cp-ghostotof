@@ -7,7 +7,8 @@
   la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
   connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664), le
   2026-10-21 (D7 : `subscriptions/listen` refusé, #675), le 2026-10-22 (D3 : découverte OAuth et
-  autorisation différée, #646) et le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647)
+  autorisation différée, #646), le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647) et le
+  2026-11-06 (D7 : `ignore` Dependabot et garde commun des épinglages, #731)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -286,6 +287,19 @@ fin de flux épuiserait la zone de débit de son IP) et le refus seul avec `list
 (une capacité annoncée, puis refusée). Servir à nouveau une notification demande d'abord un bus, puis la
 levée de ce refus, dans le même changement. La borne nginx de connexions simultanées (deux par IP et par
 pod) est gardée en défense en profondeur. Le détail est dans `.claude/rules/mcp.md`.
+
+*Amendé le 2026-11-06 (#731).* Dependabot **n'ouvre plus de PR de montée** pour `symfony/mcp-bundle` ni
+`mcp/*` (`ignore` de `.github/dependabot.yml`, comme pour `symfony/ai-*`, ADR 0004 D1) : en 0.x une version
+qui casse compte pour lui comme une « minor », que le groupe `backend-minor-patch` proposerait en lot et
+dont la PR réécrirait le pin exact. L'`ignore` ne retire que ces montées de version : les PR de sécurité
+automatiques sont déjà désactivées pour tout le dépôt (`tools/github-settings.sh`), les alertes restent
+actives, et `composer audit --no-dev` bloque la CI. Les nouvelles versions se lisent à la main
+(`composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`, `composer outdated` ne prenant qu'un
+nom de paquet) ; cette veille est suivie dans #764. Le pin lui-même est désormais gardé en commun avec
+`symfony/ai-*` : `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php` exige, pour tout
+`symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou, une contrainte exacte dans le `require`, égale à la
+version verrouillée. Les versions ne changent pas ici (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : leur
+montée fait l'objet d'un changement distinct.
 
 ### D8 — Rien ne nomme l'auteur hors du corpus nominatif
 

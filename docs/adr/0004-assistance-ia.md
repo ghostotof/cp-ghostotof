@@ -143,9 +143,13 @@ le bundle tirera demain le fait rougir tant qu'il n'est pas épinglé.
 **Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-bundle` et `mcp/*`
 (ADR 0006 D7) : une montée y est délibérée, lue dans les changelogs amont, et une version 0.x mineure
 compterait pour Dependabot comme une montée `minor` du groupe `backend-minor-patch`, proposée en lot
-avec le reste. La contrepartie : plus aucune PR automatique pour eux, de sécurité comprise ; les
-nouvelles versions se lisent à la main (`composer outdated 'symfony/ai-*' symfony/mcp-bundle 'mcp/*'`).
-Ce choix est à réévaluer à la montée vers Symfony 8.2 (issue #764).
+avec le reste. Cet `ignore` ne retire que les montées de version hebdomadaires : les PR de sécurité
+automatiques sont déjà désactivées pour tout le dépôt (`tools/github-settings.sh`, étape h : elles
+viseraient `main`, jamais fusionnables), les alertes de vulnérabilité restent actives, et
+`composer audit --no-dev` bloque déjà la CI (job `test-backend` de `.github/workflows/pipeline.yml`). Les
+nouvelles versions se lisent à la main, `composer outdated` ne prenant qu'un nom de paquet :
+`composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`. Cette veille, et la réévaluation de
+l'`ignore` à la montée vers Symfony 8.2, sont suivies dans l'issue #764.
 
 **Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
 monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`
