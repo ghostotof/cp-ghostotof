@@ -54,25 +54,25 @@ final class ScalewayHttpClientOptionSentinelTest extends TestCase
 
     public function testTheBundleStillIgnoresTheHttpClientOptionOfAScalewayPlatform(): void
     {
+        $scaleway = [
+            'api_key' => TestKeys::material('scaleway-sentinel'),
+            'http_client' => self::REQUESTED_HTTP_CLIENT,
+        ];
+
         // Une option retirée du nœud ferait échouer le chargement en erreur de
         // configuration, sans dire laquelle des deux raisons est en jeu : on le
-        // dit d'abord, lisiblement.
-        foreach (['api_key', 'http_client'] as $option) {
+        // dit d'abord, lisiblement, pour chaque option que la configuration
+        // ci-dessus passe (la liste vérifiée en dérive, elle ne se recopie pas).
+        $nodeOptions = self::scalewayNodeOptions();
+        foreach (array_keys($scaleway) as $option) {
             self::assertContains(
                 $option,
-                self::scalewayNodeOptions(),
+                $nodeOptions,
                 \sprintf('Le nœud `ai.platform.scaleway` n\'accepte plus l\'option `%s`, que cette sentinelle configure : suivre .claude/rules/ai.md, « Moving the Scaleway platform back into `ai.yaml` », cas d\'une option retirée.', $option),
             );
         }
 
-        $container = $this->loadAiExtension([
-            'platform' => [
-                'scaleway' => [
-                    'api_key' => TestKeys::material('scaleway-sentinel'),
-                    'http_client' => self::REQUESTED_HTTP_CLIENT,
-                ],
-            ],
-        ]);
+        $container = $this->loadAiExtension(['platform' => ['scaleway' => $scaleway]]);
 
         self::assertTrue($container->hasDefinition('ai.platform.scaleway'), 'Le bundle ne déclare plus `ai.platform.scaleway` : relire son bloc `scaleway`.');
         $httpClient = $container->getDefinition('ai.platform.scaleway')->getArgument(self::HTTP_CLIENT_ARGUMENT);
