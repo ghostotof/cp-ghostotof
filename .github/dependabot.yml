@@ -42,9 +42,44 @@ updates:
     # silence a duré de la 5.0.0 à la correction. Avec l'ignore, la « dernière
     # version » devient la dernière 4.x, que le groupe accepte. À retirer
     # quand on migre vers la 5.0.
+    #
+    # Symfony AI et MCP : toutes les montées de version sont écartées, pas
+    # seulement la majeure. Ces paquets sont en 0.x et épinglés en version
+    # exacte (ADR 0004 D1, ADR 0006 D7, garde
+    # SymfonyAiAndMcpPinsMatchTheLockTest) : une montée y est un acte
+    # délibéré, lu dans les changelogs amont, jamais un lot hebdomadaire. Or
+    # en 0.x une version qui casse (0.13 -> 0.15) compte pour Dependabot
+    # comme une « minor » : le groupe `backend-minor-patch` la proposerait
+    # avec le reste, et la PR réécrirait le pin exact. Les trois motifs sont
+    # ceux du garde : `symfony/ai-*`, `symfony/mcp-*`, `mcp/*`.
+    #
+    # Cet ignore ne retire en principe que les montées de version, pas les PR
+    # de sécurité. La documentation de GitHub, « Dependabot options reference »
+    # (https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference),
+    # marque `ignore` comme agissant aussi sur les mises à jour de sécurité
+    # « except where `target-branch` is used » (section `ignore`, #ignore--),
+    # et sa section `target-branch` (#target-branch-) dit des options d'un
+    # tel bloc : « no longer apply to security updates », celles-ci visant
+    # toujours la branche par défaut. Ce bloc portant `target-branch`, son
+    # ignore ne filtre donc pas les PR de sécurité, qu'elles restent coupées
+    # (aujourd'hui, tools/github-settings.sh, étape h : elles viseraient
+    # `main`, jamais mergeables) ou soient réactivées. Lu, non mesuré : à
+    # vérifier sur le dépôt avant toute réactivation des PR de sécurité. Les
+    # alertes de vulnérabilité restent actives, et `composer audit --no-dev`
+    # bloque déjà la CI (job `test-backend` de .github/workflows/pipeline.yml).
+    #
+    # Les nouvelles versions se lisent à la main. `composer outdated` ne
+    # prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`) ; pour les
+    # trois familles en une commande, on filtre sa sortie :
+    #   composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'
+    # Cette veille, et la réévaluation de l'ignore à la montée Symfony 8.2,
+    # sont suivies dans #764.
     ignore:
       - dependency-name: 'api-platform/*'
         update-types: ['version-update:semver-major']
+      - dependency-name: 'symfony/ai-*'
+      - dependency-name: 'symfony/mcp-*'
+      - dependency-name: 'mcp/*'
 
   - package-ecosystem: npm
     directory: /frontend

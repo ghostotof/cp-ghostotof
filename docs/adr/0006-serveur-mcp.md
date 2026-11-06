@@ -7,7 +7,8 @@
   la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
   connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664), le
   2026-10-21 (D7 : `subscriptions/listen` refusé, #675), le 2026-10-22 (D3 : découverte OAuth et
-  autorisation différée, #646) et le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647)
+  autorisation différée, #646), le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647) et le
+  2026-11-06 (D7 : `ignore` Dependabot et garde commun des épinglages, #731)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -15,7 +16,9 @@
   (zones `mcp` et OAuth), l'Ingress de préprod (phase 2), un objet Ingress pour les deux documents
   `/.well-known/` et leur entrée dans `RouterScopeTest` (`NON_API_PATHS`, phase 2), le journal d'audit de
   `Security/Authentication`, le frontend (page « Brancher votre assistant », puis consentement et
-  « Mes connexions MCP ») ; **amende** l'ADR 0003 (D1) et l'ADR 0004 (D1, D3, alternatives
+  « Mes connexions MCP »), `.github/dependabot.yml` (`ignore` de `symfony/mcp-*` et `mcp/*`, D7 amendée
+  le 2026-11-06) et le garde commun des épinglages `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`
+  (D7, même amendement) ; **amende** l'ADR 0003 (D1) et l'ADR 0004 (D1, D3, alternatives
   écartées) ; objectifs n°8 (sécurité), n°9 (rien de nominatif sans `ROLE_TRUSTED`), n°11 et n°12
 
 ## Contexte
@@ -286,6 +289,29 @@ fin de flux épuiserait la zone de débit de son IP) et le refus seul avec `list
 (une capacité annoncée, puis refusée). Servir à nouveau une notification demande d'abord un bus, puis la
 levée de ce refus, dans le même changement. La borne nginx de connexions simultanées (deux par IP et par
 pod) est gardée en défense en profondeur. Le détail est dans `.claude/rules/mcp.md`.
+
+*Amendé le 2026-11-06 (#731).* Dependabot **n'ouvre plus de PR de montée** pour `symfony/mcp-*` ni
+`mcp/*` (`ignore` de `.github/dependabot.yml`, comme pour `symfony/ai-*`, ADR 0004 D1 : les trois motifs du
+garde ci-dessous) : en 0.x une version qui casse compte pour lui comme une « minor », que le groupe
+`backend-minor-patch` proposerait en lot et dont la PR réécrirait le pin exact. L'`ignore` ne retire en principe que
+ces montées de version, pas les PR de sécurité : selon la documentation de GitHub, « Dependabot options
+reference » (<https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#target-branch->), les options d'un bloc qui porte `target-branch`, `ignore` compris
+(section `#ignore--`), « no longer apply to security updates » ; le bloc Composer visant `develop`, son
+`ignore` ne les filtre pas, qu'elles restent coupées (aujourd'hui, `tools/github-settings.sh`) ou soient
+réactivées — lu, non mesuré, à vérifier sur le dépôt avant toute réactivation (détail dans `.claude/rules/backend-outillage.md`). Les alertes restent
+actives, et `composer audit --no-dev` bloque la CI. Les nouvelles versions se lisent à la main : `composer outdated`
+ne prend qu'un argument, un nom ou un motif, d'où `composer outdated --direct | grep -E
+'^(symfony/(ai|mcp)-|mcp/)'` pour les trois familles ; cette veille est suivie dans #764. Le pin lui-même
+est désormais gardé en commun avec `symfony/ai-*` : `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`
+exige, pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou, une contrainte exacte égale à la
+version verrouillée (pré-version exacte comprise, jamais une branche), dans le `require` (le `require-dev`
+pour un paquet que le verrou n'installe qu'en développement), le bundle et le SDK restant des paquets de
+production ; `McpEndpointTest` ne garde plus que `league/oauth2-server` et `defuse/php-encryption`. Cet
+`ignore`, que la règle du garde D8 (`.claude/rules/mcp-prompt-d8.md`) donnait pour une alternative
+écartée, est donc adopté, pour cette autre raison : les montées de ces paquets se font à la main, sur une
+branche du dépôt, dont le run lit le vrai nom avec le secret du dépôt. Les
+versions ne changent pas ici (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : leur montée fait l'objet
+d'un changement distinct.
 
 ### D8 — Rien ne nomme l'auteur hors du corpus nominatif
 

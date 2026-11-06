@@ -9,6 +9,8 @@ use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\MalformedToolCallException;
+use Symfony\AI\Platform\Exception\MaxOutputTokensException;
 use Symfony\AI\Platform\Exception\ModelNotFoundException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -38,10 +40,11 @@ use Throwable;
  * statut, puis le type. C'est elle qui renseigne un échec en flux, où le
  * bridge ne transmet aucun type lisible.
  *
- * Ces formats sont ceux de symfony/ai-*-platform 0.13.0 : ProviderFailureTest
- * les obtient des vrais ResultConverter et rougit si une montée de version les
- * change. Importer Symfony\AI ici est admis par ADR 0004 D1 (amendée) : seules
- * les exceptions du bridge sont lues, jamais un message ni un agent.
+ * Ces formats sont ceux de symfony/ai-*-platform à la version épinglée
+ * (composer.json) : ProviderFailureTest les obtient des vrais ResultConverter
+ * et rougit si une montée de version les change. Importer Symfony\AI ici est
+ * admis par ADR 0004 D1 (amendée) : seules les exceptions du bridge sont lues,
+ * jamais un message ni un agent.
  */
 final readonly class ProviderFailure
 {
@@ -149,6 +152,8 @@ final readonly class ProviderFailure
             $exception instanceof IncompleteStreamException,
             $exception instanceof TransportExceptionInterface => ProviderFailureReason::Interrupted,
             $exception instanceof ServerException => ProviderFailureReason::ServerError,
+            $exception instanceof MaxOutputTokensException => ProviderFailureReason::OutputTruncated,
+            $exception instanceof MalformedToolCallException => ProviderFailureReason::MalformedResponse,
             default => null,
         };
     }
