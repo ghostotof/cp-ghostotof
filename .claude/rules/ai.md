@@ -149,8 +149,14 @@ paths:
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
   `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
-  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
-  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, and since #731 `symfony/ai-platform` — it carries the `Exception\*` classes `ProviderFailure` reads —, all `0.15.0` since #731 — `0.13.0` before —, no `^` while 0.x; a bump goes through the upstream changelogs, ADR 0004 D1); the platform and the
+  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, and **every `symfony/ai-*` package
+  of `composer.lock` is pinned in exact version in `composer.json`** (ADR 0004 D1, amended 2026-11-06), no `^` while
+  0.x, a bump going through the upstream changelogs: `symfony/ai-bundle`, `symfony/ai-agent`,
+  `symfony/ai-anthropic-platform` and `symfony/ai-scaleway-platform` (pinned `0.13.0` until #731), plus, since #731,
+  the three that were only transitive until then — `symfony/ai-platform` (it carries the `Exception\*` classes
+  `ProviderFailure` reads), `symfony/ai-generic-platform` (its `CompletionsConversionTrait` converts the assistant's
+  stream) and `symfony/ai-open-responses-platform` (registered by the Scaleway bridge's `Factory`) —, all `0.15.0`. A
+  new `symfony/ai-*` entering the lock gets its exact pin in the same change; the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,

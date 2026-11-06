@@ -109,21 +109,33 @@ aucune rupture ne touche le projet (note `docs/research/2026-11-06-montees-eping
 section 2). Le lecteur `ProviderFailure` lit les mêmes formats de message, et son test, nourri des
 vrais `ResultConverter`, reste vert ; il range en plus les deux exceptions que 0.15 ajoute,
 `MaxOutputTokensException` (`output-truncated`) et `MalformedToolCallException`
-(`malformed-response`), qui finissaient en `unknown`. La plateforme Scaleway reste déclarée hors `ai.yaml`, car le
-bundle 0.15.0 ignore encore l'option `http_client` d'une plateforme `scaleway`. Montent avec eux, par
-dépendance, `symfony/ai-platform`, `symfony/ai-generic-platform` et
-`symfony/ai-open-responses-platform` (0.15.0). La `1.0.0-BETA1`, publiée depuis, est écartée : c'est
-une pré-version, et elle change `AgentInterface::call()`. Les paquets MCP de l'amendement précédent
-(`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée fait l'objet d'un
-changement distinct.
+(`malformed-response`), qui finissaient en `unknown`.
 
-**`symfony/ai-platform` rejoint la liste des paquets pinnés** (`0.15.0` exact). Il n'était jusqu'ici
-qu'une dépendance transitive, tenue par les `^0.15` des quatre autres ; or c'est lui qui porte les
-classes `Symfony\AI\Platform\Exception\*` que lit `ProviderFailure`, et le format des messages de ses
-bridges. Une montée qui le changerait doit donc être aussi délibérée que celle du bundle : pinné, il
-ne peut plus bouger sans qu'on écrive sa version. Le pin ne change rien au verrou (la version installée
-était déjà 0.15.0, seul le `content-hash` de `composer.lock` bouge). `symfony/ai-generic-platform` et
-`symfony/ai-open-responses-platform` restent transitifs : le projet n'en importe aucune classe.
+La plateforme Scaleway reste déclarée hors `ai.yaml` (dans `services.yaml`), pour deux raisons que
+0.15.0 ne lève pas. La première : le bundle ignore encore l'option `http_client` d'une plateforme
+`scaleway` ; elle partirait par le client par défaut, sans le timeout ni le `max_redirects: 0` de D5.
+La seconde : le nœud de configuration `scaleway` n'offre aucune URL de base où porter le projet
+Scaleway, et la `Factory` partirait vers son URL par défaut, `https://api.scaleway.ai`, sans projet.
+L'API viserait alors le projet par défaut de l'organisation, sur lequel la clé, limitée à un autre
+projet, n'a aucun droit : réponse 403. Deux tests sentinelles rougissent chacun le jour où l'une de
+ces raisons tombe ; la plateforme ne revient dans `ai.yaml` que lorsque les deux sont tombées.
+
+La `1.0.0-BETA1`, publiée depuis, est écartée : c'est une pré-version, et elle change
+`AgentInterface::call()` ; la montée vers la 1.0 stable est suivie par l'issue #763. Les paquets MCP de
+l'amendement précédent (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée
+fait l'objet d'un changement distinct.
+
+**Tout paquet `symfony/ai-*` du verrou est désormais pinné** (`0.15.0` exact). Aux quatre paquets de D1
+s'ajoutent les trois que le projet n'obtenait jusqu'ici que par dépendance, tenus par les `^0.15` des
+autres : `symfony/ai-platform`, qui porte les classes `Symfony\AI\Platform\Exception\*` que lit
+`ProviderFailure` et le format des messages de ses bridges ; `symfony/ai-generic-platform`, dont le
+`CompletionsConversionTrait` convertit le flux de l'assistant ; `symfony/ai-open-responses-platform`, que
+la `Factory` du bridge Scaleway enregistre. Transitifs, ils pouvaient monter d'une version mineure 0.x au
+premier `composer update`, sans qu'on écrive leur version ni qu'on lise leur changelog ; pinnés, une
+montée de l'un est aussi délibérée que celle du bundle. Le pin ne change rien au verrou (les versions
+installées étaient déjà 0.15.0, seul le `content-hash` de `composer.lock` bouge). L'invariant devient :
+**tout paquet `symfony/ai-*` présent dans `composer.lock` est pinné en version exacte dans
+`composer.json`**.
 
 **Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
 monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`
