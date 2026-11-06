@@ -274,10 +274,14 @@ final class ProviderFailureTest extends TestCase
 
     /**
      * Un flux SSE au format de l'API Anthropic : chaque événement porte une
-     * ligne `event:` du nom de son type, puis sa ligne `data:` ; le flux finit
-     * sur `message_stop`, sans `[DONE]`, qu'Anthropic n'envoie pas (« Streaming
-     * messages », documentation de l'API). Le décodeur du bridge ne lit que
-     * `data`, mais le flux reste celui que le fournisseur envoie.
+     * ligne `event:` du nom de son type, puis sa ligne `data:`, jamais suivi
+     * d'un `[DONE]`, qu'Anthropic n'envoie pas (« Streaming messages »,
+     * documentation de l'API). Le flux finit sur le dernier événement qu'on
+     * lui donne, pas toujours sur `message_stop` : celui-ci clôt un message
+     * mené à son terme ({@see self::anthropicStream()}), alors que les cas
+     * d'erreur en cours de flux (surcharge, limite de débit) ne portent que
+     * l'événement `error` que l'API y envoie. Le décodeur du bridge ne lit que `data`,
+     * mais le flux reste celui que le fournisseur envoie.
      *
      * @param list<array<string, mixed>> $events
      */

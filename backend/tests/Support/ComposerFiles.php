@@ -12,9 +12,9 @@ use PHPUnit\Framework\Assert;
  * backend par {@see RepositoryFiles}, et le parcours des paquets du lock,
  * `packages` puis `packages-dev`.
  *
- * Utilisée par {@see ApiPlatformLockFamily} (et
+ * Utilisée par {@see \App\Tests\Support\ApiPlatformLockFamily} (et
  * {@see \App\Tests\Shared\Infrastructure\ApiPlatform\ApiPlatformPackagesShareOneVersionTest}),
- * {@see ExactlyPinnedFamilies} (et
+ * {@see \App\Tests\Support\ExactlyPinnedFamilies} (et
  * {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest}) et
  * {@see \App\Tests\Mcp\Presentation\McpEndpointTest}. Elle ne normalise rien
  * d'office : la version reste celle du lock, `v` compris (le garde d'API

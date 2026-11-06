@@ -17,8 +17,8 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
  * chargé ni compilé, aucun appel ne sort.
  *
  * Partagé par les deux sentinelles du contournement de services.yaml
- * ({@see ScalewayHttpClientOptionSentinelTest},
- * {@see ScalewayPlatformOptionListSentinelTest}) : la seconde juge la liste
+ * ({@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayHttpClientOptionSentinelTest},
+ * {@see \App\Tests\Ai\Assistant\Infrastructure\ScalewayPlatformOptionListSentinelTest}) : la seconde juge la liste
  * des options du nœud, la première vérifie que celles qu'elle configure y
  * sont encore avant de charger l'extension.
  */
