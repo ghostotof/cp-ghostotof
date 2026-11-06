@@ -42,9 +42,24 @@ updates:
     # silence a duré de la 5.0.0 à la correction. Avec l'ignore, la « dernière
     # version » devient la dernière 4.x, que le groupe accepte. À retirer
     # quand on migre vers la 5.0.
+    #
+    # Symfony AI et MCP : toutes les montées sont écartées, pas seulement la
+    # majeure. Ces paquets sont en 0.x et épinglés en version exacte (ADR 0004
+    # D1, ADR 0006 D7) : une montée y est un acte délibéré, lu dans les
+    # changelogs amont, jamais un lot hebdomadaire. Or en 0.x une version qui
+    # casse (0.13 -> 0.15) compte pour Dependabot comme une « minor » : le
+    # groupe `backend-minor-patch` la proposerait avec le reste, et la PR
+    # réécrirait le pin exact. Contrepartie : plus aucune PR automatique sur
+    # ces paquets, y compris de sécurité (l'ignore vaut aussi pour elles ; les
+    # alertes restent affichées) — suivre les versions à la main (`composer
+    # outdated 'symfony/ai-*' symfony/mcp-bundle 'mcp/*'`, `composer audit`).
+    # À réévaluer à la montée Symfony 8.2 (#764).
     ignore:
       - dependency-name: 'api-platform/*'
         update-types: ['version-update:semver-major']
+      - dependency-name: 'symfony/ai-*'
+      - dependency-name: 'symfony/mcp-bundle'
+      - dependency-name: 'mcp/*'
 
   - package-ecosystem: npm
     directory: /frontend

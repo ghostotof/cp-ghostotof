@@ -368,7 +368,11 @@ caret is deliberate and is **not** the exact pin of the 0.x packages (`mcp/*`, `
 precisely what let the family drift apart. When you bump one, bump them all (`composer update 'api-platform/*'`).
 `.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
 (2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
-never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735).
+never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735). The same block
+ignores **every** update of `symfony/ai-*`, `symfony/mcp-bundle` and `mcp/*` (#731), not only their major: they are
+0.x and pinned exact (ADR 0004 D1, ADR 0006 D7), a bump is read in the upstream changelogs, and a breaking 0.x
+release counts as a « minor » that `backend-minor-patch` would batch. The cost is no automatic PR for them, security
+ones included: watch them by hand (`composer outdated`, `composer audit`). Re-evaluate at the Symfony 8.2 bump (#764).
 **`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
 and that is what hid this one, vendor calling vendor. The targeted net is `tests/Support/ApiPlatformDeprecations`, an
 error handler put on for one action: it keeps an `E_USER_DEPRECATED` when its message starts with `Since api-platform/`,

@@ -137,6 +137,13 @@ installées étaient déjà 0.15.0, seul le `content-hash` de `composer.lock` bo
 **tout paquet `symfony/ai-*` présent dans `composer.lock` est pinné en version exacte dans
 `composer.json`**.
 
+**Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-bundle` et `mcp/*`
+(ADR 0006 D7) : une montée y est délibérée, lue dans les changelogs amont, et une version 0.x mineure
+compterait pour Dependabot comme une montée `minor` du groupe `backend-minor-patch`, proposée en lot
+avec le reste. La contrepartie : plus aucune PR automatique pour eux, de sécurité comprise ; les
+nouvelles versions se lisent à la main (`composer outdated 'symfony/ai-*' symfony/mcp-bundle 'mcp/*'`).
+Ce choix est à réévaluer à la montée vers Symfony 8.2 (issue #764).
+
 **Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
 monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`
 et `symfony/ai-platform`) : `phpdocumentor/reflection-common` 2.2.0 → 2.2.1,
