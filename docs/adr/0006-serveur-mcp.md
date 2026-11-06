@@ -294,11 +294,12 @@ pod) est gardée en défense en profondeur. Le détail est dans `.claude/rules/m
 `mcp/*` (`ignore` de `.github/dependabot.yml`, comme pour `symfony/ai-*`, ADR 0004 D1 : les trois motifs du
 garde ci-dessous) : en 0.x une version qui casse compte pour lui comme une « minor », que le groupe
 `backend-minor-patch` proposerait en lot et dont la PR réécrirait le pin exact. L'`ignore` ne retire que
-ces montées de version **tant que** les PR de sécurité automatiques restent désactivées pour le dépôt
-(`tools/github-settings.sh`) ; les alertes restent actives, et `composer audit --no-dev` bloque la CI. Si
-on les réactivait, la documentation de GitHub dit que `ignore` vaut aussi pour elles, sauf dans un bloc
-qui porte `target-branch` (le bloc Composer, tant qu'il vise `develop`) — lu, non mesuré (détail dans
-`.claude/rules/backend-outillage.md`). Les nouvelles versions se lisent à la main : `composer outdated`
+ces montées de version, jamais une PR de sécurité : selon la documentation de GitHub, « Dependabot options
+reference » (<https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#target-branch->), les options d'un bloc qui porte `target-branch`, `ignore` compris
+(section `#ignore--`), « no longer apply to security updates » ; le bloc Composer visant `develop`, son
+`ignore` ne les filtre pas, qu'elles restent coupées (aujourd'hui, `tools/github-settings.sh`) ou soient
+réactivées — lu, non mesuré (détail dans `.claude/rules/backend-outillage.md`). Les alertes restent
+actives, et `composer audit --no-dev` bloque la CI. Les nouvelles versions se lisent à la main : `composer outdated`
 ne prend qu'un argument, un nom ou un motif, d'où `composer outdated --direct | grep -E
 '^(symfony/(ai|mcp)-|mcp/)'` pour les trois familles ; cette veille est suivie dans #764. Le pin lui-même
 est désormais gardé en commun avec `symfony/ai-*` : `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`

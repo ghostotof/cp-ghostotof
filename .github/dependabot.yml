@@ -53,17 +53,19 @@ updates:
     # avec le reste, et la PR réécrirait le pin exact. Les trois motifs sont
     # ceux du garde : `symfony/ai-*`, `symfony/mcp-*`, `mcp/*`.
     #
-    # Cet ignore ne retire que les montées de version hebdomadaires tant que
-    # les PR de sécurité automatiques restent désactivées pour le dépôt
-    # (tools/github-settings.sh, étape h : elles viseraient `main`, jamais
-    # mergeables) ; les alertes de vulnérabilité restent actives, et
-    # `composer audit --no-dev` bloque déjà la CI (job `test-backend` de
-    # .github/workflows/pipeline.yml). Si on les réactivait, la
-    # documentation de GitHub (« Dependabot options reference ») dit que
-    # `ignore` s'applique aussi aux mises à jour de sécurité, sauf dans un
-    # bloc qui porte `target-branch`, dont les options « no longer apply to
-    # security updates » — le cas de ce bloc tant qu'il vise `develop`. Lu,
-    # non mesuré : à vérifier avant toute réactivation.
+    # Cet ignore ne retire que les montées de version, jamais une PR de
+    # sécurité. La documentation de GitHub, « Dependabot options reference »
+    # (https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference),
+    # marque `ignore` comme agissant aussi sur les mises à jour de sécurité
+    # « except where `target-branch` is used » (section `ignore`, #ignore--),
+    # et sa section `target-branch` (#target-branch-) dit des options d'un
+    # tel bloc : « no longer apply to security updates », celles-ci visant
+    # toujours la branche par défaut. Ce bloc portant `target-branch`, son
+    # ignore ne filtre donc pas les PR de sécurité, qu'elles restent coupées
+    # (aujourd'hui, tools/github-settings.sh, étape h : elles viseraient
+    # `main`, jamais mergeables) ou soient réactivées. Lu, non mesuré. Les
+    # alertes de vulnérabilité restent actives, et `composer audit --no-dev`
+    # bloque déjà la CI (job `test-backend` de .github/workflows/pipeline.yml).
     #
     # Les nouvelles versions se lisent à la main. `composer outdated` ne
     # prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`) ; pour les
