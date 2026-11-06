@@ -9,6 +9,8 @@ use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\MalformedToolCallException;
+use Symfony\AI\Platform\Exception\MaxOutputTokensException;
 use Symfony\AI\Platform\Exception\ModelNotFoundException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -150,6 +152,8 @@ final readonly class ProviderFailure
             $exception instanceof IncompleteStreamException,
             $exception instanceof TransportExceptionInterface => ProviderFailureReason::Interrupted,
             $exception instanceof ServerException => ProviderFailureReason::ServerError,
+            $exception instanceof MaxOutputTokensException => ProviderFailureReason::OutputTruncated,
+            $exception instanceof MalformedToolCallException => ProviderFailureReason::MalformedResponse,
             default => null,
         };
     }

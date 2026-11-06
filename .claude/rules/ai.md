@@ -160,7 +160,12 @@ paths:
   the bridge's exception messages: a provider failure is logged through its `toLogContext()`
   (`exception`, `providerStatus`, `providerErrorType`, `providerFailure` — a `ProviderFailureReason` value,
   provider-independent, readable even in a stream where no error type survives —, `origin`), never with the
-  message, by both services; **no model call from a public render
+  message, by both services. Since #731 it also names the two classes 0.15 added: `MaxOutputTokensException`
+  → `output-truncated` (the site's `max_tokens` ceiling, a cost bound, not an outage — the bridge raises it on a cut
+  tool call, and on **any** `max_tokens` stop of an Anthropic stream) and `MalformedToolCallException` →
+  `malformed-response`; neither can arise today (`tools: false`, the translator does not stream), and
+  `ProviderFailureTest` obtains both from the real converters. The marker `RetryableExceptionInterface` is not
+  read: its two classes keep their own reason, and « retryable » says nothing of the failure's nature; **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a

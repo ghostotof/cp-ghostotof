@@ -39,6 +39,9 @@ final class ProviderFailureTest extends TestCase
 {
     private const string SENTINEL = 'SENTINELLE-FOURNISSEUR';
 
+    /** Arguments d'outil tronqués : ni Anthropic ni le trait Completions ne savent les décoder. */
+    private const string MALFORMED_JSON = '{"query": ';
+
     /**
      * @return iterable<string, array{Closure():Throwable, ?int, ?string, ProviderFailureReason}>
      */
@@ -75,6 +78,63 @@ final class ProviderFailureTest extends TestCase
         yield 'scaleway flux 429' => [static fn (): Throwable => self::convert($scaleway, 429, self::openAiError(['type' => 'rate_limit_error']), stream: true), 429, null, ProviderFailureReason::RateLimited];
         yield 'scaleway flux, erreur serveur' => [static fn (): Throwable => self::convertStreamEvent($scaleway, ['error' => ['type' => 'server_error', 'message' => self::SENTINEL]]), null, null, ProviderFailureReason::ServerError];
         yield 'scaleway flux, limite de débit' => [static fn (): Throwable => self::convertStreamEvent($scaleway, ['error' => ['type' => 'rate_limit_exceeded', 'message' => self::SENTINEL]]), null, null, ProviderFailureReason::RateLimited];
+
+        // Arguments d'appel d'outil qui ne sont pas du JSON (MalformedToolCallException) : le
+        // bridge cite le nom de l'outil, qui porte ici la sentinelle. Les deux agents ont
+        // `tools: false`, le cas ne devrait pas se produire ; il ne doit pas finir en `unknown`.
+        yield 'anthropic flux, arguments d\'outil illisibles' => [static fn (): Throwable => self::convertStreamEvents($anthropic, [
+            ['type' => 'message_start', 'message' => ['model' => 'claude-test']],
+            ['type' => 'content_block_start', 'index' => 0, 'content_block' => ['type' => 'tool_use', 'id' => 'toolu_test', 'name' => self::SENTINEL]],
+            ['type' => 'content_block_delta', 'index' => 0, 'delta' => ['type' => 'input_json_delta', 'partial_json' => self::MALFORMED_JSON]],
+            ['type' => 'content_block_stop', 'index' => 0],
+            ['type' => 'message_delta', 'delta' => ['stop_reason' => 'tool_use']],
+            ['type' => 'message_stop'],
+        ]), null, null, ProviderFailureReason::MalformedResponse];
+        yield 'scaleway, arguments d\'outil illisibles' => [static fn (): Throwable => self::convert($scaleway, 200, self::chatCompletionToolCall(self::SENTINEL, 'tool_calls')), null, null, ProviderFailureReason::MalformedResponse];
+    }
+
+    /**
+     * Sorties coupées par le plafond `max_tokens` (MaxOutputTokensException). Le
+     * message du bridge est générique : la sentinelle est dans le contenu, que la
+     * description ne doit pas plus porter.
+     *
+     * @return iterable<string, array{Closure():Throwable}>
+     */
+    public static function outputCutByTheTokenCeiling(): iterable
+    {
+        $anthropic = new AnthropicResultConverter();
+        $scaleway = new ScalewayResultConverter();
+
+        yield 'anthropic, appel d\'outil coupé' => [static fn (): Throwable => self::convert($anthropic, 200, json_encode([
+            'type' => 'message',
+            'content' => [['type' => 'tool_use', 'id' => 'toolu_test', 'name' => self::SENTINEL, 'input' => []]],
+            'stop_reason' => 'max_tokens',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 1024],
+        ], \JSON_THROW_ON_ERROR))];
+        // En flux, le bridge Anthropic lève sur tout arrêt `max_tokens`, texte compris.
+        yield 'anthropic flux, texte coupé' => [static fn (): Throwable => self::convertStreamEvents($anthropic, [
+            ['type' => 'message_start', 'message' => ['model' => 'claude-test']],
+            ['type' => 'content_block_start', 'index' => 0, 'content_block' => ['type' => 'text', 'text' => '']],
+            ['type' => 'content_block_delta', 'index' => 0, 'delta' => ['type' => 'text_delta', 'text' => self::SENTINEL]],
+            ['type' => 'content_block_stop', 'index' => 0],
+            ['type' => 'message_delta', 'delta' => ['stop_reason' => 'max_tokens'], 'usage' => ['output_tokens' => 1024]],
+            ['type' => 'message_stop'],
+        ])];
+        yield 'scaleway, appel d\'outil coupé' => [static fn (): Throwable => self::convert($scaleway, 200, self::chatCompletionToolCall(self::SENTINEL, 'length'))];
+    }
+
+    /**
+     * @param Closure():Throwable $failure
+     */
+    #[DataProvider('outputCutByTheTokenCeiling')]
+    public function testAnOutputCutByTheTokenCeilingIsClassifiedAsSuch(Closure $failure): void
+    {
+        $description = ProviderFailure::from($failure());
+
+        self::assertNull($description->status);
+        self::assertNull($description->errorType);
+        self::assertSame(ProviderFailureReason::OutputTruncated, $description->reason);
+        self::assertStringNotContainsString(self::SENTINEL, json_encode($description->toLogContext(), \JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -160,16 +220,26 @@ final class ProviderFailureTest extends TestCase
      */
     private static function convertStreamEvent(ResultConverterInterface $converter, array $event): Throwable
     {
+        return self::convertStreamEvents($converter, [$event]);
+    }
+
+    /**
+     * Une suite d'événements déjà décodés, servie au vrai convertisseur en flux.
+     *
+     * @param list<array<string, mixed>> $events
+     */
+    private static function convertStreamEvents(ResultConverterInterface $converter, array $events): Throwable
+    {
         $response = (new MockHttpClient(new MockResponse('')))->request('POST', 'https://ai.test/');
-        $httpStream = new readonly class($event) implements HttpStreamInterface {
-            /** @param array<string, mixed> $event */
-            public function __construct(private array $event)
+        $httpStream = new readonly class($events) implements HttpStreamInterface {
+            /** @param list<array<string, mixed>> $events */
+            public function __construct(private array $events)
             {
             }
 
             public function stream(ResponseInterface $response): iterable
             {
-                yield $this->event;
+                yield from $this->events;
             }
         };
 
@@ -194,6 +264,28 @@ final class ProviderFailureTest extends TestCase
     private static function anthropicError(string $type, string $message = self::SENTINEL): string
     {
         return json_encode(['type' => 'error', 'error' => ['type' => $type, 'message' => $message]], \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Réponse Chat Completions (compatible OpenAI, celle de Scaleway) portant un
+     * appel d'outil aux arguments illisibles, arrêtée pour la raison donnée.
+     */
+    private static function chatCompletionToolCall(string $toolName, string $finishReason): string
+    {
+        return json_encode([
+            'id' => 'chatcmpl-test',
+            'object' => 'chat.completion',
+            'model' => 'mistral-test',
+            'choices' => [[
+                'index' => 0,
+                'message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [[
+                    'id' => 'call_test',
+                    'type' => 'function',
+                    'function' => ['name' => $toolName, 'arguments' => self::MALFORMED_JSON],
+                ]]],
+                'finish_reason' => $finishReason,
+            ]],
+        ], \JSON_THROW_ON_ERROR);
     }
 
     /**

@@ -107,7 +107,9 @@ de D1 passent de `0.13.0` à **`0.15.0`**, toujours pinnés en version exacte ; 
 change pas. La montée a suivi ce qu'elle exige : changelogs et `UPGRADE.md` de 0.14 et 0.15 relus, et
 aucune rupture ne touche le projet (note `docs/research/2026-11-06-montees-epinglees-731.md`,
 section 2). Le lecteur `ProviderFailure` lit les mêmes formats de message, et son test, nourri des
-vrais `ResultConverter`, reste vert. La plateforme Scaleway reste déclarée hors `ai.yaml`, car le
+vrais `ResultConverter`, reste vert ; il range en plus les deux exceptions que 0.15 ajoute,
+`MaxOutputTokensException` (`output-truncated`) et `MalformedToolCallException`
+(`malformed-response`), qui finissaient en `unknown`. La plateforme Scaleway reste déclarée hors `ai.yaml`, car le
 bundle 0.15.0 ignore encore l'option `http_client` d'une plateforme `scaleway`. Montent avec eux, par
 dépendance, `symfony/ai-platform`, `symfony/ai-generic-platform` et
 `symfony/ai-open-responses-platform` (0.15.0). La `1.0.0-BETA1`, publiée depuis, est écartée : c'est
