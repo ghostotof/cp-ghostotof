@@ -141,8 +141,11 @@ paths:
   `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0, and still 0.15.0 (#731), hard-codes the
   default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated
   client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
-  way. Don't move it back into `ai.yaml` until a bundle version honours the option;
-  `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  way. Don't move it back into `ai.yaml` until a bundle version honours the option **and** accepts a base URL
+  carrying the project (the `scaleway` node has no base URL either, the bundle leaves the factory's default, which
+  would 403); `tests/Ai/Assistant/Infrastructure/ScalewayHttpClientOptionSentinelTest` loads the bundle's extension
+  alone with a `scaleway` platform asking for a named client and turns red the day the option is honoured (its
+  message says what to check and move); `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
   Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
   `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The

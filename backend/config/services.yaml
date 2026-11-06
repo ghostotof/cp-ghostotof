@@ -109,8 +109,11 @@ services:
     # en dur dans son bloc `'scaleway' === $type` (src/AiBundle.php) et ignore
     # l'option `http_client`, là où le bloc Anthropic l'honore. Or l'ADR exige
     # le client dédié (timeout 40 s,
-    # max_redirects 0). Le jour où une version du bundle transmet l'option, cette
-    # déclaration retourne dans ai.yaml. Paresseuse comme celle du bundle : aucun
+    # max_redirects 0). Le même bloc n'offre pas non plus d'URL de base, où le
+    # projet doit figurer (voir `$baseUrl` ci-dessous). Le jour où le bundle
+    # transmet l'option et accepte cette URL, cette déclaration retourne dans
+    # ai.yaml ; ScalewayHttpClientOptionSentinelTest rougit quand l'option est
+    # honorée. Paresseuse comme celle du bundle : aucun
     # objet n'est construit tant que l'agent n'est pas appelé.
     app.ai.platform.scaleway:
         class: Symfony\AI\Platform\Platform
