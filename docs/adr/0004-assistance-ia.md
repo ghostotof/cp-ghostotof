@@ -94,7 +94,8 @@ amendement. Une montée de version du bundle reste un changement local — à la
 Les paquets `symfony/ai-bundle`, `symfony/ai-anthropic-platform` et `symfony/ai-agent` — et, en
 phase 2, `symfony/ai-scaleway-platform` — sont **pinnés en version exacte** (`0.13.0`, pas de `^`)
 tant qu'ils sont en 0.x. Une montée de version est un acte délibéré, lu dans le changelog, pas un
-effet de bord d'un `composer update`.
+effet de bord d'un `composer update`. La version en vigueur et la liste des paquets pinnés sont
+celles de l'amendement du 2026-11-06 ci-dessous.
 
 **Amendement du 2026-10-19 (ADR 0006 D7).** La règle s'étend à `symfony/mcp-*` et à `mcp/*`
 (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : même monorepo, même namespace `Symfony\AI\`, même
@@ -113,6 +114,24 @@ dépendance, `symfony/ai-platform`, `symfony/ai-generic-platform` et
 une pré-version, et elle change `AgentInterface::call()`. Les paquets MCP de l'amendement précédent
 (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée fait l'objet d'un
 changement distinct.
+
+**`symfony/ai-platform` rejoint la liste des paquets pinnés** (`0.15.0` exact). Il n'était jusqu'ici
+qu'une dépendance transitive, tenue par les `^0.15` des quatre autres ; or c'est lui qui porte les
+classes `Symfony\AI\Platform\Exception\*` que lit `ProviderFailure`, et le format des messages de ses
+bridges. Une montée qui le changerait doit donc être aussi délibérée que celle du bundle : pinné, il
+ne peut plus bouger sans qu'on écrive sa version. Le pin ne change rien au verrou (la version installée
+était déjà 0.15.0, seul le `content-hash` de `composer.lock` bouge). `symfony/ai-generic-platform` et
+`symfony/ai-open-responses-platform` restent transitifs : le projet n'en importe aucune classe.
+
+**Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
+monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`
+et `symfony/ai-platform`) : `phpdocumentor/reflection-common` 2.2.0 → 2.2.1,
+`phpdocumentor/type-resolver` 2.0.0 → 2.1.0 et `webmozart/assert` 2.4.1 → 2.5.0. `-W` autorise
+Composer à mettre à jour les dépendances des paquets demandés, jusqu'à la dernière version que leurs
+contraintes admettent ; ils sont gardés. Ils ne relèvent pas de D1 : ce ne sont ni des `symfony/ai-*`
+ni des `mcp/*`, ils suivent le versionnement sémantique, et leurs contraintes (`^2.0`, `^2.2`,
+`^1.9.1 || ^2`) sont celles de leurs dépendants, pas du projet — une version mineure ou corrective n'y
+casse rien par contrat. La suite complète passe avec eux.
 
 ### D2 — Aucun appel à un fournisseur dans un chemin de rendu public
 

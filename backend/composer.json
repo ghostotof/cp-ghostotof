@@ -25,6 +25,7 @@
         "symfony/ai-agent": "0.15.0",
         "symfony/ai-anthropic-platform": "0.15.0",
         "symfony/ai-bundle": "0.15.0",
+        "symfony/ai-platform": "0.15.0",
         "symfony/ai-scaleway-platform": "0.15.0",
         "symfony/amqp-messenger": "8.1.*",
         "symfony/clock": "8.1.*",
