@@ -38,9 +38,15 @@ use PHPUnit\Framework\TestCase;
  * de ces familles exigé par `composer.json` mais absent du lock dit un lock
  * désynchronisé.
  *
- * Il ne couvre pas les autres paquets pinnés à la main hors de ces familles
- * (`league/oauth2-server`, `defuse/php-encryption`) : ceux-là restent gardés
- * par {@see \App\Tests\Mcp\Presentation\McpEndpointTest::testTheMcpPackagesArePinnedExactly()}.
+ * Il est le seul garde de `symfony/mcp-*` et `mcp/*` :
+ * {@see \App\Tests\Mcp\Presentation\McpEndpointTest::testTheMcpPackagesArePinnedExactly()}
+ * ne juge plus que les deux paquets pinnés à la main hors de ces familles,
+ * `league/oauth2-server` et `defuse/php-encryption`. Ce que ce dernier
+ * refusait sur les paquets MCP (une contrainte qui n'est pas une version
+ * exacte, le bundle ou le SDK absent du `require`), celui-ci le refuse aussi
+ * — un `require-dev` compris, par les ancres de production —, et davantage
+ * (un pin exact différent du lock, un pin hors lock) ; seul un pin exact de
+ * pré-version égal au lock, refusé hier, est admis, par décision (#731).
  *
  * La règle elle-même est dans {@see ExactlyPinnedFamilies}, comme celle de
  * la famille d'API Platform est dans

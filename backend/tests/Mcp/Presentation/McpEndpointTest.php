@@ -8,6 +8,7 @@ use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\ComposerFiles;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
@@ -39,8 +40,11 @@ final class McpEndpointTest extends WebTestCase
     /** Un `_meta` sous les 16 Kio du corps que nginx admet. */
     private const int META_PADDING_BYTES = 10 * 1024;
 
-    /** Les paquets pinnés en version exacte par leur nom, au-delà des préfixes MCP. */
-    private const array EXACTLY_PINNED = ['symfony/mcp-bundle', 'mcp/sdk', 'league/oauth2-server', 'defuse/php-encryption'];
+    /**
+     * Les paquets pinnés en version exacte par leur nom, hors des familles
+     * `symfony/mcp-*` et `mcp/*`, que garde SymfonyAiAndMcpPinsMatchTheLockTest.
+     */
+    private const array EXACTLY_PINNED = ['league/oauth2-server', 'defuse/php-encryption'];
 
     protected function setUp(): void
     {
@@ -397,33 +401,31 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * ADR 0006 D7 : pas de `^` sur `symfony/mcp-*` ni `mcp/*` tant qu'ils
-     * sont en 0.x — aucune promesse de compatibilité. Même règle pour
-     * `league/oauth2-server` (#647), le serveur d'autorisation des connexions
-     * MCP, utilisé sans son bundle : une montée de version se décide. Et pour
-     * `defuse/php-encryption`, que `OAuthEncryptionKey` appelle directement
-     * (la clé de chiffrement des codes et des jetons de rafraîchissement) :
-     * une dépendance directe, déclarée et pinnée comme league qui l'amène.
+     * Les deux dépendances du serveur MCP pinnées à la main hors des familles
+     * 0.x, chacune dans le `require`, en version exacte. `league/oauth2-server` (#647), le serveur
+     * d'autorisation des connexions MCP, utilisé sans son bundle : une montée
+     * de version se décide. Et `defuse/php-encryption`, que
+     * `OAuthEncryptionKey` appelle directement (la clé de chiffrement des codes
+     * et des jetons de rafraîchissement) : une dépendance directe, déclarée et
+     * pinnée comme league qui l'amène.
+     *
+     * `symfony/mcp-*` et `mcp/*` (ADR 0006 D7 : pas de `^` tant qu'ils sont en
+     * 0.x) ne sont plus jugés ici mais par le garde commun avec `symfony/ai-*`,
+     * {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest} (#731) : une
+     * contrainte exacte égale à la version du lock, et le bundle et le SDK
+     * dans les paquets de production. Ce qu'il refusait sur eux, le garde
+     * commun le refuse, sauf un pin exact de pré-version égal au lock, admis
+     * par décision.
      */
     public function testTheMcpPackagesArePinnedExactly(): void
     {
-        $composer = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.json')), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($composer);
-        self::assertIsArray($composer['require']);
+        $require = ComposerFiles::decoded('composer.json')['require'] ?? null;
+        self::assertIsArray($require);
 
-        foreach ($composer['require'] as $package => $constraint) {
-            if (!\is_string($package) || (!str_starts_with($package, 'symfony/mcp-') && !str_starts_with($package, 'mcp/') && !\in_array($package, self::EXACTLY_PINNED, true))) {
-                continue;
-            }
-
-            self::assertIsString($constraint);
-            self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+\z/', $constraint, \sprintf('%s doit être pinné en version exacte.', $package));
-        }
-
-        self::assertArrayHasKey('symfony/mcp-bundle', $composer['require']);
-        self::assertArrayHasKey('mcp/sdk', $composer['require']);
         foreach (self::EXACTLY_PINNED as $package) {
-            self::assertArrayHasKey($package, $composer['require']);
+            self::assertArrayHasKey($package, $require);
+            self::assertIsString($require[$package]);
+            self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+\z/', $require[$package], \sprintf('%s doit être pinné en version exacte.', $package));
         }
     }
 

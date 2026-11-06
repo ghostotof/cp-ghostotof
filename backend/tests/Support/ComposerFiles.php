@@ -14,7 +14,9 @@ use PHPUnit\Framework\Assert;
  *
  * Utilisée par {@see ApiPlatformLockFamily} (et
  * {@see \App\Tests\Shared\Infrastructure\ApiPlatform\ApiPlatformPackagesShareOneVersionTest}),
- * et {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest}. Elle ne normalise rien
+ * {@see ExactlyPinnedFamilies} (et
+ * {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest}) et
+ * {@see \App\Tests\Mcp\Presentation\McpEndpointTest}. Elle ne normalise rien
  * d'office : la version reste celle du lock, `v` compris (le garde d'API
  * Platform la cite ainsi), et {@see LockedPackage::versionWithoutTagPrefix()}
  * la donne comme `composer.json` l'écrit. La tolérance aux entrées mal formées
