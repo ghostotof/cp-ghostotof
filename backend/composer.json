@@ -119,6 +119,7 @@
         }
     },
     "require-dev": {
+        "composer/semver": "^3.4.4",
         "phpstan/extension-installer": "*",
         "phpstan/phpstan": ">=2.3.5",
         "phpstan/phpstan-doctrine": ">=2.1",
