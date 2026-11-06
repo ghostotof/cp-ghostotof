@@ -45,19 +45,29 @@ updates:
     #
     # Symfony AI et MCP : toutes les montées de version sont écartées, pas
     # seulement la majeure. Ces paquets sont en 0.x et épinglés en version
-    # exacte (ADR 0004 D1, ADR 0006 D7, garde SymfonyAiAndMcpPinsMatchTheLockTest) :
-    # une montée y est un acte délibéré, lu dans les changelogs amont, jamais
-    # un lot hebdomadaire. Or en 0.x une version qui casse (0.13 -> 0.15)
-    # compte pour Dependabot comme une « minor » : le groupe
-    # `backend-minor-patch` la proposerait avec le reste, et la PR réécrirait
-    # le pin exact.
-    # Cet ignore ne retire que ces montées de version hebdomadaires. Les PR de
-    # sécurité automatiques sont déjà désactivées pour tout le dépôt
+    # exacte (ADR 0004 D1, ADR 0006 D7, garde
+    # SymfonyAiAndMcpPinsMatchTheLockTest) : une montée y est un acte
+    # délibéré, lu dans les changelogs amont, jamais un lot hebdomadaire. Or
+    # en 0.x une version qui casse (0.13 -> 0.15) compte pour Dependabot
+    # comme une « minor » : le groupe `backend-minor-patch` la proposerait
+    # avec le reste, et la PR réécrirait le pin exact. Les trois motifs sont
+    # ceux du garde : `symfony/ai-*`, `symfony/mcp-*`, `mcp/*`.
+    #
+    # Cet ignore ne retire que les montées de version hebdomadaires tant que
+    # les PR de sécurité automatiques restent désactivées pour le dépôt
     # (tools/github-settings.sh, étape h : elles viseraient `main`, jamais
-    # mergeables), les alertes de vulnérabilité restent actives, et
+    # mergeables) ; les alertes de vulnérabilité restent actives, et
     # `composer audit --no-dev` bloque déjà la CI (job `test-backend` de
-    # .github/workflows/pipeline.yml). Les nouvelles versions se lisent à la
-    # main, `composer outdated` ne prenant qu'un nom de paquet :
+    # .github/workflows/pipeline.yml). Si on les réactivait, la
+    # documentation de GitHub (« Dependabot options reference ») dit que
+    # `ignore` s'applique aussi aux mises à jour de sécurité, sauf dans un
+    # bloc qui porte `target-branch`, dont les options « no longer apply to
+    # security updates » — le cas de ce bloc tant qu'il vise `develop`. Lu,
+    # non mesuré : à vérifier avant toute réactivation.
+    #
+    # Les nouvelles versions se lisent à la main. `composer outdated` ne
+    # prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`) ; pour les
+    # trois familles en une commande, on filtre sa sortie :
     #   composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'
     # Cette veille, et la réévaluation de l'ignore à la montée Symfony 8.2,
     # sont suivies dans #764.
@@ -65,7 +75,7 @@ updates:
       - dependency-name: 'api-platform/*'
         update-types: ['version-update:semver-major']
       - dependency-name: 'symfony/ai-*'
-      - dependency-name: 'symfony/mcp-bundle'
+      - dependency-name: 'symfony/mcp-*'
       - dependency-name: 'mcp/*'
 
   - package-ecosystem: npm

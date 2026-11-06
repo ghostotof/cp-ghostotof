@@ -124,8 +124,10 @@ paths:
   `symfony/mcp-bundle`, which write what the server publishes, was never checked against the real name in its
   own run (only after its merge, on `develop`'s). Without the Dependabot copy, a Dependabot run fails the guard,
   saying so, like an empty name anywhere else. Accepted: the name then reaches the dependency code of a
-  Dependabot branch not reviewed yet — the code it would reach on `develop` once merged; the alternative (an
-  `ignore` of the two packages in `dependabot.yml`, bumped by hand) gave up their update PRs.
+  Dependabot branch not reviewed yet — the code it would reach on `develop` once merged. **Since 2026-11-06 that
+  `ignore` is adopted** (ADR 0006 D7 amended, #731), for another reason (0.x pinned exact, a bump read in the
+  changelogs): `dependabot.yml` ignores `symfony/mcp-*` and `mcp/*`, bumped by hand on a branch of ours whose
+  run reads the repository secret; the Dependabot copy stays for every other Dependabot run, which runs the guard too.
   `tools/tests/d8-guard-step.test.sh` (`tools-tests`) pins that step: the secret in its `env`, no fallback in its
   script, no other line of `pipeline.yml` naming the variable (`.github/` is not mounted in the dev container,
   hence a shell test rather than PHPUnit); `tools/github-settings.sh` (step `l`) checks both copies exist. **Under `GITHUB_ACTIONS` a failure gives the number

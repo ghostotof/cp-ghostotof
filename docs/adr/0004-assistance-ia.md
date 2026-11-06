@@ -137,19 +137,26 @@ installées étaient déjà 0.15.0, seul le `content-hash` de `composer.lock` bo
 **tout paquet `symfony/ai-*` présent dans `composer.lock` est pinné en version exacte dans
 `composer.json`**. Il est gardé par `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`,
 commun aux paquets MCP (ADR 0006 D7) : pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou,
-une contrainte exacte dans le `require`, égale à la version verrouillée. Un paquet de ces familles que
-le bundle tirera demain le fait rougir tant qu'il n'est pas épinglé.
+une contrainte exacte égale à la version verrouillée (une pré-version exacte comprise, jamais une
+branche), dans le `require` — ou le `require-dev` pour un paquet que le verrou n'installe qu'en
+développement. Un paquet de ces familles que le bundle tirera demain le fait rougir tant qu'il n'est pas
+épinglé.
 
-**Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-bundle` et `mcp/*`
-(ADR 0006 D7) : une montée y est délibérée, lue dans les changelogs amont, et une version 0.x mineure
-compterait pour Dependabot comme une montée `minor` du groupe `backend-minor-patch`, proposée en lot
-avec le reste. Cet `ignore` ne retire que les montées de version hebdomadaires : les PR de sécurité
-automatiques sont déjà désactivées pour tout le dépôt (`tools/github-settings.sh`, étape h : elles
-viseraient `main`, jamais fusionnables), les alertes de vulnérabilité restent actives, et
-`composer audit --no-dev` bloque déjà la CI (job `test-backend` de `.github/workflows/pipeline.yml`). Les
-nouvelles versions se lisent à la main, `composer outdated` ne prenant qu'un nom de paquet :
-`composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`. Cette veille, et la réévaluation de
-l'`ignore` à la montée vers Symfony 8.2, sont suivies dans l'issue #764.
+**Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-*` et `mcp/*`
+(ADR 0006 D7), les trois motifs du garde : une montée y est délibérée, lue dans les changelogs amont, et
+une version 0.x mineure compterait pour Dependabot comme une montée `minor` du groupe
+`backend-minor-patch`, proposée en lot avec le reste. Cet `ignore` ne retire que les montées de version
+hebdomadaires **tant que** les PR de sécurité automatiques restent désactivées pour le dépôt
+(`tools/github-settings.sh`, étape h : elles viseraient `main`, jamais fusionnables) ; les alertes de
+vulnérabilité restent actives, et `composer audit --no-dev` bloque déjà la CI (job `test-backend` de
+`.github/workflows/pipeline.yml`). Si on les réactivait, la documentation de GitHub (« Dependabot options
+reference ») dit que `ignore` vaut aussi pour les mises à jour de sécurité, sauf dans un bloc qui porte
+`target-branch`, dont les options « no longer apply to security updates » — le cas du bloc Composer tant
+qu'il vise `develop` ; lu, non mesuré, à vérifier avant toute réactivation. Les nouvelles versions se
+lisent à la main : `composer outdated` ne prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`),
+d'où, pour les trois familles en une commande, `composer outdated --direct | grep -E
+'^(symfony/(ai|mcp)-|mcp/)'`. Cette veille, et la réévaluation de l'`ignore` à la montée vers Symfony 8.2,
+sont suivies dans l'issue #764.
 
 **Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
 monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`

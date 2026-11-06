@@ -369,13 +369,17 @@ precisely what let the family drift apart. When you bump one, bump them all (`co
 `.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
 (2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
 never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735). The same block
-ignores **every** update of `symfony/ai-*`, `symfony/mcp-bundle` and `mcp/*` (#731), not only their major: they are
-0.x and pinned exact (ADR 0004 D1, ADR 0006 D7), a bump is read in the upstream changelogs, and a breaking 0.x
-release counts as a « minor » that `backend-minor-patch` would batch. It removes the weekly version updates only:
-automatic security PRs are already off for the whole repository (`tools/github-settings.sh`, step h), the alerts stay
-on, and `composer audit --no-dev` already blocks CI (`test-backend`). New versions are read by hand, with
-`composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'` (`composer outdated` takes a single package name —
-measured); that watch, and re-evaluating the `ignore` at the Symfony 8.2 bump, are tracked in #764.
+ignores **every** update of `symfony/ai-*`, `symfony/mcp-*` and `mcp/*` (#731, the pin guard's three patterns), not
+only their major: they are 0.x and pinned exact (ADR 0004 D1, ADR 0006 D7), a bump is read in the upstream changelogs,
+and a breaking 0.x release counts as a « minor » that `backend-minor-patch` would batch. It removes the weekly version
+updates only **as long as** automatic security PRs stay off for the repository (`tools/github-settings.sh`, step h);
+the alerts stay on, and `composer audit --no-dev` already blocks CI (`test-backend`). Were they turned back on, GitHub's
+« Dependabot options reference » says `ignore` applies to security updates too, except in a block carrying
+`target-branch`, whose options « no longer apply to security updates » — this block, while it targets `develop`. Read,
+not measured: check before turning them on. New versions are read by hand: `composer outdated` takes one argument, a
+name or a pattern (`'symfony/ai-*'`, measured), hence `composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`
+for the three families in one command; that watch, and re-evaluating the `ignore` at the Symfony 8.2 bump, are
+tracked in #764.
 **`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
 and that is what hid this one, vendor calling vendor. The targeted net is `tests/Support/ApiPlatformDeprecations`, an
 error handler put on for one action: it keeps an `E_USER_DEPRECATED` when its message starts with `Since api-platform/`,

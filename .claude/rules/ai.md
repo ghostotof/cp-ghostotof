@@ -161,9 +161,11 @@ paths:
   `ProviderFailure` reads), `symfony/ai-generic-platform` (its `CompletionsConversionTrait` converts the assistant's
   stream) and `symfony/ai-open-responses-platform` (registered by the Scaleway bridge's `Factory`) —, all `0.15.0`. A
   new `symfony/ai-*` entering the lock gets its exact pin in the same change: `SymfonyAiAndMcpPinsMatchTheLockTest`
-  (`tests/Shared/`, the guard common to this family and `symfony/mcp-*`/`mcp/*`, ADR 0006 D7) reads `composer.lock` and
-  requires every such package in `composer.json`'s `require` at **exactly** its locked version, and every such pin to
-  be in the lock; the platform and the
+  (`tests/Shared/`, the guard common to this family and `symfony/mcp-*`/`mcp/*`, ADR 0006 D7; its rule in
+  `tests/Support/ExactlyPinnedFamilies`) reads `composer.lock` and requires every such package at **exactly** its locked
+  version (an exact pre-release such as `1.0.0-BETA1` included, never a branch nor an operator), in `require` — in
+  `require-dev` for a package the lock installs in `packages-dev` —, and every such pin to be in the lock; Dependabot
+  ignores the same three patterns (`.claude/rules/backend-outillage.md`); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
