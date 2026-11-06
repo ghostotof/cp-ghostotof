@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use Composer\Semver\VersionParser;
+use UnexpectedValueException;
+
 /**
  * La règle des épinglages exacts des paquets 0.x de Symfony AI et du serveur
  * MCP (ADR 0004 D1, ADR 0006 D7, issue #731), jugée sur un `composer.json` et
- * un `composer.lock` décodés : le pendant d'{@see ApiPlatformLockFamily} pour
- * {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest}, qui en dit les
- * raisons et en pose les cas.
+ * un `composer.lock` décodés : le pendant d'{@see \App\Tests\Support\ApiPlatformLockFamily}
+ * pour {@see \App\Tests\Shared\SymfonyAiAndMcpPinsMatchTheLockTest}, qui en dit
+ * les raisons et en pose les cas.
  *
  * Tout paquet `symfony/ai-*`, `symfony/mcp-*` ou `mcp/*` du lock est exigé dans
  * la section que le lock impose (`packages` -> `require`, `packages-dev` ->
- * `require-dev`) par une contrainte exacte égale à sa version verrouillée,
- * sans le `v` du tag ; tout pin de ces familles absent du lock est un lock
- * désynchronisé. Le lock se lit par {@see ComposerFiles}, sans tolérance : une
- * entrée mal formée fait échouer le test ({@see MalformedLockEntry::Fails}).
+ * `require-dev`) par une version seule, sans `v` ni opérateur, que Composer
+ * ({@see VersionParser}) lit comme sa version verrouillée ; tout pin de ces
+ * familles absent du lock est un lock désynchronisé. Le lock se lit par
+ * {@see ComposerFiles}, sans tolérance : une entrée mal formée fait échouer le
+ * test ({@see MalformedLockEntry::Fails}).
  */
 final class ExactlyPinnedFamilies
 {
@@ -27,12 +31,15 @@ final class ExactlyPinnedFamilies
     private const array PINNED_PREFIXES = ['symfony/ai-', 'symfony/mcp-', 'mcp/'];
 
     /**
-     * Une version exacte, telle que la contrainte doit l'écrire : trois
-     * nombres, puis au plus un suffixe de pré-version `alpha`, `beta` ou `RC`
-     * (la casse que Composer admet). `dev-*`, `.x-dev` et `-dev` n'y entrent
-     * pas : ce sont des branches.
+     * La forme d'une version seule, avant que Composer la lise : un chiffre en
+     * tête, puis des chiffres, des lettres, des points et des tirets. Elle
+     * écarte ce que {@see VersionParser::normalize()} accepterait et
+     * effacerait en silence — le `v` d'un tag, les espaces autour, un alias
+     * `as`, un drapeau `@stabilité` — et tout opérateur, joker ou alternative
+     * (`^`, `~`, `>`, `=`, `*`, `|`, `,`, espace). Le sens de la version (sa
+     * pré-version, sa stabilité, son égalité au lock) est laissé à Composer.
      */
-    private const string EXACT_VERSION = '/^\d+\.\d+\.\d+(?:-(?:alpha|beta|RC)\.?\d*)?\z/i';
+    private const string SINGLE_VERSION_SHAPE = '/^\d[0-9A-Za-z.\-]*\z/';
 
     /**
      * Les paquets des familles dans le lock, `packages` et `packages-dev`
@@ -76,7 +83,7 @@ final class ExactlyPinnedFamilies
 
             if (null === $constraint) {
                 $violations[$package] = \sprintf('%s : verrouillé en %s, absent du %s — %s.', $package, $version, $requireSection, $expected);
-            } elseif (!\is_string($constraint) || 1 !== preg_match(self::EXACT_VERSION, $constraint) || $constraint !== $version) {
+            } elseif (!\is_string($constraint) || !self::pinsExactly($constraint, $version)) {
                 $found = \is_string($constraint) ? $constraint : get_debug_type($constraint);
                 $violations[$package] = \sprintf('%s : verrouillé en %s, contrainte « %s » — %s.', $package, $version, $found, $expected);
             }
@@ -115,6 +122,29 @@ final class ExactlyPinnedFamilies
     private static function requirements(array $composer, string $section): array
     {
         return \is_array($composer[$section] ?? null) ? $composer[$section] : [];
+    }
+
+    /**
+     * Une contrainte épingle exactement la version verrouillée quand elle est
+     * une version seule ({@see self::SINGLE_VERSION_SHAPE}), qui n'est pas une
+     * branche (stabilité `dev` : `dev-main`, `0.16.x-dev`, `0.16.0-dev`), et
+     * que Composer la normalise comme la version du lock : `1.0.0-beta1` et
+     * `v1.0.0-BETA1`, `1.0.0-b1` et `1.0.0-beta1`, `1.0.0-p1` et
+     * `1.0.0-patch1` sont une même version pour lui.
+     */
+    private static function pinsExactly(string $constraint, string $lockedVersion): bool
+    {
+        if (1 !== preg_match(self::SINGLE_VERSION_SHAPE, $constraint) || 'dev' === VersionParser::parseStability($constraint)) {
+            return false;
+        }
+
+        $parser = new VersionParser();
+        try {
+            return $parser->normalize($constraint) === $parser->normalize($lockedVersion);
+        } catch (UnexpectedValueException) {
+            // Une forme que Composer ne lit pas comme une version n'épingle rien.
+            return false;
+        }
     }
 
     private static function isPinnedFamily(string $package): bool

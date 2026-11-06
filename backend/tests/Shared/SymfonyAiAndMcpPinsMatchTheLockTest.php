@@ -16,10 +16,12 @@ use PHPUnit\Framework\TestCase;
  *
  * Tout paquet `symfony/ai-*`, `symfony/mcp-*` ou `mcp/*` présent dans
  * `composer.lock` doit être exigé par `composer.json` avec une contrainte
- * **exacte** égale à la version verrouillée (sans le `v` du tag) : trois
- * nombres, et au plus un suffixe de pré-version (`1.0.0-BETA1`, `0.16.0-RC2`).
- * Jamais une branche (`dev-main`, `0.16.x-dev`), ni un opérateur, un joker,
- * une alternative ou une espace. Ces paquets sont en 0.x, sans promesse de
+ * **exacte** égale à la version verrouillée : une version seule, sans le `v`
+ * du tag, que Composer normalise comme celle du lock — une pré-version
+ * comprise, dans la casse ou la forme courte que Composer admet (`1.0.0-BETA1`
+ * ou `1.0.0-beta1`, `1.0.0-b1`, `1.0.0-p1`, `0.16.0-RC2`). Jamais une branche
+ * (`dev-main`, `0.16.x-dev`), ni un opérateur, un joker, une alternative, une
+ * espace, un alias `as` ou un drapeau `@stabilité`. Ces paquets sont en 0.x, sans promesse de
  * compatibilité : une montée se décide et se lit dans les changelogs amont. Un
  * paquet seulement transitif monterait d'une version 0.x au premier
  * `composer update`, tenu par le seul `^0.15` d'un autre ; c'est ce que #731
@@ -132,6 +134,28 @@ final class SymfonyAiAndMcpPinsMatchTheLockTest extends TestCase
         $betaPinned = ['symfony/ai-bundle' => '1.0.0-BETA1', 'symfony/ai-platform' => '0.16.0-RC2', 'mcp/sdk' => '0.8.1'];
         yield 'une pré-version épinglée à sa version du lock' => [self::composer($betaPinned), $beta, []];
         yield 'une pré-version qui n\'est pas celle du lock' => [self::composer([...$betaPinned, 'symfony/ai-bundle' => '1.0.0-BETA2']), $beta, ['symfony/ai-bundle']];
+
+        // Une même version, écrite autrement que le lock : Composer les normalise à l'identique
+        // (casse, formes courtes de pré-version, quatre segments), le pin est donc exact.
+        foreach ([
+            'une pré-version dans une autre casse' => ['v1.0.0-BETA1', '1.0.0-beta1'],
+            'une alpha en forme courte -a1' => ['v1.0.0-alpha1', '1.0.0-a1'],
+            'une bêta en forme courte -b1' => ['v1.0.0-beta1', '1.0.0-b1'],
+            'un correctif en forme courte -p1' => ['v1.0.0-patch1', '1.0.0-p1'],
+            'un correctif en forme longue -patch1' => ['v1.0.0-p1', '1.0.0-patch1'],
+            'une version à quatre segments' => ['v1.2.3.4', '1.2.3.4'],
+        ] as $case => [$lockedVersion, $constraint]) {
+            yield $case => [
+                self::composer(['symfony/ai-bundle' => $constraint, 'mcp/sdk' => '0.8.1']),
+                self::lock(['symfony/ai-bundle' => $lockedVersion, 'mcp/sdk' => 'v0.8.1']),
+                [],
+            ];
+        }
+        yield 'une forme courte qui n\'est pas la version du lock' => [
+            self::composer(['symfony/ai-bundle' => '1.0.0-b2', 'mcp/sdk' => '0.8.1']),
+            self::lock(['symfony/ai-bundle' => 'v1.0.0-beta1', 'mcp/sdk' => 'v0.8.1']),
+            ['symfony/ai-bundle'],
+        ];
 
         // Une branche n'est jamais un pin exact, même écrite comme le lock l'écrit.
         yield 'une branche dev-*' => [
