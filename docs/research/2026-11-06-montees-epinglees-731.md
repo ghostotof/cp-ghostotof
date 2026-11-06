@@ -26,8 +26,16 @@ faible) et, pour une rupture, une **sévérité** estimée (bloquante, haute, mo
 | `symfony/ai-agent` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
 | `symfony/ai-anthropic-platform` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
 | `symfony/ai-scaleway-platform` | 0.13.0 | **0.15.0** | 1.0.0-BETA1 | monter en 0.15.0 |
+| `symfony/ai-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
+| `symfony/ai-generic-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
+| `symfony/ai-open-responses-platform` | — (transitif) | **0.15.0** | 1.0.0-BETA1 | épingler en 0.15.0 (fait) |
 | `symfony/mcp-bundle` | 0.14.1 | **0.15.0** (2026-10-22) | 1.0.0-BETA1 (même code) | monter en 0.15.0, **avec** `mcp/sdk` 0.9.0 |
 | `mcp/sdk` | 0.8.1 | **0.9.0** (2026-10-18) | — | monter en 0.9.0, **avec** le bundle 0.15.0 |
+
+Les trois `symfony/ai-*` jusqu'ici transitifs sont épinglés depuis, par décision du 2026-11-06 (ADR 0004,
+amendement du 2026-11-06), et un garde commun aux deux familles, `SymfonyAiAndMcpPinsMatchTheLockTest`
+(`backend/tests/Shared/`), exige pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou une contrainte
+exacte dans le `require`, égale à la version verrouillée.
 
 Constats principaux :
 
@@ -134,7 +142,10 @@ ruptures, sévérité haute si l'on montait en 1.0 ; sans objet pour 0.15.
 
 ### 2.5 Recommandation AI
 
-**Monter les quatre paquets en `0.15.0` exacts**, dans une PR à part du MCP. Confiance élevée. Coût : les
+**Monter les quatre paquets en `0.15.0` exacts**, dans une PR à part du MCP, et **épingler aussi en `0.15.0` les
+trois `symfony/ai-*` jusqu'ici transitifs** (`symfony/ai-platform`, `symfony/ai-generic-platform`,
+`symfony/ai-open-responses-platform` ; décision du 2026-11-06, livrée avec la montée), sous le garde commun
+`SymfonyAiAndMcpPinsMatchTheLockTest` (section 0). Confiance élevée. Coût : les
 versions dans `composer.json`/`composer.lock`, `config/reference.php`, et les mentions de `0.13.0` dans
 l'ADR 0004 (D1 et son amendement du 2026-10-19) et dans `.claude/rules/ai.md` (paragraphe de la plateforme
 Scaleway : « the bridge reports… », « symfony/ai-bundle hard-codes… » ; la liste des pins). Dans le code, le
