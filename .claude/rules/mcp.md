@@ -34,8 +34,8 @@ paths:
   by `tools/check-backend-nginx-rate-limits.sh`), the smoke scripts (`tools/`, not mounted; a preprod fails), and the
   tests' own `'/api/mcp'` (`SpeaksMcp::MCP_ENDPOINT`, `Request::create()`): an oracle kept apart from the constant.
   Read-only, **no model call** (ADR 0006 D1). The bundle and
-  `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
-  a bundle release moves), guarded with `symfony/ai-*` by `tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest` (#731:
+  `mcp/sdk` are pinned **exact** (`0.15.0`, `0.9.0`; the bundle 0.15.0 requires `mcp/sdk ^0.9`, so the two move
+  together), guarded with `symfony/ai-*` by `tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest` (#731:
   every `symfony/mcp-*` and `mcp/*` of the lock at exactly its locked version, the bundle and the SDK in `packages`);
   `McpEndpointTest::testTheOAuthDependenciesOutsideThePinnedFamiliesArePinnedExactly` keeps only the two pins outside those families,
   `league/oauth2-server` and `defuse/php-encryption`.

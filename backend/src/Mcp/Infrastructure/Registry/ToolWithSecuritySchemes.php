@@ -8,6 +8,7 @@ use App\Mcp\Application\ToolSecuritySchemes;
 use Mcp\Schema\Icon;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
+use Mcp\Schema\ToolExecution;
 use stdClass;
 
 /**
@@ -51,6 +52,7 @@ final class ToolWithSecuritySchemes extends Tool
             icons: $tool->icons,
             meta: $tool->meta,
             outputSchema: $tool->outputSchema,
+            execution: $tool->execution,
         );
     }
 
@@ -92,6 +94,7 @@ final class ToolWithSecuritySchemes extends Tool
      *     icons?: Icon[],
      *     _meta?: array<string, mixed>,
      *     outputSchema?: ToolOutputSchema|stdClass,
+     *     execution?: ToolExecution,
      *     securitySchemes: list<array<string, mixed>>
      * }
      */

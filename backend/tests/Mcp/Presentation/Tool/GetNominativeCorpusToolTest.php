@@ -357,6 +357,67 @@ final class GetNominativeCorpusToolTest extends WebTestCase
     }
 
     /**
+     * La prémisse que pose la 0.9 du SDK : la réponse d'un `POST` reste au
+     * transport, qui la rend dans la réponse HTTP ; la file de sortie de la
+     * session ne porte plus que les messages dont le serveur a l'initiative,
+     * et ce serveur n'en émet aucun (ni notification, ni requête au client).
+     * En 0.8.1 c'était l'inverse : le SDK mettait la réponse en file dans la
+     * session au `save()`, puis la vidait vers le `POST` — le corpus nominatif
+     * passait donc par `cache_items`, et ce test y rougissait.
+     *
+     * Pourquoi elle compte : la borne de la réponse en file
+     * (`QUEUED_ANSWER_MAX_BYTES`) et le motif d'origine de la liaison d'une
+     * session à sa connexion reposaient sur ce passage par la session. Les
+     * retirer ou les rejustifier demande que la prémisse soit tenue par un
+     * test, pas par une lecture du SDK.
+     *
+     * Ce qui est lu : les écritures de `cache_items` que Doctrine journalise
+     * (canal `doctrine`, `debug`), paramètres compris, pendant l'appel de
+     * l'outil. La sonde ne garde que la dernière requête, même sans
+     * redémarrage du noyau ({@see self::useRenderer()}) : les services sont
+     * réinitialisés entre deux requêtes, et la sonde vidée avec eux (mesuré
+     * en écrivant ce test : après l'appel, elle ne porte que ses écritures).
+     * Elle garderait les requêtes d'ouverture que le test tiendrait encore :
+     * elles sont portées par la même connexion, donc liées elles aussi, et
+     * sans corpus. Les lectures de la même ligne portent l'identifiant de la
+     * session sans rien écrire : seules les écritures (`INSERT`, `UPDATE`)
+     * sont retenues.
+     */
+    public function testTheAnswerNeverTransitsThroughTheSession(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->useRenderer(new StubCorpusRenderer(self::CORPUS_SENTINEL));
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
+
+        $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
+
+        $binding = 'mcp-connection:'.$held->connectionId;
+        $sessionWrites = [];
+        foreach (self::allChannelsLogRecordsOf('doctrine') as $record) {
+            $sql = $record->context['sql'] ?? null;
+            if (!str_starts_with($record->message, 'Executing ') || !\is_string($sql) || !str_contains($sql, 'cache_items')) {
+                continue;
+            }
+            if (1 !== preg_match('/^\s*(?:INSERT|UPDATE)\b/i', $sql)) {
+                continue;
+            }
+
+            $params = print_r($record->context['params'] ?? null, true);
+            if (str_contains($params, 'mcp-portfolio-'.$sessionId) || str_contains($params, $binding."\n")) {
+                $sessionWrites[] = $params;
+            }
+        }
+
+        self::assertNotSame([], $sessionWrites, 'Aucune écriture de session relevée : le test ne verrait rien.');
+        foreach ($sessionWrites as $params) {
+            // Témoin positif : les paramètres journalisés portent bien la valeur écrite.
+            self::assertStringContainsString($binding, $params);
+            self::assertStringNotContainsString(self::CORPUS_SENTINEL, $params, 'La réponse a transité par la session.');
+        }
+        self::assertStringContainsString(self::CORPUS_SENTINEL, $this->rawMcpAnswer($this->client));
+    }
+
+    /**
      * La mesure de l'outil ({@see QueuedAnswer::bytes()}) est ce que le SDK
      * met réellement en file : la réponse JSON-RPC qu'il a encodée, réencodée
      * comme `Session::save()` la réencode (calcul de RouteBackedToolsTest). Le

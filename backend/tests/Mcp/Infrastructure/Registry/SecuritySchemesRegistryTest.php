@@ -8,7 +8,9 @@ use App\Mcp\Infrastructure\Registry\SecuritySchemesRegistry;
 use App\Mcp\Infrastructure\Registry\ToolWithoutSecuritySchemesException;
 use App\Mcp\Infrastructure\Registry\ToolWithSecuritySchemes;
 use Mcp\Capability\Registry;
+use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\Enum\IconTheme;
+use Mcp\Schema\Enum\TaskSupport;
 use Mcp\Schema\Icon;
 use Mcp\Schema\Page;
 use Mcp\Schema\Prompt;
@@ -16,6 +18,7 @@ use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
+use Mcp\Schema\ToolExecution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -113,6 +116,7 @@ final class SecuritySchemesRegistryTest extends TestCase
             icons: [new Icon('https://site.example/icon.png', 'image/png', ['48x48'], IconTheme::Light)],
             meta: ['securitySchemes' => self::NO_AUTH, 'openai/outputTemplate' => 'ui://widget'],
             outputSchema: ['type' => 'object', 'properties' => ['items' => ['type' => 'array', 'items' => []]], 'additionalProperties' => false],
+            execution: new ToolExecution(TaskSupport::Optional),
         );
         $this->inner->registerTool($tool, self::handler());
 
@@ -145,7 +149,7 @@ final class SecuritySchemesRegistryTest extends TestCase
         );
 
         self::assertSame(
-            ['name', 'title', 'inputSchema', 'description', 'annotations', 'icons', 'meta', 'outputSchema'],
+            ['name', 'title', 'inputSchema', 'description', 'annotations', 'icons', 'meta', 'outputSchema', 'execution'],
             $parameters,
         );
     }
@@ -226,7 +230,26 @@ final class SecuritySchemesRegistryTest extends TestCase
     }
 
     /**
+     * « A decorator forwards the answer of the registry it wraps » (contrat
+     * de `RegistryInterface::publishesListChanges()`) : la réponse est celle
+     * du registre décoré, dans les deux sens — une constante, vraie ou
+     * fausse, rougit ici. C'est elle que le builder du SDK lit pour annoncer
+     * `listChanged` quand un bus de notifications existe.
+     */
+    public function testTheListChangesAnswerIsTheInnerRegistrys(): void
+    {
+        foreach ([true, false] as $answer) {
+            $inner = self::createStub(RegistryInterface::class);
+            $inner->method('publishesListChanges')->willReturn($answer);
+
+            self::assertSame($answer, new SecuritySchemesRegistry($inner)->publishesListChanges());
+        }
+    }
+
+    /**
      * L'outil de ce nom tel que `tools/list` le publie.
+     *
+     * @param Page<Tool> $page
      *
      * @return array<string, mixed>
      */
@@ -239,13 +262,14 @@ final class SecuritySchemesRegistryTest extends TestCase
     }
 
     /**
+     * @param Page<Tool> $page
+     *
      * @return list<string>
      */
     private static function toolNames(Page $page): array
     {
         $names = [];
         foreach ($page->references as $tool) {
-            self::assertInstanceOf(Tool::class, $tool);
             $names[] = $tool->name;
         }
 

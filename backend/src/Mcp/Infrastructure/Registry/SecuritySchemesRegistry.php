@@ -53,15 +53,24 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * (`getTool() === …`) lisent les références du registre décoré, jamais une
  * recopie.
  *
- * Écart accepté : le builder du SDK charge un registre fourni par
- * `setRegistry()` par `Registry::loadFrom()` quand c'est sa propre classe
- * (`final`), qui tait les événements de changement de la liste pendant le
- * chargement, et directement sinon. Décoré, le chargement émet donc un
+ * {@see self::publishesListChanges()} est déléguée elle aussi : « A decorator
+ * forwards the answer of the registry it wraps », dit le contrat du SDK
+ * (`RegistryInterface`, depuis la 0.9 ; sans elle le noyau ne démarre plus).
+ *
+ * Écart accepté, relu dans `Server\Builder` et `Capability\Registry` de la
+ * version épinglée (composer.json) : le builder du SDK charge un registre
+ * fourni par `setRegistry()` par `Registry::loadFrom()` quand c'est sa propre
+ * classe (`final`), qui tait les événements de changement de la liste pendant
+ * le chargement, et directement sinon. Décoré, le chargement émet donc un
  * `ToolListChangedEvent` par outil (un `PromptListChangedEvent` par prompt)
  * sur le répartiteur de Symfony, à chaque construction du serveur. Aucun
- * écouteur ne les reçoit : le seul abonné du SDK (`RegistryChangePublisher`)
- * n'est câblé qu'avec un bus de notifications, et ce serveur n'en a pas
- * (`TruthfulCapabilitiesPass`, aucun `listChanged` annoncé).
+ * écouteur ne les reçoit : ce qui les publierait (`RegistryChangePublisher`,
+ * appelé par `PublishingEventDispatcher`) n'entoure le répartiteur du registre
+ * qu'avec un bus de notifications (`subscriptions.bus`, `none` par défaut),
+ * et ce serveur n'en a pas. L'annonce, elle, ne dépend pas de ce registre :
+ * les capacités sont écrites (`TruthfulCapabilitiesPass`), et
+ * `AnnouncedCapabilitiesTest` reste le garde qu'aucun `listChanged` n'est
+ * annoncé.
  *
  * Aucun journal ici : la décoration déplace les tags du service décoré, dont
  * son canal Monolog, vers le décorateur (`.claude/rules/mcp.md`). Le registre
@@ -83,7 +92,11 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     /**
      * La page du registre décoré, chaque outil recopié avec ses
      * `securitySchemes` au premier niveau ; ses clés (les noms) et son
-     * curseur sont gardés.
+     * curseur sont gardés. La page reste une `Page<Tool>`, le type du
+     * contrat (`Page` est invariante) : chaque {@see ToolWithSecuritySchemes}
+     * est un `Tool`.
+     *
+     * @return Page<Tool>
      *
      * @throws ToolWithoutSecuritySchemesException
      */
@@ -91,9 +104,10 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     {
         $page = $this->inner->getTools($limit, $cursor);
 
+        /** @var array<int|string, Tool> $tools */
         $tools = [];
         foreach ($page->references as $name => $tool) {
-            $tools[$name] = $tool instanceof Tool ? ToolWithSecuritySchemes::of($tool) : $tool;
+            $tools[$name] = ToolWithSecuritySchemes::of($tool);
         }
 
         return new Page($tools, $page->nextCursor);
@@ -153,6 +167,17 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     public function unregisterPrompt(string $name): void
     {
         $this->inner->unregisterPrompt($name);
+    }
+
+    /**
+     * La réponse du registre décoré, telle quelle : « A decorator forwards
+     * the answer of the registry it wraps » (contrat du SDK). Fausse ici,
+     * faute de bus de notifications ; le builder ne la lit de toute façon que
+     * pour des capacités détectées, et celles de ce serveur sont écrites.
+     */
+    public function publishesListChanges(): bool
+    {
+        return $this->inner->publishesListChanges();
     }
 
     public function hasTool(string $name): bool

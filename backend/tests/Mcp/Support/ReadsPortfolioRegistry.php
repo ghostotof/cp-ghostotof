@@ -71,7 +71,6 @@ trait ReadsPortfolioRegistry
         $prompts = [];
         foreach ($this->portfolioRegistry()->getPrompts() as $name => $prompt) {
             self::assertIsString($name);
-            self::assertInstanceOf(Prompt::class, $prompt);
             $prompts[$name] = $prompt;
         }
         self::assertNotEmpty($prompts, 'Aucun prompt au registre : le test ne vérifie plus rien.');
