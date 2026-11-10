@@ -51,6 +51,11 @@
             "symfony/runtime": true,
             "phpstan/extension-installer": true
         },
+        "audit": {
+            "ignore": {
+                "PKSA-s52d-n7sx-trsg": "GHSA-f4rf-6ghj-mhr6, mcp/sdk 0.8.x : corps non borné sur /token et /register des middlewares OAuthProxyMiddleware et ClientRegistrationMiddleware. Exposition nulle : le site n'en monte aucun (pile du bundle 0.14.1 = Cors + DnsRebinding + ProtocolVersion, OAuth maison via league, ADR 0006 D4). Correctif = mcp/sdk 0.9.0, qui exige symfony/mcp-bundle 0.15.0 : montée de la PR 2 de #731, à la fusion de laquelle cet ignore est retiré."
+            }
+        },
         "bump-after-update": true,
         "sort-packages": true
     },
