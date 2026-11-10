@@ -11,6 +11,7 @@ use JsonException;
 use LogicException;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Exception\InvalidArgumentException;
+use Mcp\Exception\InvalidCursorException;
 use Mcp\Exception\RegistryException;
 use Mcp\Exception\ToolNotFoundException;
 use Monolog\Handler\TestHandler;
@@ -77,6 +78,7 @@ final class SdkChannelRedactorTest extends TestCase
         yield 'argument requis absent' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Missing required argument `role` for p.')];
         yield 'argument d\'un type inconvertible' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Error processing parameter `role`: Array to string conversion')];
         yield 'paramètre invalide (-32602)' => ['Unhandled error during tool execution', RegistryException::invalidParams('Parameter `ids` must be a list of values, not an object.')];
+        yield 'curseur de pagination inconnu' => ['Invalid argument: Invalid value for pagination parameter "cursor": "x"', new InvalidCursorException('x')];
         yield 'requête moderne que le SDK ne sait pas réencoder' => ['Rejected an unparseable modern-era request.', new JsonException('Inf and NaN cannot be JSON encoded')];
     }
 

@@ -21,7 +21,7 @@ paths:
   exception into its normalised form without a trace (three `previous` at most), and **downgrades the client's
   faults to `notice`** — under the cap; the call log keeps their outcome. Which faults: a closed list written
   against the pinned version (`composer.json`) — by SDK exception class when one only designates the client (`ToolNotFoundException`,
-  `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`),
+  `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`, `InvalidCursorException`),
   by exact message otherwise (unreadable JSON, an id-less error response, a refused `requestState`), and `RegistryException` only by code
   `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
   the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
@@ -42,7 +42,12 @@ paths:
   (`SdkChannelRedactorTest`). `SdkChannelRecordsTest` plays both under the 2026-07-28 envelope and requires the
   line itself, at `notice`, with that context (each red at `warning` before, measured). `StatelessProtocol`'s other
   lines at `warning` or above are not a client's: the missing header validator (at construction; the builder sets
-  one), a handler asking for input (no tool does), a handler's uncaught exception.
+  one), a handler asking for input (no tool does), a handler's uncaught exception. **A third one, in a session**
+  (same review, found by probing both eras with malformed requests): a pagination cursor the registry did not issue
+  (`tools/list`, `prompts/list`, both resource lists) throws `InvalidCursorException`, which `Protocol` writes as a
+  `warning`, « Invalid argument: … », quoting the cursor — by class since, the registry throwing it nowhere else;
+  the sessionless revision answers it 400 without a line. `Protocol`'s `warning` stays for any other
+  `\InvalidArgumentException` a handler throws (the SDK's own for a wiring defect, above).
   Accepted: the dev log loses the raw messages too (the processor is not per environment). **Read again against
   SDK 0.9** (#731): « Received message to process. » no longer carries the raw message, which moved to a `debug`
   line, « Received message payload. », still under `message`, withheld; `Protocol`'s two new `warning`s — « Client

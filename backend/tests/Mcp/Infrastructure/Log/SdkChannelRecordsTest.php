@@ -131,6 +131,15 @@ final class SdkChannelRecordsTest extends WebTestCase
         yield 'rôle absent' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => new stdClass()]];
         yield 'langue inconnue du prompt' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => 'PHP developer', 'locale' => str_repeat('z', self::HUGE)]]];
         yield 'langue inconnue d\'un outil' => ['tools/call', ['name' => 'get_about', 'arguments' => ['locale' => str_repeat('z', self::HUGE)]]];
+        // Un curseur de pagination que le registre n'a pas émis : le SDK le cite
+        // dans son message, « Invalid argument: … », qu'il écrit en `warning`
+        // (#731, relecture finale). Les quatre listes passent par le même
+        // registre, ressources comprises bien que le serveur n'en serve aucune.
+        yield 'curseur inconnu de la liste des outils' => ['tools/list', ['cursor' => str_repeat('z', self::HUGE)]];
+        yield 'curseur inconnu de la liste des prompts' => ['prompts/list', ['cursor' => str_repeat('z', self::HUGE)]];
+        yield 'curseur inconnu de la liste des ressources' => ['resources/list', ['cursor' => str_repeat('z', self::HUGE)]];
+        yield 'curseur inconnu de la liste des modèles de ressources' => ['resources/templates/list', ['cursor' => str_repeat('z', self::HUGE)]];
+        yield 'curseur au-delà de la liste' => ['tools/list', ['cursor' => base64_encode('999999')]];
         yield 'complétion d\'un prompt inconnu' => ['completion/complete', ['ref' => ['type' => 'ref/prompt', 'name' => str_repeat('z', self::HUGE)], 'argument' => ['name' => 'role', 'value' => 'x']]];
     }
 

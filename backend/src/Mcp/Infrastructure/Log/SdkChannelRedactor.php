@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Infrastructure\Log;
 
 use JsonException;
+use Mcp\Exception\InvalidCursorException;
 use Mcp\Exception\InvalidInputMessageException;
 use Mcp\Exception\PromptGetException;
 use Mcp\Exception\PromptNotFoundException;
@@ -98,6 +99,11 @@ final class SdkChannelRedactor
         PromptGetException::class,
         // Message JSON-RPC mal formé, méthode inconnue.
         InvalidInputMessageException::class,
+        // Curseur de pagination que le registre n'a pas émis (`tools/list`,
+        // `prompts/list`, les deux listes de ressources) : le SDK ne la lève
+        // que là, sur la valeur reçue, et l'écrit en `warning` dans une
+        // session, « Invalid argument: … » (#731).
+        InvalidCursorException::class,
         // Pas Mcp\Exception\InvalidArgumentException : le SDK la lève aussi pour
         // un défaut de câblage (« Invalid handler type »), et un argument
         // inconvertible arrive enveloppé dans une RegistryException.
