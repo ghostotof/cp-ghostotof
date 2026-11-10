@@ -63,12 +63,21 @@ final class SdkChannelRedactor
     /**
      * Les clés de contexte du SDK qui portent un échange ou une session.
      *
+     * `data` est ce que le validateur de schémas du SDK validait quand sa
+     * validation a échoué en interne, encodé en JSON : les arguments d'un
+     * outil, et depuis la 0.9 sa **sortie** — pour l'outil nominatif, le
+     * corpus (#731). `sessionId` est l'identifiant de session tel que
+     * l'écrit le transport quand le gestionnaire d'une fibre suspendue
+     * échoue, sous une autre graphie que partout ailleurs. Une clé d'un
+     * autre type qu'une chaîne (un tableau d'identifiants, un objet) est
+     * déjà réduite à son type par {@see self::bounded()}.
+     *
      * @var list<string>
      */
     public const array WITHHELD_KEYS = [
         'message', 'request', 'response', 'notification', 'arguments', 'params',
-        'structured_content', 'error_args',
-        'session_id', 'payload_session_id', 'expected_session_id',
+        'structured_content', 'error_args', 'data',
+        'session_id', 'sessionId', 'payload_session_id', 'expected_session_id',
     ];
 
     /**

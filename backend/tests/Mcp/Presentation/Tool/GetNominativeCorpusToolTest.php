@@ -506,6 +506,92 @@ final class GetNominativeCorpusToolTest extends WebTestCase
     }
 
     /**
+     * Les sorties qui manquent au schéma publié, une par mot-clé qu'il porte
+     * (`type`, `additionalProperties`, `required`), le témoin du corpus dans
+     * chaque valeur.
+     *
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function outputsBreakingTheSchema(): iterable
+    {
+        yield 'corpus d\'un autre type' => [['corpus' => [self::CORPUS_SENTINEL], 'cvPageUrl' => 'u']];
+        yield 'propriété en plus' => [['corpus' => self::CORPUS_SENTINEL, 'cvPageUrl' => 'u', 'extra' => self::CORPUS_SENTINEL]];
+        yield 'propriété manquante' => [['corpus' => self::CORPUS_SENTINEL]];
+    }
+
+    /**
+     * Depuis la 0.9 le SDK valide le `structuredContent` de chaque outil
+     * contre son `outputSchema` (`CallToolHandler::validateStructuredContent()`)
+     * et, sur un écart, remplace la réponse par une erreur d'outil dont le
+     * texte — rendu au client **et** écrit en `error` sur le canal `mcp` —
+     * résume les erreurs de validation. Ces erreurs ne citent aucune valeur
+     * de la sortie (R8 de #731) : un pointeur (des clés), un mot-clé, des
+     * paramètres du schéma et des noms de type.
+     *
+     * Le schéma est celui que publie `tools/list`, le validateur celui du SDK,
+     * et la sortie est mise à la forme que le SDK valide (décodée en objets,
+     * comme il le fait de ce qu'il envoie). Que la recherche du témoin morde
+     * est prouvé par {@see self::testAValidationErrorDoesQuoteTheKeysOfTheOutput()},
+     * et par une mutation mesurée : un validateur qui ajoute à son message la
+     * valeur fautive fait rougir les trois cas.
+     *
+     * Si ce test rougit, ne pas l'assouplir : un message qui cite une valeur
+     * porterait le corpus nominatif dans les journaux du pod. La correction
+     * est une décision de l'auteur.
+     *
+     * @param array<string, mixed> $output
+     */
+    #[DataProvider('outputsBreakingTheSchema')]
+    public function testAnOutputBreakingItsSchemaNamesNoValueOfTheCorpus(array $output): void
+    {
+        $errors = $this->validationErrorsOf($output);
+
+        self::assertNotSame([], $errors, 'La sortie est conforme : le test ne verrait rien.');
+        foreach ($errors as $error) {
+            // L'erreur entière, encodée : un champ que le SDK ajouterait serait lu aussi.
+            self::assertStringNotContainsString(self::CORPUS_SENTINEL, json_encode($error, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
+        }
+    }
+
+    /**
+     * Le témoin du test précédent, et sa limite : une erreur de validation
+     * **cite les clés** de la sortie — le pointeur, et le nom d'une propriété
+     * en trop. Le témoin placé dans une clé est donc retrouvé, ce qui prouve
+     * que la recherche ci-dessus verrait une valeur citée. Sans conséquence
+     * pour cet outil, dont les deux clés sont des constantes
+     * (`NominativeCorpus::payload()`) ; un outil dont une clé viendrait d'un
+     * contenu la verrait citée.
+     */
+    public function testAValidationErrorDoesQuoteTheKeysOfTheOutput(): void
+    {
+        $errors = $this->validationErrorsOf(['corpus' => 'c', 'cvPageUrl' => 'u', self::CORPUS_SENTINEL => 'x']);
+
+        self::assertCount(1, $errors);
+        self::assertSame('additionalProperties', $errors[0]['keyword']);
+        self::assertStringContainsString(self::CORPUS_SENTINEL, $errors[0]['message']);
+    }
+
+    /**
+     * Les erreurs que le SDK relève sur `$output` contre le schéma publié par
+     * `tools/list`, la sortie décodée en objets comme
+     * `CallToolHandler::validateStructuredContent()` le fait de ce qu'il envoie.
+     *
+     * @param array<string, mixed> $output
+     *
+     * @return list<array{pointer: string, keyword: string, message: string}>
+     */
+    private function validationErrorsOf(array $output): array
+    {
+        $sessionId = $this->initializeMcpSession($this->client);
+        $schema = $this->listedMcpTool($this->client, $sessionId, self::TOOL)['outputSchema'] ?? null;
+        self::assertIsArray($schema);
+        /** @var array<string, mixed> $schema */
+        $sent = json_decode(json_encode($output, \JSON_THROW_ON_ERROR), false, 512, \JSON_THROW_ON_ERROR);
+
+        return new SchemaValidator()->validateAgainstJsonSchema($sent, $schema);
+    }
+
+    /**
      * Remplace le rendu du corpus par un rendu branché sur le CV fictif, et
      * le rend : l'étalon auquel la sortie se compare.
      */

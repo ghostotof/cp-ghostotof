@@ -61,7 +61,8 @@ paths:
   instruction sixty lines down, or mimicked on its own line an end of block and a fake reminder) — a pasted
   list becomes one line, accepted —, then trimmed; refused without a letter or digit. `delimited($tag)`
   writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
-  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`. **Both parameters
+  error the pinned SDK (`composer.json`) renders with its message (`GetPromptHandler`) — `-32603`, where the protocol
+  wants `-32602`. **Both parameters
   are untyped (`mixed`)** (#663): typed `string`, the SDK cast an argument of another type itself — an array became
   `"Array"` with a PHP `warning` on the `php` channel (fixed text, no value), a line an anonymous caller produced at
   will in production. `PromptRole::fromInput()` refuses anything but a string with `NOT_A_TEXT` — a missing `role`

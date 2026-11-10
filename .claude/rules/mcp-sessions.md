@@ -69,10 +69,15 @@ paths:
   `warning`, the session serving the next request. An SDK bump that queued answers again turns both red: the bound
   and the refusal are then to be decided again. What still bounds the corpus is upstream: `MAX_CHARACTERS` for the
   CV's text only, the anonymous CV and the case studies have no length bound. A `tools/call` on a known
-  session costs four round trips on the session row, one of them a write (measured 2026-11-10: the reception
-  check's read, `save()`'s own existence check — a read too, in the decorator —, the write, the drain's read; in
-  0.8.1 the drain wrote the emptied queue back, a second write): ADR 0006 D6's « no write per call » holds for the
-  authentication, not for the session.
+  session costs four round trips on the session row, **three reads and one write**, in this order (measured
+  2026-11-10): the reception check's read, `save()`'s own existence check — a read too, in the decorator —, the
+  write (one `INSERT … ON CONFLICT DO UPDATE`), the drain's read; in 0.8.1 the drain wrote the emptied queue back, a
+  second write. Pinned by `McpEndpointTest::testAToolCallCostsAFixedNumberOfSessionStatements`, which reads
+  Doctrine's `debug` lines of the call and requires every statement on `cache_items` to name the session: red with
+  the decorator's read cache removed (five reads) and with the SDK's drain writing an empty queue back (two writes,
+  four reads), both measured. It is a cost per MCP request that an SDK bump can change — the test says so, and this
+  sentence and ADR 0006 D6 follow it; a session lock (#762) would add one existence check on reception. ADR 0006
+  D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception of `read`, `write` and `destroy` and returns `false` (its `exists()`
   throws, « an unreachable store » below); the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,

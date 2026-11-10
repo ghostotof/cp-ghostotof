@@ -78,7 +78,24 @@ paths:
   the model). A route rendering an object → that object; a collection → `{"items": [...]}` (ADR 0006 D1, the
   MCP spec wants an object before the 2026-07-28 revision). Each tool's functional test compares its output
   with the route's body **in the same test**, in every language the route takes, and checks the
-  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`. **One JSON
+  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`. **Since SDK 0.9 the
+  SDK validates it too, on every call** (#731, `CallToolHandler::validateStructuredContent()`): a `structuredContent`
+  that does not conform to its `outputSchema` is replaced by a tool error — `isError: true`, one text block « Invalid
+  structured output for tool '<name>': … », no `structuredContent` — and an `error` line of the `mcp` channel carries
+  the same summary (its `validation_errors` context reduced to `array` by `SdkChannelRedactor`). The tool then stops
+  serving what its route serves until the schema or the route is corrected (ADR 0006 D1): a defect of ours, which
+  the conformance tests above meet first (measured: a property's type changed in four schemas, each test red — on
+  the SDK's refusal, and on its own validator once that refusal is cut off). **That summary names no value of the
+  output**: pointers and unexpected property names (keys), keywords, schema parameters, type names — pinned for the
+  nominative tool, whose output is the corpus, by
+  `GetNominativeCorpusToolTest::testAnOutputBreakingItsSchemaNamesNoValueOfTheCorpus` on the schema `tools/list`
+  publishes (red with a validator mutated to quote the value, measured). **Keys are quoted**
+  (`testAValidationErrorDoesQuoteTheKeysOfTheOutput`): harmless here, the nominative output's two keys are
+  constants; a tool taking a key from a content would see it in the client's error and in the log. If that test
+  turns red, the fix is the author's decision — never loosen it. When the validation itself fails (a schema Opis
+  cannot resolve), the SDK logs what it was validating under `data`: withheld (`mcp-journaux.md`). And the nominative
+  tool writes its audit line before the SDK validates: an output refused there is audited as read though the client
+  got the error (measured under a mutated schema) — the over-count of « an answer the tool served », below. **One JSON
   nuance, accepted** (#641): the route's Serializer writes an integral float as `1.0`
   (`JSON_PRESERVE_ZERO_FRACTION`, the technologies' `years`), the SDK encodes the whole JSON-RPC answer
   with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot

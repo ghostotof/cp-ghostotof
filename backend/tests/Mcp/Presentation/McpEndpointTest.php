@@ -307,6 +307,73 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
+     * Ce qu'un `tools/call` coûte sur la ligne de session, mesuré puis
+     * épinglé (#731) : **quatre allers-retours avec PostgreSQL, dont une
+     * écriture**, dans cet ordre —
+     *
+     *  1. une lecture : le contrôle d'existence de l'identifiant reçu
+     *     (`Protocol::resolveSession()`), que BoundedSessionStore fait en
+     *     lisant la ligne ; la lecture de la session qui suit est servie de
+     *     ce qu'il vient de lire ;
+     *  2. une lecture : le contrôle d'existence que `Session::save()` rappelle
+     *     avant d'écrire, la relecture sur laquelle il reporte ses clés étant
+     *     servie de même ;
+     *  3. une écriture : la session, avec le `_meta` de la requête (un
+     *     `INSERT … ON CONFLICT DO UPDATE`) ;
+     *  4. une lecture : la file des messages émis par le serveur
+     *     (`Protocol::consumeOutgoingMessages()`), vide ici, donc pas
+     *     réécrite. En 0.8.1 la réponse passait par cette file, que la
+     *     vidange réécrivait vidée : une seconde écriture.
+     *
+     * C'est un coût **par requête MCP**, celui du SDK et du décorateur
+     * ensemble, qu'une montée du SDK peut changer : ce test le dira, et
+     * `.claude/rules/mcp-sessions.md` et l'ADR 0006 (D6) sont alors à
+     * corriger avec lui. Un verrou de session (#762) ajouterait un contrôle
+     * d'existence à la réception. La décision D6 « aucune écriture par appel »
+     * vaut pour l'authentification, pas pour la session.
+     *
+     * L'outil appelé n'a ni route ni contenu à poser (`get_contact_info`) :
+     * le coût de la session ne dépend pas de l'outil, et l'appel est servi
+     * sans seed. La sonde ne garde que la dernière requête (le noyau
+     * redémarre entre deux, et #769 la vide de toute façon) : après l'appel,
+     * elle ne porte que lui. Toute requête sur `cache_items` doit désigner la
+     * session — un autre pool en base qui s'inviterait sur `/api/mcp` (un
+     * limiteur) ferait rougir ce test plutôt que de fausser le compte.
+     *
+     * Mutations mesurées : le cache de lecture du décorateur retiré
+     * (`readOnReceipt`), cinq lectures pour une écriture ; la vidange du SDK
+     * réécrivant une file vide, deux écritures et quatre lectures.
+     */
+    public function testAToolCallCostsAFixedNumberOfSessionStatements(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $result = $this->callMcpTool($client, $sessionId, 'get_contact_info');
+        self::assertFalse($result['isError'] ?? false, 'L\'appel mesuré doit être servi.');
+
+        $statements = [];
+        foreach (self::allChannelsLogRecordsOf('doctrine') as $record) {
+            $sql = $record->context['sql'] ?? null;
+            if (!str_starts_with($record->message, 'Executing ') || !\is_string($sql) || !str_contains($sql, 'cache_items')) {
+                continue;
+            }
+
+            self::assertStringContainsString(
+                'mcp-portfolio-'.$sessionId,
+                print_r($record->context['params'] ?? null, true),
+                'Une requête sur `cache_items` qui ne désigne pas la session : '.$sql,
+            );
+            $statements[] = 1 === preg_match('/^\s*SELECT\b/i', $sql) ? 'lecture' : 'écriture';
+        }
+
+        self::assertSame(['lecture', 'lecture', 'écriture', 'lecture'], $statements);
+        $counts = array_count_values($statements);
+        self::assertSame(3, $counts['lecture'] ?? 0, 'Lectures de la ligne de session par tools/call.');
+        self::assertSame(1, $counts['écriture'] ?? 0, 'Écritures de la ligne de session par tools/call.');
+    }
+
+    /**
      * La zone nginx `mcpsession` exempte les POST portant
      * `MCP-Protocol-Version: 2026-07-28` (#672). Ce n'est sûr que tant qu'un
      * `initialize` sous cet en-tête n'ouvre aucune session — sans la révision

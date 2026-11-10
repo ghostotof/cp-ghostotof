@@ -30,7 +30,23 @@ paths:
   the prompt before any cast since #663 (« The prompt », `.claude/rules/mcp-prompt-d8.md`). `SdkChannelRecordsTest` provokes each client fault on the real server, with
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
-  Accepted: the dev log loses the raw messages too (the processor is not per environment).
+  Accepted: the dev log loses the raw messages too (the processor is not per environment). **Read again against
+  SDK 0.9** (#731): « Received message to process. » no longer carries the raw message, which moved to a `debug`
+  line, « Received message payload. », still under `message`, withheld; `Protocol`'s two new `warning`s — « Client
+  request timed out. » (`request_id`, a UUID the server drew, and `session_id`, withheld) and « Received a client
+  response for an unknown or timed out request ID. » (`message_id`, the client's own id: an integer, or a string
+  bounded like any other) — carry nothing else, and neither is reachable today (no tool asks the client anything,
+  and a client response is refused before the SDK, `mcp.md`, « Six inbound messages »; the second is not in the
+  client-fault list: to be judged the day that refusal lets an expected answer through, or an anonymous client
+  writes a `warning` at will). **Two keys were covered by nothing, and are withheld since**: `data`, what the SDK's
+  schema validator was validating when its own validation failed (« MCP SDK: JSON Schema validation failed
+  internally. », `error`, `SchemaValidator::validateAgainstJsonSchema()`), JSON-encoded — a tool's arguments and,
+  since 0.9 validates outputs, **a tool's output**: the 256-character bound would have let the beginning of the
+  nominative corpus through; and `sessionId`, the session id as `BaseTransport::handleFiberYield()` spells it in
+  « Fiber yield handler failed. » (`error`; no fiber suspends today). `SdkChannelRedactorTest` pins both, the first
+  on the record the real validator writes through the processor, so an SDK renaming the key turns it red (each red
+  before its key, measured). A context value that is not a string (`validation_errors`, `session_ids`,
+  `response_data`, `payload`) is reduced to its type whatever its key.
 - **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
   `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's
   `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes

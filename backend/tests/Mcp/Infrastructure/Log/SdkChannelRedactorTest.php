@@ -9,10 +9,13 @@ use App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException;
 use DateTimeImmutable;
 use JsonException;
 use LogicException;
+use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Exception\InvalidArgumentException;
 use Mcp\Exception\RegistryException;
 use Mcp\Exception\ToolNotFoundException;
+use Monolog\Handler\TestHandler;
 use Monolog\Level;
+use Monolog\Logger;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -27,6 +30,9 @@ use Throwable;
  */
 final class SdkChannelRedactorTest extends TestCase
 {
+    /** Un témoin placé dans ce que le SDK valide : sa présence dans un enregistrement dirait une fuite. */
+    private const string OUTPUT_SENTINEL = 'OUTPUT-SENTINEL-7d1f';
+
     /**
      * @return iterable<string, array{string, Throwable}>
      */
@@ -137,6 +143,68 @@ final class SdkChannelRedactorTest extends TestCase
             'list' => 'array',
             'at' => DateTimeImmutable::class,
         ], $record->context);
+    }
+
+    /**
+     * Depuis la 0.9 le SDK valide la **sortie** d'un outil contre son
+     * `outputSchema` avec le validateur qui ne voyait que les arguments. Quand
+     * la validation elle-même échoue (un schéma qu'Opis ne sait pas résoudre),
+     * ce validateur journalise en `error` ce qu'il validait, encodé en JSON
+     * sous la clé `data` (`SchemaValidator::validateAgainstJsonSchema()`) : la
+     * sortie de l'outil nominatif y serait le corpus. Bornée à 256 caractères
+     * seulement, la ligne en portait le début dans les journaux du pod — la
+     * clé est retenue (R11 de #731).
+     *
+     * L'enregistrement est celui que le vrai validateur écrit, sur un logger
+     * qui porte le processeur comme le canal `mcp` : un SDK qui renommerait la
+     * clé ferait rougir ce test. Les erreurs rendues à l'appelant ne citent
+     * pas davantage la sortie.
+     *
+     * Rouge avant l'ajout de `data` à WITHHELD_KEYS (mesuré : la clé portait
+     * le JSON de la sortie, témoin compris).
+     */
+    public function testTheOutputTheSdkFailedToValidateIsWithheld(): void
+    {
+        $probe = new TestHandler();
+        $logger = new Logger('mcp', [$probe], [new SdkChannelRedactor()]);
+        $unresolvable = ['type' => 'object', 'properties' => ['corpus' => ['$ref' => '#/definitions/missing']]];
+
+        $errors = new SchemaValidator(logger: $logger)->validateAgainstJsonSchema((object) ['corpus' => self::OUTPUT_SENTINEL], $unresolvable);
+
+        // Témoin : c'est bien l'échec interne de la validation qui a été pris.
+        self::assertSame(['internal'], array_column($errors, 'keyword'));
+        self::assertStringNotContainsString(self::OUTPUT_SENTINEL, json_encode($errors, \JSON_THROW_ON_ERROR));
+
+        $records = $probe->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(Level::Error, $records[0]->level, 'Une panne du serveur : elle garde son niveau.');
+        self::assertSame('MCP SDK: JSON Schema validation failed internally.', $records[0]->message);
+        self::assertSame(['exception', 'data', 'schema'], array_keys($records[0]->context), 'Le SDK journalise d\'autres clés : les juger.');
+        self::assertSame(SdkChannelRedactor::WITHHELD, $records[0]->context['data']);
+        self::assertStringNotContainsString(self::OUTPUT_SENTINEL, $records[0]->message.json_encode($records[0]->context, \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * L'identifiant de session vaut accès à la session, et le SDK l'écrit sous
+     * plusieurs clés : `session_id` presque partout, mais `sessionId` dans
+     * « Fiber yield handler failed. » (`BaseTransport::handleFiberYield()`, en
+     * `error`). Chemin non emprunté aujourd'hui — aucun outil ne suspend sa
+     * fibre —, retenu quand même : la clé n'était couverte par rien (R11 de
+     * #731), et une chaîne de 36 caractères passe sous la borne.
+     *
+     * Rouge avant l'ajout de `sessionId` à WITHHELD_KEYS (mesuré).
+     */
+    public function testTheSessionIdOfAFailedFiberYieldIsWithheld(): void
+    {
+        $sessionId = '0199f1e2-0000-4000-8000-000000000000';
+
+        $record = (new SdkChannelRedactor())($this->record(Level::Error, 'Fiber yield handler failed.', [
+            'exception' => new LogicException('yield'),
+            'sessionId' => $sessionId,
+        ]));
+
+        self::assertSame(SdkChannelRedactor::WITHHELD, $record->context['sessionId']);
+        self::assertStringNotContainsString($sessionId, json_encode($record->context, \JSON_THROW_ON_ERROR));
     }
 
     public function testInvalidUtf8IsScrubbedRatherThanFailingTheRecord(): void
