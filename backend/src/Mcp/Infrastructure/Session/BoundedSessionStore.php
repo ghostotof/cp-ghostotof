@@ -85,17 +85,38 @@ use Symfony\Contracts\Service\ResetInterface;
  * `StreamableHttpTransport::createJsonResponse()`) — un `POST` anonyme
  * concurrent, muni de l'identifiant, aurait reçu le corpus nominatif mis en
  * file par l'appel authentifié. Depuis la 0.9 la réponse ne passe plus par la
- * session, et ce motif est tombé. Ce que la liaison garde : la session porte
- * ce que la connexion a déclaré — `client_info`, le `_meta` de sa dernière
- * requête, la version négociée — et la file des messages que le serveur
- * initie, qu'aucune autre requête ne doit lire ni réécrire. Aucun outil n'en
- * émet aujourd'hui ; le jour où l'un d'eux émettrait une requête vers le
- * client (élicitation, échantillonnage), la vidange, qui reste celle de toute
- * la file, rendrait à la liaison sa raison d'origine. La connexion est lue
- * dans le `TokenStorage` ({@see McpConnectionPrincipal}, posé par le firewall
- * `mcp` avant le SDK) ; une session qu'aucune connexion n'a encore utilisée
- * reste servie comme avant. Deux exigences, tenues ici parce que ce
- * décorateur voit chaque lecture et chaque écriture de la ligne :
+ * session, et ce motif est tombé. Ce que la liaison garde, lu dans la
+ * version épinglée (composer.json) :
+ *
+ *  - ce que la connexion a déclaré : `client_info`, le `_meta` de sa
+ *    dernière requête, la version négociée ;
+ *  - le jour où un outil interrogerait le client (élicitation,
+ *    échantillonnage), **les requêtes en attente** que le SDK range en
+ *    session (`Protocol::registerRequest()`, `_mcp.pending_requests`) et
+ *    **les réponses que le client y fait** (`Protocol::handleResponse()`,
+ *    `_mcp.responses`, relues par `checkResponse()`) : aucune autre
+ *    connexion ne doit les lire, ni répondre à sa place. La requête
+ *    elle-même ne passerait pas par la file de la session : suspendue par le
+ *    fiber d'un outil pendant un `POST`, elle part dans une file propre au
+ *    transport (`Protocol::queueFiberOutgoing()`), que seule la réponse de
+ *    ce `POST` vide ;
+ *  - la file de la session, que `consumeOutgoingMessages()` vide toujours
+ *    **entière** vers la requête qui porte l'identifiant. Elle n'est plus
+ *    alimentée que par `Protocol::sendRequest()` et `sendNotification()`
+ *    appelées hors du fiber d'un outil (dans le SDK, les notifications
+ *    d'abonnement aux ressources) et par `Protocol::handleFiberYield()`
+ *    quand le transport n'est plus là.
+ *
+ * Rien de cela n'est emprunté aujourd'hui : le serveur n'émet ni requête ni
+ * notification, n'a ni ressource ni abonnement, et refuse les réponses d'un
+ * client avant le SDK
+ * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}). La
+ * liaison est gardée pour le jour où l'un de ces chemins s'ouvrirait. La
+ * connexion est lue dans le `TokenStorage` ({@see McpConnectionPrincipal},
+ * posé par le firewall `mcp` avant le SDK) ; une session qu'aucune connexion
+ * n'a encore utilisée reste servie comme avant. Deux exigences, tenues ici
+ * parce que ce décorateur voit chaque lecture et chaque écriture de la
+ * ligne :
  *
  *  - **la liaison avant toute lecture** : une session liée à une autre
  *    connexion que celle de la requête — ou à une connexion, pour une requête
@@ -109,22 +130,22 @@ use Symfony\Contracts\Service\ResetInterface;
  *    bien qu'aucune ligne n'est écrite pour une connexion sans la désigner.
  *
  * Une course reste celle du SDK, qui tourne ici sans verrou de session
- * (#762). Dans la version épinglée (composer.json), sa sauvegarde relit le
- * store avant d'écrire (`Session::save()` : le contrôle d'existence, puis la
- * relecture sur laquelle elle reporte ses clés), et ce décorateur relève la
- * liaison à chaque lecture : une requête
- * qui a lu la session avant sa liaison par une autre connexion **n'écrit
- * donc plus rien** — `save()` rend `false` —, là où en 0.8.1 elle la
- * réécrivait une fois avec ce qu'elle avait lu. La fenêtre qui reste est
- * dans `save()` même, entre cette relecture et l'écriture : liée dans cet
- * intervalle, la session est réécrite non liée **ou liée à la connexion de
- * la requête** (la dernière écriture gagne, la première connexion reçoit
- * alors un 404), ou détruite si l'écriture dépasse {@see self::MAX_BYTES}.
- * Ce qui s'y perd est l'état de la session, comme dans toute mise à jour
- * concurrente — jamais une réponse, qui n'y passe plus —, et la file des
- * messages initiés par le serveur n'est lue que sous la liaison que le store
- * porte à cet instant : la vidange relit le store et refuse une liaison
- * étrangère. De même, une connexion qui connaît l'identifiant d'une session
+ * (#762). Dans la version épinglée (composer.json), `Session::save()`
+ * rappelle le contrôle d'existence avant d'écrire, et ce contrôle, ici, lit
+ * la ligne et relève sa liaison — la relecture qui suit, sur laquelle
+ * `save()` reporte ses clés, est servie de ce qu'il vient de lire, sans
+ * seconde requête. Une requête **dont la sauvegarde commence après** la
+ * liaison de la session par une autre connexion n'écrit donc rien (`save()`
+ * rend `false`), là où en 0.8.1 elle la réécrivait une fois avec ce qu'elle
+ * avait lu à sa réception. La fenêtre qui reste va de cette lecture à
+ * l'écriture, dans `save()` même : liée dans cet intervalle, la session est
+ * réécrite non liée **ou liée à la connexion de la requête** (la dernière
+ * écriture gagne, la première connexion reçoit alors un 404), ou détruite si
+ * l'écriture dépasse {@see self::MAX_BYTES}. Ce qui s'y perd est l'état de
+ * la session, comme dans toute mise à jour concurrente — jamais une réponse,
+ * qui n'y passe plus —, et la file de la session n'est lue que sous la
+ * liaison que le store porte à cet instant : la vidange relit le store et
+ * refuse une liaison étrangère. De même, une connexion qui connaît l'identifiant d'une session
  * ouverte en anonyme peut la prendre, son titulaire anonyme recevant un 404
  * (des UUID v4 du serveur) ; et une même requête refusée peut écrire deux
  * `warning`, dans cet ordre : le contrôle d'existence de sa sauvegarde, puis
@@ -242,9 +263,8 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
         }
 
         // Une lecture sans contrôle d'existence avant elle : la session neuve
-        // d'un `initialize`, ou la vidange de la file des messages initiés par
-        // le serveur après `save()` — qu'une requête concurrente a pu lier
-        // entre-temps.
+        // d'un `initialize`, ou la vidange de la file de la session après
+        // `save()` — qu'une requête concurrente a pu lier entre-temps.
         $stored = $this->inner->read($id);
         if (false === $stored) {
             $this->boundTo[$key] = null;

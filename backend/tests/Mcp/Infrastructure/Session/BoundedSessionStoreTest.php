@@ -35,7 +35,8 @@ use Symfony\Component\Uid\Uuid;
  * liaison part dans la même écriture que la session. Gardée en défense en
  * profondeur depuis #731 : la réponse d'un outil ne passe plus par la session
  * (GetNominativeCorpusToolTest l'épingle), qui porte encore ce que la
- * connexion a déclaré et la file des messages que le serveur initierait.
+ * connexion a déclaré et, le jour où un outil interrogerait le client, les
+ * requêtes en attente et les réponses qu'il y ferait.
  */
 final class BoundedSessionStoreTest extends TestCase
 {
@@ -47,8 +48,9 @@ final class BoundedSessionStoreTest extends TestCase
 
     /**
      * La clé de la file sortante du SDK (`Protocol::SESSION_OUTGOING_QUEUE`,
-     * privée) : les messages dont le serveur a l'initiative, jamais une
-     * réponse.
+     * privée) : des messages dont le serveur a l'initiative, jamais une
+     * réponse — et pas la requête qu'un outil suspendu adresse au client
+     * pendant un `POST`, qui part dans une file propre au transport.
      */
     private const string OUTGOING_QUEUE = '_mcp.outgoing_queue';
 
@@ -333,8 +335,8 @@ final class BoundedSessionStoreTest extends TestCase
      *     clés changées, puis écrit ;
      *  4. `StreamableHttpTransport::createJsonResponse()` :
      *     `Protocol::consumeOutgoingMessages()`, une seconde `Session` sur le
-     *     même identifiant, qui lit la file des messages initiés par le
-     *     serveur et ne réécrit rien quand elle est vide.
+     *     même identifiant, qui lit la file de la session et ne réécrit
+     *     rien quand elle est vide.
      *
      * En 0.8.1 la réponse était mise en file dans la session à l'étape 3,
      * puis la file vidée et réécrite à l'étape 4 : deux écritures, dont une
@@ -377,19 +379,24 @@ final class BoundedSessionStoreTest extends TestCase
     }
 
     /**
-     * Une file de messages initiés par le serveur — aucun outil n'en émet
-     * aujourd'hui (ni élicitation, ni échantillonnage, ni notification) — ne
-     * sort que vers sa connexion, et sa vidange est écrite liée elle aussi :
-     * c'est pour elle que la liaison reprendrait sa raison d'origine. La
-     * vidange de `Protocol::consumeOutgoingMessages()` rejouée : la file lue,
-     * puis réécrite vide.
+     * La file de la session ne sort que vers sa connexion, et sa vidange est
+     * écrite liée elle aussi. `Protocol::consumeOutgoingMessages()` rejouée :
+     * la file lue, puis réécrite vide.
+     *
+     * Ce qui la remplirait, dans la version épinglée (composer.json) :
+     * `Protocol::sendRequest()` ou `sendNotification()` appelées hors du
+     * fiber d'un outil, et `Protocol::handleFiberYield()` quand le transport
+     * n'est plus là — pas la requête qu'un outil suspendu adresse au client
+     * pendant un `POST`, rangée dans une file propre au transport
+     * (`Protocol::queueFiberOutgoing()`). Aucun de ces chemins n'est emprunté
+     * aujourd'hui ; le message mis en file ici en tient lieu.
      */
     public function testAQueueOfServerInitiatedMessagesIsDrainedByItsConnectionOnly(): void
     {
         $inner = new RecordingSessionStore();
         $connection = Uuid::v7();
         $id = Uuid::v4();
-        $queue = [['message' => '{"jsonrpc":"2.0","id":"r1","method":"elicitation/create"}', 'context' => ['type' => 'request']]];
+        $queue = [['message' => '{"jsonrpc":"2.0","method":"notifications/resources/updated"}', 'context' => ['type' => 'notification']]];
         $inner->seed($id, $this->bound($connection, '{"initialized":true,"_mcp":{"outgoing_queue":'.json_encode($queue, \JSON_THROW_ON_ERROR).'}}'));
 
         $foreign = new Session($this->storeAs($inner, null), $id);
@@ -410,8 +417,9 @@ final class BoundedSessionStoreTest extends TestCase
      * session non liée, puis une autre connexion la lie avant sa sauvegarde.
      *
      * `Session::save()` rappelle le contrôle d'existence avant d'écrire : le
-     * décorateur relit la ligne, la voit liée à une autre connexion, et la
-     * dit absente — `save()` rend `false` **sans écrire**. La vidange
+     * décorateur y relit la ligne, la voit liée à une autre connexion, et la
+     * dit absente — `save()` rend `false` **sans écrire**. C'est le cas joué
+     * ici : la liaison précède le début de la sauvegarde. La vidange
      * (`Protocol::consumeOutgoingMessages()`) relit ensuite la session : même
      * refus, une file vide, rien de réécrit. Deux `warning`, donc, dans cet
      * ordre : le contrôle d'existence de la sauvegarde, puis la lecture de la
@@ -419,14 +427,15 @@ final class BoundedSessionStoreTest extends TestCase
      * c'était la lecture de la vidange puis son écriture, refusée, et la
      * sauvegarde avait déjà réécrit la ligne avec ce que la requête avait lu.
      *
-     * Ce test tient donc aussi un comportement du SDK : `save()` relit le
-     * store avant d'écrire (le contrôle d'existence, puis la relecture sur
-     * laquelle il reporte ses clés), et le décorateur relève la liaison à
-     * chaque lecture. Un SDK qui écrirait de nouveau depuis sa mémoire, sans
-     * relire, ferait réécrire la ligne par la requête dépassée, non liée : ce
-     * test rougirait sur l'écriture. La fenêtre qui reste est entre cette
-     * relecture et l'écriture, dans `save()` même (limite acceptée,
-     * `.claude/rules/mcp-sessions.md`).
+     * Ce test tient donc aussi un comportement du SDK : `save()` rappelle le
+     * contrôle d'existence avant d'écrire, et celui du décorateur lit la
+     * ligne et relève sa liaison (la relecture qui suit dans `save()` est
+     * servie de ce qu'il a lu, sans seconde requête). Un SDK qui écrirait de
+     * nouveau depuis sa mémoire, sans ce contrôle, ferait réécrire la ligne
+     * par la requête dépassée, non liée : ce test rougirait sur l'écriture.
+     * La fenêtre qui reste va de cette lecture à l'écriture, dans `save()`
+     * même — une liaison qui y tomberait n'est pas jouée ici (limite
+     * acceptée, `.claude/rules/mcp-sessions.md`).
      */
     public function testARequestOvertakenByAnotherConnectionWritesNothing(): void
     {

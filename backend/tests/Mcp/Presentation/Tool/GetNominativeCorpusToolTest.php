@@ -268,8 +268,8 @@ final class GetNominativeCorpusToolTest extends WebTestCase
      * la 0.9 la réponse ne passe plus par la session
      * ({@see self::testTheAnswerNeverTransitsThroughTheSession()}), et la
      * liaison est gardée en défense en profondeur (#731) : la session porte ce
-     * que la connexion a déclaré, et la file des messages que le serveur
-     * initierait. Liée, la session n'existe plus pour l'appelant anonyme : un
+     * que la connexion a déclaré, et porterait les requêtes qu'un outil
+     * adresserait au client et ses réponses (BoundedSessionStore). Liée, la session n'existe plus pour l'appelant anonyme : un
      * `ping` et le `GET` du flux reçoivent le 404 qui fait se réinitialiser un
      * client, rien du corpus ; son `DELETE` ne la détruit pas — la connexion
      * continue de s'en servir.
@@ -463,6 +463,46 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         $this->assertNoLogCarries(self::CORPUS_SENTINEL);
 
         $this->assertSessionServes($sessionId, self::bearer($held->accessToken));
+    }
+
+    /**
+     * L'audit suit la construction du résultat : un corpus que JsonToolResult
+     * ne peut pas encoder (de l'UTF-8 invalide) n'est pas servi, et n'est pas
+     * journalisé comme lu. C'est la raison des deux temps de
+     * NominativeCorpusReaderInterface — `open()`, puis `recordServed()` —,
+     * que plus aucun test n'exerçait depuis le retrait du refus de taille
+     * (#731).
+     *
+     * Ce que le SDK rend, lu puis épinglé : son erreur générique `-32603`
+     * (« Error while executing tool », HTTP 200) et une ligne `error` du
+     * canal `mcp` — une faute du serveur, qui garde son niveau. Rien du
+     * corpus, ni dans la réponse ni dans un journal.
+     *
+     * Mutation mesurée : `recordServed()` appelé avant
+     * `JsonToolResult::forObject()`, ce test rougit sur la ligne d'audit.
+     */
+    public function testACorpusThatCannotBeEncodedIsNotAuditedAsRead(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->useRenderer(new StubCorpusRenderer(self::CORPUS_SENTINEL."\xB1"));
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
+
+        $this->postMcp($this->client, $sessionId, $this->callMessage(['locale' => 'fr']), self::bearer($held->accessToken));
+
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode());
+        $answer = $this->decodeMcpResponse($this->client);
+        self::assertArrayNotHasKey('result', $answer);
+        self::assertSame(['code' => -32603, 'message' => 'Error while executing tool'], $answer['error'] ?? null);
+        self::assertStringNotContainsString(self::CORPUS_SENTINEL, $this->rawMcpAnswer($this->client));
+
+        self::assertSame([], self::securityAuditEvents('nominative-corpus-read'), 'Un corpus qui n\'a pas pu être mis en forme n\'a pas été lu.');
+
+        $serverFaults = array_filter(
+            self::allChannelsLogRecordsOf('mcp'),
+            static fn (LogRecord $record): bool => Level::Error === $record->level,
+        );
+        self::assertCount(1, $serverFaults, 'La faute du serveur doit laisser sa ligne sur le canal `mcp`.');
+        $this->assertNoLogCarries(self::CORPUS_SENTINEL);
     }
 
     /**

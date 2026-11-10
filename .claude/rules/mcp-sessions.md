@@ -55,7 +55,8 @@ paths:
   measured). The **number** of sessions per IP is
   the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound no longer has to fit an answer**
   (#731): since SDK 0.9 a `POST`'s response stays with the transport and never enters the session, whose outgoing
-  queue only holds server-initiated messages — this server sends none. In 0.8.1 the SDK queued a tool's response in
+  queue only holds messages the server initiates, never a response (what feeds it: « bound to the first MCP
+  connection », below) — this server sends none. In 0.8.1 the SDK queued a tool's response in
   the session before sending it, so every answer went through `cache_items`, the nominative corpus included: the
   tool measured its queued answer, refused a corpus over half of `MAX_BYTES` with a link to the CV page, and a test
   kept every route-backed answer far below the bound. All of it is removed (decided 2026-11-06; the business effect
@@ -100,10 +101,18 @@ paths:
   session's **whole** outgoing queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from
   `StreamableHttpTransport::createJsonResponse()`), so a concurrent anonymous `POST` holding the id would have
   received the corpus of the authenticated call. Since 0.9 no answer goes through the session (above). What the
-  binding still keeps: the session carries what the connection declared (`client_info`, the last request's `_meta`,
-  the negotiated version) and the queue of server-initiated messages, which no other request may read or rewrite; the
-  day a tool sends the client a request (elicitation, sampling), the drain — still of the whole queue — gives the
-  binding its original reason back. The
+  binding still keeps, read in the pinned SDK (`composer.json`): what the connection declared (`client_info`, the
+  last request's `_meta`, the negotiated version); the day a tool asks the client something (elicitation, sampling),
+  **the pending requests** the SDK stores in the session (`Protocol::registerRequest()`, `_mcp.pending_requests`) and
+  **the client's answers to them** (`handleResponse()`, `_mcp.responses`, read back by `checkResponse()`), which no
+  other connection may read nor answer in its place — the request itself would **not** go through the session's
+  queue: suspended by a tool's fiber during a `POST`, it goes to a queue of that transport alone
+  (`Protocol::queueFiberOutgoing()`), which only that `POST`'s response drains; and the session's queue, which
+  `consumeOutgoingMessages()` still drains **whole** to whoever carries the id, now only fed by
+  `Protocol::sendRequest()` / `sendNotification()` called outside a tool's fiber (in the SDK, the resource
+  subscription notifications) and by `handleFiberYield()` once the transport is gone. None of these paths is taken
+  today: the server sends no request nor notification, has no resource nor subscription, and refuses a client's
+  responses before the SDK (`mcp.md`, « Six inbound messages »). The
   decorator reads the request's connection in the token storage (`McpConnectionPrincipal`, set by the `mcp` firewall
   before the SDK) and writes the binding **in the same write** as the session: the stored value is
   `mcp-connection:<connection UUID>\n` then the SDK's session, never decoded (the SDK's starts with `{` or `[`, so an
@@ -114,23 +123,24 @@ paths:
   before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
   stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
   connection, hence the session. Accepted, the SDK's own race (no session lock, #762), **narrowed since 0.9**:
-  `Session::save()` re-reads the store before writing (its existence check, then the reload it applies its changed
-  keys to) and the decorator refreshes the binding at each read, so a request that read the session before another
-  connection bound it **writes nothing** (`save()` returns `false`; in 0.8.1 it wrote the session back once, with
-  what it had read). The window left is inside `save()`, between that re-read and the write: bound in that interval,
+  `Session::save()` calls the existence check before writing, and the decorator's check reads the row and refreshes
+  its binding (the reload that follows, onto which `save()` applies its changed keys, is served from what the check
+  just read, no second query), so a request **whose save starts after** another connection bound the session writes
+  nothing (`save()` returns `false`; in 0.8.1 it wrote the session back once, with what it had read on receipt). The
+  window left runs from that read to the write, inside `save()`: bound in that interval,
   the session is written back unbound **or bound to the request's own connection** (the last writer wins, the first
   connection then gets a 404), or destroyed when the write crosses `MAX_BYTES` — what is lost is session state, like
-  any concurrent update, never an answer, and the queue of server-initiated messages is only read under the binding
+  any concurrent update, never an answer, and the session's queue is only read under the binding
   the store holds then (the drain re-reads the store and refuses a foreign binding); likewise a connection that
   knows the id of a session opened anonymously
   can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
   write two `warning`s, in this order: `save()`'s existence check, then the drain's read (0.8.1: the drain's read,
   then its refused write), measured by `BoundedSessionStoreTest::testARequestOvertakenByAnotherConnectionWritesNothing`
-  — security review of #648. `MAX_BYTES` counts the
+  (the binding precedes the save; one falling inside the window is not played) — security review of #648. `MAX_BYTES` counts the
   SDK's session, not the header. The sessionless 2026-07-28 revision is not concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
   `BoundedSessionStoreTest` replays a `tools/call`'s sequence with the SDK's `Session`
   (`testEveryWriteOfABoundSessionCarriesItsBinding`: the reception check, the request's `_meta` set, `save()`, the
-  drain's read — one write per request, each starting with the binding), the drain of a queue of server-initiated
-  messages (by its connection only, written back bound) and the overtaken request above;
+  drain's read — one write per request, each starting with the binding), the drain of a non-empty session queue
+  (by its connection only, written back bound) and the overtaken request above;
   `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
   anonymously and reads the `cache_items` row.

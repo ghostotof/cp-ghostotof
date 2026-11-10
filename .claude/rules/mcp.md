@@ -114,7 +114,9 @@ paths:
   (`Infrastructure/Corpus/NominativeCorpusReader`) — `open(Locale): ?NominativeCorpus` decides the access and renders,
   `recordServed(NominativeCorpus)` writes the audit line — and turns each outcome into a
   `CallToolResult`; two steps because the result is built in the SDK's form (Presentation) and the audit must follow
-  it: a result that cannot be built leaves no line.
+  it: a result that cannot be built leaves no line
+  (`GetNominativeCorpusToolTest::testACorpusThatCannotBeEncodedIsNotAuditedAsRead`: invalid UTF-8, the SDK's `-32603`,
+  no audit line; red with `recordServed()` called first, measured).
   **The identity is read through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token
   nor the SDK's authorization middlewares, and no `RequestContext` (nothing would read it). **The reader re-checks what
   the authenticator already judged** (defence in depth, review of #648): a `McpConnectionPrincipal`, its
