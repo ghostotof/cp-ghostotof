@@ -95,7 +95,9 @@ paths:
   a key from a content would see it in the client's error and in the log. When the validation itself fails (a schema Opis
   cannot resolve), the SDK logs what it was validating under `data`: withheld (`mcp-journaux.md`). And the nominative
   tool writes its audit line before the SDK validates: an output refused there is audited as read though the client
-  got the error (measured under a mutated schema) — the over-count of « an answer the tool served », below. **One JSON
+  got the error (measured under a mutated schema) — the over-count of « an answer the tool served », below, **accepted
+  by the author on 2026-11-10** for this case too: a `nominative-corpus-read` line without a read, the safe direction,
+  never a read without its line. **One JSON
   nuance, accepted** (#641): the route's Serializer writes an integral float as `1.0`
   (`JSON_PRESERVE_ZERO_FRACTION`, the technologies' `years`), the SDK encodes the whole JSON-RPC answer
   with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot
