@@ -368,7 +368,19 @@ caret is deliberate and is **not** the exact pin of the 0.x packages (`mcp/*`, `
 precisely what let the family drift apart. When you bump one, bump them all (`composer update 'api-platform/*'`).
 `.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
 (2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
-never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735).
+never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735). The same block
+ignores **every** update of `symfony/ai-*`, `symfony/mcp-*` and `mcp/*` (#731, the pin guard's three patterns), not
+only their major: they are 0.x and pinned exact (ADR 0004 D1, ADR 0006 D7), a bump is read in the upstream changelogs,
+and a breaking 0.x release counts as a « minor » that `backend-minor-patch` would batch. It should remove version updates
+only, not security PRs: GitHub's « Dependabot options reference » (<https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference>) marks `ignore` as acting on security
+updates too « except where `target-branch` is used » (section `ignore`, `#ignore--`), and its `target-branch` section
+(`#target-branch-`) says a block's options then « no longer apply to security updates », which always target the
+default branch. This block carries `target-branch: develop`, so its `ignore` filters no security PR, whether those stay
+off (today, `tools/github-settings.sh`, step h) or are turned back on. Read, not measured: check it on the repository before turning security PRs back on. The alerts stay on, and
+`composer audit --no-dev` already blocks CI (`test-backend`). New versions are read by hand: `composer outdated` takes one argument, a
+name or a pattern (`'symfony/ai-*'`, measured), hence `composer outdated --direct | grep -E '^(symfony/(ai|mcp)-|mcp/)'`
+for the three families in one command; that watch, and re-evaluating the `ignore` at the Symfony 8.2 bump, are
+tracked in #764.
 **`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
 and that is what hid this one, vendor calling vendor. The targeted net is `tests/Support/ApiPlatformDeprecations`, an
 error handler put on for one action: it keeps an `E_USER_DEPRECATED` when its message starts with `Since api-platform/`,
@@ -403,7 +415,10 @@ judged by its own referrer — and `found()` starts over at each compilation. It
 `require` and `require-dev` — read from the file, never listed in the test, so a component added tomorrow is judged
 the day it is added —, not every package with the prefix (an `api-platform/*` tool outside the monorepo has its own
 versions, and nothing in the lock tells it apart by `source.url` or `homepage`); it fails citing
-`composer update <those packages>`. The collector, the lock family and the pass each have their own test
+`composer update <those packages>`. It and the 0.x pin guard (`SymfonyAiAndMcpPinsMatchTheLockTest`, rule in
+`tests/Support/ExactlyPinnedFamilies`) read both files through `tests/Support/ComposerFiles` (#731: `packages` then
+`packages-dev`, the version as the lock writes it, `v` included), each keeping its tolerance (`MalformedLockEntry`):
+this one ignores a malformed entry, the pin guard fails on it (`ComposerFilesTest`). The collector, the lock family and the pass each have their own test
 (`ApiPlatformDeprecationCollectorTest`, `ApiPlatformPackagesShareOneVersionTest`, `DeprecatedReferencesOfApiPlatformTest`).
 **Two traps measured while building it.** `@` is deliberately not looked at: `trigger_deprecation()` calls
 `@trigger_error()`, so every such deprecation arrives « suppressed » (and PHPUnit lowers `error_reporting()` during a

@@ -47,6 +47,15 @@ enum ProviderFailureReason: string
     case InputRejected = 'input-rejected';
     /** Transport coupé, ou flux terminé sans fin annoncée. */
     case Interrupted = 'interrupted';
+    /**
+     * Sortie coupée par le plafond `max_tokens` du site — une borne de coût
+     * (ADR 0004 D5), pas une panne du fournisseur. Le bridge ne lève que sur
+     * un appel d'outil coupé, sauf en flux Anthropic, où tout arrêt
+     * `max_tokens` lève.
+     */
+    case OutputTruncated = 'output-truncated';
+    /** Réponse que le bridge n'a pas su lire : arguments d'un appel d'outil qui ne sont pas du JSON. */
+    case MalformedResponse = 'malformed-response';
     /** Rien de reconnaissable : un format de bridge nouveau, ou un bogue de ce côté-ci. */
     case Unknown = 'unknown';
 }

@@ -35,7 +35,10 @@ paths:
   tests' own `'/api/mcp'` (`SpeaksMcp::MCP_ENDPOINT`, `Request::create()`): an oracle kept apart from the constant.
   Read-only, **no model call** (ADR 0006 D1). The bundle and
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
-  a bundle release moves) — `McpEndpointTest::testTheMcpPackagesArePinnedExactly` refuses any operator.
+  a bundle release moves), guarded with `symfony/ai-*` by `tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest` (#731:
+  every `symfony/mcp-*` and `mcp/*` of the lock at exactly its locked version, the bundle and the SDK in `packages`);
+  `McpEndpointTest::testTheOAuthDependenciesOutsideThePinnedFamiliesArePinnedExactly` keeps only the two pins outside those families,
+  `league/oauth2-server` and `defuse/php-encryption`.
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;
   `php-http/discovery` is `false` in `allow-plugins`, so nothing gets installed behind our back. That package is
   the bundle's, never in our `require`: `src/` takes the service `mcp.psr17_factory` by its PSR-17 interfaces

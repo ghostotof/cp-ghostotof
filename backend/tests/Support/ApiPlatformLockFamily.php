@@ -65,22 +65,10 @@ final class ApiPlatformLockFamily
      */
     public static function versions(array $lock, array $roots): array
     {
-        /** @var array<string, array{version: string, require: list<string>}> $packages */
+        // Tolérance d'origine du garde (#701) : une entrée mal formée est ignorée.
         $packages = [];
-        foreach (['packages', 'packages-dev'] as $section) {
-            $entries = $lock[$section] ?? [];
-            if (!\is_array($entries)) {
-                continue;
-            }
-
-            foreach ($entries as $entry) {
-                if (!\is_array($entry) || !\is_string($entry['name'] ?? null) || !\is_string($entry['version'] ?? null)) {
-                    continue;
-                }
-
-                $require = \is_array($entry['require'] ?? null) ? array_keys($entry['require']) : [];
-                $packages[$entry['name']] = ['version' => $entry['version'], 'require' => array_values(array_filter($require, \is_string(...)))];
-            }
+        foreach (ComposerFiles::lockedPackages($lock, MalformedLockEntry::Skipped) as $package) {
+            $packages[$package->name] = ['version' => $package->version, 'require' => $package->requires];
         }
 
         $family = [];

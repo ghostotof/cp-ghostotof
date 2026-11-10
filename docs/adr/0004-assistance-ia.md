@@ -14,8 +14,10 @@
   (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1) ;
   **D5 amendée le 2026-10-10** (issue #406 : 5 000 caractères par message de l'assistant renvoyé,
   voir l'encadré sous D5) ; **D1, D3 et les alternatives écartées amendées le 2026-10-19** (ADR 0006,
-  issue #379 : le serveur MCP est rouvert, voir les encadrés)
-- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04, le 2026-10-10 et le 2026-10-19
+  issue #379 : le serveur MCP est rouvert, voir les encadrés) ; **D1 amendée le 2026-11-06**
+  (issue #731 : `symfony/ai-*` montés en 0.15.0, toujours pinnés, voir l'encadré sous D1)
+- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04, le 2026-10-10, le 2026-10-19 et le
+  2026-11-06
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
   dédié à Scaleway), `config/packages/rate_limiter.yaml`, `k8s/overlays/*/external-secrets.yaml`
@@ -92,12 +94,81 @@ amendement. Une montée de version du bundle reste un changement local — à la
 Les paquets `symfony/ai-bundle`, `symfony/ai-anthropic-platform` et `symfony/ai-agent` — et, en
 phase 2, `symfony/ai-scaleway-platform` — sont **pinnés en version exacte** (`0.13.0`, pas de `^`)
 tant qu'ils sont en 0.x. Une montée de version est un acte délibéré, lu dans le changelog, pas un
-effet de bord d'un `composer update`.
+effet de bord d'un `composer update`. La version en vigueur et la liste des paquets pinnés sont
+celles de l'amendement du 2026-11-06 ci-dessous.
 
 **Amendement du 2026-10-19 (ADR 0006 D7).** La règle s'étend à `symfony/mcp-*` et à `mcp/*`
 (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : même monorepo, même namespace `Symfony\AI\`, même
 absence de promesse de compatibilité. Le serveur MCP n'appelle aucun modèle et ne vit donc pas sous
 `src/Ai/` ; seule la règle de pin le concerne ici.
+
+**Amendement du 2026-11-06 (issue #731) — montée en 0.15.0.** Les quatre paquets `symfony/ai-*`
+de D1 passent de `0.13.0` à **`0.15.0`**, toujours pinnés en version exacte ; la règle elle-même ne
+change pas. La montée a suivi ce qu'elle exige : changelogs et `UPGRADE.md` de 0.14 et 0.15 relus, et
+aucune rupture ne touche le projet (note `docs/research/2026-11-06-montees-epinglees-731.md`,
+section 2). Le lecteur `ProviderFailure` lit les mêmes formats de message, et son test, nourri des
+vrais `ResultConverter`, reste vert ; il range en plus les deux exceptions que 0.15 ajoute,
+`MaxOutputTokensException` (`output-truncated`) et `MalformedToolCallException`
+(`malformed-response`), qui finissaient en `unknown`.
+
+La plateforme Scaleway reste déclarée hors `ai.yaml` (dans `services.yaml`), pour deux raisons que
+0.15.0 ne lève pas. La première : le bundle ignore encore l'option `http_client` d'une plateforme
+`scaleway` ; elle partirait par le client par défaut, sans le timeout ni le `max_redirects: 0` de D5.
+La seconde : le nœud de configuration `scaleway` n'offre aucune URL de base où porter le projet
+Scaleway, et la `Factory` partirait vers son URL par défaut, `https://api.scaleway.ai`, sans projet.
+L'API viserait alors le projet par défaut de l'organisation, sur lequel la clé, limitée à un autre
+projet, n'a aucun droit : réponse 403. Deux tests sentinelles rougissent chacun le jour où l'une de
+ces raisons tombe ; la plateforme ne revient dans `ai.yaml` que lorsque les deux sont tombées.
+
+La `1.0.0-BETA1`, publiée depuis, est écartée : c'est une pré-version, et elle change
+`AgentInterface::call()` ; la montée vers la 1.0 stable est suivie par l'issue #763. Les paquets MCP de
+l'amendement précédent (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée
+fait l'objet d'un changement distinct.
+
+**Tout paquet `symfony/ai-*` du verrou est désormais pinné** (`0.15.0` exact). Aux quatre paquets de D1
+s'ajoutent les trois que le projet n'obtenait jusqu'ici que par dépendance, tenus par les `^0.15` des
+autres : `symfony/ai-platform`, qui porte les classes `Symfony\AI\Platform\Exception\*` que lit
+`ProviderFailure` et le format des messages de ses bridges ; `symfony/ai-generic-platform`, dont le
+`CompletionsConversionTrait` convertit le flux de l'assistant ; `symfony/ai-open-responses-platform`, que
+la `Factory` du bridge Scaleway enregistre. Transitifs, ils pouvaient monter d'une version mineure 0.x au
+premier `composer update`, sans qu'on écrive leur version ni qu'on lise leur changelog ; pinnés, une
+montée de l'un est aussi délibérée que celle du bundle. Le pin ne change rien au verrou (les versions
+installées étaient déjà 0.15.0, seul le `content-hash` de `composer.lock` bouge). L'invariant devient :
+**tout paquet `symfony/ai-*` présent dans `composer.lock` est pinné en version exacte dans
+`composer.json`**. Il est gardé par `backend/tests/Shared/SymfonyAiAndMcpPinsMatchTheLockTest.php`,
+commun aux paquets MCP (ADR 0006 D7) : pour tout `symfony/ai-*`, `symfony/mcp-*` et `mcp/*` du verrou,
+une contrainte exacte égale à la version verrouillée (une pré-version exacte comprise, jamais une
+branche), dans le `require` — ou le `require-dev` pour un paquet que le verrou n'installe qu'en
+développement. Un paquet de ces familles que le bundle tirera demain le fait rougir tant qu'il n'est pas
+épinglé.
+
+**Dependabot ignore ces paquets** (`.github/dependabot.yml`), comme `symfony/mcp-*` et `mcp/*`
+(ADR 0006 D7), les trois motifs du garde : une montée y est délibérée, lue dans les changelogs amont, et
+une version 0.x mineure compterait pour Dependabot comme une montée `minor` du groupe
+`backend-minor-patch`, proposée en lot avec le reste. Cet `ignore` ne retire en principe que les montées de version,
+pas les PR de sécurité : la documentation de GitHub, « Dependabot options reference »
+(<https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference>), marque `ignore` comme agissant aussi sur les mises à jour de sécurité « except where
+`target-branch` is used » (section `ignore`, `#ignore--`), et sa section `target-branch` (`#target-branch-`)
+dit des options d'un tel bloc qu'elles « no longer apply to security updates », celles-ci visant toujours la
+branche par défaut. Le bloc Composer portant `target-branch: develop`, son `ignore` ne filtre donc pas les PR
+de sécurité, qu'elles restent coupées (aujourd'hui, `tools/github-settings.sh`, étape h : elles viseraient
+`main`, jamais fusionnables) ou soient réactivées ; lu, non mesuré, à vérifier sur le dépôt avant toute réactivation des PR de sécurité. Les alertes de vulnérabilité restent
+actives, et `composer audit --no-dev` bloque déjà la CI (job `test-backend` de
+`.github/workflows/pipeline.yml`). Les nouvelles versions se
+lisent à la main : `composer outdated` ne prend qu'un argument, un nom ou un motif (`'symfony/ai-*'`),
+d'où, pour les trois familles en une commande, `composer outdated --direct | grep -E
+'^(symfony/(ai|mcp)-|mcp/)'`. Cette veille, et la réévaluation de l'`ignore` à la montée vers Symfony 8.2,
+sont suivies dans l'issue #764.
+
+**Montées collatérales, hors D1.** La résolution `composer require … --with-all-dependencies` a aussi
+monté trois paquets de l'arbre sous `phpdocumentor/reflection-docblock` (exigé par `symfony/ai-agent`
+et `symfony/ai-platform`) : `phpdocumentor/reflection-common` 2.2.0 → 2.2.1,
+`phpdocumentor/type-resolver` 2.0.0 → 2.1.0 et `webmozart/assert` 2.4.1 → 2.5.0. `-W` autorise
+Composer à mettre à jour les dépendances des paquets demandés, jusqu'à la dernière version que leurs
+contraintes admettent ; ils sont gardés. Ils ne relèvent pas de D1 : ce ne sont ni des `symfony/ai-*`
+ni des `mcp/*`, ils suivent le versionnement sémantique, et leurs contraintes (`^2.0`, `^2.2`,
+`^1.9.1 || ^2`) sont celles de leurs dépendants, pas du projet — une version mineure ou corrective n'y
+casse rien par contrat. La suite complète passe avec eux.
 
 ### D2 — Aucun appel à un fournisseur dans un chemin de rendu public
 

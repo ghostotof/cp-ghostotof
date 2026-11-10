@@ -135,19 +135,43 @@ paths:
   so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
   and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
-  0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
+  bridge (0.13.0, still 0.15.0) reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
   call the API directly and read the status before suspecting anything else.
   **The Scaleway platform is declared in `services.yaml` (`app.ai.platform.scaleway`, the bridge's
-  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0 hard-codes the
+  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0, and still 0.15.0 (#731), hard-codes the
   default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated
   client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
-  way. Don't move it back into `ai.yaml` until a bundle version honours the option;
-  `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  way. Don't move it back into `ai.yaml` until a bundle version honours the option **and** accepts a base URL
+  carrying the project (the `scaleway` node has no base URL either, the bundle leaves the factory's default, which
+  would 403). Two sentinels, one per reason, whose messages and docblocks both point at « Moving the Scaleway
+  platform back into `ai.yaml` » below: `ScalewayHttpClientOptionSentinelTest` loads the bundle's extension alone
+  with a `scaleway` platform asking for a named client and turns red the day the option is honoured;
+  `ScalewayPlatformOptionListSentinelTest` reads the bundle's configuration tree and requires the `scaleway` node's
+  options to be exactly its closed list (`KNOWN_OPTIONS`: `api_key`, `http_client`, compared as a set by
+  `assertEqualsCanonicalizing`, so the list need not stay sorted), so it turns red on **any** new or removed option —
+  the pattern it replaced, which guessed the base URL's name (`url`, `host`, `endpoint`…), was measured on the
+  `generic` node (a base URL plus path options), not on `scaleway`: it saw `base_url` and missed
+  `completions_path` and `embeddings_path`; the `scaleway` node has none of the three. Both sentinels read the node
+  through the trait `ReadsTheScalewayPlatformNode`, and `ScalewayHttpClientOptionSentinelTest` first checks that the
+  two options it configures are still there, so a removed one fails on a readable assertion instead of the
+  extension's configuration error;
+  `ScalewayPlatformWiringTest` pins the wiring (mock behind
   `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
-  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
-  `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
-  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
-  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
+  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from
+  `symfony/ai-generic-platform`, a dependency of the Scaleway bridge) were deleted — delete them again if a recipe update recreates them. The
+  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, and **every `symfony/ai-*` package
+  of `composer.lock` is pinned in exact version in `composer.json`** (ADR 0004 D1, amended 2026-11-06), no `^` while
+  0.x, a bump going through the upstream changelogs: `symfony/ai-bundle`, `symfony/ai-agent`,
+  `symfony/ai-anthropic-platform` and `symfony/ai-scaleway-platform` (pinned `0.13.0` until #731), plus, since #731,
+  the three that were only transitive until then — `symfony/ai-platform` (it carries the `Exception\*` classes
+  `ProviderFailure` reads), `symfony/ai-generic-platform` (its `CompletionsConversionTrait` converts the assistant's
+  stream) and `symfony/ai-open-responses-platform` (registered by the Scaleway bridge's `Factory`) —, all `0.15.0`. A
+  new `symfony/ai-*` entering the lock gets its exact pin in the same change: `SymfonyAiAndMcpPinsMatchTheLockTest`
+  (`tests/Shared/`, the guard common to this family and `symfony/mcp-*`/`mcp/*`, ADR 0006 D7; its rule in
+  `tests/Support/ExactlyPinnedFamilies`) reads `composer.lock` and requires every such package at **exactly** its locked
+  version (an exact pre-release such as `1.0.0-BETA1` included, never a branch nor an operator), in `require` — in
+  `require-dev` for a package the lock installs in `packages-dev` —, and every such pin to be in the lock; Dependabot
+  ignores the same three patterns (`.claude/rules/backend-outillage.md`); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
@@ -157,7 +181,19 @@ paths:
   the bridge's exception messages: a provider failure is logged through its `toLogContext()`
   (`exception`, `providerStatus`, `providerErrorType`, `providerFailure` — a `ProviderFailureReason` value,
   provider-independent, readable even in a stream where no error type survives —, `origin`), never with the
-  message, by both services; **no model call from a public render
+  message, by both services. Since #731 it also names the two classes 0.15 added: `MaxOutputTokensException`
+  → `output-truncated` (the site's `max_tokens` ceiling, a cost bound, not an outage — the bridge raises it on a cut
+  tool call, and on **any** `max_tokens` stop of an Anthropic stream) and `MalformedToolCallException` →
+  `malformed-response`; neither can arise today (`tools: false`, the translator does not stream), and
+  `ProviderFailureTest` obtains both from the real converters — on the assistant's real path too, an SSE stream read
+  by the Scaleway converter through `CompletionsConversionTrait::convertStream()`. Every stream case of that test, both
+  bridges, goes through one helper on that real path (`EventSourceHttpClient`, the converter's default `SseStream`), in
+  its provider's own format (Anthropic: an `event:` line before each `data:`, a `ping`, no `[DONE]`; Scaleway,
+  OpenAI-compatible: `data:` lines ending on `data: [DONE]`), and
+  a column of its provider says whether the sentinel is in the bridge's message: « no » for a cut output, whose fixed
+  message makes « never by its message » vacuous, said rather than hidden. The marker
+  `RetryableExceptionInterface` is not read: its two classes keep their own reason, « retryable » says nothing of the
+  failure's nature, and an exception carrying the marker alone stays `unknown` (pinned); **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
@@ -182,4 +218,32 @@ paths:
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
   delete it again if a recipe update recreates it.
+- **Moving the Scaleway platform back into `ai.yaml`** (#731): the one procedure both sentinels point at. Two reasons
+  keep `app.ai.platform.scaleway` in `services.yaml`, each with its sentinel — the ignored `http_client` option
+  (`ScalewayHttpClientOptionSentinelTest`) and the missing base URL (`ScalewayPlatformOptionListSentinelTest`) —, and
+  the platform moves back only once **both** have fallen. A reason has fallen when its sentinel turned red and the
+  step below confirmed it; a sentinel already **removed** means its reason fell earlier.
+  1. **`ScalewayHttpClientOptionSentinelTest` red**: the bundle honours `http_client`, its reason has fallen. If the
+     other sentinel is still there and green, the base URL is still missing: remove this sentinel, keep
+     `services.yaml`, and say here and in its comment that one reason remains. If the base URL's reason has fallen too
+     (the other sentinel red and confirmed by step 2, or already removed): step 3.
+  2. **`ScalewayPlatformOptionListSentinelTest` red**: the `scaleway` node gained or lost an option. Read it in the
+     bundle (`config/platform/scaleway.php`, and what the `'scaleway' === $type` block of `src/AiBundle.php` does with
+     it). **An option gained**: does it carry the project, i.e. a base URL `https://api.scaleway.ai/<project>` handed to
+     the `Factory`'s `$baseUrl`? **If not**, add its name to `KNOWN_OPTIONS`, say here what it is, keep
+     `services.yaml`: the sentinel goes green and keeps guarding. **If it does**, the base URL's reason has fallen: if
+     the other sentinel is still there and green, remove this one, keep `services.yaml`, and say here and in its
+     comment that one reason remains; if it is red too, or already removed, step 3. **An option lost**: no reason
+     falls by it — `services.yaml` builds the platform through the `Factory`, not through the node, and
+     `ScalewayPlatformWiringTest` stays the proof that it works. Remove the name from `KNOWN_OPTIONS`, say here what
+     the bundle did instead, keep `services.yaml`. `ScalewayHttpClientOptionSentinelTest` then fails too, on its
+     readable « n'accepte plus l'option » assertion (it configures both options): `api_key` lost, drop the key from
+     its configuration and its check; `http_client` lost, the bundle offers no way to pass a client at all — the
+     first reason holds in a stronger form —, so rewrite that sentinel to turn red the day the node accepts the
+     option again, and say so here.
+  3. **The move back**: declare the platform in `ai.yaml` (`http_client: ai.scaleway.http_client`, the key, the base
+     URL carrying `%env(SCALEWAY_AI_PROJECT_ID)%`), remove `app.ai.platform.scaleway` from `services.yaml`, point the
+     `career_assistant` agent at `ai.platform.scaleway`, keep `ScalewayPlatformWiringTest` green (its mock must still
+     sit behind `ai.scaleway.http_client.scoping.inner`), remove the remaining sentinel, then update this rule, the
+     comment of `services.yaml` and ADR 0004 D1 (amendment of 2026-11-06).
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
 use App\Tests\Support\ApiPlatformLockFamily;
-use App\Tests\Support\RepositoryFiles;
+use App\Tests\Support\ComposerFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -33,10 +33,8 @@ final class ApiPlatformPackagesShareOneVersionTest extends TestCase
 {
     public function testEveryApiPlatformPackageOfTheLockIsAtTheSameVersion(): void
     {
-        $composer = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.json')), true, flags: \JSON_THROW_ON_ERROR);
-        $lock = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.lock')), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($composer);
-        self::assertIsArray($lock);
+        $composer = ComposerFiles::decoded('composer.json');
+        $lock = ComposerFiles::decoded('composer.lock');
         $roots = ApiPlatformLockFamily::roots($composer);
         $versions = ApiPlatformLockFamily::versions($lock, $roots);
 
@@ -121,6 +119,28 @@ final class ApiPlatformPackagesShareOneVersionTest extends TestCase
 
         self::assertSame(['api-platform/symfony', 'api-platform/graphql'], ApiPlatformLockFamily::roots($composer));
         self::assertSame([], ApiPlatformLockFamily::roots([]));
+    }
+
+    /**
+     * Une entrée mal formée du lock (section qui n'est pas une liste, entrée
+     * qui n'est pas un objet, nom ou version absent, `require` qui n'est pas
+     * un objet) est ignorée, jamais une erreur : la famille se lit sur le reste.
+     * Les versions restent telles que le lock les écrit, `v` compris.
+     */
+    public function testAMalformedLockEntryIsIgnored(): void
+    {
+        $lock = [
+            'packages' => [
+                'pas un objet',
+                ['name' => 'api-platform/state'],
+                ['version' => 'v4.3.0'],
+                ['name' => 'api-platform/symfony', 'version' => 'v4.4.6', 'require' => ['api-platform/state' => '^4.4', 'api-platform/metadata' => '^4.4']],
+                ['name' => 'api-platform/metadata', 'version' => 'v4.4.6', 'require' => 'pas un objet'],
+            ],
+            'packages-dev' => 'pas une liste',
+        ];
+
+        self::assertSame(['api-platform/symfony' => 'v4.4.6', 'api-platform/metadata' => 'v4.4.6'], ApiPlatformLockFamily::versions($lock, ['api-platform/symfony']));
     }
 
     public function testTheFailureNamesOnlyTheFamilyAndACommandThatCanRun(): void
