@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
+use JsonException;
 use Mcp\Exception\InvalidInputMessageException;
 use Mcp\Exception\PromptGetException;
 use Mcp\Exception\PromptNotFoundException;
@@ -108,12 +109,33 @@ final class SdkChannelRedactor
      * client qu'au décodage de l'entrée, à l'encodage d'une réponse c'est une
      * panne du serveur.
      *
+     * Le `requestState` refusé est celui de la révision sans session : le
+     * serveur ne configure aucun `request_state` (mcp.yaml), il n'en signe
+     * donc aucun, et toute valeur qu'un client envoie est refusée — une ligne
+     * par requête, à volonté pour un anonyme (#731). Son contexte ne porte
+     * que la méthode et un code de raison (`malformed`, `mac`, `expired`).
+     *
      * @var list<string>
      */
     private const array CLIENT_FAULT_MESSAGES = [
         'Failed to decode json message.',
         'Received an id-less error response from client; cannot correlate it to a pending request.',
+        'Rejected a requestState that failed verification.',
     ];
+
+    /**
+     * Le refus, par la révision sans session, d'une requête que le SDK n'a pas
+     * su remettre à sa fabrique. Faute du client pour un JsonException
+     * seulement : le SDK réencode le message qu'il a décodé, et `json_encode()`
+     * refuse un nombre que `json_decode()` a lu infini (`1e999`) — une ligne
+     * par requête, à volonté pour un anonyme (#731). Toute autre exception
+     * levée là (un TypeError de la fabrique) garde son niveau : elle dirait un
+     * défaut du SDK, ou un message que
+     * {@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener} aurait
+     * dû refuser avant lui. Le contexte porte la méthode telle que le client
+     * l'a écrite, bornée comme toute chaîne, et l'exception.
+     */
+    private const string UNPARSEABLE_MODERN_REQUEST = 'Rejected an unparseable modern-era request.';
 
     /**
      * RegistryException est générique : seuls ces débuts de message, levés par
@@ -157,6 +179,10 @@ final class SdkChannelRedactor
         $exception = $record->context['exception'] ?? null;
         if (!$exception instanceof Throwable) {
             return false;
+        }
+
+        if (self::UNPARSEABLE_MODERN_REQUEST === $record->message) {
+            return $exception instanceof JsonException;
         }
 
         if ($exception instanceof RegistryException) {

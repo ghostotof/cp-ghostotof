@@ -8,6 +8,8 @@ use App\Mcp\Presentation\Prompt\PromptRole;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
+use JsonException;
+use Mcp\Server\Stateless\RequestMeta;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -201,6 +203,103 @@ final class SdkChannelRecordsTest extends WebTestCase
         foreach ($this->formattedSdkRecords() as $line) {
             self::assertStringNotContainsString(str_repeat('z', 1_000), $line);
         }
+    }
+
+    /**
+     * Un `requestState` que le serveur n'a pas émis, sous la révision sans
+     * session (2026-07-28). `mcp.yaml` ne configure aucun `request_state` : le
+     * serveur n'en signe aucun, toute valeur reçue est donc refusée (400,
+     * `-32602`), et le SDK l'écrivait en `warning` — une ligne au niveau du
+     * plafond de production par requête, pour un anonyme (#731, relecture
+     * finale).
+     *
+     * La ligne reste, en `notice` : le test exige qu'elle existe, sans quoi il
+     * ne prouverait rien, et un SDK qui la renomme le fait rougir. Son contexte
+     * ne porte que la méthode — une méthode que la fabrique du SDK connaît, le
+     * refus venant après elle — et un code de raison d'une liste fermée
+     * (`malformed`, `mac`, `expired`), jamais la valeur reçue.
+     */
+    public function testARequestStateTheServerNeverMintedStaysBelowWarningAndBounded(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list', ['requestState' => str_repeat('z', self::HUGE)]);
+
+        self::assertResponseStatusCodeSame(400);
+        self::assertSame(-32602, $this->decodeMcpResponse($client)['error']['code'] ?? null);
+
+        $refusals = $this->sdkRecordsSaying('Rejected a requestState that failed verification.');
+        self::assertCount(1, $refusals, 'Le SDK doit avoir écrit son refus : sans cette ligne, le test ne prouve rien.');
+        self::assertSame(['method' => 'tools/list', 'reason' => 'mac'], $refusals[0]->context);
+
+        $this->assertNoSdkRecordAtOrAboveWarning();
+        foreach ($this->formattedSdkRecords() as $line) {
+            self::assertStringNotContainsString(str_repeat('z', 1_000), $line);
+        }
+    }
+
+    /**
+     * Une requête de la révision sans session que le SDK ne sait pas remettre
+     * à sa fabrique. `StatelessProtocol::dispatch()` réencode le message qu'il
+     * a décodé, et `json_encode()` refuse un nombre que `json_decode()` a lu
+     * infini (`1e999`) : le SDK répond 404 `-32601` et l'écrivait en
+     * `warning`, avec la méthode — ici la chaîne du client, que la fabrique
+     * n'a pas encore jugée — et l'exception. Une ligne au niveau du plafond de
+     * production par requête, pour un anonyme (#731, relecture finale, trouvé
+     * en relisant les `warning` de `StatelessProtocol`).
+     *
+     * La ligne reste, en `notice`, sa méthode bornée comme toute chaîne du
+     * canal ; un SDK qui la renomme, ou qui cesse de réencoder, fait rougir
+     * ce test.
+     */
+    public function testAModernRequestTheSdkCannotReencodeStaysBelowWarningAndBounded(): void
+    {
+        $client = self::createClient();
+        $method = str_repeat('z', self::HUGE);
+
+        // `json_encode()` ne sait pas écrire un nombre infini : le corps est
+        // encodé avec un témoin, remplacé ensuite par le littéral `1e999`.
+        $body = str_replace('"overflow"', '1e999', self::jsonBody([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => $method,
+            'params' => [
+                '_meta' => [
+                    RequestMeta::PROTOCOL_VERSION => self::MCP_MODERN_REVISION,
+                    RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
+                ],
+                'limit' => 'overflow',
+            ],
+        ]));
+        self::assertStringContainsString('"limit":1e999', $body);
+
+        $this->postRawMcp($client, null, $body, [
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
+            'HTTP_MCP_METHOD' => $method,
+        ]);
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame(-32601, $this->decodeMcpResponse($client)['error']['code'] ?? null);
+
+        $refusals = $this->sdkRecordsSaying('Rejected an unparseable modern-era request.');
+        self::assertCount(1, $refusals, 'Le SDK doit avoir écrit son refus : sans cette ligne, le test ne prouve rien.');
+        self::assertSame(['method', 'exception'], array_keys($refusals[0]->context));
+        self::assertSame(JsonException::class, $refusals[0]->context['exception']['class'] ?? null);
+
+        $this->assertNoSdkRecordAtOrAboveWarning();
+        foreach ($this->formattedSdkRecords() as $line) {
+            self::assertStringNotContainsString(str_repeat('z', 1_000), $line);
+        }
+    }
+
+    /**
+     * Les enregistrements du canal qui portent exactement ce message.
+     *
+     * @return list<LogRecord>
+     */
+    private function sdkRecordsSaying(string $message): array
+    {
+        return array_values(array_filter($this->sdkRecords(), static fn (LogRecord $record): bool => $message === $record->message));
     }
 
     private function assertNoSdkRecordAtOrAboveWarning(): void

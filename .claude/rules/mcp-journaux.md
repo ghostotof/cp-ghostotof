@@ -22,7 +22,7 @@ paths:
   faults to `notice`** — under the cap; the call log keeps their outcome. Which faults: a closed list written
   against the pinned version (`composer.json`) — by SDK exception class when one only designates the client (`ToolNotFoundException`,
   `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`),
-  by exact message otherwise (unreadable JSON, an id-less error response), and `RegistryException` only by code
+  by exact message otherwise (unreadable JSON, an id-less error response, a refused `requestState`), and `RegistryException` only by code
   `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
   the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
   fault (`JsonException` while encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its
@@ -30,6 +30,19 @@ paths:
   the prompt before any cast since #663 (« The prompt », `.claude/rules/mcp-prompt-d8.md`). `SdkChannelRecordsTest` provokes each client fault on the real server, with
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
+  **Two `warning`s of the sessionless revision were an anonymous client's at will, and are client faults since**
+  (#731, final review; both in `StatelessProtocol::dispatch()`, before any handler). « Rejected a requestState that
+  failed verification. »: `mcp.yaml` sets no `request_state`, so the server signs none and refuses any value sent
+  (400, `-32602`); its context is the method — one the SDK's factory knows, the refusal comes after it — and a closed
+  reason code (`malformed`, `mac`, `expired`), never the value. « Rejected an unparseable modern-era request. », **for
+  a `JsonException` only**: the SDK re-encodes the message it decoded before handing it to its factory, and
+  `json_encode()` refuses a number `json_decode()` read as infinite (`1e999`; 404, `-32601`); its `method` is the
+  client's own string, bounded like any other. Any other exception caught there (a `TypeError` of the factory) keeps
+  its `warning`: an SDK defect, or a message `InboundMessageRefusalListener` should have refused first
+  (`SdkChannelRedactorTest`). `SdkChannelRecordsTest` plays both under the 2026-07-28 envelope and requires the
+  line itself, at `notice`, with that context (each red at `warning` before, measured). `StatelessProtocol`'s other
+  lines at `warning` or above are not a client's: the missing header validator (at construction; the builder sets
+  one), a handler asking for input (no tool does), a handler's uncaught exception.
   Accepted: the dev log loses the raw messages too (the processor is not per environment). **Read again against
   SDK 0.9** (#731): « Received message to process. » no longer carries the raw message, which moved to a `debug`
   line, « Received message payload. », still under `message`, withheld; `Protocol`'s two new `warning`s — « Client

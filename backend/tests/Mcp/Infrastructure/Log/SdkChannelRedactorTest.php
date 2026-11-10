@@ -21,6 +21,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 use Throwable;
+use TypeError;
 
 /**
  * Le pendant de {@see SdkChannelRecordsTest}, qui provoque les fautes du client sur le
@@ -45,6 +46,11 @@ final class SdkChannelRedactorTest extends TestCase
         // Le SDK lève aussi sa propre InvalidArgumentException pour un défaut de
         // câblage (ReferenceHandler, HandlerResolver) : ce n'est pas le client.
         yield 'gestionnaire d\'un type invalide' => ['Unhandled error during tool execution', new InvalidArgumentException('Invalid handler type')];
+        // « Rejected an unparseable modern-era request. » n'est une faute du client
+        // que pour le JsonException du réencodage (un nombre lu infini) : toute
+        // autre exception levée là — un TypeError de la fabrique du SDK — reste
+        // à son niveau, elle dirait un défaut que le plafond ne doit pas cacher.
+        yield 'requête moderne illisible pour une autre raison que son réencodage' => ['Rejected an unparseable modern-era request.', new TypeError('Cannot assign string to property of type ?array')];
     }
 
     #[DataProvider('serverFaults')]
@@ -71,6 +77,7 @@ final class SdkChannelRedactorTest extends TestCase
         yield 'argument requis absent' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Missing required argument `role` for p.')];
         yield 'argument d\'un type inconvertible' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Error processing parameter `role`: Array to string conversion')];
         yield 'paramètre invalide (-32602)' => ['Unhandled error during tool execution', RegistryException::invalidParams('Parameter `ids` must be a list of values, not an object.')];
+        yield 'requête moderne que le SDK ne sait pas réencoder' => ['Rejected an unparseable modern-era request.', new JsonException('Inf and NaN cannot be JSON encoded')];
     }
 
     #[DataProvider('clientFaults')]
