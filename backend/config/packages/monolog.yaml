@@ -119,6 +119,10 @@ when@prod:
                 # les exclure ici est ce qui évite qu'un même événement sorte deux
                 # fois (et, à LOG_LEVEL=debug, avec deux niveaux d'effet différents).
                 # `lock` aussi, pour une autre raison : voir son handler.
+                # `cache` y reste exprès — l'exclure tairait toute panne de tout
+                # pool : l'identifiant de session MCP que porte une clé du pool des
+                # sessions en est retiré par SessionKeyCacheChannelRedactor, un
+                # processeur de ce canal (#731, .claude/rules/mcp-journaux.md).
                 channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock", "!mcp", "!mcp_usage"]
             # Verrou des limiteurs de débit (issue #272). Le composant Lock trace
             # chaque pose et chaque levée en `debug`, avec la ressource —
