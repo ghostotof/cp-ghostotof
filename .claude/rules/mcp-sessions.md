@@ -92,7 +92,8 @@ paths:
   `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **An unreachable store is not an absent
   session** (#731, decided 2026-11-06: follow the SDK): since SDK 0.9 `Psr16SessionStore::exists()` throws
   `SessionStoreException` when its cache's `has()` fails; the decorator lets it through, neither caught nor logged
-  (`BoundedSessionStoreTest::testAnUnreachableStoreIsNotAnAbsentSession`), and it is a **503**, a JSON-RPC `-32603`
+  (`BoundedSessionStoreTest::testAnUnreachableStoreIsNotAnAbsentSession`), and on a cache whose `has()` throws it is a
+  **503** (behind the DBAL pool, never: below), a JSON-RPC `-32603`
   « Session store is unavailable. » with an `error` line of that message on the `mcp` channel — the SDK's at the POST
   (`Protocol::resolveSession()`), the controller's at the GET —, never a 404: the session may exist, the client retries
   instead of re-initialising. **Measured, accepted by the author on 2026-11-10 (#770)**: behind the DBAL pool Symfony's adapter catches the failed

@@ -73,7 +73,10 @@ use Symfony\Contracts\Service\ResetInterface;
  * le SDK sert en 503 au POST (`Protocol::resolveSession()`) et le contrôleur
  * au GET : la session existe peut-être, le client réessaie au lieu de se
  * réinitialiser. Ni attrapée ni journalisée ici : celui qui répond 503 écrit
- * la ligne. La décision #673 ci-dessus est inchangée — `read()` avale
+ * la ligne. Derrière le pool DBAL, ce 503 n'est pas atteint : l'adaptateur de
+ * Symfony Cache attrape l'échec de la requête et répond « absente », si bien
+ * qu'une panne de PostgreSQL reste un 404 — limite acceptée par l'auteur le
+ * 2026-11-10, suivie par l'issue #770. La décision #673 ci-dessus est inchangée — `read()` avale
  * toujours ses erreurs, et une session présente mais illisible reste un 404.
  *
  * **Une session est liée à la première connexion MCP qui l'utilise** (#648,
@@ -236,9 +239,10 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
             return true;
         }
 
-        // Un store injoignable lève ici (Mcp\Exception\SessionStoreException),
-        // et ce n'est pas rattrapé : un 503, jamais le 404 d'une session
-        // absente (#731).
+        // Un store dont le has() échoue lève ici
+        // (Mcp\Exception\SessionStoreException), et ce n'est pas rattrapé : un
+        // 503, jamais le 404 d'une session absente (#731). Derrière le pool
+        // DBAL, une panne de PostgreSQL n'y arrive pas : 404, #770.
         if ($this->inner->exists($id)) {
             // Présente mais illisible : Psr16SessionStore a avalé l'échec de
             // la lecture.

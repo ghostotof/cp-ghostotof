@@ -18,7 +18,7 @@ paths:
 | Rule | Bullets |
 |---|---|
 | this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host and origin check, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
-| `mcp-sessions.md` | sessions (split out by #731): the DBAL pool, the bound (`BoundedSessionStore`, `MAX_BYTES`), an oversized session's id that does not exist (404), an unreadable session (404), an unreachable store (503), the binding to the first MCP connection |
+| `mcp-sessions.md` | sessions (split out by #731): the DBAL pool, the bound (`BoundedSessionStore`, `MAX_BYTES`), an oversized session's id that does not exist (404), an unreadable session (404), a store whose check throws (503; behind the DBAL pool a PostgreSQL outage reads « absent », 404, accepted, #770), the binding to the first MCP connection |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -269,7 +269,8 @@ paths:
   decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation — the bounded store's `exists()` reads it,
   `mcp-sessions.md`, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
-  as absent — #663), 406 without `Accept: text/event-stream`, **503 when the session store is unreachable** (#731,
+  as absent — #663), 406 without `Accept: text/event-stream`, **503 when the session store's existence check throws**
+  (#731 — behind the DBAL pool a PostgreSQL outage reads « absent » and gets the 404, accepted limit, #770 —,
   `mcp-sessions.md`: the SDK's `-32603` « Session store is unavailable. », without `id`, and its `error` line of the
   `mcp` channel, the exception in its context and **never the session id**; only for an id to check — a GET whose
   header is absent, empty or `0` never asks the store and is served). `McpEndpointGetTest` pins each
