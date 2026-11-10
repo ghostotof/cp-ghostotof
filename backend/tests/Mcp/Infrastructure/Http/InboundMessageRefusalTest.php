@@ -264,9 +264,17 @@ final class InboundMessageRefusalTest extends WebTestCase
     /**
      * Le SDK lit `error`, puis `result`, avant `method`
      * ({@see \Mcp\JsonRpc\MessageFactory}) : une requête qui porte un résultat
-     * ou une erreur est pour lui une réponse, rangée en session sous
-     * l'identifiant choisi (#671). Elle passait le refus, qui exigeait
-     * l'absence de `method`, et la session grossissait à chaque envoi.
+     * ou une erreur est pour lui une réponse. En 0.8.1 il la rangeait en
+     * session sous l'identifiant choisi par le client (#671) : elle passait le
+     * refus, qui exigeait l'absence de `method`, et la session grossissait à
+     * chaque envoi.
+     *
+     * Depuis la 0.9 il ne range que la réponse à une requête qu'il attend,
+     * sous un UUID qu'il a tiré lui-même ({@see Protocol::handleResponse()}) :
+     * la seconde assertion, « aucune réponse rangée », serait donc vraie sans
+     * le refus. Elle est gardée en défense, contre un SDK qui rangerait de
+     * nouveau une réponse non attendue ; c'est la première, le refus, qui
+     * mord toujours.
      */
     #[DataProvider('requestsCarryingAResponse')]
     public function testARequestCarryingAResponseIsRefusedAndStoresNoResponse(string $message): void
