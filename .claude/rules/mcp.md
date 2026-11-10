@@ -274,7 +274,11 @@ paths:
   as absent — #663), 406 without `Accept: text/event-stream`, **503 when the session store's existence check throws**
   (#731 — behind the DBAL pool a PostgreSQL outage reads « absent » and gets the 404, accepted limit, #770 —,
   `mcp-sessions.md`: the SDK's `-32603` « Session store is unavailable. », without `id`, and its `error` line of the
-  `mcp` channel, the exception in its context and **never the session id**; only for an id to check — a GET whose
+  `mcp` channel, the exception in its context and **no `session_id` key** — the limit: the cache exception's message
+  is copied into `SessionStoreException`'s (`Psr16SessionStore::exists()`) and kept as `previous`, which
+  `SdkChannelRedactor` bounds and does not filter, so a cache whose exception quoted its key would put the session id
+  on that line, GET and POST alike; latent, the 503 being out of reach behind the DBAL pool, whose driver errors
+  `DriverErrorRedactionMiddleware` already strips of their parameters —; only for an id to check — a GET whose
   header is absent, empty or `0` never asks the store and is served). `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included, the `Origin` rules above, and that 503 against the POST's on
   the real chain (status, headers, error, log line).

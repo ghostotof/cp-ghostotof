@@ -67,9 +67,18 @@ use Symfony\Component\Uid\Uuid;
  * existe peut-être, le client réessaie, là où un 404 le ferait se
  * réinitialiser et l'abandonner ; sortie du contrôleur, l'exception donnait
  * un 500. Une ligne `error` du même message sur le canal `mcp`, avec
- * l'exception et sans l'identifiant de session. Un GET sans identifiant à
- * contrôler (en-tête absent, vide ou « 0 ») ne consulte pas le store et reste
- * servi. Mesuré (#731) : derrière le pool DBAL de `cache.yaml`, l'adaptateur
+ * l'exception et sans la clé `session_id` (celle du SDK, au POST, la porte,
+ * et le rédacteur du canal la retient). **Limite** : le message de
+ * l'exception du cache est recopié dans celui de {@see SessionStoreException}
+ * (`Psr16SessionStore::exists()`), l'exception d'origine gardée en
+ * `previous` ; le rédacteur du canal borne ces messages, il ne les filtre
+ * pas. Un cache dont l'exception citerait sa clé — elle porte l'identifiant
+ * de session — le ferait donc sortir sur cette ligne, au GET comme au POST.
+ * Latent : derrière le pool DBAL ce 503 n'est pas atteint (ci-dessous), et
+ * {@see \App\Shared\Infrastructure\Doctrine\DriverErrorRedactionMiddleware}
+ * retire déjà des erreurs du pilote la ligne qui cite les paramètres. Un GET
+ * sans identifiant à contrôler (en-tête absent, vide ou « 0 ») ne consulte
+ * pas le store et reste servi. Mesuré (#731) : derrière le pool DBAL de `cache.yaml`, l'adaptateur
  * de Symfony attrape lui-même l'échec de la requête (`hasItem()` rend `false`
  * après un `warning` du canal `cache`) — une base injoignable s'y lit encore
  * « session absente », 404 au GET comme au POST ; le 503 vaut pour un cache
@@ -177,9 +186,11 @@ final readonly class McpEndpointController
             } catch (SessionStoreException $e) {
                 // Le store injoignable n'est pas une session absente : elle
                 // existe peut-être, et un 404 la ferait abandonner. 503, le
-                // client réessaie — ce que le SDK répond au POST. Jamais
-                // l'identifiant de session dans la ligne : il vaut accès à
-                // la session.
+                // client réessaie — ce que le SDK répond au POST. La ligne ne
+                // porte pas la clé `session_id` : l'identifiant vaut accès à
+                // la session. Le message de l'exception, lui, est celui du
+                // cache, borné par le rédacteur du canal et non filtré
+                // (limite dite au docblock de la classe).
                 $this->logger->error(self::SESSION_STORE_UNAVAILABLE, ['exception' => $e]);
 
                 return $this->jsonRpcServerError(Response::HTTP_SERVICE_UNAVAILABLE, self::SESSION_STORE_UNAVAILABLE);
