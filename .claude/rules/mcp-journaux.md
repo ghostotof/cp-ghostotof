@@ -5,7 +5,7 @@ paths:
   - "backend/config/packages/monolog.yaml"
 ---
 
-# Backend — `Mcp`: the SDK's channel and the call log
+# Backend — `Mcp`: the SDK's channel, the call log and the session key on the `cache` channel
 
 > Split out of `.claude/rules/mcp.md` (#673), whose index lists every MCP rule. Decisions: `docs/adr/0006-serveur-mcp.md`;
 > spec `.claude/specs/0007-mcp-server.md`. The index of every rule is at the top of `.claude/CLAUDE.md`.
@@ -140,3 +140,39 @@ paths:
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
+- **The session id never leaves through the `cache` channel** (#731, finding C2 of task 4's review, decided
+  2026-11-10). A session is stored under the PSR-16 key `mcp-portfolio-<session id>` (`Psr16SessionStore::getKey()`,
+  behind the prefix the bundle gives the `portfolio` server's store). When an operation of the pool
+  `cache.mcp_sessions` fails, Symfony Cache writes a `warning` on its own `cache` channel (`CacheItem::log()`, from
+  `AbstractAdapterTrait` and `AbstractAdapter::commit()`) — « Failed to fetch key "{key}" », « Failed to check if key
+  "{key}" is cached », « Failed to save key "{key}" », « Failed to delete key "{key}" » — with the key in the context
+  (`key`; `keys` for `getItems()`), the exception, and the exception's message appended to the record's. `when@prod`'s
+  `main` handler takes that channel, at `warning` in prod and `debug` in preprod (and `console`, in a command): the
+  id, which gives access to the session, went into the pods' logs.
+  `Infrastructure/Log/SessionKeyCacheChannelRedactor` (`#[AsMonologProcessor(channel: 'cache')]`, every level, every
+  environment) rewrites **only** a record whose `key`, or an entry of `keys`, starts with its `SESSION_KEY_PREFIX` and
+  carries something after it: the key becomes `mcp-portfolio-` + `WITHHELD` — the prefix still says which pool failed —
+  and the id is removed wherever the record carries it: the message, every string of the context (one level of
+  array), and the context's exception when a link of its chain quotes it, which then becomes its normalised form
+  without a trace (class, message, code, `file:line`, `previous`), an exception quoting nothing staying the object it
+  was. `{key}` is not yet replaced when the processor runs: Monolog runs a channel's processors before any handler
+  (`Logger::addRecord()`), and the interpolation is the handler's own `PsrLogMessageProcessor`, so it writes the
+  rewritten key. Any other record is returned as is, the same object — a limiter's key, the workers' restart signal:
+  **a processor rather than `!cache` on `main`**, which would have silenced every failure of every pool. What it
+  costs those records: a read of `key` and `keys` and a prefix test, no regular expression. **An exception's message
+  can quote the key** (measured 2026-11-10): PostgreSQL quotes the bound parameters in its error's `CONTEXT:`
+  (`unnamed portal with parameters: $1 = '<namespace>:mcp-portfolio-<id>'`) as soon as
+  `log_parameter_max_length_on_error` is not 0 — its default, and nothing in `k8s/` sets it —, and
+  `DriverErrorRedactionMiddleware` (#428) already drops that line on every Doctrine connection, the pool's included;
+  the processor is the second net. **The prefix is written a second time**, in the constant: the pinned bundle
+  (`composer.json`) computes it in a private method (`mcp-<server name>-` without a `session.prefix` in `mcp.yaml`)
+  and hands it to the store as an argument, no container parameter carries it. The constant is derived from the same
+  source, the server's name, and `SessionKeyCacheChannelRedactorTest::testAFailingSessionPoolWritesTheSessionIdOnNoChannel`
+  holds it on the real chain: the container's store (the decorator, the SDK's store, the DBAL pool) inside a
+  transaction PostgreSQL has aborted, its four operations, the real `cache` logger and the `all_channels_test` probe
+  formatted by `JsonFormatter` — the four lines must exist with the prefix, and no record of any channel may carry the
+  id (`doctrine`'s `debug` aside: SQL parameters, logged under `kernel.debug` only). Measured red before the processor
+  (the id in `key` and in the interpolated message of the four sites), and red again with the constant changed: a
+  bundle that changed the prefix would turn it red. The unit cases of the same class pin the rewriting and that a
+  record naming no MCP session comes back the same object. Not covered: a record of the channel quoting a session key
+  without carrying it in `key` nor `keys` — no site of the installed symfony/cache (`composer.lock`) writes one.

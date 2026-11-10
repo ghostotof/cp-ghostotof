@@ -1009,3 +1009,115 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
 EOF
 ```
+
+---
+
+### Tâche 10 : C2, l'identifiant de session MCP ne sort plus par le canal `cache`
+
+**Modèle conseillé :** fable — **sensible** (identifiant de session, journaux de production).
+
+**Origine :** constat C2 de la tâche 4, confirmé en relecture (confiance élevée), préexistant à #731. L'auteur a décidé le
+2026-11-10 de le corriger dans cette PR.
+
+**Constat à reproduire d'abord :**
+- Les sessions MCP sont stockées sous la clé PSR-16 `mcp-portfolio-<uuid>`. Le bundle forme le préfixe par serveur
+  (`McpBundle::sessionPrefix()`) et `Psr16SessionStore::getKey()` rend `prefix.$id`.
+- Sur une panne du pool `cache.mcp_sessions` (`cache.adapter.doctrine_dbal`), `AbstractAdapterTrait` de `symfony/cache`
+  journalise par `CacheItem::log()`, en `warning` sur le canal `cache`, des messages « Failed to fetch key "{key}" »,
+  « Failed to check if key "{key}" is cached » et « Failed to save key "{key}" ». Le contexte porte `key`, la clé, et
+  `exception`.
+- Le handler `main` de `when@prod` (`config/packages/monolog.yaml`, clé `channels`) n'exclut pas `cache`, et son niveau
+  vaut `warning` en prod, `debug` en préprod. L'identifiant de session, qui donne accès à la session, part donc dans les
+  journaux de production et de préprod. Cela contredit l'invariant de `.claude/rules/mcp-journaux.md` : jamais
+  d'identifiant de session dans un journal.
+
+**Règles à lire avant d'écrire (outil `Read`) :** `.claude/rules/mcp-journaux.md`, `.claude/rules/mcp-sessions.md`,
+`.claude/rules/security-authentication-audit.md` (« what a record never carries »), `.claude/rules/backend-conventions.md`,
+`.claude/rules/backend-outillage.md` (Monolog).
+
+**Décision de conception (fil principal) :**
+- Un **processeur Monolog** sur le canal `cache`, et non une exclusion `!cache` du handler `main`, qui perdrait le signal
+  d'exploitation de toutes les autres pannes de cache.
+- Modèle à suivre : `src/Security/Authentication/Infrastructure/Log/SecurityChannelAccountRedactor.php` et
+  `src/Mcp/Infrastructure/Log/SdkChannelRedactor.php` (`#[AsMonologProcessor(channel: …)]`, constante `WITHHELD`).
+- Classe proposée : `App\Mcp\Infrastructure\Log\SessionKeyCacheChannelRedactor`, `#[AsMonologProcessor(channel: 'cache')]`.
+- Portée : seuls les enregistrements dont la clé désigne une session MCP sont réécrits. Les autres clés de cache restent
+  intactes, signal d'exploitation compris.
+- Ce qui est retiré : l'identifiant, partout où il apparaît dans l'enregistrement. Cela couvre `context.key` et le message
+  s'il est déjà interpolé (vérifier par lecture si Monolog ou le bundle interpole `{key}` avant les processeurs, et dans
+  quel ordre). Cela couvre aussi le message de l'exception du contexte, s'il peut citer la clé : vérifier ce que lève
+  `DoctrineDbalAdapter` (`doHave`, `doFetch`, `doSave`) et si un message de DBAL cite un paramètre. Garder le préfixe
+  visible (`mcp-portfolio-<withheld>`), pour que la ligne dise encore quel pool a échoué.
+- Le préfixe ne doit pas être écrit en dur s'il peut être lu. Sinon, le dériver de la même source que le bundle, et le dire.
+  Un test doit rougir si le préfixe du bundle change.
+
+**Fichiers :**
+- Créer : `backend/src/Mcp/Infrastructure/Log/SessionKeyCacheChannelRedactor.php`
+- Créer : `backend/tests/Mcp/Infrastructure/Log/SessionKeyCacheChannelRedactorTest.php`
+- Modifier : `.claude/rules/mcp-journaux.md` (le canal `cache` et son processeur), `.claude/rules/mcp-sessions.md`
+  (la phrase du warning du canal `cache` qui « nomme la clé », écrite par la tâche 4)
+- Modifier : `tasks/todo.md` (ajouter puis cocher la ligne « 10. C2 : identifiant de session retiré du canal `cache` —
+  **sensible (journaux)** » dans la section « Montées épinglées (#731) »), `tasks/plan-731-mcp-0-15.md` (ajouter cette
+  tâche, texte de ce brief, après la tâche 9)
+
+- [ ] **Étape 1 : le test rouge sur la vraie chaîne**
+
+Dans le conteneur de test, faire échouer une lecture du pool des sessions MCP, avec un identifiant connu. Par exemple : un
+`Psr16SessionStore` monté sur un pool `DoctrineDbalAdapter` pointé vers une table absente, ou toute autre façon
+d'atteindre `CacheItem::log()` par le vrai logger du canal `cache`. Lire la sonde `all_channels_test` (`ReadsAllChannelsLog`)
+et asserter qu'aucun enregistrement, message, contexte ou exception sérialisée ne contient l'identifiant. Ajouter un témoin
+positif : un enregistrement du canal `cache` existe bien, et porte le préfixe. Run : FAIL, l'identifiant est dans `key`.
+Attention : la sonde est vidée à chaque requête, même sous `disableReboot()` (#769). Rester dans une seule requête, ou
+appeler le store directement.
+
+- [ ] **Étape 2 : les cas unitaires**
+
+Dans `SessionKeyCacheChannelRedactorTest` :
+- une clé MCP dans `context.key` et dans le message → identifiant retiré, préfixe gardé ;
+- une clé d'un autre pool → enregistrement inchangé (le même objet, ou égal) ;
+- un contexte sans `key` → inchangé ;
+- une exception du contexte dont le message citerait la clé, seulement si l'étape de lecture montre que c'est possible.
+
+- [ ] **Étape 3 : écrire le processeur**, jusqu'au vert des étapes 1 et 2.
+
+- [ ] **Étape 4 : les autres canaux**
+
+Vérifier, par lecture et sans `grep -r` sur `backend/`, qu'aucun autre canal écrit en prod ou en préprod ne porte
+l'identifiant de session ou la clé de session :
+- `doctrine`, dont la journalisation SQL n'est active que si `kernel.debug` : à confirmer pour `APP_ENV=prod` ;
+- `request` ;
+- `php`.
+Consigner le résultat dans le rapport. Un autre site trouvé n'est pas corrigé ici : il est rendu au fil principal.
+
+- [ ] **Étape 5 : documentation**
+
+- `.claude/rules/mcp-journaux.md` : le canal `cache` et son processeur, ce qu'il retire, pourquoi un processeur plutôt
+  que `!cache`, le test.
+- `.claude/rules/mcp-sessions.md` : la phrase du warning du canal `cache` renvoie à ce processeur.
+- Docblock de la classe, sur le modèle de `SecurityChannelAccountRedactor`.
+
+- [ ] **Étape 6 : vérifier et committer**
+
+Run, dans le conteneur :
+- les deux nouveaux tests ;
+- `tests/Security/SecurityServicesEnvironmentParityTest.php` et `tests/Security/AccountIdentifierReachesNoLogTest.php` ;
+- `make back-quality` ;
+- `bash tools/check-claude-rules.sh`.
+
+```bash
+git add backend/src/Mcp/Infrastructure/Log/SessionKeyCacheChannelRedactor.php \
+  backend/tests/Mcp/Infrastructure/Log/SessionKeyCacheChannelRedactorTest.php \
+  .claude/rules/mcp-journaux.md .claude/rules/mcp-sessions.md tasks/todo.md tasks/plan-731-mcp-0-15.md
+git commit -F - <<'MSG'
+fix(mcp): l'identifiant de session MCP retiré des lignes du canal cache (#731)
+
+Sur une panne du pool des sessions, Symfony Cache journalisait en warning,
+sur le canal cache que le handler main de prod garde, la clé
+mcp-portfolio-<uuid> : l'identifiant de session. Un processeur du canal
+cache le retire, préfixe gardé, et laisse intactes les clés des autres
+pools (décision du 2026-11-10, constat de la relecture de la tâche 4).
+
+Co-Authored-By: <le modèle qui écrit>
+Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
+MSG
+```

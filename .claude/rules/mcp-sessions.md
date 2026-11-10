@@ -95,7 +95,11 @@ paths:
   (`Protocol::resolveSession()`), the controller's at the GET —, never a 404: the session may exist, the client retries
   instead of re-initialising. **Measured, not decided**: behind the DBAL pool Symfony's adapter catches the failed
   query itself (`AbstractAdapterTrait::hasItem()`: a `warning` of the `cache` channel naming the key, then `false`), so
-  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws. **A session is bound to the first MCP
+  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws. **That
+  `warning` names the key without the session id** (#731, decided 2026-11-10): the key is `mcp-portfolio-<session id>`
+  and `main` takes the `cache` channel in production, so `Infrastructure/Log/SessionKeyCacheChannelRedactor`, a
+  processor of that channel, withholds the id on every such line — read, existence check, write, deletion — and
+  keeps the prefix (`.claude/rules/mcp-journaux.md`, « The session id never leaves through the `cache` channel »). **A session is bound to the first MCP
   connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
   queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
   so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The

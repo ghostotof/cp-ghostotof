@@ -220,7 +220,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
 - [x] PR 1 — famille Symfony AI en 0.15.0 exacts (#766, fusionnée dans la mère, d639b5db)
 - [ ] PR 2 — `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0 exacts, branche `feature/spec-0007-731-mcp-0-15`,
       PR vers la mère ; **urgente** : la mère est rouge sur `composer audit` (GHSA-f4rf-6ghj-mhr6). Plan
-      `tasks/plan-731-mcp-0-15.md`, neuf tâches, **sensibles** marquées :
+      `tasks/plan-731-mcp-0-15.md`, dix tâches (la 10 ajoutée le 2026-11-10), **sensibles** marquées :
   - [x] 1. La montée, R1 (`publishesListChanges()`), R6 (`execution`), R10 (`Page<TItem>`), `config/reference.php`,
         prémisse « la réponse ne passe pas par la session » épinglée — **sensible (session, réponse nominative)**
   - [x] 2. R4 : `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`, garde « une origine » par environnement — **sensible (Origin)**
@@ -231,6 +231,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
   - [ ] 7. R8, R9, R11 vérifiés ; coût de la session mesuré et épinglé — **sensible (réponse nominative)**
   - [ ] 8. ADR 0006 D7 amendée, D4 confirmée, versions au présent renvoyées au pin
   - [ ] 9. Exposition à l'avis, notes client (`tasks/pr-731-mcp-0-15.md`, corps de PR), vérification complète
+  - [x] 10. C2 : identifiant de session retiré du canal `cache` — **sensible (journaux)**
   - [ ] Fermer #731 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
 
 ### Clôture
