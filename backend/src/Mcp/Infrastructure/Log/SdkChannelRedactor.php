@@ -52,7 +52,8 @@ use Throwable;
  * Le classement des fautes du client est une liste fermée, écrite contre la
  * version épinglée (composer.json) : par classe d'exception quand le SDK en a une qui ne désigne que le
  * client, par code (-32602) ou début de message pour une RegistryException, par
- * message exact sinon. Une faute serveur (une exception de câblage,
+ * message exact sinon — l'un d'eux pour une exception donnée seulement
+ * ({@see self::UNPARSEABLE_MODERN_REQUEST}). Une faute serveur (une exception de câblage,
  * {@see \App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException}) garde son
  * niveau. {@see \App\Tests\Mcp\Infrastructure\Log\SdkChannelRecordsTest} provoque
  * chaque faute sur le vrai serveur : une montée de version du SDK qui change un
