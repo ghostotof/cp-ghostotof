@@ -231,7 +231,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
   - [x] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
   - [x] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
   - [x] 7. R8, R9, R11 vérifiés ; coût de la session mesuré et épinglé (3 lectures, 1 écriture par `tools/call`) ; `data` et `sessionId` retenus sur le canal `mcp` — **sensible (réponse nominative)**
-  - [ ] 8. ADR 0006 D7 amendée, D4 confirmée, versions au présent renvoyées au pin
+  - [x] 8. ADR 0006 D7 amendée, D4 confirmée, D6 précisée (coût de session mesuré), versions au présent renvoyées au pin
   - [ ] 9. Exposition à l'avis, notes client (`tasks/pr-731-mcp-0-15.md`, corps de PR), vérification complète
   - [x] 10. C2 : identifiant de session retiré du canal `cache` — **sensible (journaux)**
   - [ ] Fermer #731 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)

@@ -21,15 +21,17 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * Lie le refus des réponses du client (#644, refus n°3) à la classification du
- * SDK (#671) : le listener refuse tout message que {@see MessageFactory} du
- * SDK 0.8.1 classe en `Response` ou `Error` — ceux que
- * {@see \Mcp\Server\Protocol::handleResponse()} range en session, sauf une
- * erreur sans identifiant, qu'il journalise seulement — et laisse passer ce
- * qu'il sert comme requête ou notification.
+ * SDK (#671) : le listener refuse tout message que {@see MessageFactory} de la
+ * version épinglée (composer.json) classe en `Response` ou `Error` — ceux que
+ * {@see \Mcp\Server\Protocol::handleResponse()} traite : en 0.8.1 il les
+ * rangeait en session, sauf une erreur sans identifiant ; depuis la 0.9 il ne
+ * range que la réponse à une requête qu'il a envoyée et qui attend encore, et
+ * journalise toute autre en `warning` — et laisse passer ce qu'il sert comme
+ * requête ou notification.
  *
  * Le SDK lit `error`, puis `result` (par `isset`, une valeur `null` ne compte
  * pas), **avant** `method`. Le listener exigeait l'absence de `method` : une
- * requête portant un résultat passait, et le SDK la rangeait en session.
+ * requête portant un résultat passait, et le SDK 0.8.1 la rangeait en session.
  *
  * Chaque ligne fixe à la main ce que la vraie `MessageFactory` fait du
  * message, et ce que décide le listener. Le jour où le SDK classe autrement,

@@ -47,9 +47,10 @@ use Mcp\Exception\PromptGetException;
  *    **que ceux-là** : « équipe <10 personnes, PHP >= 8.4 » garde son sens ;
  *    « (role-based…) » perd sa parenthèse, accepté.
  *
- * Une valeur refusée est une `PromptGetException`, la seule erreur que le SDK
- * 0.8.1 rend avec son message (`-32603`, quand le protocole attendrait
- * `-32602` : le SDK ne laisse pas le choix). Son message ne cite jamais le
+ * Une valeur refusée est une `PromptGetException`, la seule erreur d'un prompt
+ * que le SDK de la version épinglée (composer.json) rend avec son message
+ * (`-32603`, quand le protocole attendrait `-32602` : le SDK ne laisse pas le
+ * choix). Son message ne cite jamais le
  * texte reçu : le SDK le journalise avec l'erreur.
  */
 final readonly class PromptRole
@@ -83,7 +84,8 @@ final readonly class PromptRole
      * L'argument tel que le SDK le reçoit, **non typé** (#663) : un paramètre
      * `string` laissait le SDK 0.8.1 convertir lui-même un autre type — un
      * tableau en « Array », avec un avertissement PHP sur le canal `php`,
-     * qu'un anonyme provoquait à volonté en production. Le type est refusé
+     * qu'un anonyme provoquait à volonté en production ; la version épinglée
+     * (composer.json) convertit toujours (`ReferenceHandler`). Le type est refusé
      * ici, avant toute conversion ; un `role` absent arrive `null` et l'est
      * de même.
      *

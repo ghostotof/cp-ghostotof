@@ -31,9 +31,10 @@ use Symfony\Component\Uid\Uuid;
  * Point d'entrée de `/api/mcp` : répond lui-même au GET (et au HEAD, que le
  * routeur fait correspondre au GET), délègue le reste au contrôleur du bundle.
  *
- * Le transport Streamable HTTP du SDK 0.8.1 n'ouvre pas de flux serveur et
- * répond 405 au GET — conforme à la spécification MCP, mais l'AI Assistant de
- * PhpStorm prend ce 405 pour une panne et n'utilise pas le serveur (ADR 0006,
+ * Le transport Streamable HTTP du SDK de la version épinglée (composer.json),
+ * comme en 0.8.1, n'ouvre pas de flux serveur et répond 405 au GET —
+ * conforme à la spécification MCP, mais l'AI Assistant de PhpStorm prend ce
+ * 405 pour une panne et n'utilise pas le serveur (ADR 0006,
  * conséquences). Le GET reçoit donc un flux SSE vide qui demande au client
  * d'attendre cinq minutes avant de le rouvrir (`retry`), et se ferme
  * aussitôt.

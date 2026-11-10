@@ -20,16 +20,20 @@ use Throwable;
  * Borne ce que le SDK MCP écrit sur son canal `mcp` (spec 0007, tâche 4, #643 ;
  * reports des relectures de #640 et #642).
  *
- * Le SDK 0.8.1 et le bundle étiquettent tous leurs services sur ce canal, en
- * dur. Trois défauts, que ce processeur corrige pour tout enregistrement, à
- * tout niveau, avant qu'un handler ne le reçoive :
+ * Le bundle de la version épinglée (composer.json) étiquette tous les services
+ * du SDK sur ce canal, en dur. Trois défauts, que ce processeur corrige pour
+ * tout enregistrement, à tout niveau, avant qu'un handler ne le reçoive :
  *
- *  - **le contenu des échanges** : « Received message to process. » porte le
- *    JSON-RPC brut, « Handling request. » la requête décodée, et les
- *    gestionnaires les arguments — le `role` du prompt est du texte libre où une
- *    personne peut écrire son nom ou celui de son entreprise. Ces clés
- *    ({@see self::WITHHELD_KEYS}) sont remplacées par {@see self::WITHHELD}, de
- *    même que l'identifiant de session, qui vaut accès à la session ;
+ *  - **le contenu des échanges** : le JSON-RPC brut, que porte une ligne
+ *    `debug`, « Received message payload. » (clé `message`), et les arguments
+ *    que journalisent les gestionnaires (« Executing tool ») — le `role` du
+ *    prompt est du texte libre où une personne peut écrire son nom ou celui de
+ *    son entreprise. Ces clés ({@see self::WITHHELD_KEYS}) sont remplacées par
+ *    {@see self::WITHHELD}, de même que l'identifiant de session, qui vaut
+ *    accès à la session. En 0.8.1, le brut était sur « Received message to
+ *    process. » et la requête décodée sur « Handling request. » ; depuis la
+ *    0.9, la première n'a plus de contexte, et la seconde ne porte plus que
+ *    la méthode et l'identifiant de la requête ;
  *  - **les chaînes choisies par l'appelant**, citées sans borne (un nom d'outil
  *    ou de méthode inconnu de 100 Ko, jusqu'à 100 par lot) : le message, chaque
  *    chaîne du contexte et le message de chaque exception sont tronqués à
@@ -43,8 +47,8 @@ use Throwable;
  *    de production (monolog.yaml) : le journal d'appels `mcp_usage` en garde
  *    l'issue et le code JSON-RPC, rien n'est perdu.
  *
- * Le classement des fautes du client est une liste fermée, écrite contre le SDK
- * 0.8.1 : par classe d'exception quand le SDK en a une qui ne désigne que le
+ * Le classement des fautes du client est une liste fermée, écrite contre la
+ * version épinglée (composer.json) : par classe d'exception quand le SDK en a une qui ne désigne que le
  * client, par code (-32602) ou début de message pour une RegistryException, par
  * message exact sinon. Une faute serveur (une exception de câblage,
  * {@see \App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException}) garde son
@@ -68,9 +72,9 @@ final class SdkChannelRedactor
      * outil, et depuis la 0.9 sa **sortie** — pour l'outil nominatif, le
      * corpus (#731). `sessionId` est l'identifiant de session tel que
      * l'écrit le transport quand le gestionnaire d'une fibre suspendue
-     * échoue, sous une autre graphie que partout ailleurs. Une clé d'un
-     * autre type qu'une chaîne (un tableau d'identifiants, un objet) est
-     * déjà réduite à son type par {@see self::bounded()}.
+     * échoue, sous une autre graphie que partout ailleurs. Une valeur qui
+     * n'est pas scalaire (un tableau d'identifiants, un objet autre qu'une
+     * exception) est déjà réduite à son type par {@see self::bounded()}.
      *
      * @var list<string>
      */

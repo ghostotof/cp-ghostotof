@@ -29,7 +29,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * rétrocompatibilité. ChatGPT fige la liste à l'approbation du connecteur :
  * les deux places sont donc tenues dès la première publication, plutôt que
  * d'attendre de savoir en préprod laquelle il lit (#653). `Mcp\Schema\Tool`
- * 0.8.1 ne connaît que `_meta` : `getTools()` rend chaque outil de la page en
+ * de la version épinglée (composer.json) ne connaît que `_meta`, comme en
+ * 0.8.1 : `getTools()` rend chaque outil de la page en
  * {@see ToolWithSecuritySchemes}, dont la valeur est lue dans ce `_meta` — la
  * seule source, l'attribut `#[McpTool(meta: …)]` de l'outil. Un outil qui
  * n'en déclare pas fait échouer `tools/list` ({@see ToolWithoutSecuritySchemesException},
@@ -44,8 +45,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * du SDK, réponse entière comprise. Décoré, le registre ne change que la
  * donnée que lit le gestionnaire du SDK, qui reste le seul à répondre — dans
  * une session comme sous l'enveloppe sans session 2026-07-28 ;
- * `server/discover` ne liste pas d'outil en 0.8.1, `SecuritySchemesTest` le
- * vérifie.
+ * `server/discover` ne liste pas d'outil dans la version épinglée
+ * (composer.json), ni en 0.8.1, `SecuritySchemesTest` le vérifie.
  *
  * Tout le reste est délégué tel quel, **`getTool()` compris** : l'appel d'un
  * outil, le journal des appels ({@see \App\Mcp\Infrastructure\Log\McpCallLog},

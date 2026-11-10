@@ -89,10 +89,10 @@ paths:
   output**: pointers and unexpected property names (keys), keywords, schema parameters, type names — pinned for the
   nominative tool, whose output is the corpus, by
   `GetNominativeCorpusToolTest::testAnOutputBreakingItsSchemaNamesNoValueOfTheCorpus` on the schema `tools/list`
-  publishes (red with a validator mutated to quote the value, measured). **Keys are quoted**
-  (`testAValidationErrorDoesQuoteTheKeysOfTheOutput`): harmless here, the nominative output's two keys are
-  constants; a tool taking a key from a content would see it in the client's error and in the log. If that test
-  turns red, the fix is the author's decision — never loosen it. When the validation itself fails (a schema Opis
+  publishes (red with a validator mutated to quote the value, measured); if that test turns red, the fix is the
+  author's decision — never loosen it. **Keys are quoted** (`testAValidationErrorDoesQuoteTheKeysOfTheOutput`, the
+  witness that the search above bites): harmless here, the nominative output's two keys are constants; a tool taking
+  a key from a content would see it in the client's error and in the log. When the validation itself fails (a schema Opis
   cannot resolve), the SDK logs what it was validating under `data`: withheld (`mcp-journaux.md`). And the nominative
   tool writes its audit line before the SDK validates: an output refused there is audited as read though the client
   got the error (measured under a mutated schema) — the over-count of « an answer the tool served », below. **One JSON
@@ -188,9 +188,10 @@ paths:
   non-empty list of objects with a `type`) throws `ToolWithoutSecuritySchemesException`, a `-32603` for the whole
   list, never a tool published without one or with a guessed one. Everything else is delegated, **`getTool()`
   included**: a call, `McpCallLog` and `ReadsPortfolioRegistry` read the inner references. Pinned by
-  `SecuritySchemesTest` (both eras; `server/discover` lists no tool in 0.8.1, the day it does the test turns
-  red) and `SecuritySchemesRegistryTest` (the copy against `Tool`'s constructor parameters: an SDK bump adding
-  one turns it red). Accepted: decorated, the registry is loaded without `Registry::loadFrom()` (the builder
+  `SecuritySchemesTest` (both eras; `server/discover` lists no tool in the pinned version (`composer.json`), nor
+  did it in 0.8.1 — versions, capabilities, instructions —, the day it does the test turns red) and
+  `SecuritySchemesRegistryTest` (the copy against `Tool`'s constructor parameters: an SDK bump adding one turns it
+  red). Accepted: decorated, the registry is loaded without `Registry::loadFrom()` (the builder
   only uses it on its own `final` class), so each registration dispatches a `*ListChangedEvent` on Symfony's
   dispatcher at every server build — no listener exists without a notification bus. A language
   parameter is a **string**, never an enum (decided 2026-10-19): `#[Schema(description: ToolLocale::DESCRIPTION)]
@@ -219,8 +220,10 @@ paths:
   Detected, the SDK 0.8.1 announced `listChanged` for tools, prompts and resources that do not exist as soon as an
   event dispatcher is set — the bundle always sets Symfony's, which the call log listens to (#643) —, with no bus
   (`subscriptions.bus: none`) to carry a single notification: a compliant client opened a `subscriptions/listen`
-  for nothing. The catalogue only changes with a deployment. A compiler pass because bundle 0.14.1 exposes no
-  capability in its configuration; written by hand because the registry is only filled by `build()`, after the
+  for nothing. The catalogue only changes with a deployment. Since 0.9 the detection sets `listChanged` only with a
+  notification bus, but the pinned version (`composer.json`) still announces `logging` (`Builder::detectCapabilities()`):
+  the pass stays, for it. A compiler pass because the pinned bundle still exposes no server capability in its
+  configuration (only a client's); written by hand because the registry is only filled by `build()`, after the
   call. `tests/Mcp/AnnouncedCapabilitiesTest` pins the announce in both eras and matches each announced kind
   against the real registry: a resource (#654) added without announcing it turns it red. Announcing a
   notification again means a bus first, then lifting the `listen` refusal (below), in the same change. After
@@ -248,8 +251,9 @@ paths:
   session's id that does not exist, an unreadable session, an unreachable store, the
   binding to the first MCP connection): `.claude/rules/mcp-sessions.md`, split out by #731.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
-  `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
-  405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
+  `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The pinned SDK
+  (`composer.json`), like 0.8.1, answers 405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure.
+  A finished `Response`, **never a
   `StreamedResponse` held open**: under PHP-FPM a held stream keeps one worker per connected client, and the
   server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle; `HEAD`, which the router
   matches to the GET route, gets the GET's answer without a body (it reached the SDK's 405 before #641).
@@ -289,10 +293,11 @@ paths:
   `id` — the form of the SDK transport's own refusals; `listen` excepted, (6) below —, the reason and its message in the enum
   `InboundMessageRefusal`: (1) **a batch of several messages**, with the SDK's own predicate (`json_decode` assoc,
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
-  100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
-  (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable through the bundle), and batches
-  came with revision 2025-03-26 and left the protocol at the next, 2025-06-18 — of the four handshake revisions SDK
-  0.8.1 negotiates (2024-11-05 to 2025-11-25) only 2025-03-26 knows them, and the sessionless 2026-07-28, served too,
+  100 `tools/call` served, measured in the reviews of #644): the pinned SDK (`composer.json`), like 0.8.1, accepts up to
+  100 per request, hard-coded (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable
+  through the bundle), and batches came with revision 2025-03-26 and left the protocol at the next, 2025-06-18 — of
+  the four handshake revisions the pinned SDK negotiates (2024-11-05 to 2025-11-25) only 2025-03-26 knows them, and
+  the sessionless 2026-07-28, served too,
   has none; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
@@ -310,8 +315,10 @@ paths:
   refused here first, without). `InboundMessageClassificationTest` holds a hand-written table — the message, what the
   real `MessageFactory` makes of it, whether the listener refuses it — and fails when the SDK classifies otherwise:
   correct the SDK column, then the table's invariant (refuse every `Response`/`Error`, never a request) forces the
-  listener to follow. The SDK stored such responses under ids of the client's choosing, accumulating ~30 KB per post
-  up to the session bound (audit of #644, measured) — this server sends the client no request (no sampling,
+  listener to follow. SDK 0.8.1 stored such responses under ids of the client's choosing, accumulating ~30 KB per post
+  up to the session bound (audit of #644, measured); since 0.9 it stores only the answer to a pending request it sent
+  (a UUID, `Protocol::handleResponse()`) and logs any other a `warning` — an anonymous client's at will without this
+  refusal (`mcp-journaux.md`) — this server sends the client no request (no sampling,
   elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer;
   (4) **a `params._meta` that is not an object** (#664, audit): the SDK's factory stores a notification's into an
   `?array` property, and a scalar threw a `TypeError` — an `error` line of the `mcp` channel at will in the

@@ -22,13 +22,15 @@ use Symfony\Component\Uid\Uuid;
  * Ce que le serveur MCP refuse avant le SDK (#644), parce que le SDK le
  * servirait ou le recopierait en session sans borne :
  *
- * - un lot JSON-RPC de plusieurs messages : le SDK 0.8.1 en accepte jusqu'à
- *   100 par requête HTTP, codé en dur — 100 `tools/call` pour une seule
- *   requête comptée par la zone nginx `mcp` ;
+ * - un lot JSON-RPC de plusieurs messages : le SDK de la version épinglée
+ *   (composer.json) en accepte jusqu'à 100 par requête HTTP, codé en dur —
+ *   100 `tools/call` pour une seule requête comptée par la zone nginx `mcp` ;
  * - un `initialize` dont les déclarations (`clientInfo`, `capabilities`)
  *   dépassent la borne : le SDK les recopie telles quelles en session ;
- * - une réponse du client : le SDK la range en session sous un identifiant
- *   que le client choisit, et ce serveur n'envoie aucune requête au client ;
+ * - une réponse du client : en 0.8.1 le SDK la rangeait en session sous un
+ *   identifiant que le client choisit ; depuis la 0.9 il n'y range que la
+ *   réponse à une requête qu'il a envoyée, et écrit un `warning` pour toute
+ *   autre — ce serveur n'envoie aucune requête au client ;
  * - `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
  *   php-fpm pris, pour un serveur qui n'émet aucune notification.
  */
@@ -558,7 +560,8 @@ final class InboundMessageRefusalTest extends WebTestCase
 
     /**
      * La clé sous laquelle {@see Protocol::handleResponse()} range les réponses
-     * (`_mcp.responses` en 0.8.1), lue dans le SDK : renommée, elle fait
+     * (`_mcp.responses` dans la version épinglée, composer.json, comme en
+     * 0.8.1), lue dans le SDK : renommée, elle fait
      * échouer la lecture au lieu de la laisser vide.
      */
     private function sdkResponsesKey(): string

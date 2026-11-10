@@ -8,7 +8,9 @@
   connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664), le
   2026-10-21 (D7 : `subscriptions/listen` refusé, #675), le 2026-10-22 (D3 : découverte OAuth et
   autorisation différée, #646), le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647) et le
-  2026-11-06 (D7 : `ignore` Dependabot et garde commun des épinglages, #731)
+  2026-11-06 (D7 : `ignore` Dependabot et garde commun des épinglages, #731) et le 2026-11-10 (D7 :
+  montée en `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0, #731 ; D4 confirmée et D6 précisée par la
+  même montée)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -203,9 +205,9 @@ personne. Attendre la préprod (tâche 14) pour savoir laquelle il lit aurait pu
 incomplète d'ici là. **Une seule source** : l'attribut `#[McpTool(meta: …)]` de l'outil ; le champ de
 premier niveau en est relu, jamais déduit, et un outil qui n'en déclare pas fait échouer `tools/list`
 (`-32603`) plutôt que d'être publié sans schéma ou avec un schéma inventé. Le coût : `Mcp\Schema\Tool`
-0.8.1 ne connaît pas ce champ, d'où un décorateur du registre du SDK (`SecuritySchemesRegistry`), qui
-recopie chaque outil de la page avec le champ ajouté et délègue tout le reste — l'appel d'un outil
-compris. Un test rougit si une montée du SDK ajoute au type `Tool` un champ que la recopie perdrait ;
+0.8.1 ne connaît pas ce champ (ni la 0.9, qui ajoute `execution`), d'où un décorateur du registre
+du SDK (`SecuritySchemesRegistry`), qui recopie chaque outil de la page avec le champ ajouté et
+délègue tout le reste — l'appel d'un outil compris. Un test rougit si une montée du SDK ajoute au type `Tool` un champ que la recopie perdrait ;
 une montée qui connaîtrait `securitySchemes` rendrait le décorateur inutile. Ces valeurs ne décident
 d'aucun accès (D4) : elles disent à ChatGPT quand proposer la liaison du compte.
 
@@ -220,7 +222,11 @@ et c'est précisément ce que le JWT du site ne fait pas (ADR 0003, risque accep
 - **Jamais `_meta.oauth`, jamais les middlewares d'autorisation du SDK.** L'outil lit l'identité par
   `Security`, rien d'autre. Cela écarte la métadonnée complétable par le client, l'URL de métadonnées
   construite depuis l'en-tête `Host` et le tout-ou-rien d'`AuthorizationMiddleware`, et la phase 2
-  n'attend pas un bundle compatible avec `mcp/sdk` 0.9.
+  n'attend pas un bundle compatible avec `mcp/sdk` 0.9. *Confirmé le 2026-11-10 (#731), à la montée en
+  0.9.0 :* rien de la phase 2 n'en dépendait, et les middlewares d'autorisation que la 0.9 refond
+  (`AuthorizationMiddleware`, `ProtectedResourceMetadataMiddleware`) restent inutilisés — la fabrique
+  du bundle 0.15.0 ne construit que le CORS et la protection contre le rebond DNS du SDK, et le projet
+  n'en câble aucun autre.
 - **Pourquoi pas de cookie.** `/api/mcp` doit être exclu de la garde CSRF, puisqu'un client MCP ne
   porte pas de jeton XSRF. Cette exclusion n'est sûre que si le canal ne s'authentifie jamais par
   cookie : sinon une page tierce ferait lancer au navigateur d'une personne de confiance des requêtes
@@ -258,6 +264,19 @@ nominatif (ADR 0003 D1), et une lecture par un client MCP est moins visible qu'u
   en effectif ; un limiteur Symfony serait partagé, mais il ferait une écriture et un verrou
   PostgreSQL à chaque appel, et un client MCP en fait plusieurs par question.
 
+*Précisé le 2026-11-10 (#731), à la montée en `mcp/sdk` 0.9.0.* « Aucune écriture par appel » est
+**tenue pour l'authentification** (aucune écriture par appel pour l'authentification : D4, le dernier
+usage d'une connexion ne s'écrit qu'au rafraîchissement du jeton), **avec une écriture de session par
+requête** : le SDK réécrit la session à la fin de chaque `POST` qui la porte
+(`Protocol::handleMessages()`). Le coût est mesuré et épinglé par `McpEndpointTest::testAToolCallCostsAFixedNumberOfSessionStatements`,
+sur une session anonyme : un `tools/call` fait **trois lectures et une écriture** de la ligne de
+session, dans l'ordre lecture, lecture, écriture, lecture — le contrôle d'existence de l'identifiant
+reçu, celui que `Session::save()` refait avant d'écrire, l'écriture, la vidange de la file des messages
+qu'initie le serveur, vide ici, donc pas réécrite. En 0.8.1, la réponse passait par cette file, que la
+vidange réécrivait vidée : une seconde écriture. Une montée du SDK peut changer ce coût : le test le
+dit, et cette précision le suit ; un verrou de session (#762, hors de cette montée) ajouterait un
+contrôle d'existence à la réception. Le détail est dans `.claude/rules/mcp-sessions.md`.
+
 ### D7 — `symfony/mcp-bundle` seul, pinné en version exacte (amende l'ADR 0004, D1)
 
 Le serveur repose sur `symfony/mcp-bundle` et des services `#[McpTool]`, sans `api-platform/mcp`.
@@ -270,7 +289,8 @@ qui défait D1 —, il installe `symfony/object-mapper` sur toutes les opératio
 `symfony/mcp-bundle` (0.14.1) et `mcp/sdk` (0.8.1) sont **pinnés en version exacte** tant qu'ils sont
 en 0.x. La règle de l'ADR 0004 (D1), écrite pour `symfony/ai-*`, s'étend à `symfony/mcp-*` et à
 `mcp/*` : même monorepo, même namespace `Symfony\AI\`, même absence de promesse de compatibilité —
-`mcp/sdk` 0.9.0 est sortie avec une série de ruptures la veille de cette décision.
+`mcp/sdk` 0.9.0 est sortie avec une série de ruptures la veille de cette décision. Les versions en
+vigueur sont celles de l'amendement du 2026-11-10 ci-dessous.
 
 *Amendé le 2026-10-20 (#664).* Le SDK 0.8.1 sert, sur le même point d'accès, la révision du protocole
 sans session (`2026-07-28`) à côté de celles qui s'ouvrent par un `initialize`. Elle est **servie et
@@ -312,6 +332,41 @@ production ; `McpEndpointTest` ne garde plus que `league/oauth2-server` et `defu
 branche du dépôt, dont le run lit le vrai nom avec le secret du dépôt. Les
 versions ne changent pas ici (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : leur montée fait l'objet
 d'un changement distinct.
+
+*Amendé le 2026-11-10 (#731) — montée en `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0.* Les deux
+paquets montent ensemble, **toujours pinnés en version exacte** (`"symfony/mcp-bundle": "0.15.0"`,
+`"mcp/sdk": "0.9.0"`) : le bundle 0.15.0 exige `mcp/sdk ^0.9`. La règle elle-même ne change pas, et le
+garde commun des épinglages la tient. La raison : l'avis GHSA-f4rf-6ghj-mhr6 (PKSA-s52d-n7sx-trsg), qui
+vise `mcp/sdk` >=0.8.0,<0.9.0, faisait échouer `composer audit` en CI ; l'exposition réelle du projet
+est instruite à part, avec le corps de la PR. La montée a suivi ce qu'elle exige : changelogs et diffs
+relus, ruptures classées une à une (note `docs/research/2026-11-06-montees-epinglees-731.md`,
+sections 3 à 5), puis les décisions de l'auteur du 2026-11-06 (section 7 de la note) appliquées :
+
+- **`allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`** (décision du 2026-11-10, qui précise celle du
+  2026-11-06 : une origine par environnement, rien en dur) : l'origine du site est admise, un `Origin`
+  envoyé qui n'est ni celle-là ni celle de la requête est refusé en 403, et la variable doit rester une
+  origine dans chaque environnement (`.claude/rules/mcp.md`, « Host and Origin check »).
+- **503 au `GET` aussi** quand le store de sessions est injoignable, comme le SDK au `POST` : la session
+  existe peut-être, le client réessaie au lieu de se réinitialiser (`.claude/rules/mcp-sessions.md`).
+- **Une session trop grosse est servie, son identifiant n'existe pas** : la réponse arrive, la requête
+  suivante sous cet identifiant reçoit 404, au `POST` comme au `GET` (`.claude/rules/mcp-sessions.md`).
+- **La borne de la réponse en file est retirée** : la réponse d'un `POST` ne passe plus par la session,
+  et un corpus nominatif très gros est servi en entier (effet confirmé par l'auteur le 2026-11-10).
+  **Le lien session ↔ connexion est gardé, en défense en profondeur** : sa raison d'origine est tombée
+  avec la file, ce qu'il garde encore est écrit dans `.claude/rules/mcp-sessions.md`.
+- **Le journal de l'ère sans session** s'écrit sur les événements que le SDK émet désormais pour elle
+  aussi : `declaredClient` est lu dans le `RequestMeta` de la session, et `durationMs` mesure le
+  traitement du message dans les deux ères (`.claude/rules/mcp-journaux.md`).
+- **La validation du `structuredContent`** : le SDK valide la sortie de chaque outil contre son
+  `outputSchema`, et remplace une sortie non conforme par une erreur d'outil. Effet sur D1 : un outil
+  ne sert toujours rien que sa route ne serve, mais il peut alors servir moins — une erreur au lieu de
+  la sortie, jusqu'à la correction du schéma ou de la route. C'est un défaut à nous, que les tests de
+  conformité rencontrent les premiers, et le résumé de l'erreur ne cite aucune valeur de la sortie
+  (`.claude/rules/mcp.md`, « A tool serves exactly what its route serves »).
+- **Hors périmètre, décidé** : le verrou de session du bundle 0.15 (`session.lock`, #762) et la 1.0
+  (#763).
+
+D4 en sort confirmée et D6 précisée (encadrés ci-dessus).
 
 ### D8 — Rien ne nomme l'auteur hors du corpus nominatif
 

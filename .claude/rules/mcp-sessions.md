@@ -30,7 +30,7 @@ paths:
   session lived up to 25 h with the daily purge only, now 2 h at most. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
   `mcp.server.portfolio.session.store`, `MAX_BYTES` 512 KiB): the SDK copies into it what the client declares
   (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
-  choosing, the last request's `_meta`) and rewrites the whole row on every request — since #644 the first two are
+  choosing in 0.8.1 — since 0.9 only the answer to a pending request the server sent —, the last request's `_meta`) and rewrites the whole row on every request — since #644 the first two are
   refused before the SDK (`InboundMessageRefusalListener`, `mcp.md`, « Six inbound messages »), the `_meta` is bounded by nginx's 16 KiB body and
   replaced by each request, not accumulated; unbounded, an anonymous client filled `cache_items`,
   hence PostgreSQL's disk (security review of #640, rated high). Over the bound the session is destroyed and the
@@ -76,8 +76,9 @@ paths:
   Doctrine's `debug` lines of the call and requires every statement on `cache_items` to name the session: red with
   the decorator's read cache removed (five reads) and with the SDK's drain writing an empty queue back (two writes,
   four reads), both measured. It is a cost per MCP request that an SDK bump can change — the test says so, and this
-  sentence and ADR 0006 D6 follow it; a session lock (#762) would add one existence check on reception. ADR 0006
-  D6's « no write per call » holds for the authentication, not for the session.
+  sentence and ADR 0006 D6 (its precision of 2026-11-10, which states this cost and names the test) follow it; a
+  session lock (#762) would add one existence check on reception. D6's « no write per call » holds for the
+  authentication, with one session write per request.
   `Psr16SessionStore` swallows every exception of `read`, `write` and `destroy` and returns `false` (its `exists()`
   throws, « an unreachable store » below); the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,

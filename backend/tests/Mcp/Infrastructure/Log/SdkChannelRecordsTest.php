@@ -19,13 +19,14 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * Ce que le SDK MCP écrit sur son canal `mcp` (spec 0007, tâche 4, #643,
  * reports des relectures de #640 et #642).
  *
- * Le SDK 0.8.1 journalise le message JSON-RPC brut (« Received message to
- * process. », « Handling request. », arguments compris — le `role` du prompt
- * est du texte libre où une personne peut écrire son nom), les identifiants de
- * session, et cite sans borne en `warning`/`error` des chaînes choisies par
- * l'appelant (nom d'outil ou de méthode inconnu). Les fautes du client y sont
- * des `error` : un anonyme écrivait une ligne `error` par requête en
- * production.
+ * Le SDK de la version épinglée (composer.json) journalise le message JSON-RPC
+ * brut (« Received message payload. », en `debug` ; en 0.8.1, « Received
+ * message to process. » et « Handling request. »), les arguments (« Executing
+ * tool » — le `role` du prompt est du texte libre où une personne peut écrire
+ * son nom), les identifiants de session, et cite sans borne en
+ * `warning`/`error` des chaînes choisies par l'appelant (nom d'outil ou de
+ * méthode inconnu). Les fautes du client y sont des `error` : un anonyme
+ * écrivait une ligne `error` par requête en production.
  *
  * La sonde `all_channels_test` (niveau `debug`) lit ce que le canal émet à
  * **tout** niveau : ce que la préprod (`LOG_LEVEL=debug`) aurait reçu sans le

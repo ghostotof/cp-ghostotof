@@ -19,8 +19,9 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * Aucune réponse du serveur MCP n'est un flux (audit de #675, C5) : sous
  * PHP-FPM, un flux tient un worker tant qu'il dure, et seule la zone nginx
  * `mcpconn` (deux connexions par IP et par pod) le bornerait. #675 refuse
- * `subscriptions/listen`, la seule méthode du SDK 0.8.1 qui en ouvre un
- * d'office ; ce test garde les autres, dans les deux ères.
+ * `subscriptions/listen`, la seule méthode du SDK qui en ouvre un d'office,
+ * en 0.8.1 comme dans la version épinglée (composer.json) ; ce test garde les
+ * autres, dans les deux ères.
  *
  * Le SDK passe une réponse en SSE quand le traitement d'une requête se suspend
  * — un outil ou un prompt qui notifie (progression, journal) ou sollicite le
@@ -105,7 +106,9 @@ final class NoAnswerIsAStreamTest extends WebTestCase
         );
 
         // Une extension ajoute ses méthodes à la fabrique du serveur, pas à la
-        // constante lue ci-dessus : le bundle 0.14.1 n'en active aucune.
+        // constante lue ci-dessus : le bundle de la version épinglée
+        // (composer.json) n'en active aucune — McpApps seulement pour un serveur
+        // qui a une app MCP, et celui-ci n'en a pas.
         $client = self::createClient();
         $this->postModernMcp($client, StatelessProtocol::DISCOVER_METHOD);
         $capabilities = $this->decodeMcpResponse($client)['result']['capabilities'] ?? null;
@@ -206,7 +209,7 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             'roots/list' => [],
             // Inconnue de l'ère à session, servie avant la fabrique dans l'autre.
             StatelessProtocol::DISCOVER_METHOD => [],
-            // Le seul flux du SDK 0.8.1, refusé avant lui (#675) : un 400 JSON.
+            // Le seul flux d'office du SDK, refusé avant lui (#675) : un 400 JSON.
             StatelessProtocol::LISTEN_METHOD => [],
         ];
     }

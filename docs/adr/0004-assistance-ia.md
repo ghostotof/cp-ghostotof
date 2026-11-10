@@ -98,9 +98,10 @@ effet de bord d'un `composer update`. La version en vigueur et la liste des paqu
 celles de l'amendement du 2026-11-06 ci-dessous.
 
 **Amendement du 2026-10-19 (ADR 0006 D7).** La règle s'étend à `symfony/mcp-*` et à `mcp/*`
-(`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : même monorepo, même namespace `Symfony\AI\`, même
-absence de promesse de compatibilité. Le serveur MCP n'appelle aucun modèle et ne vit donc pas sous
-`src/Ai/` ; seule la règle de pin le concerne ici.
+(`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1 ; montés en 0.15.0 et 0.9.0 le 2026-11-10, ADR 0006
+D7) : même monorepo, même namespace `Symfony\AI\`, même absence de promesse de compatibilité. Le
+serveur MCP n'appelle aucun modèle et ne vit donc pas sous `src/Ai/` ; seule la règle de pin le
+concerne ici.
 
 **Amendement du 2026-11-06 (issue #731) — montée en 0.15.0.** Les quatre paquets `symfony/ai-*`
 de D1 passent de `0.13.0` à **`0.15.0`**, toujours pinnés en version exacte ; la règle elle-même ne
@@ -123,7 +124,7 @@ ces raisons tombe ; la plateforme ne revient dans `ai.yaml` que lorsque les deux
 La `1.0.0-BETA1`, publiée depuis, est écartée : c'est une pré-version, et elle change
 `AgentInterface::call()` ; la montée vers la 1.0 stable est suivie par l'issue #763. Les paquets MCP de
 l'amendement précédent (`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) ne bougent pas ici : leur montée
-fait l'objet d'un changement distinct.
+fait l'objet d'un changement distinct (montés en 0.15.0 et 0.9.0 le 2026-11-10, ADR 0006 D7).
 
 **Tout paquet `symfony/ai-*` du verrou est désormais pinné** (`0.15.0` exact). Aux quatre paquets de D1
 s'ajoutent les trois que le projet n'obtenait jusqu'ici que par dépendance, tenus par les `^0.15` des
