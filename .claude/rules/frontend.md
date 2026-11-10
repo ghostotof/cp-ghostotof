@@ -140,7 +140,7 @@ truth —, and any 401 on base-tier content calls `markBaseAccessExpired()`, so 
 ### Toolchain history (Node, jsdom, Vitest)
 
 > Moved verbatim from `.claude/CLAUDE.md` (#602), section « Versions ». « The `make front-*` targets above »
-> are those of `.claude/CLAUDE.md`, « Frontend day-to-day ».
+> are those of `.claude/rules/environnement-dev.md`, « Frontend day-to-day ».
 
 `jsdom` used to be held back at `^26.x` because `jsdom@30` requires Node `>=22.22` and fails on anything
 older — including a workstation below the project's `NODE_TAG`. **That pin is gone** (issue #26): the fix was

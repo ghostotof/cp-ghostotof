@@ -12,8 +12,9 @@ paths:
 
 # Release flow and pipeline internals
 
-> Moved verbatim from `.claude/CLAUDE.md` (#602), section « Deployment invariants ». `CLAUDE.md` keeps what
-> holds from the shell (computed version, merge-commit, no `[skip ci]`, the steps by hand). The index of
+> Moved verbatim from `.claude/CLAUDE.md` (#602), section « Deployment invariants ». What holds from the
+> shell (computed version, merge-commit, no `[skip ci]`, the steps by hand) is in
+> `.claude/rules/flux-git-et-release.md` since 2026-11-10, `CLAUDE.md` keeping its summary. The index of
 > every rule is at the top of `.claude/CLAUDE.md`.
 
 - **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
