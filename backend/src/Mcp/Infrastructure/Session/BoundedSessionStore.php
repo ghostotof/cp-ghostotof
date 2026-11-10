@@ -27,15 +27,32 @@ use Symfony\Contracts\Service\ResetInterface;
  * La borne doit laisser passer la plus grosse réponse légitime : le SDK met
  * aussi en file, dans la session, la réponse d'un outil avant de la renvoyer.
  * Au-delà, la session est détruite et l'écriture refusée : l'identifiant
- * rendu au client ne sert plus (404 à la requête suivante).
+ * rendu au client ne sert plus (404 à la requête suivante). La réponse de la
+ * requête, elle, arrive (#731, décision de l'auteur du 2026-11-06 : suivre le
+ * SDK) : depuis la 0.9 elle est au transport avant la sauvegarde de la
+ * session (`Protocol::handleMessages()`), si bien qu'un `initialize` trop
+ * gros est servi avec l'identifiant d'une session qui n'existe pas. Cet
+ * identifiant n'ouvre rien : 404 au POST comme au GET
+ * ({@see \App\Tests\Mcp\Presentation\McpEndpointTest}). En 0.8.1, la
+ * réponse, mise en file dans la session refusée, était perdue.
  *
- * **Et le reste pour la requête en cours** : le SDK, en vidant sa file
- * sortante, relit la session et la réécrit aussitôt, vide, sous le même
- * identifiant — qui restait alors valide, et la requête suivante tournait sur
- * une session vidée (ni `clientInfo` ni version négociée) au lieu du 404 qui
- * fait se réinitialiser le client (relecture de la tâche 2). Un identifiant
- * détruit ici n'existe donc plus, ni en lecture ni en écriture, jusqu'à la fin
- * de la requête (`reset()` pour un runtime persistant).
+ * **Et le reste pour la requête en cours** : un identifiant détruit ici
+ * n'existe plus — ni au contrôle d'existence, ni en lecture, ni en écriture —
+ * jusqu'à la fin de la requête (`reset()` pour un runtime persistant). En
+ * 0.8.1, le SDK, en vidant sa file sortante, relisait la session et la
+ * réécrivait aussitôt, vide, sous le même identifiant — qui restait alors
+ * valide, et la requête suivante tournait sur une session vidée (ni
+ * `clientInfo` ni version négociée) au lieu du 404 qui fait se réinitialiser
+ * le client (relecture de la tâche 2). Depuis la 0.9, ce qui touche encore la
+ * session après le `save()` refusé est la vidange de la file des messages que
+ * le serveur initie (`Protocol::consumeOutgoingMessages()`, appelée par
+ * `StreamableHttpTransport::createJsonResponse()`) : elle relit la session,
+ * et ne la réécrit que si cette file n'est pas vide. Une session détruite se
+ * relit absente, donc sans file : rien n'est réécrit, et aucun test du point
+ * d'entrée ne voit plus cette mémoire (mesuré le 2026-11-10, #731 : retirée,
+ * ils restent verts). Elle est gardée : la règle tient ici, pas dans l'ordre
+ * des appels du SDK, qu'une montée peut changer
+ * ({@see \App\Tests\Mcp\Infrastructure\Session\BoundedSessionStoreTest}).
  *
  * **Une session présente mais illisible n'existe pas** (#673) : le MAC du
  * cache refusé après une rotation d'`APP_SECRET`, ou deux réplicas sur deux
@@ -91,7 +108,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * titulaire anonyme recevant un 404 (des UUID v4 du serveur) ; et une même
  * requête refusée peut écrire deux `warning` (la lecture de la vidange, puis
  * l'écriture refusée). Limites acceptées, relecture de sécurité de #648
- * (`.claude/rules/mcp.md`). La révision sans session
+ * (`.claude/rules/mcp-sessions.md`). La révision sans session
  * 2026-07-28 n'est pas concernée : `StatelessProtocol` sert chaque requête
  * sur une session en mémoire, jamais sur ce store.
  */

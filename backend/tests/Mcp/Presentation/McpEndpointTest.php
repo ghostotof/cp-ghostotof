@@ -10,6 +10,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ComposerFiles;
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
 use App\Tests\Support\TestDatabase;
@@ -17,7 +18,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Session\Psr16SessionStore;
 use Mcp\Server\Stateless\RequestMeta;
+use Monolog\Level;
 use Monolog\Logger;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use ReflectionProperty;
@@ -34,6 +37,7 @@ use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
  */
 final class McpEndpointTest extends WebTestCase
 {
+    use ReadsAllChannelsLog;
     use SpeaksMcp;
 
     private const string TRUSTED_USERNAME = 'mcp.trusted';
@@ -134,16 +138,6 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * Le SDK recopie en session ce que le client envoie : sans borne, un
-     * anonyme remplirait la table `cache_items`, donc le disque de PostgreSQL.
-     * Une session qui dépasse la borne n'est pas enregistrée, et son
-     * identifiant ne sert à rien. Depuis #644, les déclarations de
-     * l'`initialize` et les « réponses » du client sont refusées avant le SDK
-     * (InboundMessageRefusalListener) ; reste le `_meta` d'une requête, que le
-     * SDK range en session (`SESSION_ACTIVE_REQUEST_META`), borné en
-     * production par le corps de 16 Kio de nginx — absent en test.
-     */
-    /**
      * Une session présente mais illisible — le MAC du cache refusé après une
      * rotation d'APP_SECRET — est morte au POST comme au GET (#673) : 404, le
      * client se réinitialise. Le SDK la servait vide, puis la réécrivait vide
@@ -167,15 +161,41 @@ final class McpEndpointTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    /**
+     * Le SDK recopie en session ce que le client envoie : sans borne, un
+     * anonyme remplirait la table `cache_items`, donc le disque de PostgreSQL.
+     * Depuis #644, les déclarations de l'`initialize` et les « réponses » du
+     * client sont refusées avant le SDK (InboundMessageRefusalListener) ;
+     * reste le `_meta` d'une requête, que le SDK range en session
+     * (`SESSION_ACTIVE_REQUEST_META`), borné en production par le corps de
+     * 16 Kio de nginx — absent en test.
+     *
+     * **La borne protège toujours le disque** : une session qui la dépasse
+     * n'atteint pas la base. Ce qui a changé est ce que le client voit. En
+     * 0.8.1, le SDK mettait la réponse en file dans la session : la session
+     * refusée, l'`initialize` restait sans réponse ni identifiant. Depuis la
+     * 0.9, la réponse est au transport avant la sauvegarde de la session
+     * (`Protocol::handleMessages()`) : l'`initialize` est servi, avec
+     * l'identifiant d'une session qui n'existe pas. On suit le SDK (#731,
+     * décision 7 de l'auteur du 2026-11-06) plutôt que de retenir la réponse
+     * derrière l'écriture : cet identifiant n'ouvre rien, la requête suivante
+     * reçoit 404 — au POST comme au GET, jamais un flux servi — et le client
+     * se réinitialise.
+     *
+     * Le canal `mcp` ne porte que le refus de la borne, tailles seules :
+     * `Session::save()` rend `false` sans lever quand le store refuse
+     * l'écriture, donc pas de « Failed to save session » du SDK.
+     */
     public function testAnOversizedSessionIsNeitherKeptNorReusable(): void
     {
         $client = self::createClient();
 
-        // Le motif de comptage voit bien une session ordinaire : sans cela,
-        // l'égalité finale serait vraie par construction.
+        // Les deux motifs de comptage voient bien une session ordinaire : sans
+        // cela, les égalités finales seraient vraies par construction.
         $before = $this->storedMcpSessions();
-        $this->initializeMcpSession($client);
+        $ordinarySessionId = $this->initializeMcpSession($client);
         self::assertSame($before + 1, $this->storedMcpSessions());
+        self::assertSame(1, $this->storedRowsOf($ordinarySessionId));
 
         $this->postMcp($client, null, [
             'jsonrpc' => '2.0',
@@ -189,21 +209,50 @@ final class McpEndpointTest extends WebTestCase
             ],
         ]);
 
-        // Aucun identifiant rendu, et la session volumineuse n'atteint pas la
-        // base. Le SDK y réécrit une session vide en vidant sa file sortante :
-        // une petite ligne orpheline, dont le nombre relève du débit (zone
-        // nginx `mcp`), pas de la borne.
-        self::assertNull($client->getResponse()->headers->get(self::MCP_SESSION_HEADER));
+        // L'initialize est servi (le SDK) : un identifiant est rendu…
+        self::assertResponseIsSuccessful();
+        self::assertIsArray($this->decodeMcpResponse($client)['result'] ?? null);
+        $sessionId = $client->getResponse()->headers->get(self::MCP_SESSION_HEADER);
+        self::assertIsString($sessionId);
+        // …d'une session absente de la base.
+        self::assertSame(0, $this->storedRowsOf($sessionId));
         self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
+
+        // Le canal `mcp` de cet initialize, tel que mesuré (la sonde ne garde
+        // que la dernière requête) : au-dessus d'`info`, le seul refus de la
+        // borne, tailles seules…
+        $records = self::allChannelsLogRecordsOf('mcp');
+        $alerts = array_values(array_filter($records, static fn (LogRecord $record): bool => $record->level->isHigherThan(Level::Info)));
+        self::assertCount(1, $alerts);
+        self::assertSame(Level::Warning, $alerts[0]->level);
+        self::assertSame('MCP session refused: over the size bound.', $alerts[0]->message);
+        self::assertSame(['bytes', 'maxBytes'], array_keys($alerts[0]->context));
+        self::assertGreaterThan(BoundedSessionStore::MAX_BYTES, $alerts[0]->context['bytes']);
+        self::assertSame(BoundedSessionStore::MAX_BYTES, $alerts[0]->context['maxBytes']);
+        // …et, à aucun niveau, l'échec de sauvegarde du SDK.
+        foreach ($records as $record) {
+            self::assertStringStartsNotWith('Failed to save session', $record->message);
+        }
+
+        // Pas réutilisable : le client se réinitialise.
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        self::assertResponseStatusCodeSame(404);
+        // Au GET non plus : jamais un flux servi.
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_MCP_SESSION_ID' => $sessionId, 'HTTP_ACCEPT' => 'text/event-stream']);
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringStartsNotWith('text/event-stream', (string) $client->getResponse()->headers->get('Content-Type'));
     }
 
     /**
      * Une session **existante** qui dépasse la borne en cours de route (le
      * client y fait recopier un `_meta` volumineux) est détruite, et le
-     * reste : le SDK réécrivait aussitôt sous le même identifiant une session
-     * vide en vidant sa file sortante, si bien que la requête suivante
-     * tournait sur une session vidée au lieu du 404 qui fait se réinitialiser
-     * le client (relecture de la tâche 2).
+     * reste : en 0.8.1, le SDK réécrivait aussitôt sous le même identifiant
+     * une session vide en vidant sa file sortante, si bien que la requête
+     * suivante tournait sur une session vidée au lieu du 404 qui fait se
+     * réinitialiser le client (relecture de la tâche 2). Depuis la 0.9, la
+     * réponse à la requête qui fait déborder la session arrive — elle est au
+     * transport avant la sauvegarde que la borne refuse (#731) —, et plus
+     * rien ne réécrit la session détruite.
      */
     public function testASessionThatOutgrowsTheBoundIsGoneForTheNextRequest(): void
     {
@@ -216,6 +265,11 @@ final class McpEndpointTest extends WebTestCase
             'method' => 'tools/list',
             'params' => ['_meta' => ['padding' => str_repeat('x', 600 * 1024)]],
         ]);
+        // La réponse arrive : elle est au transport avant la sauvegarde que
+        // la borne refuse (#731). La session, elle, est détruite.
+        self::assertResponseIsSuccessful();
+        self::assertIsArray($this->decodeMcpResponse($client)['result'] ?? null);
+        self::assertSame(0, $this->storedRowsOf($sessionId));
 
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
         self::assertResponseStatusCodeSame(404);
@@ -494,6 +548,14 @@ final class McpEndpointTest extends WebTestCase
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
 
         return $this->integer($connection->fetchOne("SELECT COALESCE(MAX(octet_length(item_data)), 0) FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'"));
+    }
+
+    /** Les lignes de `cache_items` qui portent cette session, par le motif des autres tests de la classe. */
+    private function storedRowsOf(string $sessionId): int
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        return $this->integer($connection->fetchOne('SELECT COUNT(*) FROM cache_items WHERE item_id LIKE ?', ['%mcp-portfolio-'.$sessionId.'%']));
     }
 
     private function storedMcpSessions(): int

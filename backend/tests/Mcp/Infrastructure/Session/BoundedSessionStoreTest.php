@@ -359,6 +359,44 @@ final class BoundedSessionStoreTest extends TestCase
     }
 
     /**
+     * Un identifiant détruit pour dépassement n'existe plus pour le reste de
+     * la requête, quoi que le store contienne ensuite : ni contrôle
+     * d'existence, ni lecture, ni écriture — jusqu'à `reset()`. En 0.8.1, le
+     * SDK réécrivait aussitôt la session, vide, en vidant sa file sortante ;
+     * depuis la 0.9 il ne le fait plus (il ne réécrit qu'une file non vide,
+     * et une session détruite se relit absente), si bien que plus aucun test
+     * du point d'entrée ne voit cette mémoire (mesuré le 2026-11-10, #731 :
+     * retirée, `McpEndpointTest` reste vert). La règle est tenue ici, pas par
+     * l'ordre des appels du SDK : ce test la garde. La ligne remise dans le
+     * store tient lieu de ce qui la ferait réapparaître — une requête
+     * concurrente de la même session, un SDK qui réécrirait.
+     */
+    public function testAnIdDestroyedOverTheBoundStaysGoneForTheRestOfTheRequest(): void
+    {
+        $inner = new RecordingSessionStore();
+        $store = $this->storeAs($inner, null);
+        $id = Uuid::v4();
+        $inner->seed($id, '{"initialized":true}');
+
+        self::assertTrue($store->exists($id));
+        self::assertFalse($store->write($id, str_repeat('a', BoundedSessionStore::MAX_BYTES + 1)));
+        self::assertSame([$id->toRfc4122()], $inner->destroyed());
+        self::assertTrue($this->mcpLog->hasWarning('MCP session refused: over the size bound.'));
+
+        $inner->seed($id, '{"initialized":true}');
+
+        self::assertFalse($store->exists($id));
+        self::assertFalse($store->read($id));
+        self::assertFalse($store->write($id, '[]'));
+        self::assertSame([], $inner->writes());
+        self::assertSame('{"initialized":true}', $inner->row($id));
+
+        // Un runtime persistant : la requête suivante repart du store.
+        $store->reset();
+        self::assertTrue($store->exists($id));
+    }
+
+    /**
      * Un en-tête de liaison illisible (seul ce décorateur l'écrit, sous le
      * MAC du cache) : la session est présente mais illisible, donc absente.
      */

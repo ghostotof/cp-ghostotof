@@ -226,7 +226,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
   - [x] 2. R4 : `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`, garde « une origine » par environnement — **sensible (Origin)**
   - [x] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
   - [x] 4. R7 : 503 au GET, store de sessions injoignable — **sensible (session)**
-  - [ ] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
+  - [x] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
   - [ ] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
   - [ ] 7. R8, R9, R11 vérifiés ; coût de la session mesuré et épinglé — **sensible (réponse nominative)**
   - [ ] 8. ADR 0006 D7 amendée, D4 confirmée, versions au présent renvoyées au pin

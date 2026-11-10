@@ -17,7 +17,8 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host and origin check, sessions, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
+| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host and origin check, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
+| `mcp-sessions.md` | sessions (split out by #731): the DBAL pool, the bound (`BoundedSessionStore`, `MAX_BYTES`), an oversized session's id that does not exist (404), the queued answer's bound, an unreadable session (404), an unreachable store (503), the binding to the first MCP connection |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -103,7 +104,7 @@ paths:
   once the answer fits its bound, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`)
   — it records the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the
   server had to serve, not necessarily the CV), and **an answer the tool served, not one the client received**
-  (accepted, review of #648: a session write lost afterwards — the store down, the binding race below, a session
+  (accepted, review of #648: a session write lost afterwards — the store down, the binding race of `mcp-sessions.md`, a session
   over its bound once the answer is queued — over-counts, the safe direction); without
   one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
   `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
@@ -122,7 +123,7 @@ paths:
   `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
   exception ») and `app.frontend_base_url`; the tool takes the reader's interface, `BearerChallenge` and the logger,
   pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded**
-  (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
+  (`QUEUED_ANSWER_MAX_BYTES`, `mcp-sessions.md`); for it `Mcp/Presentation` imports
   `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
   with the code that enforces it). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
@@ -222,91 +223,9 @@ paths:
   POST and GET alike (`originsAgainstTheSite()`, shared by `McpEndpointGetTest` and `McpEndpointTest`). `*` there
   would admit every origin, an empty value an empty `Origin`: the guard refuses both. After changing `mcp.yaml`
   locally, `rm -rf var/cache/test`.
-- **Sessions** live in the DBAL pool `cache.mcp_sessions` (`cache.yaml`, table `cache_items`; lifetime written
-  once, `session.ttl` in `mcp.yaml`, 1 h), through the PSR-16 service `app.mcp.session_cache` (`psr/simple-cache`
-  is a direct dependency for it): never the bundle's default `file` store under `var/cache` (read-only pod, two
-  replicas, ADR 0005). The values carry the cache MAC like every DBAL pool (#468), and `cache:pool:prune` purges
-  them, **every hour** since #644 (`k8s/base/cache-prune-cronjob.yaml`, `McpSessionsPrunedHourlyTest`): an expired
-  session lived up to 25 h with the daily purge only, now 2 h at most. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
-  `mcp.server.portfolio.session.store`, `MAX_BYTES` 512 KiB): the SDK copies into it what the client declares
-  (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
-  choosing, the last request's `_meta`) and rewrites the whole row on every request — since #644 the first two are
-  refused before the SDK (`InboundMessageRefusalListener`, below), the `_meta` is bounded by nginx's 16 KiB body and
-  replaced by each request, not accumulated; unbounded, an anonymous client filled `cache_items`,
-  hence PostgreSQL's disk (security review of #640, rated high). Over the bound the session is destroyed and the
-  write refused (`warning`, size only, never the id), and **the id stays gone for the rest of the request**
-  (#641): draining its outgoing queue, the SDK re-reads the session and writes it back, empty, under the same
-  id — which stayed valid, so the next request ran on an emptied session (no `clientInfo`, no negotiated
-  version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
-  (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
-  (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
-  the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
-  answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included, **measured in #648**: the SDK encodes the answer without
-  flags (`\uXXXX`, 12 bytes for a 4-byte character), the corpus is in it twice (`structuredContent` and the text
-  block), and `Session::save()` encodes it again; `MAX_CHARACTERS` bounds the CV's text only, the anonymous CV and the
-  case studies have no length bound. Queued, the fictive CV gives 2 880 bytes, 30 000 ASCII characters 60 806, 30 000
-  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24), corrected by the
-  review of task 5: the tool bounds **the queued answer itself**, `GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES` =
-  `MAX_BYTES / 2` (half left to the rest of the session), measured by `Presentation/Tool/QueuedAnswer::bytes()` (the
-  `CallToolResult` as returned, wrapped in the SDK's `Response`, `json_encode`d as `Protocol::queueOutgoing()` does,
-  then again as `Session::save()` does) — a bound on the payload was not enough: against the flag-less payload the
-  queue weighs 2 × (ASCII), ~2.3 × (accents, emoji), 4 × (`/`, line feed) and 6 × (`"`, `\`), up to 12 queued bytes
-  per byte of text. Over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the sizes
-  only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged.
-  `GetNominativeCorpusToolTest::testTheToolMeasuresWhatTheSdkQueues` compares the measure with the real queue (two SDK
-  internals no API publishes: an SDK bump changing either turns it red), and
-  `testAQueuedAnswerAtTheBoundFitsInTheSession` pins the relation with `MAX_BYTES` on the worst composition (a corpus of
-  `"`) in a real session. **Guarded since #644**:
-  `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
-  the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
-  of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
-  moves it). Measured on production on 2026-10-20 with the same computation: 2.1 to 2.8 × the route body, 21.6 KB at most
-  (`get_anonymous_cv` fr, 10.2 KB body), 4 % of the bound; the seeds give the same order (12 KB for `list_incidents`). Each MCP request costs three
-  round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
-  drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
-  `Psr16SessionStore` swallows every exception of `read`, `write` and `destroy` and returns `false` (its `exists()`
-  throws, « an unreachable store » below); the decorator logs that `warning` too, on a
-  refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,
-  #641). **Such a session does not exist** (#673, the author's decision of 2026-10-21): the SDK served it empty, then
-  wrote it back empty under the same id, and the client never re-initialised. `Protocol` checks every received id
-  with `exists()` before reading it, so the decorator's `exists()` **reads** the session — one query in the common
-  case —, keeps what it read for the `read()` that follows (dropped by a `write`, a `destroy` and `reset()`), and on
-  a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
-  `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
-  reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
-  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **An unreachable store is not an absent
-  session** (#731, decided 2026-11-06: follow the SDK): since SDK 0.9 `Psr16SessionStore::exists()` throws
-  `SessionStoreException` when its cache's `has()` fails; the decorator lets it through, neither caught nor logged
-  (`BoundedSessionStoreTest::testAnUnreachableStoreIsNotAnAbsentSession`), and it is a **503**, a JSON-RPC `-32603`
-  « Session store is unavailable. » with an `error` line of that message on the `mcp` channel — the SDK's at the POST
-  (`Protocol::resolveSession()`), the controller's at the GET —, never a 404: the session may exist, the client retries
-  instead of re-initialising. **Measured, not decided**: behind the DBAL pool Symfony's adapter catches the failed
-  query itself (`AbstractAdapterTrait::hasItem()`: a `warning` of the `cache` channel naming the key, then `false`), so
-  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws. **A session is bound to the first MCP
-  connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
-  queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
-  so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The
-  decorator reads the request's connection in the token storage (`McpConnectionPrincipal`, set by the `mcp` firewall
-  before the SDK) and writes the binding **in the same write** as the session: the stored value is
-  `mcp-connection:<connection UUID>\n` then the SDK's session, never decoded (the SDK's starts with `{` or `[`, so an
-  unbound row reads as before; a malformed header is an unreadable session). Bound, the session **does not exist** for
-  any other request, anonymous or another connection: `exists()` is `false` before the SDK reads or drains anything
-  (404) — the GET's too —, a read returns nothing, a write is refused, a `DELETE` destroys nothing (the SDK answers 200,
-  as to an unknown id; one read more); a `warning` without any id. Not used by a connection yet, a session is served as
-  before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
-  stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
-  connection, hence the session. Accepted, the SDK's own race (no lock): a request that read the session before it was
-  bound may write it back once, with what it had read, unbound **or bound to its own connection** (the last writer
-  wins, the first connection then gets a 404), or destroy it when its write crosses `MAX_BYTES` — never the
-  connection's answer, then lost like any concurrent update, and never another connection's corpus (the drain re-reads
-  the store and refuses a foreign binding); likewise a connection that knows the id of a session opened anonymously
-  can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
-  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the
-  SDK's session, not the header. The sessionless 2026-07-28 revision is not concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
-  `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
-  `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
-  anonymously and reads the `cache_items` row.
+- **Sessions** (the DBAL pool `cache.mcp_sessions`, the bound `BoundedSessionStore::MAX_BYTES`, an oversized
+  session's id that does not exist, the queued answer's bound, an unreadable session, an unreachable store, the
+  binding to the first MCP connection): `.claude/rules/mcp-sessions.md`, split out by #731.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -323,10 +242,10 @@ paths:
   body-less GET; #673). Then it answers as the transport does for a session: 400 for a
   malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one, **or one present but unreadable** (#673,
   decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation — the bounded store's `exists()` reads it,
-  below, so the POST answers 404 too) (the client re-initialises; a GET
+  `mcp-sessions.md`, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
   as absent — #663), 406 without `Accept: text/event-stream`, **503 when the session store is unreachable** (#731,
-  « Sessions » above: the SDK's `-32603` « Session store is unavailable. », without `id`, and its `error` line of the
+  `mcp-sessions.md`: the SDK's `-32603` « Session store is unavailable. », without `id`, and its `error` line of the
   `mcp` channel, the exception in its context and **never the session id**; only for an id to check — a GET whose
   header is absent, empty or `0` never asks the store and is served). `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included, the `Origin` rules above, and that 503 against the POST's on
@@ -426,7 +345,7 @@ paths:
   `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's
   `FirewallListener` and after `InboundMessageRefusalListener`. A test that reads the nominative tool's own answer
   without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`). The session where
-  the corpus was served is the connection's: « Sessions » above.
+  the corpus was served is the connection's: `mcp-sessions.md`.
 - **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its

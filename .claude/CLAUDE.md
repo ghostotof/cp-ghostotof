@@ -36,7 +36,8 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
-| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the seven below | touching a tool, `mcp.yaml`, the `mcp` firewall |
+| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the eight below | touching a tool, `mcp.yaml`, the `mcp` firewall |
+| `mcp-sessions.md` | MCP sessions: the DBAL pool `cache.mcp_sessions`, the bound (`BoundedSessionStore`), an oversized session's id that does not exist, an unreadable session, an unreachable store (503), the binding to the first MCP connection | touching `Mcp/Infrastructure/Session`, `session` in `mcp.yaml`, the pool in `cache.yaml`, the GET's session check, `cache-prune-cronjob.yaml` |
 | `mcp-prompt-d8.md` | the prompt `present_for_role`, the D8 guard (the author never named) | touching the prompt, a published description, `AuthorNeverNamedTest` |
 | `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage` | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
 | `mcp-oauth.md` | `Mcp/Connection`, the OAuth 2.1 authorization server of phase 2, the consent page | touching an OAuth endpoint, a token, the consent, `ingress-oauth-metadata.yaml` |
