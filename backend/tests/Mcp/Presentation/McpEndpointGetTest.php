@@ -5,15 +5,30 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Presentation;
 
 use App\Mcp\Infrastructure\Http\ServerAnswers;
+use App\Mcp\Infrastructure\Log\SdkChannelRedactor;
+use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Mcp\Presentation\Controller\McpEndpointController;
+use App\Tests\Mcp\Fixtures\UnreachableSimpleCache;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
+use Mcp\Exception\SessionStoreException;
+use Mcp\Server\Session\Psr16SessionStore;
+use Mcp\Server\Session\SessionStoreInterface;
+use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use Monolog\Logger;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use ReflectionProperty;
 use Symfony\AI\McpBundle\Controller\McpController;
 use Symfony\AI\McpBundle\Http\MiddlewareFactory;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -23,18 +38,29 @@ use Symfony\Component\Uid\Uuid;
  * `allowed_origins`, et son CORS, laissé à ses défauts (aucune origine
  * autorisée) —, au lieu d'en recopier les règles avec un seul hôte. Puis il répond comme le
  * transport pour une session : 404 si elle n'existe pas (ou plus), 400 si
- * son identifiant n'est pas un UUID, 406 sans `Accept: text/event-stream`.
+ * son identifiant n'est pas un UUID, 406 sans `Accept: text/event-stream`,
+ * 503 quand le store de sessions est injoignable (#731).
  * `HEAD`, que le routeur fait correspondre au GET, reçoit la même réponse
  * sans corps, plus le 405 du SDK.
  */
 final class McpEndpointGetTest extends WebTestCase
 {
+    use ReadsAllChannelsLog;
     use SpeaksMcp;
 
     private const array EVENT_STREAM = ['HTTP_ACCEPT' => 'text/event-stream'];
 
     /** Le corps du 403 que le SDK rend pour un `Origin` qu'il n'admet pas. */
     public const string INVALID_ORIGIN = 'Forbidden: Invalid Origin header.';
+
+    /**
+     * Le message du 503 et de sa ligne `error`, recopié du SDK
+     * (`Protocol::resolveSession()`) : un oracle à part du contrôleur.
+     */
+    private const string STORE_UNAVAILABLE = 'Session store is unavailable.';
+
+    /** Le code JSON-RPC d'une erreur interne (`Error::INTERNAL_ERROR` du SDK), recopié de même. */
+    private const int INTERNAL_ERROR = -32603;
 
     protected function setUp(): void
     {
@@ -67,7 +93,8 @@ final class McpEndpointGetTest extends WebTestCase
     public function testTheGetAppliesTheSdkHostRulesToTheWholeConfiguredList(string $host, int $expectedStatus): void
     {
         self::bootKernel();
-        $controller = $this->controllerAllowing(['localhost', 'www.site.example', '[::1]']);
+        $container = self::getContainer();
+        $controller = $this->controllerWith(['localhost', 'www.site.example', '[::1]'], $container->get('mcp.server.portfolio.session.store'), new NullLogger());
 
         $response = $controller->handle(Request::create('/api/mcp', server: ['HTTP_HOST' => $host] + self::EVENT_STREAM));
 
@@ -246,6 +273,129 @@ final class McpEndpointGetTest extends WebTestCase
         self::assertSame("retry: 300000\n\n", $client->getResponse()->getContent());
     }
 
+    /**
+     * Le store de sessions injoignable (#731, R7). Sous un cache en panne, le
+     * `Psr16SessionStore` du SDK lève {@see SessionStoreException} au contrôle
+     * d'existence, que le décorateur borné laisse passer : elle sortait du
+     * contrôleur, et le noyau répondait 500. Le GET suit le SDK (décision du
+     * 2026-11-06), qui en fait au POST un 503 : la session existe peut-être,
+     * le client réessaie au lieu de se réinitialiser (un 404).
+     *
+     * **Le 503 ne vaut que pour un identifiant à contrôler** : un GET sans
+     * en-tête de session — ou dont l'en-tête est vide ou « 0 », que le
+     * transport lit absent — ne consulte pas le store, et reste servi quand
+     * celui-ci est en panne.
+     *
+     * @return iterable<string, array{array<string, string>, int}>
+     */
+    public static function sessionHeadersOnAnUnreachableStore(): iterable
+    {
+        yield 'un identifiant à contrôler' => [['HTTP_MCP_SESSION_ID' => Uuid::v4()->toRfc4122()], 503];
+        yield 'sans en-tête de session' => [[], 200];
+        yield 'en-tête vide, lu absent' => [['HTTP_MCP_SESSION_ID' => ''], 200];
+        yield 'en-tête « 0 », lu absent' => [['HTTP_MCP_SESSION_ID' => '0'], 200];
+    }
+
+    /**
+     * @param array<string, string> $server
+     */
+    #[DataProvider('sessionHeadersOnAnUnreachableStore')]
+    public function testAGetOnAnUnreachableSessionStore(array $server, int $expectedStatus): void
+    {
+        self::bootKernel();
+        $mcpLog = new TestHandler();
+        $logger = new Logger('mcp', [$mcpLog]);
+        $controller = $this->controllerWith(
+            ['localhost'],
+            new BoundedSessionStore(new Psr16SessionStore(new UnreachableSimpleCache()), new TokenStorage(), $logger),
+            $logger,
+        );
+
+        $response = $controller->handle(Request::create('/api/mcp', server: $server + self::EVENT_STREAM));
+
+        self::assertSame($expectedStatus, $response->getStatusCode());
+        if (200 === $expectedStatus) {
+            // Servi sans avoir consulté le store : ni panne ni session illisible à dire.
+            self::assertSame("retry: 300000\n\n", $response->getContent());
+            self::assertSame([], $mcpLog->getRecords());
+
+            return;
+        }
+
+        // Le 503 du transport : l'erreur JSON-RPC interne, sans `id` (un GET
+        // ne porte aucune requête à laquelle la rattacher).
+        self::assertSame('application/json', $response->headers->get('Content-Type'));
+        self::assertSame(
+            ['jsonrpc' => '2.0', 'error' => ['code' => self::INTERNAL_ERROR, 'message' => self::STORE_UNAVAILABLE]],
+            json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR),
+        );
+
+        // Une seule ligne, `error`, et rien d'autre que l'exception : jamais
+        // l'identifiant de session, qui vaut accès à la session.
+        $records = $mcpLog->getRecords();
+        self::assertCount(1, $records);
+        $record = $records[0];
+        self::assertSame(Level::Error, $record->level);
+        self::assertSame(self::STORE_UNAVAILABLE, $record->message);
+        self::assertSame(['exception'], array_keys($record->context));
+        self::assertInstanceOf(SessionStoreException::class, $record->context['exception']);
+
+        // Telle que le canal `mcp` l'écrit, passée par son rédacteur : toujours
+        // `error` (une panne du serveur, que le handler de production prend),
+        // et l'identifiant nulle part.
+        $written = new SdkChannelRedactor()($record);
+        self::assertSame(Level::Error, $written->level);
+        self::assertArrayNotHasKey('session_id', $written->context);
+        self::assertStringNotContainsString($server['HTTP_MCP_SESSION_ID'], $this->asWritten($written));
+    }
+
+    /**
+     * Le 503 du GET est celui du POST, sur la vraie chaîne : le store en
+     * panne posé dans le conteneur, le même identifiant présenté au SDK
+     * (POST) puis au contrôleur (GET). Même statut, mêmes en-têtes, même
+     * erreur JSON-RPC — le POST y ajoute l'`id` de sa requête, le GET n'en a
+     * pas. Et la même ligne `error` sur le canal `mcp`, lue sur la sonde
+     * après le rédacteur du canal : celle du SDK porte une clé `session_id`,
+     * que le rédacteur retient ; celle du GET ne la porte pas, et aucune des
+     * deux ne cite l'identifiant.
+     */
+    public function testTheGetAnswersAnUnreachableStoreAsThePostDoes(): void
+    {
+        $client = self::createClient();
+        // Un seul noyau pour les deux requêtes : le store posé y reste.
+        $client->disableReboot();
+        self::getContainer()->set('mcp.server.portfolio.session.store', new BoundedSessionStore(
+            new Psr16SessionStore(new UnreachableSimpleCache()),
+            new TokenStorage(),
+            new NullLogger(),
+        ));
+        $sessionId = Uuid::v4()->toRfc4122();
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/list']);
+        $post = $client->getResponse();
+        $postErrors = $this->storeUnavailableErrors();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_MCP_SESSION_ID' => $sessionId] + self::EVENT_STREAM);
+        $get = $client->getResponse();
+        $getErrors = $this->storeUnavailableErrors();
+
+        self::assertSame(503, $post->getStatusCode(), 'Le SDK ne répond plus 503 au POST : la référence du GET a changé.');
+        self::assertSame($post->getStatusCode(), $get->getStatusCode());
+        self::assertSame($this->headersOf($post), $this->headersOf($get));
+
+        $error = ['code' => self::INTERNAL_ERROR, 'message' => self::STORE_UNAVAILABLE];
+        self::assertSame(['jsonrpc' => '2.0', 'id' => 7, 'error' => $error], json_decode((string) $post->getContent(), true, flags: \JSON_THROW_ON_ERROR));
+        self::assertSame(['jsonrpc' => '2.0', 'error' => $error], json_decode((string) $get->getContent(), true, flags: \JSON_THROW_ON_ERROR));
+
+        self::assertCount(1, $postErrors);
+        self::assertSame(SdkChannelRedactor::WITHHELD, $postErrors[0]->context['session_id'] ?? null);
+        self::assertStringNotContainsString($sessionId, $this->asWritten($postErrors[0]));
+
+        self::assertCount(1, $getErrors);
+        self::assertArrayNotHasKey('session_id', $getErrors[0]->context);
+        self::assertStringNotContainsString($sessionId, $this->asWritten($getErrors[0]));
+    }
+
     public function testAGetThatDoesNotAcceptAnEventStreamIs406(): void
     {
         $client = self::createClient();
@@ -267,13 +417,49 @@ final class McpEndpointGetTest extends WebTestCase
     }
 
     /**
-     * Le contrôleur, construit avec les services du conteneur et une autre
-     * liste d'hôtes : en test, `allowed_hosts` n'en porte qu'un (`localhost`).
-     * Le contrôleur du bundle qu'il décore ne sert pas au GET.
+     * Les lignes `error` « Session store is unavailable. » que la dernière
+     * requête a laissées sur le canal `mcp`, telles que la sonde les reçoit —
+     * après le rédacteur du canal.
+     *
+     * @return list<LogRecord>
+     */
+    private function storeUnavailableErrors(): array
+    {
+        return array_values(array_filter(
+            self::allChannelsLogRecordsOf('mcp'),
+            static fn (LogRecord $record): bool => Level::Error === $record->level && self::STORE_UNAVAILABLE === $record->message,
+        ));
+    }
+
+    /** Un enregistrement tel qu'un handler JSON l'écrirait : son message et tout son contexte. */
+    private function asWritten(LogRecord $record): string
+    {
+        return $record->message.json_encode($record->context, \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Les en-têtes d'une réponse, sans sa date.
+     *
+     * @return array<string, list<string|null>>
+     */
+    private function headersOf(Response $response): array
+    {
+        $headers = $response->headers->all();
+        unset($headers['date']);
+        ksort($headers);
+
+        return $headers;
+    }
+
+    /**
+     * Le contrôleur, construit avec les services du conteneur, une autre
+     * liste d'hôtes — en test, `allowed_hosts` n'en porte qu'un (`localhost`)
+     * —, un store de sessions et un journal au choix du test. Le contrôleur
+     * du bundle qu'il décore ne sert pas au GET.
      *
      * @param list<string> $allowedHosts
      */
-    private function controllerAllowing(array $allowedHosts): McpEndpointController
+    private function controllerWith(array $allowedHosts, SessionStoreInterface $sessionStore, LoggerInterface $logger): McpEndpointController
     {
         $container = self::getContainer();
         $inner = new ReflectionProperty(McpEndpointController::class, 'inner')->getValue($container->get('mcp.server.portfolio.controller'));
@@ -285,8 +471,9 @@ final class McpEndpointGetTest extends WebTestCase
             $container->get('mcp.psr_http_factory'),
             $container->get('mcp.http_foundation_factory'),
             $container->get('mcp.psr17_factory'),
-            $container->get('mcp.server.portfolio.session.store'),
+            $sessionStore,
             new ServerAnswers(),
+            $logger,
         );
     }
 }

@@ -7,6 +7,9 @@ namespace App\Tests\Mcp\Infrastructure\Session;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Tests\Mcp\Fixtures\ConnectionPrincipal;
 use App\Tests\Mcp\Fixtures\RecordingSessionStore;
+use App\Tests\Mcp\Fixtures\UnreachableSimpleCache;
+use Mcp\Exception\SessionStoreException;
+use Mcp\Server\Session\Psr16SessionStore;
 use Mcp\Server\Session\Session;
 use Mcp\Server\Session\SessionStoreInterface;
 use Monolog\Handler\TestHandler;
@@ -19,8 +22,11 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Les échecs que `Psr16SessionStore` avale (il rend `false` sur toute
- * exception) laissent une trace sur le canal `mcp` : sans elle, une session
- * vidée en silence n'expliquerait rien des erreurs que voit le client.
+ * exception d'une lecture, d'une écriture ou d'une destruction) laissent une
+ * trace sur le canal `mcp` : sans elle, une session vidée en silence
+ * n'expliquerait rien des erreurs que voit le client. Celui qu'il n'avale
+ * pas — son contrôle d'existence lève quand le cache échoue — traverse le
+ * décorateur tel quel (#731).
  *
  * Et la liaison d'une session à la connexion MCP qui l'a utilisée la
  * première (#648, décision de l'auteur du 2026-10-24) : une fois liée, elle
@@ -59,6 +65,33 @@ final class BoundedSessionStoreTest extends TestCase
         // de lire la session (Mcp\Server\Protocol::resolveSession()).
         self::assertFalse($store->exists($id));
         self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+    }
+
+    /**
+     * Un store injoignable n'est pas une session absente (#731, R7). Sous un
+     * cache en panne, le `Psr16SessionStore` du SDK avale l'échec de la
+     * lecture (`false`) mais lève {@see SessionStoreException} au contrôle
+     * d'existence : le décorateur la laisse passer, telle quelle. Le SDK en
+     * fait un 503 au POST (`Protocol::resolveSession()`), le contrôleur au
+     * GET — la session existe peut-être, le client réessaie. Rendue `false`,
+     * elle devenait un 404, qui fait se réinitialiser le client et abandonner
+     * une session peut-être intacte.
+     *
+     * Aucun `warning` « MCP session unreadable » non plus : on ne sait rien
+     * de la ligne, ni présente ni illisible. La trace de la panne est le
+     * `error` de celui qui répond 503.
+     */
+    public function testAnUnreachableStoreIsNotAnAbsentSession(): void
+    {
+        $store = new BoundedSessionStore(new Psr16SessionStore(new UnreachableSimpleCache()), new TokenStorage(), new Logger('mcp', [$this->mcpLog]));
+
+        $this->expectException(SessionStoreException::class);
+
+        try {
+            $store->exists(Uuid::v4());
+        } finally {
+            self::assertFalse($this->mcpLog->hasWarningRecords());
+        }
     }
 
     /**

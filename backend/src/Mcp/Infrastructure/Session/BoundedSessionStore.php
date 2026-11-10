@@ -46,6 +46,15 @@ use Symfony\Contracts\Service\ResetInterface;
  * 404 — comme le GET de {@see \App\Mcp\Presentation\Controller\McpEndpointController}.
  * Ce qu'il a lu est rendu à la lecture qui suit, sans seconde requête.
  *
+ * **Un store injoignable n'est pas une session absente** (#731, R7) : le
+ * contrôle d'existence laisse passer la {@see \Mcp\Exception\SessionStoreException}
+ * du store — celui du SDK la lève quand le `has()` de son cache échoue —, que
+ * le SDK sert en 503 au POST (`Protocol::resolveSession()`) et le contrôleur
+ * au GET : la session existe peut-être, le client réessaie au lieu de se
+ * réinitialiser. Ni attrapée ni journalisée ici : celui qui répond 503 écrit
+ * la ligne. La décision #673 ci-dessus est inchangée — `read()` avale
+ * toujours ses erreurs, et une session présente mais illisible reste un 404.
+ *
  * **Une session est liée à la première connexion MCP qui l'utilise** (#648,
  * décision de l'auteur du 2026-10-24). Le SDK met la réponse d'un outil en
  * file dans la session, puis vide **toute** la file vers la requête qui porte
@@ -165,8 +174,12 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
             return true;
         }
 
+        // Un store injoignable lève ici (Mcp\Exception\SessionStoreException),
+        // et ce n'est pas rattrapé : un 503, jamais le 404 d'une session
+        // absente (#731).
         if ($this->inner->exists($id)) {
-            // Présente mais illisible : Psr16SessionStore a avalé l'échec.
+            // Présente mais illisible : Psr16SessionStore a avalé l'échec de
+            // la lecture.
             $this->logger->warning('MCP session unreadable: present in the store but not read back.');
         }
 
@@ -231,8 +244,8 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
         if ($written) {
             $this->boundTo[$key] = $connection;
         } else {
-            // Psr16SessionStore avale toute exception et rend false : sans
-            // cette ligne, l'échec serait silencieux (ADR 0005).
+            // Psr16SessionStore avale toute exception d'écriture et rend
+            // false : sans cette ligne, l'échec serait silencieux (ADR 0005).
             $this->logger->warning('MCP session not saved by the store.', ['bytes' => \strlen($data)]);
         }
 

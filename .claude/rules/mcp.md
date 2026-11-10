@@ -265,7 +265,8 @@ paths:
   (`get_anonymous_cv` fr, 10.2 KB body), 4 % of the bound; the seeds give the same order (12 KB for `list_incidents`). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
-  `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
+  `Psr16SessionStore` swallows every exception of `read`, `write` and `destroy` and returns `false` (its `exists()`
+  throws, « an unreachable store » below); the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,
   #641). **Such a session does not exist** (#673, the author's decision of 2026-10-21): the SDK served it empty, then
   wrote it back empty under the same id, and the client never re-initialised. `Protocol` checks every received id
@@ -274,7 +275,15 @@ paths:
   a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
   `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
   reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
-  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **A session is bound to the first MCP
+  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **An unreachable store is not an absent
+  session** (#731, decided 2026-11-06: follow the SDK): since SDK 0.9 `Psr16SessionStore::exists()` throws
+  `SessionStoreException` when its cache's `has()` fails; the decorator lets it through, neither caught nor logged
+  (`BoundedSessionStoreTest::testAnUnreachableStoreIsNotAnAbsentSession`), and it is a **503**, a JSON-RPC `-32603`
+  « Session store is unavailable. » with an `error` line of that message on the `mcp` channel — the SDK's at the POST
+  (`Protocol::resolveSession()`), the controller's at the GET —, never a 404: the session may exist, the client retries
+  instead of re-initialising. **Measured, not decided**: behind the DBAL pool Symfony's adapter catches the failed
+  query itself (`AbstractAdapterTrait::hasItem()`: a `warning` of the `cache` channel naming the key, then `false`), so
+  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws. **A session is bound to the first MCP
   connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
   queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
   so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The
@@ -316,8 +325,12 @@ paths:
   decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation — the bounded store's `exists()` reads it,
   below, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
-  as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
-  case, the host rules on a several-host list included, and the `Origin` rules above.
+  as absent — #663), 406 without `Accept: text/event-stream`, **503 when the session store is unreachable** (#731,
+  « Sessions » above: the SDK's `-32603` « Session store is unavailable. », without `id`, and its `error` line of the
+  `mcp` channel, the exception in its context and **never the session id**; only for an id to check — a GET whose
+  header is absent, empty or `0` never asks the store and is served). `McpEndpointGetTest` pins each
+  case, the host rules on a several-host list included, the `Origin` rules above, and that 503 against the POST's on
+  the real chain (status, headers, error, log line).
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
   SSE answers alike, the last answering event of a stream; `callMcpTool()`, `listedMcpTool()`, `routeBody()`).
   A test that opens sessions calls `forgetMcpSessions()` in its `tearDown`: the `mcp-portfolio-` rows of
