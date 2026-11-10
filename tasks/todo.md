@@ -204,13 +204,15 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       pod sur `/token` face aux IP de sortie partagées de claude.ai et ChatGPT. Reports de la tâche 9 :
       vérifier en préprod ce que ChatGPT lit de `securitySchemes` (premier niveau ou `_meta`) et la
       forme liste de `_meta["mcp/www_authenticate"]` ; le 401 `invalid_token` sur toute requête au
-      jeton refusé, face aux vrais clients ; mesurer la taille réelle en file du corpus (la taille
-      seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES` ; CORS n'expose pas `WWW-Authenticate` ;
+      jeton refusé, face aux vrais clients ; ~~mesurer la taille réelle en file du corpus (la taille
+      seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES`~~ (sans objet depuis #731 : la réponse ne
+      passe plus par la session) ; CORS n'expose pas `WWW-Authenticate` ;
       la page publique de confidentialité dit encore « Aucun transfert de données hors de l'Union
       européenne » (`frontend/src/infrastructure/portfolio/content/fr.ts` et `en.ts`), contredite par
       le registre §8 à la sortie de la phase 2 (→ #653, commentaire du 2026-10-27) ; un `pdftotext` et une ligne d'audit par appel de
-      l'outil nominatif, sans quota par connexion — et le corpus rendu en entier avant d'être refusé
-      pour sa taille (le refus coûte une lecture), à traiter avec ce quota ; contrôler au smoke
+      l'outil nominatif, sans quota par connexion — ~~et le corpus rendu en entier avant d'être refusé
+      pour sa taille (le refus coûte une lecture)~~ (sans objet depuis #731 : la réponse ne passe plus par
+      la session, le refus de taille est retiré) —, à traiter avec ce quota ; contrôler au smoke
       préprod le `WWW-Authenticate` réel par la recherche de mentions D8
 
 ### Montées épinglées (#731) — préalable à l'ouverture publique de la phase 2
@@ -227,7 +229,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
   - [x] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
   - [x] 4. R7 : 503 au GET, store de sessions injoignable — **sensible (session)**
   - [x] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
-  - [ ] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
+  - [x] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
   - [ ] 7. R8, R9, R11 vérifiés ; coût de la session mesuré et épinglé — **sensible (réponse nominative)**
   - [ ] 8. ADR 0006 D7 amendée, D4 confirmée, versions au présent renvoyées au pin
   - [ ] 9. Exposition à l'avis, notes client (`tasks/pr-731-mcp-0-15.md`, corps de PR), vérification complète

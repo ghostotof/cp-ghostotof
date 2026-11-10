@@ -9,13 +9,11 @@ use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Application\ToolSecuritySchemes;
 use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
-use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\ToolAnnotations;
-use Psr\Log\LoggerInterface;
 
 /**
  * `get_nominative_corpus` : le corpus nominatif, réservé au palier de
@@ -25,16 +23,12 @@ use Psr\Log\LoggerInterface;
  * c'est ce sur quoi s'appuie l'authentification différée des clients. Un
  * adaptateur mince : la décision d'accès, le rendu et l'audit sont ceux de
  * {@see NominativeCorpusReaderInterface} ; l'outil lit la langue, met le
- * corpus à la forme MCP, mesure la réponse telle que le SDK la mettra en file
- * — une affaire de SDK, donc de Presentation — et traduit chaque issue en
- * `CallToolResult`.
+ * corpus à la forme MCP et traduit chaque issue en `CallToolResult`. Deux
+ * issues :
  *
- *  - **Corpus ouvert, réponse dans sa borne** : le corpus et l'adresse de la
- *    page du CV, puis `recordServed()` — la ligne d'audit **après** la mesure :
- *    une lecture journalisée est une réponse que l'outil sert.
- *  - **Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}** : une erreur d'outil
- *    qui donne l'adresse de la page du CV, un `warning` aux tailles seules, et
- *    aucune ligne d'audit : rien n'a été servi.
+ *  - **Corpus ouvert** : le corpus et l'adresse de la page du CV, puis
+ *    `recordServed()` — la ligne d'audit **après** la construction du
+ *    résultat : une lecture journalisée est une réponse que l'outil sert.
  *  - **Refusé** (pas de connexion, ou une connexion sans le scope ou le
  *    palier) : l'erreur d'outil que ChatGPT sait suivre — le défi
  *    `insufficient_scope` dans `_meta["mcp/www_authenticate"]`, qui lui fait
@@ -47,6 +41,19 @@ use Psr\Log\LoggerInterface;
  * Aucun `RequestContext` du SDK n'est demandé (accepté par le contrôleur de la
  * tâche 9) : rien ne le lirait, la branche refusée répondant la même chose
  * avec ou sans le marqueur, et l'identité venant de `Security`.
+ *
+ * **Aucune borne de taille** (#731, effet métier accepté par l'auteur le
+ * 2026-11-10) : un corpus très gros est servi en entier, jamais remplacé par
+ * un renvoi à la page du CV. Tant que le SDK mettait la réponse d'un outil en
+ * file dans la session avant de la rendre (0.8.1), l'outil la mesurait et la
+ * refusait au-delà de la moitié de la borne de session, faute de quoi la
+ * session était détruite et le client ne recevait rien. Depuis la 0.9 la
+ * réponse reste au transport et ne passe plus par la session — prémisse
+ * épinglée par
+ * {@see \App\Tests\Mcp\Presentation\Tool\GetNominativeCorpusToolTest::testTheAnswerNeverTransitsThroughTheSession()} —,
+ * et le refus est parti avec la borne. Ce qui borne encore le corpus est en
+ * amont : `PopplerPdfTextExtractor::MAX_CHARACTERS` pour le texte du CV ; le
+ * CV sans identité et les études de cas n'ont aucune borne de longueur.
  *
  * La valeur de `_meta["mcp/www_authenticate"]` est une **liste** de défis RFC
  * 7235 : la référence de l'Apps SDK d'OpenAI (« Error tool result »,
@@ -73,53 +80,6 @@ final readonly class GetNominativeCorpusTool
      */
     public const string CONNECTION_REQUIRED_DESCRIPTION = 'An MCP connection to the site is required to read the nominative corpus';
 
-    /** Le refus d'un corpus trop grand ; `%s` reçoit l'adresse de la page du CV. */
-    public const string CORPUS_TOO_LARGE = 'The nominative corpus is too large to be served over MCP. The CV can be downloaded from the site: %s';
-
-    /**
-     * La taille maximale de la réponse **telle que le SDK la met en file dans
-     * la session** ({@see QueuedAnswer::bytes()} : la réponse JSON-RPC encodée
-     * sans drapeau, puis réencodée par `Session::save()`), en octets : la
-     * moitié de la borne de session, l'autre moitié restant au reste de la
-     * session (décision de l'auteur du 2026-10-24, tâche 9, puis de la
-     * relecture de la tâche 5).
-     *
-     * La borne est celle du store de sessions, d'où l'import d'une classe
-     * d'Infrastructure par la Presentation, assumé (relecture finale de
-     * #648) comme celui de ServerAnswersInterface par le contrôleur MCP : la
-     * borne vit avec le code qui l'applique ; la déplacer dans l'Application
-     * y mettrait un détail de stockage (la taille d'une ligne de
-     * `cache_items`) que seul ce store fait respecter.
-     *
-     * Au-delà de {@see BoundedSessionStore::MAX_BYTES}, la session est
-     * détruite et le client ne reçoit rien. Or la réponse grossit bien plus que
-     * le texte, et pas d'un rapport fixe : le corpus y est **deux fois**
-     * (`structuredContent`, et le bloc texte de JsonToolResult, déjà du JSON),
-     * le SDK encode la réponse sans drapeau (tout caractère hors ASCII en
-     * `\uXXXX`, 12 octets pour une paire de substitution ; `/` en `\/`), et
-     * `Session::save()` réencode la file, chaque barre oblique inverse et
-     * chaque guillemet doublés. Rien ne borne le corpus entier :
-     * `PopplerPdfTextExtractor::MAX_CHARACTERS` (30 000) ne borne que le texte
-     * du CV, le CV sans identité et les études de cas n'ont aucune borne de
-     * longueur. Mesuré le 2026-10-24 sur la pile réelle, taille en file pour
-     * 30 000 caractères de CV (borne 524 288) :
-     *
-     *  - CV fictif des tests : 2 880 octets ;
-     *  - ASCII : 60 806 ;
-     *  - 2 ou 3 octets : 420 806 ;
-     *  - 4 octets : 841 076 — session détruite.
-     *
-     * Rapporté au payload `{corpus, cvPageUrl}` encodé sans drapeau, la file
-     * pèse 2 × (ASCII), ~2,3 × (accents, emoji), 4 × (`/`, saut de ligne) et
-     * 6 × (`"`, `\`) ; en octets de texte, jusqu'à 12 par guillemet. Une borne
-     * sur le payload laissait donc passer une réponse qui détruisait la
-     * session (relecture de la tâche 5 : 786 432 octets pour un corpus de
-     * guillemets à la borne d'alors) : c'est la file elle-même qui est
-     * mesurée. GetNominativeCorpusToolTest compare la mesure à la file réelle
-     * et pince la relation avec la borne de session par la pire composition.
-     */
-    public const int QUEUED_ANSWER_MAX_BYTES = BoundedSessionStore::MAX_BYTES / 2;
-
     /** La clé `_meta` du défi dans un résultat d'outil en erreur (Apps SDK d'OpenAI). */
     private const string WWW_AUTHENTICATE_META_KEY = 'mcp/www_authenticate';
 
@@ -136,7 +96,6 @@ final readonly class GetNominativeCorpusTool
     public function __construct(
         private NominativeCorpusReaderInterface $corpusReader,
         private BearerChallenge $challenge,
-        private LoggerInterface $logger,
     ) {
     }
 
@@ -168,16 +127,8 @@ final readonly class GetNominativeCorpusTool
 
         $result = JsonToolResult::forObject($corpus->payload());
 
-        // Mesurée telle que le SDK la met en file : c'est elle, pas le texte,
-        // qui doit tenir dans la session.
-        $queuedBytes = QueuedAnswer::bytes($result);
-        if ($queuedBytes > self::QUEUED_ANSWER_MAX_BYTES) {
-            // Les tailles seules : jamais le texte, qui nomme l'auteur.
-            $this->logger->warning('Nominative corpus refused over MCP: queued answer over its bound.', ['queuedBytes' => $queuedBytes, 'maxBytes' => self::QUEUED_ANSWER_MAX_BYTES]);
-
-            return CallToolResult::error([new TextContent(\sprintf(self::CORPUS_TOO_LARGE, $corpus->cvPageUrl))]);
-        }
-
+        // Après la construction du résultat : si elle échoue, rien n'est
+        // servi, et rien n'est journalisé comme lu.
         $this->corpusReader->recordServed($corpus);
 
         return $result;

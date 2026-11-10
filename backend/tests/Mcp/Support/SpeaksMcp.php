@@ -249,8 +249,8 @@ trait SpeaksMcp
 
     /**
      * La réponse JSON-RPC telle que le SDK l'a encodée — la chaîne même qu'il
-     * met en file dans la session —, que le transport l'ait rendue en JSON ou
-     * dans un flux SSE.
+     * remet au transport —, que celui-ci l'ait rendue en JSON ou dans un flux
+     * SSE.
      */
     private function rawMcpAnswer(KernelBrowser $client): string
     {

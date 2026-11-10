@@ -9,9 +9,6 @@ use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
 use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
-use App\Mcp\Presentation\Tool\GetNominativeCorpusTool;
-use App\Mcp\Presentation\Tool\JsonToolResult;
-use App\Mcp\Presentation\Tool\QueuedAnswer;
 use App\Mcp\Presentation\Tool\ToolLocale;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Assistant\Support\StubCorpusRenderer;
@@ -67,7 +64,7 @@ final class GetNominativeCorpusToolTest extends WebTestCase
 
     private const string FICTIONAL_CV = __DIR__.'/../../../Ai/Assistant/Infrastructure/Pdf/Fixtures/cv-fictif.pdf';
 
-    /** Un témoin en tête des corpus de la borne : sa présence dirait une fuite. */
+    /** Un témoin en tête des corpus de substitution : sa présence, hors de la réponse, dirait une fuite. */
     private const string CORPUS_SENTINEL = 'CORPUS-SENTINEL-5c2e';
 
     protected function setUp(): void
@@ -264,13 +261,18 @@ final class GetNominativeCorpusToolTest extends WebTestCase
 
     /**
      * Une session est liée à la première connexion qui l'utilise (#648,
-     * décision de l'auteur du 2026-10-24) : le SDK vide toute la file de
-     * sortie d'une session vers n'importe quel `POST` qui porte son
-     * identifiant, et un appelant anonyme concurrent aurait reçu le corpus mis
-     * en file par l'appel authentifié. Liée, la session n'existe plus pour
-     * lui : un `ping` et le `GET` du flux reçoivent le 404 qui fait se
-     * réinitialiser un client, rien du corpus ; son `DELETE` ne la détruit
-     * pas — la connexion continue de s'en servir.
+     * décision de l'auteur du 2026-10-24). En 0.8.1, le SDK mettait la
+     * réponse d'un outil en file dans la session, puis vidait toute la file
+     * vers n'importe quel `POST` qui portait son identifiant : un appelant
+     * anonyme concurrent aurait reçu le corpus de l'appel authentifié. Depuis
+     * la 0.9 la réponse ne passe plus par la session
+     * ({@see self::testTheAnswerNeverTransitsThroughTheSession()}), et la
+     * liaison est gardée en défense en profondeur (#731) : la session porte ce
+     * que la connexion a déclaré, et la file des messages que le serveur
+     * initierait. Liée, la session n'existe plus pour l'appelant anonyme : un
+     * `ping` et le `GET` du flux reçoivent le 404 qui fait se réinitialiser un
+     * client, rien du corpus ; son `DELETE` ne la détruit pas — la connexion
+     * continue de s'en servir.
      */
     public function testABoundSessionDoesNotExistForAnAnonymousCaller(): void
     {
@@ -340,7 +342,7 @@ final class GetNominativeCorpusToolTest extends WebTestCase
      * La ligne `cache_items` d'une session où le corpus a été servi porte la
      * connexion : la liaison est écrite par le décorateur borné dans la même
      * écriture que la session (BoundedSessionStoreTest rejoue chaque écriture
-     * de la séquence du SDK, file pleine comprise).
+     * de la séquence d'un `tools/call` du SDK).
      */
     public function testTheSessionRowWhereTheCorpusWasServedIsBound(): void
     {
@@ -365,23 +367,29 @@ final class GetNominativeCorpusToolTest extends WebTestCase
      * session au `save()`, puis la vidait vers le `POST` — le corpus nominatif
      * passait donc par `cache_items`, et ce test y rougissait.
      *
-     * Pourquoi elle compte : la borne de la réponse en file
-     * (`QUEUED_ANSWER_MAX_BYTES`) et le motif d'origine de la liaison d'une
-     * session à sa connexion reposaient sur ce passage par la session. Les
-     * retirer ou les rejustifier demande que la prémisse soit tenue par un
-     * test, pas par une lecture du SDK.
+     * Pourquoi elle compte : tant que la réponse passait par la session,
+     * l'outil la bornait et refusait un corpus trop grand — borne et refus
+     * retirés par #731 —, et la liaison d'une session à sa connexion y
+     * trouvait son motif d'origine, gardée depuis en défense en profondeur
+     * (BoundedSessionStore). L'un et l'autre reposent sur cette prémisse : elle
+     * est tenue par un test, pas par une lecture du SDK.
      *
      * Ce qui est lu : les écritures de `cache_items` que Doctrine journalise
      * (canal `doctrine`, `debug`), paramètres compris, pendant l'appel de
      * l'outil. La sonde ne garde que la dernière requête, même sans
-     * redémarrage du noyau ({@see self::useRenderer()}) : les services sont
-     * réinitialisés entre deux requêtes, et la sonde vidée avec eux (mesuré
-     * en écrivant ce test : après l'appel, elle ne porte que ses écritures).
-     * Elle garderait les requêtes d'ouverture que le test tiendrait encore :
-     * elles sont portées par la même connexion, donc liées elles aussi, et
-     * sans corpus. Les lectures de la même ligne portent l'identifiant de la
+     * redémarrage du noyau ({@see self::useRenderer()}) : elle est vidée à
+     * chaque requête (#769), si bien qu'après l'appel elle ne porte que ses
+     * écritures. Les lectures de la même ligne portent l'identifiant de la
      * session sans rien écrire : seules les écritures (`INSERT`, `UPDATE`)
      * sont retenues.
+     *
+     * Deux assertions, de portées différentes. « Pas de corpus » vaut pour
+     * **toute** écriture de `cache_items` de la requête, quelle que soit sa
+     * clé : une copie de la réponse rangée ailleurs que sous la clé de la
+     * session (une autre ligne, un autre pool en base) n'échappe pas. Le
+     * témoin positif — les paramètres journalisés portent bien la valeur
+     * écrite, liaison comprise — ne vaut que pour les écritures de la
+     * session, reconnues à sa clé ou à sa liaison.
      */
     public function testTheAnswerNeverTransitsThroughTheSession(): void
     {
@@ -403,6 +411,8 @@ final class GetNominativeCorpusToolTest extends WebTestCase
             }
 
             $params = print_r($record->context['params'] ?? null, true);
+            // Toute écriture de `cache_items`, sous quelque clé que ce soit.
+            self::assertStringNotContainsString(self::CORPUS_SENTINEL, $params, 'La réponse a transité par `cache_items`.');
             if (str_contains($params, 'mcp-portfolio-'.$sessionId) || str_contains($params, $binding."\n")) {
                 $sessionWrites[] = $params;
             }
@@ -412,113 +422,47 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         foreach ($sessionWrites as $params) {
             // Témoin positif : les paramètres journalisés portent bien la valeur écrite.
             self::assertStringContainsString($binding, $params);
-            self::assertStringNotContainsString(self::CORPUS_SENTINEL, $params, 'La réponse a transité par la session.');
         }
         self::assertStringContainsString(self::CORPUS_SENTINEL, $this->rawMcpAnswer($this->client));
     }
 
     /**
-     * La mesure de l'outil ({@see QueuedAnswer::bytes()}) est ce que le SDK
-     * met réellement en file : la réponse JSON-RPC qu'il a encodée, réencodée
-     * comme `Session::save()` la réencode (calcul de RouteBackedToolsTest). Le
-     * SDK n'expose ni l'une ni l'autre de ces deux étapes : ce test rougit le
-     * jour où une montée de version change l'encodage. Même longueur
-     * d'identifiant (`2` ici, `0` dans la mesure), donc égalité exacte.
+     * Un corpus de n'importe quelle taille est servi en entier (#731, effet
+     * métier accepté par l'auteur le 2026-11-10) : la réponse ne passe plus
+     * par la session, donc rien ne la borne dans l'outil. Jusqu'à #731,
+     * l'outil refusait une réponse qui, mise en file dans la session, en
+     * aurait dépassé la moitié de la borne : une erreur d'outil renvoyant à
+     * la page du CV, sans ligne d'audit.
+     *
+     * Le corpus pèse ici, à lui seul, plus que la borne de session
+     * ({@see BoundedSessionStore::MAX_BYTES}), et la réponse le porte deux
+     * fois : s'il passait encore par la session, celle-ci serait détruite.
+     * Il arrive entier, sa lecture est journalisée, aucun `warning` ne part
+     * (ni la borne de session ni un refus de l'outil), le corpus n'est dans
+     * aucun journal, et la session sert la requête suivante.
      */
-    public function testTheToolMeasuresWhatTheSdkQueues(): void
+    public function testACorpusLargerThanTheSessionBoundIsServedInFull(): void
     {
         $held = $this->holdMcpConnection();
-        $renderer = $this->useFictionalCv();
-        $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
-
-        $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
-
-        $expected = JsonToolResult::forObject(['corpus' => $renderer->render(Locale::FR), 'cvPageUrl' => $this->frontendBaseUrl().'/fr/assistant']);
-        self::assertSame(\strlen(json_encode($this->rawMcpAnswer($this->client), \JSON_THROW_ON_ERROR)), QueuedAnswer::bytes($expected));
-    }
-
-    /**
-     * La relation entre les deux bornes : une réponse juste sous
-     * `QUEUED_ANSWER_MAX_BYTES`, de la pire composition (un corpus de
-     * guillemets : 12 octets en file par octet de texte, deux copies
-     * réencodées deux fois), est servie, et ce que le SDK en met en file
-     * dans une vraie session reste sous la borne de la session, sans quoi
-     * celle-ci serait détruite et le client ne recevrait rien.
-     */
-    public function testAQueuedAnswerAtTheBoundFitsInTheSession(): void
-    {
-        $held = $this->holdMcpConnection();
-        $corpus = $this->longestCorpusUnder(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES, 'fr');
+        $corpus = self::CORPUS_SENTINEL.str_repeat('x', BoundedSessionStore::MAX_BYTES);
         $this->useRenderer(new StubCorpusRenderer($corpus));
         $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
 
-        $this->postMcp($this->client, $sessionId, $this->callMessage(['locale' => 'fr']), self::bearer($held->accessToken));
+        $result = $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
 
-        $answer = $this->rawMcpAnswer($this->client);
-        self::assertNotSame('', $answer, 'La réponse n\'est pas arrivée : la session a-t-elle été détruite ?');
-        $result = $this->decodeMcpResponse($this->client)['result'] ?? null;
-        self::assertIsArray($result);
-        self::assertFalse($result['isError'] ?? false);
+        self::assertFalse($result['isError'] ?? false, 'Un corpus très gros est servi, jamais refusé pour sa taille.');
         self::assertSame($corpus, $result['structuredContent']['corpus'] ?? null);
-        $queuedBytes = \strlen(json_encode($answer, \JSON_THROW_ON_ERROR));
-        self::assertGreaterThan(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES - 12, $queuedBytes, 'La réponse doit être à la borne.');
-        self::assertLessThan(BoundedSessionStore::MAX_BYTES, $queuedBytes, \sprintf('%d octets en file, borne de session %d.', $queuedBytes, BoundedSessionStore::MAX_BYTES));
-    }
+        self::assertSame($this->frontendBaseUrl().'/fr/assistant', $result['structuredContent']['cvPageUrl'] ?? null);
+        self::assertSame($held->connectionId, self::singleSecurityAuditEvent('nominative-corpus-read')['connectionId'] ?? null);
 
-    /**
-     * Un guillemet de plus que la borne : une erreur d'outil qui donne la
-     * page du site où se télécharge le CV, un `warning` aux tailles seules,
-     * rien du corpus (ni dans la réponse ni dans aucun journal), et aucune
-     * ligne d'audit — rien n'a été servi.
-     */
-    public function testAnOversizedCorpusIsRefusedWithTheCvPageLink(): void
-    {
-        $held = $this->holdMcpConnection();
-        $corpus = $this->longestCorpusUnder(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES, 'en').'"';
-        $this->useRenderer(new StubCorpusRenderer($corpus));
-        $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
-
-        $result = $this->toolResult($sessionId, ['locale' => 'en'], bearer: self::bearer($held->accessToken));
-
-        self::assertTrue($result['isError']);
-        self::assertArrayNotHasKey('structuredContent', $result);
-        self::assertSame([['type' => 'text', 'text' => 'The nominative corpus is too large to be served over MCP. The CV can be downloaded from the site: '.$this->frontendBaseUrl().'/en/assistant']], $result['content']);
-        self::assertStringNotContainsString(self::CORPUS_SENTINEL, $this->rawMcpAnswer($this->client));
-        self::assertSame([], self::securityAuditEvents('nominative-corpus-read'));
-
-        $warnings = array_values(array_filter(
-            self::allChannelsLogRecords(),
-            static fn (LogRecord $record): bool => Level::Warning === $record->level && str_starts_with($record->message, 'Nominative corpus refused'),
-        ));
-        self::assertCount(1, $warnings);
-        self::assertSame([
-            'queuedBytes' => $this->queuedBytesOf($corpus, 'en'),
-            'maxBytes' => GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES,
-        ], $warnings[0]->context);
+        $warnings = array_map(
+            static fn (LogRecord $record): string => $record->channel.' : '.$record->message,
+            array_values(array_filter(self::allChannelsLogRecords(), static fn (LogRecord $record): bool => $record->level->isHigherThan(Level::Notice))),
+        );
+        self::assertSame([], $warnings, 'Ni la borne de session ni l\'outil ne refusent rien.');
         $this->assertNoLogCarries(self::CORPUS_SENTINEL);
-    }
 
-    /**
-     * Le plus long corpus de guillemets (précédé d'un témoin, pour qu'une fuite
-     * se voie) dont la réponse, mesurée comme la mesure l'outil, tient dans
-     * `$bound` octets : un guillemet de plus la fait dépasser.
-     */
-    private function longestCorpusUnder(int $bound, string $locale): string
-    {
-        $base = $this->queuedBytesOf(self::CORPUS_SENTINEL, $locale);
-        $perQuote = $this->queuedBytesOf(self::CORPUS_SENTINEL.'"', $locale) - $base;
-        self::assertSame(12, $perQuote, 'Un guillemet : douze octets en file.');
-
-        $corpus = self::CORPUS_SENTINEL.str_repeat('"', intdiv($bound - $base, $perQuote));
-        self::assertLessThanOrEqual($bound, $this->queuedBytesOf($corpus, $locale));
-        self::assertGreaterThan($bound, $this->queuedBytesOf($corpus.'"', $locale));
-
-        return $corpus;
-    }
-
-    private function queuedBytesOf(string $corpus, string $locale): int
-    {
-        return QueuedAnswer::bytes(JsonToolResult::forObject(['corpus' => $corpus, 'cvPageUrl' => $this->frontendBaseUrl().'/'.$locale.'/assistant']));
+        $this->assertSessionServes($sessionId, self::bearer($held->accessToken));
     }
 
     /**
@@ -567,7 +511,15 @@ final class GetNominativeCorpusToolTest extends WebTestCase
      *
      * Seules les requêtes SQL de `doctrine` (debug) sont écartées, comme dans
      * AccountIdentifierReachesNoLogTest : elles portent la valeur écrite dans
-     * `cache_items`, donc la file de la session et le corpus. Le gestionnaire
+     * `cache_items`. En 0.8.1 du SDK cette valeur portait la file de la
+     * session, donc le corpus ; depuis la 0.9 la réponse n'y passe plus, ce
+     * que {@see self::testTheAnswerNeverTransitsThroughTheSession()} lit sur
+     * ces écritures mêmes — par `print_r` : la valeur est binaire (le MAC du
+     * cache), et l'encodage JSON fait ici ne la verrait pas (mesuré le
+     * 2026-11-10 ; l'exclusion retirée, la classe reste verte, sans rien
+     * prouver de plus pour cette raison). L'exclusion est gardée : ce garde
+     * lit les journaux qui sortent, et ces lignes-là ne sortent pas. Le
+     * gestionnaire
      * `main` de prod **ne les exclut pas** (`monolog.yaml` n'écarte pas le
      * canal `doctrine`), et la préprod tourne à `LOG_LEVEL=debug` : ce qui les
      * coupe est l'absence de `kernel.debug`, seule condition sous laquelle

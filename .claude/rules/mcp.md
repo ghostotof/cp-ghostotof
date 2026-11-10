@@ -18,7 +18,7 @@ paths:
 | Rule | Bullets |
 |---|---|
 | this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host and origin check, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
-| `mcp-sessions.md` | sessions (split out by #731): the DBAL pool, the bound (`BoundedSessionStore`, `MAX_BYTES`), an oversized session's id that does not exist (404), the queued answer's bound, an unreadable session (404), an unreachable store (503), the binding to the first MCP connection |
+| `mcp-sessions.md` | sessions (split out by #731): the DBAL pool, the bound (`BoundedSessionStore`, `MAX_BYTES`), an oversized session's id that does not exist (404), an unreadable session (404), an unreachable store (503), the binding to the first MCP connection |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -100,19 +100,21 @@ paths:
   **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
   deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
   deferred 401 below. **With an MCP connection** (#648) it returns `{"corpus": <CorpusRenderer's text for the
-  language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and,
-  once the answer fits its bound, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`)
+  language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and
+  the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`)
   — it records the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the
   server had to serve, not necessarily the CV), and **an answer the tool served, not one the client received**
-  (accepted, review of #648: a session write lost afterwards — the store down, the binding race of `mcp-sessions.md`, a session
-  over its bound once the answer is queued — over-counts, the safe direction); without
+  (accepted, review of #648: an answer lost after the tool returned over-counts, the safe direction; since SDK 0.9 a
+  lost session write no longer loses it — the answer is with the transport before the session is saved,
+  `mcp-sessions.md`); without
   one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
   `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
   reference types it « string or string[] ») —, the same marked or not, nothing read. **The tool is a thin adapter**
   (review of #648): it parses the language, calls `Application/NominativeCorpusReaderInterface`
   (`Infrastructure/Corpus/NominativeCorpusReader`) — `open(Locale): ?NominativeCorpus` decides the access and renders,
-  `recordServed(NominativeCorpus)` writes the audit line —, measures the answer and turns each outcome into a
-  `CallToolResult`; two steps because the measure is the SDK's encoding (Presentation) and the audit must follow it.
+  `recordServed(NominativeCorpus)` writes the audit line — and turns each outcome into a
+  `CallToolResult`; two steps because the result is built in the SDK's form (Presentation) and the audit must follow
+  it: a result that cannot be built leaves no line.
   **The identity is read through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token
   nor the SDK's authorization middlewares, and no `RequestContext` (nothing would read it). **The reader re-checks what
   the authenticator already judged** (defence in depth, review of #648): a `McpConnectionPrincipal`, its
@@ -121,11 +123,11 @@ paths:
   refusal as without a connection, nothing rendered nor logged (`NominativeCorpusReaderTest`, a fixture principal
   lacking the tier, then the scope: red without each check, measured). The reader takes `Security`,
   `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
-  exception ») and `app.frontend_base_url`; the tool takes the reader's interface, `BearerChallenge` and the logger,
-  pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded**
-  (`QUEUED_ANSWER_MAX_BYTES`, `mcp-sessions.md`); for it `Mcp/Presentation` imports
-  `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
-  with the code that enforces it). `get_tech_watch` relays third-party strings
+  exception ») and `app.frontend_base_url`; the tool takes the reader's interface and `BearerChallenge`,
+  pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its answer has no size bound** (#731, confirmed by the
+  author on 2026-11-10): a very large corpus is served whole, never replaced by the link to the CV page — the bound
+  on the answer queued in the session, and its refusal, left with SDK 0.9 (`mcp-sessions.md`). `get_tech_watch`
+  relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -224,7 +226,7 @@ paths:
   would admit every origin, an empty value an empty `Origin`: the guard refuses both. After changing `mcp.yaml`
   locally, `rm -rf var/cache/test`.
 - **Sessions** (the DBAL pool `cache.mcp_sessions`, the bound `BoundedSessionStore::MAX_BYTES`, an oversized
-  session's id that does not exist, the queued answer's bound, an unreadable session, an unreachable store, the
+  session's id that does not exist, an unreadable session, an unreachable store, the
   binding to the first MCP connection): `.claude/rules/mcp-sessions.md`, split out by #731.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers

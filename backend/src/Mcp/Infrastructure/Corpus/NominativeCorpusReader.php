@@ -31,14 +31,15 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *    l'adresse de la page du site où se télécharge le CV (spec 0007) ; jamais
  *    le PDF ;
  *  - **l'audit** : la ligne `nominative-corpus-read`, écrite par
- *    {@see self::recordServed()} une fois la réponse acceptée — une lecture
+ *    {@see self::recordServed()} une fois le résultat construit — une lecture
  *    journalisée est une lecture servie par l'outil. Elle consigne le corpus
  *    **tel que rendu** : un CV détaillé indisponible (fichier absent,
  *    extraction en échec) laisse un corpus qui le dit à sa place, et la ligne
  *    est écrite quand même — limite acceptée (relecture finale de #648) :
  *    elle dit qu'une connexion a lu ce que le serveur avait à servir, pas que
  *    le CV y était. Elle ne dit pas non plus que le client l'a reçue : une
- *    écriture de session perdue après elle sur-compte (`.claude/rules/mcp.md`).
+ *    réponse perdue après elle (une connexion coupée) sur-compte
+ *    (`.claude/rules/mcp.md`).
  *
  * La dépendance à SecurityAuditLoggerInterface est la seconde porte de
  * l'exception admise de `.claude/rules/mcp-oauth.md` : l'unique écrivain de

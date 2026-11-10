@@ -17,7 +17,8 @@ paths:
 
 > Split out of `.claude/rules/mcp.md` by #731 (49 793 bytes, 207 short of `tools/check-claude-rules.sh`'s 50 000 bytes),
 > its « Sessions » bullet moved here word for word, then amended by the same issue (an oversized session's id does not
-> exist); `mcp.md` keeps everything else and its index lists every MCP rule. Decisions:
+> exist; the bound on the queued answer removed, the binding kept as defence in depth); `mcp.md` keeps everything
+> else and its index lists every MCP rule. Decisions:
 > `docs/adr/0006-serveur-mcp.md`, `docs/adr/0005-etat-hors-du-pod.md`; spec `.claude/specs/0007-mcp-server.md`. The
 > index of every rule is at the top of `.claude/CLAUDE.md`.
 
@@ -52,31 +53,25 @@ paths:
   in the SDK's call order, which a bump may change:
   `BoundedSessionStoreTest::testAnIdDestroyedOverTheBoundStaysGoneForTheRestOfTheRequest` (red without the memory,
   measured). The **number** of sessions per IP is
-  the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
-  answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included, **measured in #648**: the SDK encodes the answer without
-  flags (`\uXXXX`, 12 bytes for a 4-byte character), the corpus is in it twice (`structuredContent` and the text
-  block), and `Session::save()` encodes it again; `MAX_CHARACTERS` bounds the CV's text only, the anonymous CV and the
-  case studies have no length bound. Queued, the fictive CV gives 2 880 bytes, 30 000 ASCII characters 60 806, 30 000
-  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24), corrected by the
-  review of task 5: the tool bounds **the queued answer itself**, `GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES` =
-  `MAX_BYTES / 2` (half left to the rest of the session), measured by `Presentation/Tool/QueuedAnswer::bytes()` (the
-  `CallToolResult` as returned, wrapped in the SDK's `Response`, `json_encode`d as `Protocol::queueOutgoing()` does,
-  then again as `Session::save()` does) — a bound on the payload was not enough: against the flag-less payload the
-  queue weighs 2 × (ASCII), ~2.3 × (accents, emoji), 4 × (`/`, line feed) and 6 × (`"`, `\`), up to 12 queued bytes
-  per byte of text. Over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the sizes
-  only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged.
-  `GetNominativeCorpusToolTest::testTheToolMeasuresWhatTheSdkQueues` compares the measure with the real queue (two SDK
-  internals no API publishes: an SDK bump changing either turns it red), and
-  `testAQueuedAnswerAtTheBoundFitsInTheSession` pins the relation with `MAX_BYTES` on the worst composition (a corpus of
-  `"`) in a real session. **Guarded since #644**:
-  `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
-  the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
-  of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
-  moves it). Measured on production on 2026-10-20 with the same computation: 2.1 to 2.8 × the route body, 21.6 KB at most
-  (`get_anonymous_cv` fr, 10.2 KB body), 4 % of the bound; the seeds give the same order (12 KB for `list_incidents`). Each MCP request costs three
-  round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
-  drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
+  the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound no longer has to fit an answer**
+  (#731): since SDK 0.9 a `POST`'s response stays with the transport and never enters the session, whose outgoing
+  queue only holds server-initiated messages — this server sends none. In 0.8.1 the SDK queued a tool's response in
+  the session before sending it, so every answer went through `cache_items`, the nominative corpus included: the
+  tool measured its queued answer, refused a corpus over half of `MAX_BYTES` with a link to the CV page, and a test
+  kept every route-backed answer far below the bound. All of it is removed (decided 2026-11-06; the business effect
+  confirmed by the author on 2026-11-10: **a very large nominative corpus is served whole**, never replaced by the
+  link). The premise is pinned, not read in the SDK:
+  `GetNominativeCorpusToolTest::testTheAnswerNeverTransitsThroughTheSession` reads every `INSERT`/`UPDATE` of
+  `cache_items` during the `tools/call` (Doctrine's `debug` lines, their parameters through `print_r` — the value is
+  binary) and finds the corpus in none, the binding in the session's own;
+  `testACorpusLargerThanTheSessionBoundIsServedInFull` serves a corpus heavier than `MAX_BYTES`, audited, no
+  `warning`, the session serving the next request. An SDK bump that queued answers again turns both red: the bound
+  and the refusal are then to be decided again. What still bounds the corpus is upstream: `MAX_CHARACTERS` for the
+  CV's text only, the anonymous CV and the case studies have no length bound. A `tools/call` on a known
+  session costs four round trips on the session row, one of them a write (measured 2026-11-10: the reception
+  check's read, `save()`'s own existence check — a read too, in the decorator —, the write, the drain's read; in
+  0.8.1 the drain wrote the emptied queue back, a second write): ADR 0006 D6's « no write per call » holds for the
+  authentication, not for the session.
   `Psr16SessionStore` swallows every exception of `read`, `write` and `destroy` and returns `false` (its `exists()`
   throws, « an unreachable store » below); the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,
@@ -100,9 +95,15 @@ paths:
   and `main` takes the `cache` channel in production, so `Infrastructure/Log/SessionKeyCacheChannelRedactor`, a
   processor of that channel, withholds the id on every such line — read, existence check, write, deletion — and
   keeps the prefix (`.claude/rules/mcp-journaux.md`, « The session id never leaves through the `cache` channel »). **A session is bound to the first MCP
-  connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
-  queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
-  so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The
+  connection that uses it** (#648, the author's decision of 2026-10-24), **kept as defence in depth** (#731, decided
+  2026-11-06). Its original reason held in 0.8.1: the SDK queued a tool's response in the session, then drained the
+  session's **whole** outgoing queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from
+  `StreamableHttpTransport::createJsonResponse()`), so a concurrent anonymous `POST` holding the id would have
+  received the corpus of the authenticated call. Since 0.9 no answer goes through the session (above). What the
+  binding still keeps: the session carries what the connection declared (`client_info`, the last request's `_meta`,
+  the negotiated version) and the queue of server-initiated messages, which no other request may read or rewrite; the
+  day a tool sends the client a request (elicitation, sampling), the drain — still of the whole queue — gives the
+  binding its original reason back. The
   decorator reads the request's connection in the token storage (`McpConnectionPrincipal`, set by the `mcp` firewall
   before the SDK) and writes the binding **in the same write** as the session: the stored value is
   `mcp-connection:<connection UUID>\n` then the SDK's session, never decoded (the SDK's starts with `{` or `[`, so an
@@ -112,14 +113,24 @@ paths:
   as to an unknown id; one read more); a `warning` without any id. Not used by a connection yet, a session is served as
   before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
   stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
-  connection, hence the session. Accepted, the SDK's own race (no lock): a request that read the session before it was
-  bound may write it back once, with what it had read, unbound **or bound to its own connection** (the last writer
-  wins, the first connection then gets a 404), or destroy it when its write crosses `MAX_BYTES` — never the
-  connection's answer, then lost like any concurrent update, and never another connection's corpus (the drain re-reads
-  the store and refuses a foreign binding); likewise a connection that knows the id of a session opened anonymously
+  connection, hence the session. Accepted, the SDK's own race (no session lock, #762), **narrowed since 0.9**:
+  `Session::save()` re-reads the store before writing (its existence check, then the reload it applies its changed
+  keys to) and the decorator refreshes the binding at each read, so a request that read the session before another
+  connection bound it **writes nothing** (`save()` returns `false`; in 0.8.1 it wrote the session back once, with
+  what it had read). The window left is inside `save()`, between that re-read and the write: bound in that interval,
+  the session is written back unbound **or bound to the request's own connection** (the last writer wins, the first
+  connection then gets a 404), or destroyed when the write crosses `MAX_BYTES` — what is lost is session state, like
+  any concurrent update, never an answer, and the queue of server-initiated messages is only read under the binding
+  the store holds then (the drain re-reads the store and refuses a foreign binding); likewise a connection that
+  knows the id of a session opened anonymously
   can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
-  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the
+  write two `warning`s, in this order: `save()`'s existence check, then the drain's read (0.8.1: the drain's read,
+  then its refused write), measured by `BoundedSessionStoreTest::testARequestOvertakenByAnotherConnectionWritesNothing`
+  — security review of #648. `MAX_BYTES` counts the
   SDK's session, not the header. The sessionless 2026-07-28 revision is not concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
-  `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
+  `BoundedSessionStoreTest` replays a `tools/call`'s sequence with the SDK's `Session`
+  (`testEveryWriteOfABoundSessionCarriesItsBinding`: the reception check, the request's `_meta` set, `save()`, the
+  drain's read — one write per request, each starting with the binding), the drain of a queue of server-initiated
+  messages (by its connection only, written back bound) and the overtaken request above;
   `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
   anonymously and reads the `cache_items` row.
