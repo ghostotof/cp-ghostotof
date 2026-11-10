@@ -220,10 +220,10 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
 - [x] PR 1 — famille Symfony AI en 0.15.0 exacts (#766, fusionnée dans la mère, d639b5db)
 - [ ] PR 2 — `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0 exacts, branche `feature/spec-0007-731-mcp-0-15`,
       PR vers la mère ; **urgente** : la mère est rouge sur `composer audit` (GHSA-f4rf-6ghj-mhr6). Plan
-      `tasks/plan.md`, neuf tâches, **sensibles** marquées :
+      `tasks/plan-731-mcp-0-15.md`, neuf tâches, **sensibles** marquées :
   - [ ] 1. La montée, R1 (`publishesListChanges()`), R6 (`execution`), R10 (`Page<TItem>`), `config/reference.php`,
         prémisse « la réponse ne passe pas par la session » épinglée — **sensible (session, réponse nominative)**
-  - [ ] 2. R4 : `allowed_origins` = `MCP_ALLOWED_ORIGIN`, une valeur par environnement, garde par environnement — **sensible (Origin)**
+  - [ ] 2. R4 : `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`, garde « une origine » par environnement — **sensible (Origin)**
   - [ ] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
   - [ ] 4. R7 : 503 au GET, store de sessions injoignable — **sensible (session)**
   - [ ] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**

@@ -62,7 +62,8 @@ Chaque tâche les inclut implicitement.
   commentaire par `{@see \Nom\Complet}` sans `use` (`CommentedClassNamesExistTest` : une classe supprimée ne doit plus
   être citée nulle part), aucune exception générique nue dans `src/`.
 - Dans le code (docblocks, commentaires), une affirmation **au présent** sur le SDK ou le bundle ne cite plus de numéro
-  de version : elle renvoie à « la version épinglée (composer.json) », comme la PR 1 l'a fait pour Symfony AI ; une
+  de version : elle renvoie à « la version épinglée (composer.json) », comme la PR 1 l'a fait pour Symfony AI (extension à MCP
+  confirmée par l'auteur le 2026-11-10) ; une
   affirmation **historique** (« en 0.8.1, le SDK … ; depuis la 0.9 … ») garde ses versions. Les fixtures de version
   des tests de pins (`SymfonyAiAndMcpPinsMatchTheLockTest`, `ComposerFilesTest`) ne bougent pas : ce sont des données.
 - Les quatre relectures par série (/code-review, audit sécu, Standards, Spec) sont l'affaire du fil principal, pas
@@ -72,9 +73,9 @@ Chaque tâche les inclut implicitement.
 
 Cinq conditions que la note implique sans qu'un test existant les exerce ; chacune a son test dans la tâche indiquée.
 
-1. **`MCP_ALLOWED_ORIGIN` vide ou mal formée** (`''`, barre finale, chemin, `*`) : `allowed_origins: ['']` admettrait un
-   en-tête `Origin:` vide, une barre finale refuserait le site. Attendu : chaque environnement porte exactement
-   l'origine de son `APP_FRONTEND_BASE_URL`, bien formée (tâche 2, `McpAllowedOriginPerEnvironmentTest`).
+1. **`APP_FRONTEND_BASE_URL` qui cesserait d'être une origine** (vide, `*`, chemin, barre finale selon le SDK) : elle
+   gouverne désormais `allowed_origins` et `allowed_hosts`. Attendu : dans chaque environnement, une origine bien
+   formée (tâche 2, `McpAllowedOriginPerEnvironmentTest`).
 2. **`Origin: null`** (iframe isolée, `file://`) et un `Origin` du même hôte mais d'un autre schéma ou port : 403
    « Forbidden: Invalid Origin header. », au POST comme au GET (tâche 2).
 3. **Store injoignable sur un GET sans session** (en-tête absent, vide ou `0`) : servi 200 sans toucher au store — le
@@ -94,7 +95,7 @@ Cinq conditions que la note implique sans qu'un test existant les exerce ; chacu
 | `backend/src/Mcp/Infrastructure/Registry/ToolWithSecuritySchemes.php` | 1 | recopie `execution` |
 | `backend/tests/Mcp/Infrastructure/Registry/SecuritySchemesRegistryTest.php`, `tests/Mcp/Support/ReadsPortfolioRegistry.php` | 1 | R10, R6, R1 |
 | `backend/tests/Mcp/Presentation/Tool/GetNominativeCorpusToolTest.php` | 1, 6, 7 | prémisse « pas par la session », retrait de la borne, R8 |
-| `backend/config/packages/mcp.yaml`, `backend/.env`, `backend/phpunit.dist.xml`, `k8s/overlays/{preprod,prod}/kustomization.yaml` | 2 | `allowed_origins` = `MCP_ALLOWED_ORIGIN` |
+| `backend/config/packages/mcp.yaml`, `backend/.env`, `k8s/overlays/{preprod,prod}/kustomization.yaml` (commentaires) | 2 | `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL` |
 | `backend/tests/Mcp/Infrastructure/Kubernetes/McpAllowedOriginPerEnvironmentTest.php` (nouveau) | 2 | une origine juste par environnement |
 | `backend/tests/Mcp/Presentation/McpEndpointGetTest.php`, `McpEndpointTest.php` | 2, 4, 5, 7 | `Origin`, 503, session trop grosse, coût |
 | `backend/src/Mcp/Infrastructure/Log/McpCallLog.php`, `ModernExchange.php` | 3 | `declaredClient` depuis `RequestMeta` |
@@ -260,29 +261,38 @@ EOF
 
 ---
 
-### Tâche 2 : R4, `allowed_origins` = l'origine du site, par environnement
+### Tâche 2 : R4, `allowed_origins` = l'origine du site, dérivée d'`APP_FRONTEND_BASE_URL`
 
 **Modèle conseillé :** opus — **sensible** (`Origin`).
 
+**Décision de l'auteur (2026-11-10)** : pas de variable dédiée. `allowed_origins` lit `APP_FRONTEND_BASE_URL`, déjà
+posée par environnement (`.env` pour dev et test, `backend-config` des overlays préprod et prod) et dont
+`allowed_hosts` dérive déjà l'hôte (`%env(key:host:url:APP_FRONTEND_BASE_URL)%`). Une seule source : aucun écart
+possible entre l'URL du site et l'origine admise, aucun garde d'égalité à tenir. Contrepartie acceptée : la valeur
+d'`APP_FRONTEND_BASE_URL` gouverne désormais un contrôle de sécurité ; elle doit donc rester une **origine** (sans
+chemin). Un garde l'exige dans chaque environnement.
+
 **Règles à lire avant d'écrire (outil `Read`) :** `.claude/rules/mcp.md` (puces « Host check » et « `GET /api/mcp` »),
 `.claude/rules/deploiement.md` (lire un fichier de `k8s/overlays/` par `Read`), `.claude/rules/backoffice-api.md`
-(« Authorization », gardes de parité #659/#698), `.claude/rules/backend-outillage.md` (`phpunit.dist.xml`,
-`ForcedTestValuesWinOverTheShellTest`).
+(« Authorization », gardes de parité #659/#698), `.claude/rules/backend-outillage.md`.
 
 **Fichiers :**
-- Modifier : `backend/config/packages/mcp.yaml` (`http.allowed_origins`)
-- Modifier : `backend/.env` (bloc `###> app ###`), `backend/phpunit.dist.xml`
-- Modifier : `k8s/overlays/preprod/kustomization.yaml`, `k8s/overlays/prod/kustomization.yaml` (littéraux de `backend-config`)
+- Modifier : `backend/config/packages/mcp.yaml` (`http.allowed_origins`, et le commentaire d'`allowed_hosts`)
+- Modifier : `backend/.env` (commentaire d'`APP_FRONTEND_BASE_URL` : elle doit rester une origine, elle gouverne
+  `allowed_hosts` et `allowed_origins`) — valeur inchangée
+- Modifier : `k8s/overlays/preprod/kustomization.yaml`, `k8s/overlays/prod/kustomization.yaml` (commentaire du
+  littéral `APP_FRONTEND_BASE_URL` seulement, valeur inchangée)
 - Créer : `backend/tests/Mcp/Infrastructure/Kubernetes/McpAllowedOriginPerEnvironmentTest.php`
 - Modifier : `backend/tests/Mcp/Presentation/McpEndpointGetTest.php`, `backend/tests/Mcp/Presentation/McpEndpointTest.php`
 - Modifier : `backend/src/Mcp/Presentation/Controller/McpEndpointController.php` (docblock), `.claude/rules/mcp.md`
 
 **Interfaces :**
-- Produit : la variable d'environnement `MCP_ALLOWED_ORIGIN` (une origine `scheme://hôte[:port]`, minuscules, sans
-  barre finale), lue par `mcp.yaml` : `allowed_origins: ['%env(MCP_ALLOWED_ORIGIN)%']`.
-- Valeurs : `.env` (dev) `http://localhost:5173` ; `phpunit.dist.xml` (test) `http://localhost:5173`, en
-  `<server … force="true"/>` **et** `<env … force="true"/>` de même valeur ; préprod
-  `https://preprod.cp-ghostotof.com` ; prod `https://cp-ghostotof.com`.
+- Produit : `allowed_origins: ['%env(APP_FRONTEND_BASE_URL)%']` dans `mcp.yaml`. Aucune nouvelle variable.
+- Préalable à vérifier dans le source 0.9 installé (`vendor/mcp/sdk/src/Server/Transport/Http/Middleware/DnsRebindingProtectionMiddleware.php`)
+  et à citer dans le commentaire de `mcp.yaml` : comment le SDK compare l'`Origin` à `allowedOrigins` (normalisation
+  de la casse, de la barre finale, du port par défaut). Si la comparaison n'admettait pas `https://site/` contre
+  `Origin: https://site`, le garde de l'étape 3 exige une valeur sans barre finale ; si elle normalise, le garde
+  l'admet et le dit. Ne pas présumer : lire, puis écrire le garde selon ce qui est lu.
 
 - [ ] **Étape 1 : constater le rouge de départ**
 
@@ -302,76 +312,80 @@ yield 'autre schéma' => ['https://localhost:5173', 403];
 yield 'autre port' => ['http://localhost:5174', 403];
 yield 'MCP Inspector' => ['http://localhost:6274', 403];
 yield 'origine opaque' => ['null', 403];
+yield 'origine vide' => ['', 403];
 yield 'hôte étranger' => ['https://evil.example', 403];
 ```
 
-Pour un 403, asserter aussi le corps `Forbidden: Invalid Origin header.`. Le docblock de
-`testAGetFromThePageOfTheSiteIsServed` perd « port ignoré » : l'origine du site est admise par `allowed_origins`.
-`McpEndpointTest` — le même fournisseur au POST (`testThePostAdmitsTheSiteOriginOnly`, via `postInitialize($client,
-['HTTP_ORIGIN' => $origin])`, 200 ou 403). Run : rouges sur `la page du site` (403), verts ailleurs.
+(Le cas `''` : si le SDK traite un `Origin` vide comme absent et le laisse passer, ce n'est pas une régression de
+cette tâche — le constater, l'écrire dans le test avec le comportement réel et sa raison lue dans le source, et le
+rendre au fil principal comme constat.) Pour un 403, asserter aussi le corps `Forbidden: Invalid Origin header.`. Le
+docblock de `testAGetFromThePageOfTheSiteIsServed` perd « port ignoré » : l'origine du site est admise par
+`allowed_origins`. `McpEndpointTest` — le même fournisseur au POST (`testThePostAdmitsTheSiteOriginOnly`, via
+`postInitialize($client, ['HTTP_ORIGIN' => $origin])`, 200 ou 403). Run : rouges sur `la page du site` (403), verts
+ailleurs.
 
 - [ ] **Étape 3 : écrire le garde par environnement**
 
 `McpAllowedOriginPerEnvironmentTest` (lit les fichiers par `tests/Support/RepositoryFiles`, les overlays par
 `KubernetesManifests::overlay('<nom>')->documents('kustomization.yaml')` puis le `configMapGenerator` nommé
-`backend-config` et ses `literals`, `.env` par `Symfony\Component\Dotenv\Dotenv::parse()`, `phpunit.dist.xml` par
-`DOMDocument`). Tests :
-- `testMcpYamlReadsTheOriginFromTheEnvironment()` : `mcp.servers.portfolio.http.allowed_origins` de `mcp.yaml` vaut
-  exactement `['%env(MCP_ALLOWED_ORIGIN)%']` (rien en dur) ;
-- `testEachEnvironmentAllowsExactlyTheOriginOfItsSite()`, fournisseur `dev` (`.env`), `test` (`phpunit.dist.xml`,
-  `<server>` et `<env>` forcés et égaux ; l'URL du site est celle de `.env`, que le test charge aussi), `preprod`,
-  `prod` (les deux littéraux du même `backend-config`). Pour chacun : la variable est présente, elle vérifie
-  `\A(https?)://[a-z0-9.-]+(:[0-9]{1,5})?\z` (ni vide, ni `*`, ni barre finale, ni chemin), et elle est égale à
-  l'origine de `APP_FRONTEND_BASE_URL` du même environnement (`scheme://host`, plus `:port` s'il est écrit) ; préprod et
-  prod en `https`.
+`backend-config` et ses `literals`, `.env` par `Symfony\Component\Dotenv\Dotenv::parse()`). Tests :
+- `testMcpYamlDerivesTheOriginFromTheSiteUrl()` : `mcp.servers.portfolio.http.allowed_origins` de `mcp.yaml` vaut
+  exactement `['%env(APP_FRONTEND_BASE_URL)%']` (rien en dur, aucune autre entrée) ;
+- `testEachEnvironmentSiteUrlIsAnOrigin()`, fournisseur `dev`/`test` (`.env` ; vérifier qu'aucun `<env>`/`<server>`
+  de `phpunit.dist.xml` ne la redéfinit, sinon la lire là pour `test`), `preprod`, `prod` (le littéral
+  `APP_FRONTEND_BASE_URL` du `backend-config` de l'overlay). Pour chacun : la variable est présente, non vide, et
+  vérifie `\A(https?)://[a-z0-9.-]+(:[0-9]{1,5})?\z` — ni `*`, ni chemin, ni requête ; barre finale admise ou non selon
+  le préalable lu dans le SDK ; préprod et prod en `https`. Le message d'échec dit pourquoi : cette valeur gouverne
+  `allowed_origins` et `allowed_hosts` de `/api/mcp`.
 
-Run : rouge (variable absente partout, `mcp.yaml` sans `allowed_origins`).
+Run : rouge sur le premier test (`mcp.yaml` sans `allowed_origins`) ; le second est vert dès l'écriture (les
+valeurs actuelles sont des origines) — le vérifier rouge pour la bonne raison en remplaçant temporairement, **dans
+le test seulement**, une valeur lue par `https://cp-ghostotof.com/fr`, puis revenir.
 
-- [ ] **Étape 4 : poser la variable et la configuration**
+- [ ] **Étape 4 : poser la configuration**
 
-`mcp.yaml`, sous `http:` après `allowed_hosts` : `allowed_origins: ['%env(MCP_ALLOWED_ORIGIN)%']`, avec un commentaire
-(le SDK compare l'`Origin` schéma et port compris ; la même origine passe toujours ; l'origine du site est admise en
-plus, une valeur par environnement, jamais en dur ici — en dev le site, sur Vite, n'est pas sur l'origine de l'API).
-`.env` : `MCP_ALLOWED_ORIGIN=http://localhost:5173`, avec son commentaire (égale à l'origine
-d'`APP_FRONTEND_BASE_URL`, ni vide ni `*` : une valeur vide admettrait un `Origin` vide). `phpunit.dist.xml` : les
-deux entrées forcées, près d'`APP_PUBLIC_API_BASE_URL`, avec un commentaire. Overlays : un littéral
-`MCP_ALLOWED_ORIGIN=…` après `APP_FRONTEND_BASE_URL`, commenté comme ses voisins (ConfigMap `backend-config` à nom
-stable : appliquée par `apply -k` avant le rollout de l'image de la PR).
+`mcp.yaml`, sous `http:` après `allowed_hosts` : `allowed_origins: ['%env(APP_FRONTEND_BASE_URL)%']`, avec un
+commentaire (le SDK compare l'`Origin` schéma et port compris, selon ce que l'étape préalable a lu ; la même origine
+passe toujours ; l'origine du site est admise en plus — en dev le site, sur Vite, n'est pas sur l'origine de l'API ;
+une seule source avec `allowed_hosts` ; le garde `McpAllowedOriginPerEnvironmentTest`). Commentaires d'`APP_FRONTEND_BASE_URL`
+dans `.env` et les deux overlays : « doit rester une origine (schéma, hôte, port), sans chemin : elle gouverne aussi
+l'`Origin` et le `Host` admis sur `/api/mcp` ». Aucune valeur ne change, donc aucune ConfigMap à réappliquer pour
+cette tâche.
 
 - [ ] **Étape 5 : vert, et les gardes de parité restent verts**
 
 Run : les trois classes ciblées ci-dessus → vertes ; puis
-`docker compose exec -T -u dev backend php bin/phpunit tests/Security/SecurityConfigEnvironmentParityTest.php tests/Security/RouteEnvironmentParityTest.php tests/Security/SecurityServicesEnvironmentParityTest.php tests/Shared/ForcedTestValuesWinOverTheShellTest.php tests/Shared/ForcedTestValuesProbeTest.php tests/Mcp/Infrastructure/Log/McpCallLogTest.php`
+`docker compose exec -T -u dev backend php bin/phpunit tests/Security/SecurityConfigEnvironmentParityTest.php tests/Security/RouteEnvironmentParityTest.php tests/Security/SecurityServicesEnvironmentParityTest.php tests/Mcp/Infrastructure/Log/McpCallLogTest.php`
 Attendu : vert, hors les trois tests R5 de `McpCallLogTest` (tâche 3) ; `testAForeignOriginIsRefused` et le test
 d'`Origin` étranger de `McpCallLogTest` restent verts.
 
 - [ ] **Étape 6 : documentation**
 
 `.claude/rules/mcp.md` : la puce « Host check » devient « Host and Origin check » (`allowed_hosts` inchangé ;
-`allowed_origins` = `MCP_ALLOWED_ORIGIN`, une valeur par environnement et où elle est posée, le garde
-`McpAllowedOriginPerEnvironmentTest` ; le SDK compare l'`Origin` schéma et port compris ; la même origine passe
+`allowed_origins` = `APP_FRONTEND_BASE_URL`, la même source qu'`allowed_hosts`, qui doit donc rester une origine — le
+garde `McpAllowedOriginPerEnvironmentTest` ; le SDK compare l'`Origin` schéma et port compris ; la même origine passe
 toujours, déduite de l'URI de la requête — en préprod et en prod elle l'est derrière l'Ingress par `trusted_proxies`,
-et l'origine du site y est de toute façon admise par la variable ; MCP Inspector et toute page tierce sont refusés,
-`Host` absent compris) ; dans la puce « `GET /api/mcp` », la limite acceptée « the `Origin` check ignores scheme and
-port » est retirée. Docblock de `McpEndpointController` : « la liste `allowed_hosts` » devient « `allowed_hosts` et
+et l'origine du site y est de toute façon admise ; MCP Inspector et toute page tierce sont refusés, `Host` absent
+compris) ; dans la puce « `GET /api/mcp` », la limite acceptée « the `Origin` check ignores scheme and port » est
+retirée. Docblock de `McpEndpointController` : « la liste `allowed_hosts` » devient « `allowed_hosts` et
 `allowed_origins` ».
 
 - [ ] **Étape 7 : commit**
 
 ```bash
-git add backend/config/packages/mcp.yaml backend/.env backend/phpunit.dist.xml \
+git add backend/config/packages/mcp.yaml backend/.env \
   k8s/overlays/preprod/kustomization.yaml k8s/overlays/prod/kustomization.yaml \
   backend/tests/Mcp/Infrastructure/Kubernetes/McpAllowedOriginPerEnvironmentTest.php \
   backend/tests/Mcp/Presentation/McpEndpointGetTest.php backend/tests/Mcp/Presentation/McpEndpointTest.php \
   backend/src/Mcp/Presentation/Controller/McpEndpointController.php .claude/rules/mcp.md
 git commit -F - <<'EOF'
-fix(mcp): l'origine du site admise par allowed_origins, une variable par environnement (#731)
+fix(mcp): l'origine du site admise par allowed_origins, dérivée de son URL (#731)
 
 Le SDK 0.9 compare l'Origin schéma et port compris : la page du site en
-dev (Vite) était refusée en 403. allowed_origins lit MCP_ALLOWED_ORIGIN,
-posée par environnement (.env, phpunit.dist.xml, ConfigMaps de préprod et
-de prod), rien en dur dans mcp.yaml (décision du 2026-11-06). Un garde
-exige dans chaque environnement l'origine exacte de son site.
+dev (Vite) était refusée en 403. allowed_origins lit APP_FRONTEND_BASE_URL,
+déjà posée par environnement et source d'allowed_hosts : une seule valeur,
+rien en dur dans mcp.yaml (décisions du 2026-11-06 et du 2026-11-10). Un
+garde exige que cette URL reste une origine dans chaque environnement.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
@@ -663,7 +677,9 @@ EOF
 
 Lecture retenue de la décision 3 : sans borne, le refus « corpus trop grand » n'a plus d'objet ; il part avec elle,
 avec son test `testAnOversizedCorpusIsRefusedWithTheCvPageLink` et le `warning` qu'il écrivait. Cette lecture a été
-remontée au fil principal avec le plan (2026-11-10) : l'auteur la confirme avant que cette tâche ne s'exécute.
+remontée au fil principal avec le plan et **confirmée par l'auteur le 2026-11-10** (effet métier accepté : un corpus
+nominatif très gros est servi en entier, jamais remplacé par le lien vers la page CV). Après cette tâche, le fil
+principal met à jour le corps de l'issue #653 (accord de l'auteur du 2026-11-10, texte montré avant écriture).
 
 - [ ] **Étape 1 : le test d'exposition dit le nouveau constructeur (rouge)**
 
@@ -885,8 +901,8 @@ En-tête « Statut » : ajouter « et le 2026-11-10 (D7 : montée en `symfony/mc
 (rien de la phase 2 n'en dépend ; les middlewares d'autorisation refondus de la 0.9 restent inutilisés). D7 : nouvel
 encadré *Amendé le 2026-11-10 (#731)*, sur le modèle de l'amendement de l'ADR 0004 D1 du 2026-11-06 : les deux paquets
 en version exacte, la raison (avis GHSA-f4rf-6ghj-mhr6 sur `mcp/sdk` 0.8.x, et la note de recherche) et les décisions
-du 2026-11-06 qui en découlent, une phrase chacune avec son renvoi à la règle : `allowed_origins` par variable
-(`MCP_ALLOWED_ORIGIN`) ; 503 au GET ; session trop grosse servie, son identifiant inexistant ; borne en file retirée,
+du 2026-11-06 qui en découlent, une phrase chacune avec son renvoi à la règle : `allowed_origins` dérivé de
+`APP_FRONTEND_BASE_URL` (décision du 2026-11-10) ; 503 au GET ; session trop grosse servie, son identifiant inexistant ; borne en file retirée,
 lien session ↔ connexion gardé en défense en profondeur ; journal de l'ère sans session sur les événements du SDK,
 `durationMs` du message ; validation du `structuredContent` (effet sur D1) ; hors périmètre : verrou de session (#762),
 1.0 (#763). La dernière phrase de l'amendement du 2026-11-06 (« Les versions ne changent pas ici … ») reste, elle date
@@ -956,12 +972,12 @@ la montée lève l'alerte de `composer audit`.
 `tasks/pr-731-mcp-0-15.md`, sections : **Résumé** (la montée, `Closes`-sans-effet : #731 se ferme à la main après la
 fusion vers la mère) ; **Décision par paquet** (montés, et pourquoi : note §1, §7) ; **Exposition à l'avis** (étape 1,
 chaque source citée) ; **Ce qui change pour un client MCP** (note §5, mis à jour de ce que la PR a décidé : 1 `Origin`
-schéma et port compris, l'origine du site admise par `MCP_ALLOWED_ORIGIN`, MCP Inspector et pages tierces en 403 ;
+schéma et port compris, l'origine du site admise, dérivée d'`APP_FRONTEND_BASE_URL`, MCP Inspector et pages tierces en 403 ;
 2 CORS : `Mcp-Method`, `Mcp-Name`, `Mcp-Param-*` autorisés, `WWW-Authenticate` exposé ; 3 store injoignable : 503
 `-32603` au POST **et au GET** ; 4 session trop grosse : réponse servie, identifiant inexistant, 404 ensuite ; 5 sortie
 non conforme : erreur d'outil ; 6 `Mcp-Param-*` sans argument miroir : `-32020` ; 7 `completion/complete` incomplet :
-refusé ; 8 schéma d'entrée mal formé refusé côté serveur ; 9 inchangé) ; **Notes de déploiement** (nouvelle variable
-`MCP_ALLOWED_ORIGIN` posée par les overlays dans `backend-config`, appliquée par `apply -k` avant le rollout ; aucune
+refusé ; 8 schéma d'entrée mal formé refusé côté serveur ; 9 inchangé) ; **Notes de déploiement** (aucune nouvelle
+variable : `allowed_origins` dérive d'`APP_FRONTEND_BASE_URL`, valeur inchangée dans `backend-config` ; aucune
 migration ; à vérifier en préprod que claude.ai, ChatGPT et Claude Code n'envoient pas d'`Origin` refusé, et lire les
 403 « Invalid Origin header » la première semaine) ; **Hors périmètre** (#762, #763, les 6 `config.unknown_key`) ;
 **Vérifications** (étape 3, sorties résumées).
