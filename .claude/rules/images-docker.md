@@ -51,7 +51,7 @@ prod run the identical PHP engine:
   `APP_ENV` alone and drop every default of `.env` —, and `.env` must never reference one of those three.
   **Only `backend/.env` feeds it**: `dump-env prod` also reads `.env.local`, `.env.prod` and
   `.env.prod.local`, all three excluded by `.dockerignore`, like a workstation's `.env.local.php` (no
-  `.env.<env>` is versioned, see `.claude/CLAUDE.md`). Keep `.env` in the image: when the pod's `APP_ENV`
+  `.env.<env>` is versioned, see `.claude/rules/environnement-dev.md`). Keep `.env` in the image: when the pod's `APP_ENV`
   differs from the compiled one, Dotenv falls back to parsing it. `ProductionImageCompilesDotenvTest` pins
   the command, its place, that no other instruction touches the file, the references of `.env` and the
   exclusions (the dev container mounts `.dockerignore` read-only for it: `up -d --force-recreate backend`
