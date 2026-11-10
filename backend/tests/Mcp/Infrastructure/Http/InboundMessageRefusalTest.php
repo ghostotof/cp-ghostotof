@@ -20,7 +20,8 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Ce que le serveur MCP refuse avant le SDK (#644), parce que le SDK le
- * servirait ou le recopierait en session sans borne :
+ * servirait, le recopierait en session sans borne ou, pour une réponse du
+ * client, la journaliserait en `warning` à volonté :
  *
  * - un lot JSON-RPC de plusieurs messages : le SDK de la version épinglée
  *   (composer.json) en accepte jusqu'à 100 par requête HTTP, codé en dur —
@@ -30,7 +31,8 @@ use Symfony\Component\Uid\Uuid;
  * - une réponse du client : en 0.8.1 le SDK la rangeait en session sous un
  *   identifiant que le client choisit ; depuis la 0.9 il n'y range que la
  *   réponse à une requête qu'il a envoyée, et écrit un `warning` pour toute
- *   autre — ce serveur n'envoie aucune requête au client ;
+ *   autre (une erreur sans identifiant a son propre message) — ce serveur
+ *   n'envoie aucune requête au client ;
  * - `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
  *   php-fpm pris, pour un serveur qui n'émet aucune notification.
  */

@@ -58,7 +58,7 @@ use Symfony\Component\Uid\Uuid;
  * vaut absent, comme au transport. Entre les deux, la règle d'en-tête de version du transport
  * (`ProtocolVersionMiddleware`) : 400 pour une révision qu'il ne négocie pas.
  *
- * **Et 503 quand le store de sessions est injoignable** (#731, décision du
+ * **Et 503 quand le contrôle d'existence du store lève** (#731, décision du
  * 2026-11-06 : suivre le SDK). Le contrôle d'existence lève alors
  * {@see SessionStoreException} — le store du SDK sur un cache dont le `has()`
  * échoue, que le store borné laisse passer —, dont le SDK fait au POST un 503
@@ -73,7 +73,8 @@ use Symfony\Component\Uid\Uuid;
  * de Symfony attrape lui-même l'échec de la requête (`hasItem()` rend `false`
  * après un `warning` du canal `cache`) — une base injoignable s'y lit encore
  * « session absente », 404 au GET comme au POST ; le 503 vaut pour un cache
- * dont le `has()` lève.
+ * dont le `has()` lève, et n'est donc pas atteint en production — limite
+ * acceptée par l'auteur le 2026-11-10, suivie par l'issue #770.
  */
 #[AsDecorator('mcp.server.portfolio.controller')]
 final readonly class McpEndpointController

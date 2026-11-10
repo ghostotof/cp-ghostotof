@@ -45,7 +45,7 @@ paths:
   nominative corpus through; and `sessionId`, the session id as `BaseTransport::handleFiberYield()` spells it in
   « Fiber yield handler failed. » (`error`; no fiber suspends today). `SdkChannelRedactorTest` pins both, the first
   on the record the real validator writes through the processor, so an SDK renaming the key turns it red (each red
-  before its key, measured). A context value that is neither a scalar nor an exception (`validation_errors`,
+  before its key, measured). A context value that is neither a scalar, nor `null`, nor an exception (`validation_errors`,
   `session_ids`, `response_data`, `payload`: arrays, objects) is reduced to its type whatever its key.
 - **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
   `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's

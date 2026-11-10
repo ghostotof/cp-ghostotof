@@ -47,11 +47,13 @@ use Mcp\Exception\PromptGetException;
  *    **que ceux-là** : « équipe <10 personnes, PHP >= 8.4 » garde son sens ;
  *    « (role-based…) » perd sa parenthèse, accepté.
  *
- * Une valeur refusée est une `PromptGetException`, la seule erreur d'un prompt
- * que le SDK de la version épinglée (composer.json) rend avec son message
- * (`-32603`, quand le protocole attendrait `-32602` : le SDK ne laisse pas le
- * choix). Son message ne cite jamais le
- * texte reçu : le SDK le journalise avec l'erreur.
+ * Une valeur refusée est une `PromptGetException`, la seule exception qu'un
+ * prompt puisse lever pour refuser une valeur et dont le SDK de la version
+ * épinglée (composer.json) rende le message (`GetPromptHandler`) — en
+ * `-32603`, quand le protocole attendrait `-32602`. Le SDK ne rend en `-32602`
+ * que `PromptNotFoundException`, qui désigne un prompt inconnu, pas une valeur
+ * refusée. Son message ne cite jamais le texte reçu : le SDK le journalise
+ * avec l'erreur.
  */
 final readonly class PromptRole
 {

@@ -40,8 +40,10 @@ final class PresentForRolePromptTest extends WebTestCase
     private const string TAG = '/<(role-[0-9a-f]{16})>/';
 
     /**
-     * -32603 : la seule erreur que le SDK de la version épinglée (composer.json)
-     * laisse rendre à un prompt (`PromptGetException`).
+     * -32603 : le code de `PromptGetException`, la seule erreur de refus d'une
+     * valeur que le SDK de la version épinglée (composer.json) laisse rendre à
+     * un prompt avec son message. `PromptNotFoundException`, rendue en -32602,
+     * désigne un prompt inconnu, pas une valeur refusée.
      */
     private const int PROMPT_ERROR = -32603;
 

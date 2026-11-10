@@ -346,8 +346,13 @@ sections 3 à 5), puis les décisions de l'auteur du 2026-11-06 (section 7 de la
   2026-11-06 : une origine par environnement, rien en dur) : l'origine du site est admise, un `Origin`
   envoyé qui n'est ni celle-là ni celle de la requête est refusé en 403, et la variable doit rester une
   origine dans chaque environnement (`.claude/rules/mcp.md`, « Host and Origin check »).
-- **503 au `GET` aussi** quand le store de sessions est injoignable, comme le SDK au `POST` : la session
-  existe peut-être, le client réessaie au lieu de se réinitialiser (`.claude/rules/mcp-sessions.md`).
+- **503 au `GET` aussi** quand le contrôle d'existence du store de sessions lève, comme le SDK au `POST` :
+  la session existe peut-être, le client réessaie au lieu de se réinitialiser
+  (`.claude/rules/mcp-sessions.md`). **Ce 503 n'est pas atteint en production**, mesuré : derrière le pool
+  DBAL, l'adaptateur de Symfony Cache attrape lui-même l'échec de la requête et répond « absente »
+  (`AbstractAdapterTrait::hasItem()`), si bien qu'une panne de PostgreSQL donne un 404 au `POST` comme au
+  `GET` ; le 503 exige un cache dont `has()` lève. Limite acceptée par l'auteur le 2026-11-10, suivie par
+  #770.
 - **Une session trop grosse est servie, son identifiant n'existe pas** : la réponse arrive, la requête
   suivante sous cet identifiant reçoit 404, au `POST` comme au `GET` (`.claude/rules/mcp-sessions.md`).
 - **La borne de la réponse en file est retirée** : la réponse d'un `POST` ne passe plus par la session,

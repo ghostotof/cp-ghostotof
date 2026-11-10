@@ -72,9 +72,9 @@ final class SdkChannelRedactor
      * outil, et depuis la 0.9 sa **sortie** — pour l'outil nominatif, le
      * corpus (#731). `sessionId` est l'identifiant de session tel que
      * l'écrit le transport quand le gestionnaire d'une fibre suspendue
-     * échoue, sous une autre graphie que partout ailleurs. Une valeur qui
-     * n'est pas scalaire (un tableau d'identifiants, un objet autre qu'une
-     * exception) est déjà réduite à son type par {@see self::bounded()}.
+     * échoue, sous une autre graphie que partout ailleurs. Une valeur ni
+     * scalaire, ni `null`, ni exception (un tableau d'identifiants, un objet)
+     * est déjà réduite à son type par {@see self::bounded()}.
      *
      * @var list<string>
      */

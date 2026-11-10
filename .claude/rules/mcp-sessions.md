@@ -95,9 +95,10 @@ paths:
   (`BoundedSessionStoreTest::testAnUnreachableStoreIsNotAnAbsentSession`), and it is a **503**, a JSON-RPC `-32603`
   « Session store is unavailable. » with an `error` line of that message on the `mcp` channel — the SDK's at the POST
   (`Protocol::resolveSession()`), the controller's at the GET —, never a 404: the session may exist, the client retries
-  instead of re-initialising. **Measured, not decided**: behind the DBAL pool Symfony's adapter catches the failed
+  instead of re-initialising. **Measured, accepted by the author on 2026-11-10 (#770)**: behind the DBAL pool Symfony's adapter catches the failed
   query itself (`AbstractAdapterTrait::hasItem()`: a `warning` of the `cache` channel naming the key, then `false`), so
-  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws. **That
+  an unreachable PostgreSQL still reads « absent », 404 at both; the 503 needs a cache whose `has()` throws — never
+  reached in production, tracked by #770. **That
   `warning` names the key without the session id** (#731, decided 2026-11-10): the key is `mcp-portfolio-<session id>`
   and `main` takes the `cache` channel in production, so `Infrastructure/Log/SessionKeyCacheChannelRedactor`, a
   processor of that channel, withholds the id on every such line — read, existence check, write, deletion — and

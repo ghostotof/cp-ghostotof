@@ -18,8 +18,9 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Throwable;
 
 /**
- * Refuse en 400 sur `/api/mcp`, avant le SDK, ce que le SDK servirait ou
- * recopierait en session sans borne (#644) — {@see InboundMessageRefusal} :
+ * Refuse en 400 sur `/api/mcp`, avant le SDK, ce que le SDK servirait,
+ * recopierait en session sans borne ou, pour une réponse du client, journaliserait
+ * en `warning` à volonté (#644) — {@see InboundMessageRefusal} :
  *
  * - **un lot JSON-RPC de plusieurs messages.** Le SDK de la version épinglée
  *   (composer.json) en accepte jusqu'à 100 par requête HTTP, une borne codée
@@ -46,10 +47,14 @@ use Throwable;
  *   borne de session : la ligne réécrite à chaque requête grossissait de
  *   ~30 Ko par réponse postée (audit de #644, mesuré). Depuis la 0.9, il ne
  *   range plus que la réponse à une requête qu'il a lui-même envoyée et qui
- *   attend encore (un identifiant UUID) ; toute autre lui fait écrire un
- *   `warning` du canal `mcp` (« Received a client response for an unknown or
- *   timed out request ID. »), qu'un anonyme provoquerait à volonté sans ce
- *   refus. Ce serveur n'envoie aucune requête au client (ni sampling, ni
+ *   attend encore (un identifiant UUID). Sinon, il écrit un `warning` du canal
+ *   `mcp` et ignore la réponse : pour une erreur sans identifiant, « Received
+ *   an id-less error response from client; cannot correlate it to a pending
+ *   request. » (clé `response`, retenue par SdkChannelRedactor, qui la range
+ *   parmi les fautes du client, en `notice`) ; pour toute autre, « Received a
+ *   client response for an unknown or timed out request ID. » (clé
+ *   `message_id`), au-dessus du plafond de production — qu'un anonyme
+ *   provoquerait à volonté sans ce refus. Ce serveur n'envoie aucune requête au client (ni sampling, ni
  *   elicitation, ni roots) : aucune réponse n'est attendue. Le jour où un
  *   outil en sollicite une, ce refus doit apprendre à reconnaître la réponse
  *   attendue ;
