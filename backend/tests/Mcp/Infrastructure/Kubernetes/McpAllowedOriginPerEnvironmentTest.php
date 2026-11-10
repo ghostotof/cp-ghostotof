@@ -34,9 +34,18 @@ use Symfony\Component\Dotenv\Dotenv;
  *   un tel `Origin`, la page du site serait refusée en 403 ;
  * - `http` en préprod et en prod : la page du site y est servie en `https`.
  *
+ * - le port par défaut du schéma écrit en clair (`https://site:443`,
+ *   `http://site:80`) : le SDK le retire, mais lui seul.
+ *   {@see \App\Mcp\Connection\Application\OAuthEndpoints} ne retire que la
+ *   barre finale, et l'émetteur OAuth comme la ressource MCP, qui retombent
+ *   sur cette variable en préprod et en prod, porteraient ce port — or un
+ *   client compare la ressource à l'URL qu'il a appelée, où il n'est pas
+ *   écrit : la connexion OAuth échouerait (côté fermé, mais cassée).
+ *
  * Et ce qu'il admet : **une barre finale** (`https://site/`), que le SDK
  * retire lui-même, comme chaque autre lecteur de la variable (`rtrim` dans
- * les liens composés).
+ * les liens composés, {@see \App\Mcp\Connection\Application\OAuthEndpoints}
+ * compris) — vrai de la barre finale seulement, d'où le refus ci-dessus.
  *
  * Limites, acceptées : le garde lit les valeurs écrites dans le dépôt —
  * `backend/.env` pour dev et test, le littéral du `backend-config` de chaque
@@ -49,9 +58,14 @@ final class McpAllowedOriginPerEnvironmentTest extends TestCase
 
     /**
      * Schéma, hôte en minuscules, port éventuel, barre finale éventuelle :
-     * ni `*`, ni identifiants, ni chemin, ni requête, ni fragment.
+     * ni `*`, ni identifiants, ni chemin, ni requête, ni fragment. Un port
+     * ne commence pas par zéro : `:0443` serait le port par défaut sous une
+     * forme que ni le SDK ni {@see self::EXPLICIT_DEFAULT_PORT} ne lisent.
      */
-    private const string ORIGIN = '~\A(https?)://[a-z0-9.-]+(:[0-9]{1,5})?/?\z~';
+    private const string ORIGIN = '~\A(https?)://[a-z0-9.-]+(:[1-9][0-9]{0,4})?/?\z~';
+
+    /** Le port par défaut du schéma, écrit en clair : `:443` en https, `:80` en http. */
+    private const string EXPLICIT_DEFAULT_PORT = '~\A(?:https://.+:443|http://.+:80)/?\z~';
 
     /** Les environnements déployés derrière l'Ingress, servis en `https` seulement. */
     private const array SERVED_OVER_HTTPS = ['preprod', 'prod'];
@@ -106,6 +120,16 @@ final class McpAllowedOriginPerEnvironmentTest extends TestCase
             self::ORIGIN,
             $siteUrl,
             \sprintf('%s : %s n\'est pas une origine. %s', $environment, self::VARIABLE, self::WHY),
+        );
+        self::assertDoesNotMatchRegularExpression(
+            self::EXPLICIT_DEFAULT_PORT,
+            $siteUrl,
+            \sprintf(
+                '%s : %s écrit le port par défaut de son schéma. Le SDK le retire, pas OAuthEndpoints : l\'émetteur OAuth et la ressource MCP le porteraient, alors qu\'un client compare la ressource à l\'URL qu\'il a appelée. %s',
+                $environment,
+                self::VARIABLE,
+                self::WHY,
+            ),
         );
         if (\in_array($environment, self::SERVED_OVER_HTTPS, true)) {
             self::assertStringStartsWith(

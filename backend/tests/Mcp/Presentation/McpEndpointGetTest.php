@@ -18,9 +18,10 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Le GET de `/api/mcp` (relecture de la tâche 2) : il traverse **les mêmes
- * middlewares que le POST** — la protection contre le rebond DNS et le CORS
- * du SDK, construits par le bundle avec `allowed_hosts` et `allowed_origins`
- * —, au lieu d'en recopier les règles avec un seul hôte. Puis il répond comme le
+ * middlewares que le POST** — ceux du SDK : sa protection contre le rebond
+ * DNS, la seule que le bundle construit avec `allowed_hosts` et
+ * `allowed_origins`, et son CORS, laissé à ses défauts (aucune origine
+ * autorisée) —, au lieu d'en recopier les règles avec un seul hôte. Puis il répond comme le
  * transport pour une session : 404 si elle n'existe pas (ou plus), 400 si
  * son identifiant n'est pas un UUID, 406 sans `Accept: text/event-stream`.
  * `HEAD`, que le routeur fait correspondre au GET, reçoit la même réponse
@@ -103,6 +104,12 @@ final class McpEndpointGetTest extends WebTestCase
      * ce que {@see \App\Tests\Mcp\Infrastructure\Kubernetes\McpAllowedOriginPerEnvironmentTest}
      * exige dans chaque environnement.
      *
+     * L'en-tête reçu n'est que mis en minuscules avant la comparaison : la
+     * casse est donc indifférente, mais une barre finale — que le SDK retire
+     * de la valeur configurée, jamais de l'en-tête — suffit au refus. Le port
+     * par défaut écrit en clair n'est admis que pour l'origine de la requête
+     * (`isSameOrigin()`), ici `http://localhost:80`.
+     *
      * Partagé avec le POST ({@see McpEndpointTest::testThePostAdmitsTheSiteOriginOnly()}).
      *
      * @return iterable<string, array{string, int}>
@@ -117,6 +124,9 @@ final class McpEndpointGetTest extends WebTestCase
         yield 'origine opaque' => ['null', 403];
         yield 'origine vide' => ['', 403];
         yield 'hôte étranger' => ['https://evil.example', 403];
+        yield 'la page du site, barre finale' => ['http://localhost:5173/', 403];
+        yield 'la page du site, en capitales' => ['HTTP://LOCALHOST:5173', 200];
+        yield 'la même origine que l\'API, port par défaut écrit' => ['http://localhost:80', 200];
     }
 
     #[DataProvider('originsAgainstTheSite')]

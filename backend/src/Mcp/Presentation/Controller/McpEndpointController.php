@@ -41,9 +41,12 @@ use Symfony\Component\Uid\Uuid;
  * n'envoie rien de lui-même (aucune notification), il n'y a donc rien à
  * attendre sur ce flux.
  *
- * **Le GET traverse les middlewares mêmes du POST** — la protection contre le
- * rebond DNS et le CORS du SDK, que le bundle construit avec `allowed_hosts`
- * et `allowed_origins` de mcp.yaml —, jamais une copie de leurs règles : une copie
+ * **Le GET traverse les middlewares mêmes du POST**, ceux du SDK tels que la
+ * fabrique du bundle les rend : la protection contre le rebond DNS, la seule
+ * qu'elle construit avec `allowed_hosts` et `allowed_origins` de mcp.yaml, et
+ * le CORS du SDK, laissé à ses défauts — aucune origine autorisée, celle du
+ * site non plus : il ne pose jamais `Access-Control-Allow-Origin`. Jamais une
+ * copie de leurs règles : une copie
  * réduite à un hôte refusait au GET un second hôte que le POST acceptait, et
  * lisait mal un hôte IPv6 (relecture de la tâche 2). Puis il répond comme le
  * transport pour une session : 400 si son identifiant n'est pas un UUID, 404

@@ -214,7 +214,9 @@ paths:
   only when the header is sent, and compares it **scheme and port included**, by strict equality once lowercased,
   with the request's own origin — always admitted, read from the request URI: behind the Ingress it is the public
   one through `trusted_proxies`, and the site's origin is admitted there anyway — and with this list, whose entries
-  it normalises (lowercase, trailing slash and default port removed: the guard admits one trailing slash). So the
+  alone it strips of a trailing slash and a default port (the received header is only lowercased, so `http://site/`
+  is refused). The guard admits one trailing slash and refuses a written default port (`:443`, `:80`): `OAuthEndpoints`
+  only trims the slash, the OAuth issuer and resource would carry it. So the
   site's page passes — in dev it is on Vite, not on the API's origin —, and MCP Inspector, `null` (a sandboxed
   iframe, `file://`), an empty `Origin` and any third-party page get 403 « Forbidden: Invalid Origin header. »,
   POST and GET alike (`originsAgainstTheSite()`, shared by `McpEndpointGetTest` and `McpEndpointTest`). `*` there
@@ -303,7 +305,9 @@ paths:
   server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle; `HEAD`, which the router
   matches to the GET route, gets the GET's answer without a body (it reached the SDK's 405 before #641).
   **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
-  (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts` and `allowed_origins`) run by the SDK's
+  (the SDK's two: its DNS-rebinding protection, the only one the bundle builds from `allowed_hosts` and
+  `allowed_origins`, and its CORS, left at its defaults — no allowed origin, the site's neither; an answer's CORS
+  headers are `nelmio_cors`'s, as on all of `/api`) run by the SDK's
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
   list, and split `[::1]:8080` into `[`. Then the transport's version rule, `StreamableHttpTransport::handshakeMiddleware()`
   (`ProtocolVersionMiddleware`: a revision it does not negotiate, `2026-07-28` included, is a 400, as the SDK answers a

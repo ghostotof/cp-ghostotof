@@ -36,10 +36,15 @@ mcp:
                 # juge que l'en-tête présent, et le compare **schéma et port
                 # compris**, par égalité stricte après mise en minuscules, à
                 # deux choses : l'origine de la requête elle-même, toujours
-                # admise (port par défaut écrit ou non), et cette liste. Il
-                # normalise la valeur écrite ici — minuscules, barre finale et
-                # port par défaut retirés —, jamais l'en-tête reçu : un
-                # navigateur l'envoie déjà sous cette forme.
+                # admise (port par défaut écrit ou non), et cette liste. La
+                # valeur écrite ici et l'en-tête reçu sont tous deux mis en
+                # minuscules ; à la valeur seule il retire la barre finale et
+                # le port par défaut, jamais à l'en-tête (un navigateur
+                # l'envoie déjà sans eux) : `Origin: http://site/` est refusé.
+                # Ces deux listes ne règlent que ce middleware-là. Le CORS du
+                # SDK, que le bundle laisse à ses défauts, n'autorise aucune
+                # origine, celle du site non plus : les en-têtes CORS d'une
+                # réponse sont ceux de nelmio_cors, comme sur tout /api.
                 # L'origine du site est donc admise en plus de celle de l'API :
                 # en dev le site, sur Vite, n'en est pas une page (autre port) ;
                 # en préprod et en prod c'est la même. Rien d'autre : MCP
@@ -49,7 +54,9 @@ mcp:
                 # écart possible entre l'URL du site et l'origine admise ; en
                 # contrepartie APP_FRONTEND_BASE_URL doit rester une origine,
                 # sans chemin (`*` ouvrirait tout, une valeur vide admettrait
-                # un Origin vide) : McpAllowedOriginPerEnvironmentTest l'exige
+                # un Origin vide) ni port par défaut écrit (le SDK le retire,
+                # pas OAuthEndpoints : l'émetteur et la ressource OAuth le
+                # porteraient) : McpAllowedOriginPerEnvironmentTest l'exige
                 # dans chaque environnement.
                 allowed_origins: ['%env(APP_FRONTEND_BASE_URL)%']
             # ADR 0005 : deux réplicas, un disque en lecture seule. Le store
