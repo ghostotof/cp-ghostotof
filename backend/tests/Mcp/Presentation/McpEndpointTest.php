@@ -19,6 +19,7 @@ use Mcp\Server\Session\Psr16SessionStore;
 use Mcp\Server\Stateless\RequestMeta;
 use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use ReflectionProperty;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -356,6 +357,25 @@ final class McpEndpointTest extends WebTestCase
         $this->postInitialize($client, ['HTTP_ORIGIN' => 'https://evil.example']);
 
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Les mêmes origines qu'au GET, au POST (R4 de #731) : le SDK compare
+     * l'`Origin` schéma et port compris, n'admet que l'origine de la requête
+     * et celle du site (`allowed_origins`), et refuse le reste en 403 —
+     * `null` et un `Origin` vide compris.
+     */
+    #[DataProviderExternal(McpEndpointGetTest::class, 'originsAgainstTheSite')]
+    public function testThePostAdmitsTheSiteOriginOnly(string $origin, int $expectedStatus): void
+    {
+        $client = self::createClient();
+
+        $this->postInitialize($client, ['HTTP_ORIGIN' => $origin]);
+
+        self::assertResponseStatusCodeSame($expectedStatus);
+        if (403 === $expectedStatus) {
+            self::assertSame(McpEndpointGetTest::INVALID_ORIGIN, $client->getResponse()->getContent());
+        }
     }
 
     /**

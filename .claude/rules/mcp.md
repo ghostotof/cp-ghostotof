@@ -17,7 +17,7 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
+| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host and origin check, sessions, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -203,10 +203,23 @@ paths:
   against the real registry: a resource (#654) added without announcing it turns it red. Announcing a
   notification again means a bus first, then lifting the `listen` refusal (below), in the same change. After
   changing `Kernel.php` locally, `rm -rf var/cache/test`: the test container is not rebuilt on its own.
-- **Host check**: `http.allowed_hosts` is `'%env(key:host:url:APP_FRONTEND_BASE_URL)%'` — the site's public
+- **Host and Origin check**: `http.allowed_hosts` is `'%env(key:host:url:APP_FRONTEND_BASE_URL)%'` — the site's public
   host, already set per overlay (same host as the API behind the Ingress), `localhost` in dev and test; no
-  variable of its own. The SDK's middleware answers 403 on a foreign `Host`, or on a foreign `Origin` when one
-  is sent.
+  variable of its own. The SDK's middleware answers 403 on a foreign `Host` (case and port ignored), an absent one
+  included. **`http.allowed_origins` is `'%env(APP_FRONTEND_BASE_URL)%'`** (#731, decided 2026-11-10): the same
+  source, no variable of its own, so the site's URL and the admitted origin cannot drift apart — and that variable
+  **must stay an origin** (scheme, host, port; no path), in every environment:
+  `McpAllowedOriginPerEnvironmentTest` (`backend/.env`, both overlays' `backend-config` literal, no other line of
+  `k8s/` naming it; `mcp.yaml` declaring exactly that entry in every kernel environment). The SDK judges an `Origin`
+  only when the header is sent, and compares it **scheme and port included**, by strict equality once lowercased,
+  with the request's own origin — always admitted, read from the request URI: behind the Ingress it is the public
+  one through `trusted_proxies`, and the site's origin is admitted there anyway — and with this list, whose entries
+  it normalises (lowercase, trailing slash and default port removed: the guard admits one trailing slash). So the
+  site's page passes — in dev it is on Vite, not on the API's origin —, and MCP Inspector, `null` (a sandboxed
+  iframe, `file://`), an empty `Origin` and any third-party page get 403 « Forbidden: Invalid Origin header. »,
+  POST and GET alike (`originsAgainstTheSite()`, shared by `McpEndpointGetTest` and `McpEndpointTest`). `*` there
+  would admit every origin, an empty value an empty `Origin`: the guard refuses both. After changing `mcp.yaml`
+  locally, `rm -rf var/cache/test`.
 - **Sessions** live in the DBAL pool `cache.mcp_sessions` (`cache.yaml`, table `cache_items`; lifetime written
   once, `session.ttl` in `mcp.yaml`, 1 h), through the PSR-16 service `app.mcp.session_cache` (`psr/simple-cache`
   is a direct dependency for it): never the bundle's default `file` store under `var/cache` (read-only pod, two
@@ -290,7 +303,7 @@ paths:
   server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle; `HEAD`, which the router
   matches to the GET route, gets the GET's answer without a body (it reached the SDK's 405 before #641).
   **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
-  (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts`) run by the SDK's
+  (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts` and `allowed_origins`) run by the SDK's
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
   list, and split `[::1]:8080` into `[`. Then the transport's version rule, `StreamableHttpTransport::handshakeMiddleware()`
   (`ProtocolVersionMiddleware`: a revision it does not negotiate, `2026-07-28` included, is a 400, as the SDK answers a
@@ -300,8 +313,7 @@ paths:
   below, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
   as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
-  case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
-  scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
+  case, the host rules on a several-host list included, and the `Origin` rules above.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
   SSE answers alike, the last answering event of a stream; `callMcpTool()`, `listedMcpTool()`, `routeBody()`).
   A test that opens sessions calls `forgetMcpSessions()` in its `tearDown`: the `mcp-portfolio-` rows of

@@ -19,8 +19,8 @@ use Symfony\Component\Uid\Uuid;
 /**
  * Le GET de `/api/mcp` (relecture de la tâche 2) : il traverse **les mêmes
  * middlewares que le POST** — la protection contre le rebond DNS et le CORS
- * du SDK, construits par le bundle avec la liste `allowed_hosts` —, au lieu
- * d'en recopier les règles avec un seul hôte. Puis il répond comme le
+ * du SDK, construits par le bundle avec `allowed_hosts` et `allowed_origins`
+ * —, au lieu d'en recopier les règles avec un seul hôte. Puis il répond comme le
  * transport pour une session : 404 si elle n'existe pas (ou plus), 400 si
  * son identifiant n'est pas un UUID, 406 sans `Accept: text/event-stream`.
  * `HEAD`, que le routeur fait correspondre au GET, reçoit la même réponse
@@ -31,6 +31,9 @@ final class McpEndpointGetTest extends WebTestCase
     use SpeaksMcp;
 
     private const array EVENT_STREAM = ['HTTP_ACCEPT' => 'text/event-stream'];
+
+    /** Le corps du 403 que le SDK rend pour un `Origin` qu'il n'admet pas. */
+    public const string INVALID_ORIGIN = 'Forbidden: Invalid Origin header.';
 
     protected function setUp(): void
     {
@@ -71,8 +74,9 @@ final class McpEndpointGetTest extends WebTestCase
     }
 
     /**
-     * Une page servie sous le nom du site (son `Origin`) est admise, port
-     * ignoré, comme au POST.
+     * Une page du site (son `Origin`, schéma et port compris) est admise par
+     * `allowed_origins` de mcp.yaml, comme au POST : en dev et en test le
+     * site, sur Vite, n'est pas sur l'origine de l'API.
      */
     public function testAGetFromThePageOfTheSiteIsServed(): void
     {
@@ -81,6 +85,51 @@ final class McpEndpointGetTest extends WebTestCase
         $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_ORIGIN' => 'http://localhost:5173'] + self::EVENT_STREAM);
 
         self::assertResponseIsSuccessful();
+    }
+
+    /**
+     * L'`Origin` contre le site (R4 de #731). Le SDK le compare **schéma et
+     * port compris** à deux choses seulement : l'origine de la requête
+     * elle-même (ici `http://localhost`, l'API), toujours admise, et
+     * `allowed_origins`, qui porte l'origine du site (`APP_FRONTEND_BASE_URL`,
+     * `http://localhost:5173` en test). Tout le reste est un 403 : le même
+     * hôte sous un autre schéma ou un autre port (MCP Inspector, sur 6274), une
+     * origine opaque (`null` : iframe isolée, `file://`), une page tierce.
+     *
+     * Un `Origin` **vide** est refusé lui aussi, et non lu comme absent : le
+     * middleware teste la présence de l'en-tête (`hasHeader('Origin')`), pas
+     * sa valeur, et une valeur vide n'égale ni l'origine de la requête ni une
+     * entrée d'`allowed_origins` — tant que celle-ci n'est pas elle-même vide,
+     * ce que {@see \App\Tests\Mcp\Infrastructure\Kubernetes\McpAllowedOriginPerEnvironmentTest}
+     * exige dans chaque environnement.
+     *
+     * Partagé avec le POST ({@see McpEndpointTest::testThePostAdmitsTheSiteOriginOnly()}).
+     *
+     * @return iterable<string, array{string, int}>
+     */
+    public static function originsAgainstTheSite(): iterable
+    {
+        yield 'la page du site' => ['http://localhost:5173', 200];
+        yield 'la même origine que l\'API' => ['http://localhost', 200];
+        yield 'autre schéma' => ['https://localhost:5173', 403];
+        yield 'autre port' => ['http://localhost:5174', 403];
+        yield 'MCP Inspector' => ['http://localhost:6274', 403];
+        yield 'origine opaque' => ['null', 403];
+        yield 'origine vide' => ['', 403];
+        yield 'hôte étranger' => ['https://evil.example', 403];
+    }
+
+    #[DataProvider('originsAgainstTheSite')]
+    public function testTheGetAdmitsTheSiteOriginOnly(string $origin, int $expectedStatus): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_ORIGIN' => $origin] + self::EVENT_STREAM);
+
+        self::assertResponseStatusCodeSame($expectedStatus);
+        if (403 === $expectedStatus) {
+            self::assertSame(self::INVALID_ORIGIN, $client->getResponse()->getContent());
+        }
     }
 
     public function testAGetWithAnUnknownSessionIs404(): void

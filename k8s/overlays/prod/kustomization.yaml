@@ -26,6 +26,11 @@ configMapGenerator:
       # Base des liens construits dans les e-mails sortants (ex. lien de
       # définition de mot de passe d'un utilisateur invité). Consommé par le
       # backend ET le worker Messenger (envoi effectif des e-mails).
+      # Doit rester une origine (schéma, hôte, port), sans chemin : elle
+      # gouverne aussi l'`Origin` et le `Host` admis sur /api/mcp
+      # (allowed_origins et allowed_hosts de mcp.yaml, #731). Le garde
+      # McpAllowedOriginPerEnvironmentTest l'exige, et refuse qu'une autre
+      # ligne de k8s/ nomme cette variable, commentaire compris.
       - APP_FRONTEND_BASE_URL=https://cp-ghostotof.com
       - CV_DOWNLOAD_FILENAME=cv.pdf
       # From des notifications du formulaire de contact (non secret, adresse
