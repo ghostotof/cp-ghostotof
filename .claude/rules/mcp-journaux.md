@@ -20,7 +20,7 @@ paths:
   `session_id`…) by `WITHHELD`, bounds the message and every context string to 256 characters, turns an
   exception into its normalised form without a trace (three `previous` at most), and **downgrades the client's
   faults to `notice`** — under the cap; the call log keeps their outcome. Which faults: a closed list written
-  against SDK 0.8.1 — by SDK exception class when one only designates the client (`ToolNotFoundException`,
+  against the pinned version (`composer.json`) — by SDK exception class when one only designates the client (`ToolNotFoundException`,
   `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`),
   by exact message otherwise (unreadable JSON, an id-less error response), and `RegistryException` only by code
   `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
@@ -54,9 +54,21 @@ paths:
   characters removed — U+202E reverses what follows in `kubectl logs`, #664: declared, never
   checked). **The sessionless `2026-07-28` revision has the same `MCP call` line** (#664, the author's decision of
   2026-10-20: serve it and log it, rather than refuse it through `protocol_versions`, which would pin the handshake
-  to one revision). The SDK serves it through `StatelessProtocol`, **`final`, built inside `Builder::build()`,
-  with no event**: nothing to listen to nor decorate, so `Infrastructure/Log/ModernExchange` reads it at
-  `kernel.terminate` from the HTTP request and response. The era is **the SDK's decision**, its own
+  to one revision). **Since SDK 0.9 its `StatelessProtocol` dispatches the same events** (`RequestEvent`,
+  `ResponseEvent`, `ErrorEvent`; 0.8.1 dispatched none) for every request it hands to a handler, on an in-memory
+  `Session`: the line is written on them, as in the other era, and `declaredClient` is read from that session's
+  `RequestMeta` (key `RequestMeta::class`, its `clientInfo`, whose `name` and `version` are strings when served:
+  `Implementation::fromArray()` requires it) when there is no `client_info` — `null` when the request declares
+  none, never `Implementation`'s defaults (#731, decided 2026-11-06; `McpCallLogTest::testAModernCallWithoutClientInfoDeclaresNoClient`).
+  **`Infrastructure/Log/ModernExchange` now reads only the exchanges the SDK settles before `RequestEvent`**
+  (`StatelessProtocol::answer()`, then the start of `dispatch()`), at `kernel.terminate` from the HTTP request and
+  response: a refusal before the SDK (`InboundMessageRefusalListener`: a client response, `subscriptions/listen`, a
+  scalar `_meta`, an unreadable `clientInfo`), the deferred 401, an acknowledged notification (202, or 400 for a
+  removed one), `server/discover`, a removed method (`ping`, 404), one the factory does not know (404, `-32601`) or a
+  malformed one (400, `-32600`), an unsupported revision, an incomplete envelope, a header contradicting the body, an
+  unreadable id, a refused `requestState` — measured: with `writeModernCall()` cut off, exactly the nine
+  `McpCallLogTest` cases of those kinds and the sessionless `DeferredAuthorizationListenerTest::testThe401LeavesACallLine`
+  turn red. The era is **the SDK's decision**, its own
   `InboundClassifier` on the body and on the headers **as the SDK receives them**, converted by the bundle's
   PSR-7 bridge (`mcp.psr_http_factory`, which trims blanks and drops a header carrying a control character) —
   never the header alone (an unknown revision in `_meta` is served, and refused, by the modern leg; a modern
@@ -77,15 +89,16 @@ paths:
   (`server/discover`, `subscriptions/listen`); any other is the caller's, unbounded, and written `null` — so is a
   known method whose message is malformed, as in the other era, and one the factory throws on (a `TypeError` on a
   scalar `_meta`, which the SDK never meets: it acknowledges a notification without building it). The factory is
-  built **without the extension messages** `Builder::build()` adds: bundle 0.14.1 enables none, and
+  built **without the extension messages** `Builder::build()` adds: the pinned bundle enables none, and
   `testTheServerEnablesNoExtension` (`server/discover` announces no `extensions`) turns red the day one is — the
   reading must then get the server's factory. Whatever the reading throws leaves the fallback line, `reset()` in a
   `finally` (`McpCallLogTerminateTest`). The outcome is read in the JSON answer (`error`
   and its `code`, `result.isError`), else from the status: a 202/400 without body (a notification), an SSE stream
-  (`listen`, refused before the SDK since #675; a tool that notifies — none does) whose `getContent()` is `false`.
-  **`durationMs` is the whole HTTP request's** (firewall, listeners, sending the answer), where the other era measures the
-  message's handling: a duration statistic keeps the two eras apart. `declaredClient` is the `clientInfo` of the
-  request's own `_meta`, bounded the same way.
+  (`listen`, refused before the SDK since #675; a tool that notifies goes through the events) whose `getContent()` is `false`.
+  **`durationMs` is the message's handling in both eras** (from `RequestEvent` to the answer, #731), no longer the whole
+  HTTP request's; **only a line `ModernExchange` writes keeps the whole HTTP request's** (firewall, listeners, sending
+  the answer). Accepted: no field says which of the two a line carries — those exchanges are refusals and answers
+  without a handler. There, `declaredClient` is the `clientInfo` of the request's own `_meta`, bounded the same way.
   `McpCallLogTest` drives the real server in that revision (success, tool error, unknown tool and method,
   removed method, `server/discover`, prompt, notification, unsupported revision, batch, foreign `Origin`, scalar
   `_meta`, malformed and bounded client) through `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it

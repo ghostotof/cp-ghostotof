@@ -346,10 +346,11 @@ final class McpCallLogTest extends WebTestCase
     }
 
     /**
-     * La révision sans session (2026-07-28, #664) passe par un autre chemin du
-     * SDK, qui n'émet aucun événement : sa ligne est lue de la requête et de la
-     * réponse HTTP, avec les mêmes champs que l'autre ère. Le `clientInfo` est
-     * celui que la requête déclare dans son `_meta`.
+     * La révision sans session (2026-07-28, #664) a les mêmes champs que
+     * l'autre ère : depuis la 0.9, le SDK émet pour elle aussi ses événements,
+     * sur une session en mémoire, et la ligne s'écrit sur eux. Le `clientInfo`
+     * est celui que la requête déclare dans son `_meta`, lu dans la
+     * `RequestMeta` de cette session.
      */
     public function testAModernToolCallLeavesOneLineWithTheExpectedFields(): void
     {
@@ -586,6 +587,22 @@ final class McpCallLogTest extends WebTestCase
         self::assertIsArray($declared);
         self::assertSame(str_repeat('n', 64), $declared['name']);
         self::assertSame(str_repeat('v', 64), $declared['version']);
+    }
+
+    /**
+     * Sans `clientInfo` dans le `_meta`, le client ne déclare rien : la ligne ne
+     * lui en invente pas un — ni un tableau de `null`, ni les défauts
+     * d'`Implementation` (`app`, `dev`) — alors que la `RequestMeta` de la
+     * session en mémoire, elle, existe.
+     */
+    public function testAModernCallWithoutClientInfoDeclaresNoClient(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list');
+        self::assertResponseStatusCodeSame(200);
+
+        self::assertNull($this->onlyCallLine()->context['declaredClient']);
     }
 
     /**

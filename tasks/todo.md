@@ -224,7 +224,7 @@ Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décision
   - [x] 1. La montée, R1 (`publishesListChanges()`), R6 (`execution`), R10 (`Page<TItem>`), `config/reference.php`,
         prémisse « la réponse ne passe pas par la session » épinglée — **sensible (session, réponse nominative)**
   - [x] 2. R4 : `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`, garde « une origine » par environnement — **sensible (Origin)**
-  - [ ] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
+  - [x] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
   - [ ] 4. R7 : 503 au GET, store de sessions injoignable — **sensible (session)**
   - [ ] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
   - [ ] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
