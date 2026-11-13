@@ -14,8 +14,9 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * contre le SSRF) : bouclage, réseaux privés, lien local — dont l'adresse des
  * métadonnées d'un hébergeur —, CGNAT, plages de documentation et de mesure,
  * multicast, plage réservée et diffusion, affectations de protocoles, relais
- * 6to4, préfixe de rejet, ORCHID, SRv6, site local déprécié, en IPv4 comme en
- * IPv6, y compris l'IPv4 portée par une adresse IPv6 (mappée, NAT64, 6to4).
+ * 6to4, préfixes de rejet et factice, SRv6, site local déprécié, en IPv4
+ * comme en IPv6, y compris l'IPv4 portée par une adresse IPv6 (mappée, NAT64,
+ * 6to4).
  * Une chaîne qui n'est pas une adresse IP dans sa forme canonique n'est pas
  * publique non plus : la politique refuse ce qu'elle ne sait pas lire.
  *
@@ -25,7 +26,10 @@ final class PublicAddressPolicyTest extends TestCase
 {
     /**
      * Les plages que PublicAddressPolicy ajoute à la liste de Symfony, chacune
-     * avec une adresse qu'elle contient.
+     * avec une adresse qu'elle contient. Symfony couvre déjà deux morceaux de
+     * `2001::/23` (Teredo `2001::/32`, mesure `2001:0002::/48`) : son témoin,
+     * `2001:5::1`, est pris hors d'eux, sans quoi le test dirait à tort que
+     * la plage entière est couverte.
      */
     private const array LOCALLY_ADDED_SUBNETS = [
         '224.0.0.0/4' => '224.0.0.1',
@@ -33,8 +37,8 @@ final class PublicAddressPolicyTest extends TestCase
         '192.0.0.0/24' => '192.0.0.170',
         '192.88.99.0/24' => '192.88.99.1',
         '100::/64' => '100::1',
-        '2001:10::/28' => '2001:10::1',
-        '2001:20::/28' => '2001:20::1',
+        '100:0:0:1::/64' => '100:0:0:1::1',
+        '2001::/23' => '2001:5::1',
         '3fff::/20' => '3fff::1',
         '5f00::/16' => '5f00::1',
         'fec0::/10' => 'fec0::1',
@@ -89,8 +93,11 @@ final class PublicAddressPolicyTest extends TestCase
         yield 'affectations de protocoles IETF 192.0.0/24' => ['192.0.0.170'];
         yield 'relais 6to4 192.88.99/24' => ['192.88.99.1'];
         yield 'préfixe de rejet 100::/64' => ['100::1'];
-        yield 'ORCHID 2001:10::/28' => ['2001:10::1'];
-        yield 'ORCHIDv2 2001:20::/28' => ['2001:20::1'];
+        yield 'préfixe factice 100:0:0:1::/64' => ['100:0:0:1::1'];
+        yield 'affectations de protocoles IETF 2001::/23, bloc non attribué' => ['2001:1::4'];
+        yield 'affectations de protocoles IETF 2001::/23, EID' => ['2001:5::1'];
+        yield 'affectations de protocoles IETF 2001::/23, ORCHID' => ['2001:10::1'];
+        yield 'affectations de protocoles IETF 2001::/23, ORCHIDv2' => ['2001:20::1'];
         yield 'plage de documentation IPv6 3fff::/20' => ['3fff::1'];
         yield 'identifiants de segment SRv6 5f00::/16' => ['5f00::1'];
         yield 'site local déprécié fec0::/10' => ['fec0::1'];

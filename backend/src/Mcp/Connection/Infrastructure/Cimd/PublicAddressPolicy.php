@@ -33,10 +33,18 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *   demanderait de la décoder, la refuser ne coûte qu'un client mal hébergé ;
  * - le multicast (`224.0.0.0/4`, `ff00::/8`) ;
  * - les autres plages à usage spécial ou réservées : affectations de
- *   protocoles de l'IETF (`192.0.0.0/24`), relais 6to4 (`192.88.99.0/24`),
- *   préfixe de rejet (`100::/64`), ORCHID (`2001:10::/28`, `2001:20::/28`),
- *   documentation (`3fff::/20`), identifiants de segment SRv6 (`5f00::/16`),
- *   site local déprécié (`fec0::/10`).
+ *   protocoles de l'IETF (`192.0.0.0/24`, `2001::/23`, qui contient ORCHID),
+ *   relais 6to4 (`192.88.99.0/24`), préfixe de rejet (`100::/64`), préfixe
+ *   factice (`100:0:0:1::/64`), documentation (`3fff::/20`), identifiants de
+ *   segment SRv6 (`5f00::/16`), site local déprécié (`fec0::/10`).
+ *
+ * Un bloc d'affectations de protocoles est refusé en entier, y compris les
+ * exceptions que le registre de l'IANA dit joignables : `192.0.0.9` et
+ * `192.0.0.10` en IPv4, `2001:1::1` à `2001:1::3`, `2001:3::/32`,
+ * `2001:4:112::/48`, `2001:20::/28` et `2001:30::/28` en IPv6. Ce sont des
+ * adresses de service (anycast, relais, identifiants), jamais l'hôte d'un
+ * document de métadonnées : les refuser ne coûte rien, les suivre une à une
+ * ferait dépendre la politique d'un registre qui change.
  *
  * La liste de Symfony, IpUtils::PRIVATE_SUBNETS, couvre tout cela sauf les
  * deux derniers points, que cette classe ajoute (MULTICAST_SUBNETS,
@@ -62,11 +70,11 @@ final readonly class PublicAddressPolicy
      * RFC 6890, et l'ancien site local).
      */
     private const array UNLISTED_SPECIAL_PURPOSE_SUBNETS = [
-        '192.0.0.0/24',   // affectations de protocoles de l'IETF (RFC 6890)
+        '192.0.0.0/24',   // affectations de protocoles de l'IETF (RFC 6890), en entier
         '192.88.99.0/24', // relais 6to4, déprécié (RFC 7526)
         '100::/64',       // préfixe de rejet (RFC 6666)
-        '2001:10::/28',   // ORCHID, déprécié (RFC 4843)
-        '2001:20::/28',   // ORCHIDv2 (RFC 7343)
+        '100:0:0:1::/64', // préfixe factice (RFC 9780)
+        '2001::/23',      // affectations de protocoles de l'IETF (RFC 2928), en entier
         '3fff::/20',      // documentation (RFC 9637)
         '5f00::/16',      // identifiants de segment SRv6 (RFC 9602)
         'fec0::/10',      // site local, déprécié (RFC 3879)
