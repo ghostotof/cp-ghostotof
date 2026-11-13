@@ -142,8 +142,10 @@ final readonly class McpEndpointController
             return $this->inner->handle($request);
         }
 
-        // `null` : allowed_hosts non configuré, les middlewares par défaut du
-        // SDK (localhost seulement), comme le transport.
+        // `null` : ni allowed_hosts ni allowed_origins configurés (le bundle
+        // rend alors la main), les middlewares par défaut du SDK (localhost,
+        // même origine seulement), comme le transport. mcp.yaml configure les
+        // deux : la branche ne sert que de repli.
         // Puis la règle d'en-tête de version, que le transport applique au
         // trafic de l'ère à poignée de main — un GET sans corps en est —, par
         // sa propre liste (#673).

@@ -121,6 +121,9 @@ final class SdkChannelRedactor
      * donc aucun, et toute valeur qu'un client envoie est refusée — une ligne
      * par requête, à volonté pour un anonyme (#731). Son contexte ne porte
      * que la méthode et un code de raison (`malformed`, `mac`, `expired`).
+     * À rejuger si `request_state` est un jour configuré : un état signé
+     * par le serveur puis refusé (`mac`, `expired`) pourrait alors dire une
+     * faute du serveur (secret changé, horloge) et non plus du client.
      *
      * @var list<string>
      */

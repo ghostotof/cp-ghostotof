@@ -34,7 +34,9 @@ paths:
   (#731, final review; both in `StatelessProtocol::dispatch()`, before any handler). « Rejected a requestState that
   failed verification. »: `mcp.yaml` sets no `request_state`, so the server signs none and refuses any value sent
   (400, `-32602`); its context is the method — one the SDK's factory knows, the refusal comes after it — and a closed
-  reason code (`malformed`, `mac`, `expired`), never the value. « Rejected an unparseable modern-era request. », **for
+  reason code (`malformed`, `mac`, `expired`), never the value — to be re-judged if `request_state` is ever
+  configured: a state the server signed, then refused (`mac`, `expired`), could then be the server's fault (a
+  changed secret, a clock), no longer the client's. « Rejected an unparseable modern-era request. », **for
   a `JsonException` only**: the SDK re-encodes the message it decoded before handing it to its factory, and
   `json_encode()` refuses a number `json_decode()` read as infinite (`1e999`; 404, `-32601`); its `method` is the
   client's own string, bounded like any other. Any other exception caught there (a `TypeError` of the factory) keeps

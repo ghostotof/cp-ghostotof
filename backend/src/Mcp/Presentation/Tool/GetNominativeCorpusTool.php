@@ -28,7 +28,10 @@ use Mcp\Schema\ToolAnnotations;
  *
  *  - **Corpus ouvert** : le corpus et l'adresse de la page du CV, puis
  *    `recordServed()` — la ligne d'audit **après** la construction du
- *    résultat : une lecture journalisée est une réponse que l'outil sert.
+ *    résultat : une lecture journalisée est une réponse que l'outil sert,
+ *    pas forcément celle que le client reçoit. Le SDK valide ensuite la
+ *    sortie contre son `outputSchema` : refusée là, elle reste journalisée
+ *    comme lue (sur-compte accepté par l'auteur le 2026-11-10, mcp.md).
  *  - **Refusé** (pas de connexion, ou une connexion sans le scope ou le
  *    palier) : l'erreur d'outil que ChatGPT sait suivre — le défi
  *    `insufficient_scope` dans `_meta["mcp/www_authenticate"]`, qui lui fait

@@ -35,7 +35,8 @@ paths:
   explicit actor for CLI callers), `mcp-connection-granted` (#647, `ConsentService` after the COMMIT of the
   connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code),
   `nominative-corpus-read` (#648, `NominativeCorpusReader::recordServed()`, called by `GetNominativeCorpusTool` once its
-  result is built, never on a refusal: `userId` — also the
+  result is built, never on a refusal — an output the SDK then refuses at its schema validation stays audited, an
+  over-count accepted on 2026-11-10, `.claude/rules/mcp.md`, « The catalogue »: `userId` — also the
   `actor`, the `mcp` firewall's `McpConnectionPrincipal` being an `AccountReference` —, `connectionId`, `clientId`,
   `tool`; never the token, its hash nor anything of the corpus), `mcp-connection-revoked` (#649,
   `McpConnectionRevoker` once the repository's revocation took effect — or, inside a transaction, its caller after
