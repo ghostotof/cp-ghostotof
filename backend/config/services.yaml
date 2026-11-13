@@ -201,6 +201,38 @@ services:
         arguments:
             $domains: '%app.mcp.cimd.allowed_domains%'
 
+    # Le client HTTP de la récupération d'un document CIMD (#651, D-D couche 5) :
+    # le `http_client` du framework entouré de NoPrivateNetworkHttpClient, qui
+    # refuse toute requête vers une adresse privée ou réservée, celle qu'on lui
+    # épingle comme celle où la connexion aboutit réellement. Le client partagé
+    # par les autres appels sortants n'est pas modifié.
+    #
+    # Public pour la même raison que AllowedClientDomains : CimdWiringTest le
+    # lit dans le conteneur, et ce service ne peut pas devenir public sous
+    # `when@test` seulement (SecurityServicesEnvironmentParityTest, #698).
+    app.mcp.cimd.http_client:
+        class: Symfony\Component\HttpClient\NoPrivateNetworkHttpClient
+        public: true
+        arguments:
+            - '@http_client'
+
+    # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
+    # Les tests le remplacent par une doublure, jamais par un DNS réel.
+    App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface:
+        alias: App\Mcp\Connection\Infrastructure\Cimd\NativeHostAddressResolver
+        public: true
+
+    # Le port de récupération du document d'un client CIMD, adossé au client
+    # HTTP ci-dessus. Public pour CimdWiringTest ; à rendre privé dès qu'un
+    # service le reçoit (l'admission d'un client CIMD, #651).
+    App\Mcp\Connection\Application\Cimd\ClientMetadataFetcherInterface:
+        alias: App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher
+        public: true
+
+    App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher:
+        arguments:
+            $client: '@app.mcp.cimd.http_client'
+
 when@test:
     services:
         _defaults:
