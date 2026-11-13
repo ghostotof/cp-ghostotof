@@ -26,11 +26,39 @@ mcp:
                 # constante (#673) ; McpEndpointPathTest compare le firewall,
                 # nginx et le front à sa valeur.
                 path: !php/const App\Mcp\Infrastructure\Http\McpEndpoint::PATH
-                # Protection contre le rebond DNS : seul l'hôte du site est servi
-                # (en-têtes Host et Origin). Dérivé de l'URL publique déjà posée
-                # par overlay, pour n'avoir qu'une source ; `localhost` en dev et
-                # en test.
+                # Protection contre le rebond DNS, en-tête Host : seul l'hôte du
+                # site est servi, casse et port ignorés. Dérivé de l'URL publique
+                # déjà posée par overlay, pour n'avoir qu'une source ; `localhost`
+                # en dev et en test.
                 allowed_hosts: ['%env(key:host:url:APP_FRONTEND_BASE_URL)%']
+                # Même protection, en-tête Origin (#731). Le SDK de la version
+                # épinglée (composer.json, DnsRebindingProtectionMiddleware) ne
+                # juge que l'en-tête présent, et le compare **schéma et port
+                # compris**, par égalité stricte après mise en minuscules, à
+                # deux choses : l'origine de la requête elle-même, toujours
+                # admise (port par défaut écrit ou non), et cette liste. La
+                # valeur écrite ici et l'en-tête reçu sont tous deux mis en
+                # minuscules ; à la valeur seule il retire la barre finale et
+                # le port par défaut, jamais à l'en-tête (un navigateur
+                # l'envoie déjà sans eux) : `Origin: http://site/` est refusé.
+                # Ces deux listes ne règlent que ce middleware-là. Le CORS du
+                # SDK, que le bundle laisse à ses défauts, n'autorise aucune
+                # origine, celle du site non plus : les en-têtes CORS d'une
+                # réponse sont ceux de nelmio_cors, comme sur tout /api.
+                # L'origine du site est donc admise en plus de celle de l'API :
+                # en dev le site, sur Vite, n'en est pas une page (autre port) ;
+                # en préprod et en prod c'est la même. Rien d'autre : MCP
+                # Inspector, `null` (iframe isolée, file://), un Origin vide et
+                # toute page tierce reçoivent 403 « Forbidden: Invalid Origin
+                # header. ». Une seule source avec allowed_hosts, donc aucun
+                # écart possible entre l'URL du site et l'origine admise ; en
+                # contrepartie APP_FRONTEND_BASE_URL doit rester une origine,
+                # sans chemin (`*` ouvrirait tout, une valeur vide admettrait
+                # un Origin vide) ni port par défaut écrit (le SDK le retire,
+                # pas OAuthEndpoints : l'émetteur et la ressource OAuth le
+                # porteraient) : McpAllowedOriginPerEnvironmentTest l'exige
+                # dans chaque environnement.
+                allowed_origins: ['%env(APP_FRONTEND_BASE_URL)%']
             # ADR 0005 : deux réplicas, un disque en lecture seule. Le store
             # par défaut (un fichier sous var/cache) n'y fonctionne pas ; les
             # sessions vivent dans un pool DBAL (cache.yaml), dont chaque valeur

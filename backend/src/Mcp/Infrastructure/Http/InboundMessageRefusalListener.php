@@ -18,16 +18,18 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Throwable;
 
 /**
- * Refuse en 400 sur `/api/mcp`, avant le SDK, ce que le SDK servirait ou
- * recopierait en session sans borne (#644) — {@see InboundMessageRefusal} :
+ * Refuse en 400 sur `/api/mcp`, avant le SDK, ce que le SDK servirait,
+ * recopierait en session sans borne ou, pour une réponse du client, journaliserait
+ * en `warning` à volonté (#644) — {@see InboundMessageRefusal} :
  *
- * - **un lot JSON-RPC de plusieurs messages.** Le SDK 0.8.1 en accepte
- *   jusqu'à 100 par requête HTTP, une borne codée en dur que le bundle ne rend
- *   pas configurable (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`) : 100
+ * - **un lot JSON-RPC de plusieurs messages.** Le SDK de la version épinglée
+ *   (composer.json) en accepte jusqu'à 100 par requête HTTP, une borne codée
+ *   en dur que le bundle ne rend pas configurable
+ *   (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, déjà en 0.8.1) : 100
  *   `tools/call` — autant d'appels de provider et de lignes `mcp_usage` — pour
  *   une seule requête comptée par la zone nginx `mcp`. Les lots, arrivés à la
  *   révision 2025-03-26, ont disparu à la suivante, 2025-06-18 : des quatre
- *   révisions à poignée de main que le SDK 0.8.1 négocie (2024-11-05 à
+ *   révisions à poignée de main que la version épinglée négocie (2024-11-05 à
  *   2025-11-25), seule 2025-03-26 les connaît, et la révision sans session
  *   (2026-07-28), servie elle aussi, n'en a pas. Le prédicat est celui du SDK (`MessageFactory::create()`) : `json_decode` en
  *   tableau associatif, puis toute liste PHP est un lot — un objet aux clés
@@ -39,11 +41,20 @@ use Throwable;
  *   entier à chaque requête : un client anonyme y faisait tenir 16 Kio de
  *   corps, trois fois plus une fois encodés ;
  * - **une réponse du client**, au sens du SDK — `error` ou `result`, lus
- *   avant `method` : une requête qui en porte un en est une (#671). Le SDK
- *   range chaque réponse en session sous l'identifiant que le client choisit
- *   (`Protocol::handleResponse()`), et elles s'accumulent jusqu'à la borne de
- *   session : la ligne réécrite à chaque requête grossissait de ~30 Ko par
- *   réponse postée (audit de #644, mesuré). Ce serveur n'envoie aucune requête au client (ni sampling, ni
+ *   avant `method` : une requête qui en porte un en est une (#671). En 0.8.1,
+ *   le SDK rangeait chaque réponse en session sous l'identifiant que le client
+ *   choisit (`Protocol::handleResponse()`), et elles s'accumulaient jusqu'à la
+ *   borne de session : la ligne réécrite à chaque requête grossissait de
+ *   ~30 Ko par réponse postée (audit de #644, mesuré). Depuis la 0.9, il ne
+ *   range plus que la réponse à une requête qu'il a lui-même envoyée et qui
+ *   attend encore (un identifiant UUID). Sinon, il écrit un `warning` du canal
+ *   `mcp` et ignore la réponse : pour une erreur sans identifiant, « Received
+ *   an id-less error response from client; cannot correlate it to a pending
+ *   request. » (clé `response`, retenue par SdkChannelRedactor, qui la range
+ *   parmi les fautes du client, en `notice`) ; pour toute autre, « Received a
+ *   client response for an unknown or timed out request ID. » (clé
+ *   `message_id`), au-dessus du plafond de production — qu'un anonyme
+ *   provoquerait à volonté sans ce refus. Ce serveur n'envoie aucune requête au client (ni sampling, ni
  *   elicitation, ni roots) : aucune réponse n'est attendue. Le jour où un
  *   outil en sollicite une, ce refus doit apprendre à reconnaître la réponse
  *   attendue ;
@@ -180,14 +191,14 @@ final readonly class InboundMessageRefusalListener
     }
 
     /**
-     * Le critère du SDK 0.8.1, dans son ordre
-     * ({@see \Mcp\JsonRpc\MessageFactory::createMessage()}) : `error`, puis
-     * `result`, lus par `isset` **avant** `method`. Une requête portant un
-     * résultat est donc une réponse pour lui, rangée en session — exiger
-     * l'absence de `method` la laissait passer (#671). Une valeur `null` ne
-     * compte pas : le SDK sert alors la requête. Une valeur fausse mais non
-     * nulle (`false`, `0`, `""`) compte : le SDK la refuse ensuite comme
-     * invalide, ce refus la précède, sans identifiant.
+     * Le critère du SDK de la version épinglée (composer.json), dans son ordre
+     * ({@see \Mcp\JsonRpc\MessageFactory::createMessage()}, inchangé depuis
+     * 0.8.1) : `error`, puis `result`, lus par `isset` **avant** `method`. Une
+     * requête portant un résultat est donc une réponse pour lui — rangée en
+     * session en 0.8.1 ; exiger l'absence de `method` la laissait passer
+     * (#671). Une valeur `null` ne compte pas : le SDK sert alors la requête.
+     * Une valeur fausse mais non nulle (`false`, `0`, `""`) compte : le SDK la
+     * refuse ensuite comme invalide, ce refus la précède, sans identifiant.
      * {@see \App\Tests\Mcp\Infrastructure\Http\InboundMessageClassificationTest}
      * lie ce critère à la `MessageFactory`.
      *

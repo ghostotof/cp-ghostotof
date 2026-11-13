@@ -17,10 +17,31 @@ use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 /**
- * Un échange de la révision sans session (2026-07-28, SEP-2575), lu de la
- * requête et de la réponse HTTP (#664) : le SDK 0.8.1 le sert par
- * `StatelessProtocol`, une classe `final` construite dans `Builder::build()`,
- * qui n'émet aucun des événements que {@see McpCallLog} écoute pour l'autre ère.
+ * Un échange de la révision sans session (2026-07-28, SEP-2575) que le SDK sert
+ * **sans événement**, lu de la requête et de la réponse HTTP (#664).
+ *
+ * En 0.8.1, `StatelessProtocol` n'émettait aucun des événements que
+ * {@see McpCallLog} écoute, et cette classe lisait tous les échanges de l'ère.
+ * Depuis la 0.9, il émet `RequestEvent`, `ResponseEvent` et `ErrorEvent` pour
+ * chaque requête qu'il confie à un handler, sur une session en mémoire : la
+ * ligne s'écrit alors sur eux, comme dans l'autre ère, et cette classe n'est plus
+ * appelée. Elle ne sert plus qu'aux échanges réglés avant `RequestEvent`
+ * (`StatelessProtocol::answer()`, puis le début de `dispatch()`) :
+ *
+ * - un refus avant le SDK : une réponse du client, `subscriptions/listen`, un
+ *   `_meta` scalaire, un `clientInfo` illisible
+ *   ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}) ; et le
+ *   401 différé ({@see \App\Mcp\Infrastructure\Http\DeferredAuthorizationListener}) ;
+ * - une notification, acquittée sans corps (202, ou 400 pour une méthode retirée) ;
+ * - `server/discover`, servi par le protocole lui-même ;
+ * - une méthode que la révision a retirée (`ping`…, 404), que la fabrique ne
+ *   connaît pas (404, `-32601`) ou dont le message est mal formé (400, `-32600`) ;
+ * - une révision non prise en charge, une enveloppe incomplète, un en-tête qui
+ *   contredit le corps, un identifiant illisible, un `requestState` refusé.
+ *
+ * **Sa durée reste celle de la requête HTTP entière** (pare-feu, écouteurs,
+ * envoi de la réponse), là où une ligne écrite sur les événements mesure le
+ * traitement du message, dans les deux ères.
  *
  * **L'ère est celle que le SDK décide** : son propre `InboundClassifier`, sur le
  * corps et sur les en-têtes **tels qu'il les reçoit**, convertis par le pont
@@ -47,14 +68,14 @@ use Throwable;
  * par l'appelant, sans borne, n'est pas recopiée — comme une méthode connue dont
  * le message est mal formé, ce que fait aussi l'autre ère. La fabrique est
  * construite sans les messages d'extension que `Builder::build()` lui ajoute :
- * le bundle 0.14.1 n'active aucune extension (`McpCallLogTest` le fige sur
- * `server/discover`).
+ * le bundle (la version épinglée, composer.json) n'active aucune extension
+ * (`McpCallLogTest` le fige sur `server/discover`).
  *
  * **L'issue est lue dans la réponse JSON** : un `error` (son `code`), un
  * `result.isError` à `true` (une erreur d'outil), sinon un succès. Une réponse
  * sans corps lisible — une notification acquittée, un flux SSE (`listen`,
- * refusé avant le SDK depuis #675, ou un outil qui notifierait : aucun
- * aujourd'hui) — suit son statut HTTP seul.
+ * refusé avant le SDK depuis #675 ; un outil qui notifierait passe, lui, par
+ * les événements) — suit son statut HTTP seul.
  */
 final readonly class ModernExchange
 {

@@ -13,19 +13,24 @@ use Symfony\Component\DependencyInjection\Definition;
  * Annonce les capacités vraies du serveur `portfolio` (#675), dans les deux
  * ères — `initialize` et `server/discover` lisent la même configuration.
  *
- * Sans elles, le SDK 0.8.1 les déduit (`Builder::detectCapabilities()`) et
- * annonce `listChanged` pour les outils, les prompts et les ressources dès
- * qu'un répartiteur d'événements est posé — le bundle pose toujours celui de
+ * Sans elles, le SDK les déduit (`Builder::detectCapabilities()`). En 0.8.1,
+ * il annonçait `listChanged` pour les outils, les prompts et les ressources dès
+ * qu'un répartiteur d'événements était posé — le bundle pose toujours celui de
  * Symfony, que le journal des appels écoute (#643). Aucun bus ne porte pourtant
  * de notification (`subscriptions.bus: none`), et le catalogue ne change qu'au
  * déploiement : un client conforme ouvrait un `subscriptions/listen` pour rien,
  * un worker php-fpm tenu 30 s. Ce serveur n'annonce donc aucune notification ;
  * `listen` est refusé avant le SDK
- * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}).
+ * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}). Depuis
+ * la 0.9, la déduction ne pose plus `listChanged` sans bus de notifications,
+ * mais la version épinglée (composer.json) annonce toujours `logging` : la
+ * passe reste nécessaire, pour lui.
  *
- * Une compiler pass plutôt qu'une option : le bundle 0.14.1 n'expose pas les
- * capacités dans sa configuration, et seule une passe peut ajouter un appel à
- * la définition d'un service qu'il enregistre. `setCapabilities()` remplace
+ * Une compiler pass plutôt qu'une option : le bundle de la version épinglée
+ * (composer.json) n'expose toujours pas les capacités du serveur dans sa
+ * configuration (seules celles d'un client), et seule une passe peut
+ * ajouter un appel à la définition d'un service qu'il enregistre.
+ * `setCapabilities()` remplace
  * toute la détection : les autres capacités recopient ce qu'elle donnait
  * (complétion, outils, prompts ; aucune ressource), sauf la journalisation :
  * aucun code n'envoie de `notifications/message` au client, et

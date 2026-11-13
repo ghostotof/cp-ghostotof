@@ -21,7 +21,8 @@ use InvalidArgumentException;
  * appelant : l'outil nominatif (ADR 0006 D3), pour une constante —
  * GetNominativeCorpusToolTest lit le défi qu'elle produit, la faute ne
  * survivrait pas à la suite. Levée dans l'outil, elle n'atteint jamais le
- * noyau HTTP : le `CallToolHandler` du SDK 0.8.1 attrape tout `Throwable`,
+ * noyau HTTP : le `CallToolHandler` du SDK de la version épinglée
+ * (composer.json), comme en 0.8.1, attrape tout `Throwable`,
  * l'écrit en `error` sur le canal `mcp` (« Unhandled error during tool
  * execution », que SdkChannelRedactor ne range pas parmi les fautes du
  * client) et répond **HTTP 200**, une erreur JSON-RPC `-32603` « Error while

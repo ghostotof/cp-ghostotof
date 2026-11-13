@@ -6,6 +6,7 @@ namespace App\Mcp\Presentation\Controller;
 
 use App\Mcp\Infrastructure\Http\ServerAnswersInterface;
 use InvalidArgumentException;
+use Mcp\Exception\SessionStoreException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Transport\Http\MiddlewareRequestHandler;
@@ -14,6 +15,7 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\McpBundle\Controller\McpController;
 use Symfony\AI\McpBundle\Http\MiddlewareFactory;
 use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
@@ -29,9 +31,10 @@ use Symfony\Component\Uid\Uuid;
  * Point d'entrée de `/api/mcp` : répond lui-même au GET (et au HEAD, que le
  * routeur fait correspondre au GET), délègue le reste au contrôleur du bundle.
  *
- * Le transport Streamable HTTP du SDK 0.8.1 n'ouvre pas de flux serveur et
- * répond 405 au GET — conforme à la spécification MCP, mais l'AI Assistant de
- * PhpStorm prend ce 405 pour une panne et n'utilise pas le serveur (ADR 0006,
+ * Le transport Streamable HTTP du SDK de la version épinglée (composer.json),
+ * comme en 0.8.1, n'ouvre pas de flux serveur et répond 405 au GET —
+ * conforme à la spécification MCP, mais l'AI Assistant de PhpStorm prend ce
+ * 405 pour une panne et n'utilise pas le serveur (ADR 0006,
  * conséquences). Le GET reçoit donc un flux SSE vide qui demande au client
  * d'attendre cinq minutes avant de le rouvrir (`retry`), et se ferme
  * aussitôt.
@@ -41,9 +44,12 @@ use Symfony\Component\Uid\Uuid;
  * n'envoie rien de lui-même (aucune notification), il n'y a donc rien à
  * attendre sur ce flux.
  *
- * **Le GET traverse les middlewares mêmes du POST** — la protection contre le
- * rebond DNS et le CORS du SDK, que le bundle construit avec la liste
- * `allowed_hosts` de mcp.yaml —, jamais une copie de leurs règles : une copie
+ * **Le GET traverse les middlewares mêmes du POST**, ceux du SDK tels que la
+ * fabrique du bundle les rend : la protection contre le rebond DNS, la seule
+ * qu'elle construit avec `allowed_hosts` et `allowed_origins` de mcp.yaml, et
+ * le CORS du SDK, laissé à ses défauts — aucune origine autorisée, celle du
+ * site non plus : il ne pose jamais `Access-Control-Allow-Origin`. Jamais une
+ * copie de leurs règles : une copie
  * réduite à un hôte refusait au GET un second hôte que le POST acceptait, et
  * lisait mal un hôte IPv6 (relecture de la tâche 2). Puis il répond comme le
  * transport pour une session : 400 si son identifiant n'est pas un UUID, 404
@@ -51,6 +57,33 @@ use Symfony\Component\Uid\Uuid;
  * réinitialise), 406 sans `Accept: text/event-stream` ; un identifiant vide
  * vaut absent, comme au transport. Entre les deux, la règle d'en-tête de version du transport
  * (`ProtocolVersionMiddleware`) : 400 pour une révision qu'il ne négocie pas.
+ *
+ * **Et 503 quand le contrôle d'existence du store lève** (#731, décision du
+ * 2026-11-06 : suivre le SDK). Le contrôle d'existence lève alors
+ * {@see SessionStoreException} — le store du SDK sur un cache dont le `has()`
+ * échoue, que le store borné laisse passer —, dont le SDK fait au POST un 503
+ * `-32603` « Session store is unavailable. » (`Protocol::resolveSession()`).
+ * Le GET rend le même, sans `id` (il ne porte aucune requête) : la session
+ * existe peut-être, le client réessaie, là où un 404 le ferait se
+ * réinitialiser et l'abandonner ; sortie du contrôleur, l'exception donnait
+ * un 500. Une ligne `error` du même message sur le canal `mcp`, avec
+ * l'exception et sans la clé `session_id` (celle du SDK, au POST, la porte,
+ * et le rédacteur du canal la retient). **Limite** : le message de
+ * l'exception du cache est recopié dans celui de {@see SessionStoreException}
+ * (`Psr16SessionStore::exists()`), l'exception d'origine gardée en
+ * `previous` ; le rédacteur du canal borne ces messages, il ne les filtre
+ * pas. Un cache dont l'exception citerait sa clé — elle porte l'identifiant
+ * de session — le ferait donc sortir sur cette ligne, au GET comme au POST.
+ * Latent : derrière le pool DBAL ce 503 n'est pas atteint (ci-dessous), et
+ * {@see \App\Shared\Infrastructure\Doctrine\DriverErrorRedactionMiddleware}
+ * retire déjà des erreurs du pilote la ligne qui cite les paramètres. Un GET
+ * sans identifiant à contrôler (en-tête absent, vide ou « 0 ») ne consulte
+ * pas le store et reste servi. Mesuré (#731) : derrière le pool DBAL de `cache.yaml`, l'adaptateur
+ * de Symfony attrape lui-même l'échec de la requête (`hasItem()` rend `false`
+ * après un `warning` du canal `cache`) — une base injoignable s'y lit encore
+ * « session absente », 404 au GET comme au POST ; le 503 vaut pour un cache
+ * dont le `has()` lève, et n'est donc pas atteint en production — limite
+ * acceptée par l'auteur le 2026-11-10, suivie par l'issue #770.
  */
 #[AsDecorator('mcp.server.portfolio.controller')]
 final readonly class McpEndpointController
@@ -62,6 +95,12 @@ final readonly class McpEndpointController
 
     /** Les valeurs de `Mcp-Session-Id` que le transport lit fausses, donc absentes. */
     private const array SESSION_IDS_READ_AS_ABSENT = ['', '0'];
+
+    /**
+     * Le message du 503 et de sa ligne de journal, mot pour mot celui du SDK
+     * au POST (`Protocol::resolveSession()`).
+     */
+    private const string SESSION_STORE_UNAVAILABLE = 'Session store is unavailable.';
 
     public function __construct(
         #[AutowireDecorated]
@@ -80,6 +119,11 @@ final readonly class McpEndpointController
         #[Autowire(service: 'mcp.server.portfolio.session.store')]
         private SessionStoreInterface $sessionStore,
         private ServerAnswersInterface $serverAnswers,
+        // Le canal du SDK, par identifiant : la ligne du 503 s'écrit là où le
+        // SDK écrit la sienne au POST, sous le même rédacteur et le même
+        // handler de production (.claude/rules/mcp-journaux.md).
+        #[Autowire(service: 'monolog.logger.mcp')]
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -98,8 +142,10 @@ final readonly class McpEndpointController
             return $this->inner->handle($request);
         }
 
-        // `null` : allowed_hosts non configuré, les middlewares par défaut du
-        // SDK (localhost seulement), comme le transport.
+        // `null` : ni allowed_hosts ni allowed_origins configurés (le bundle
+        // rend alors la main), les middlewares par défaut du SDK (localhost,
+        // même origine seulement), comme le transport. mcp.yaml configure les
+        // deux : la branche ne sert que de repli.
         // Puis la règle d'en-tête de version, que le transport applique au
         // trafic de l'ère à poignée de main — un GET sans corps en est —, par
         // sa propre liste (#673).
@@ -137,11 +183,26 @@ final readonly class McpEndpointController
                 return $this->jsonRpcError(Response::HTTP_BAD_REQUEST, StreamableHttpTransport::SESSION_HEADER.' header must be a valid UUID.');
             }
 
+            try {
+                $exists = $this->sessionStore->exists($sessionId);
+            } catch (SessionStoreException $e) {
+                // Le store injoignable n'est pas une session absente : elle
+                // existe peut-être, et un 404 la ferait abandonner. 503, le
+                // client réessaie — ce que le SDK répond au POST. La ligne ne
+                // porte pas la clé `session_id` : l'identifiant vaut accès à
+                // la session. Le message de l'exception, lui, est celui du
+                // cache, borné par le rédacteur du canal et non filtré
+                // (limite dite au docblock de la classe).
+                $this->logger->error(self::SESSION_STORE_UNAVAILABLE, ['exception' => $e]);
+
+                return $this->jsonRpcServerError(Response::HTTP_SERVICE_UNAVAILABLE, self::SESSION_STORE_UNAVAILABLE);
+            }
+
             // Une session présente mais illisible (le MAC du cache refusé
             // après une rotation d'APP_SECRET) n'existe pas pour le store
             // borné, qui la lit à ce contrôle (#673) : 404, le client se
             // réinitialise, comme au POST.
-            if (!$this->sessionStore->exists($sessionId)) {
+            if (!$exists) {
                 return $this->jsonRpcError(Response::HTTP_NOT_FOUND, 'Session not found or has expired.');
             }
         }
@@ -160,6 +221,17 @@ final readonly class McpEndpointController
         return $this->psr17Factory->createResponse($status)
             ->withHeader('Content-Type', 'application/json')
             ->withBody($this->psr17Factory->createStream(json_encode(Error::forInvalidRequest($message), \JSON_THROW_ON_ERROR)));
+    }
+
+    /**
+     * Le corps d'erreur JSON-RPC du transport pour une panne du serveur
+     * (`-32603`), sans `id` : un GET ne porte aucune requête.
+     */
+    private function jsonRpcServerError(int $status, string $message): ResponseInterface
+    {
+        return $this->psr17Factory->createResponse($status)
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody($this->psr17Factory->createStream(json_encode(Error::forInternalError($message), \JSON_THROW_ON_ERROR)));
     }
 
     private function plain(int $status, string $message): ResponseInterface

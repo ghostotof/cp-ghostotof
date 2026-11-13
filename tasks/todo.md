@@ -204,14 +204,37 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       pod sur `/token` face aux IP de sortie partagées de claude.ai et ChatGPT. Reports de la tâche 9 :
       vérifier en préprod ce que ChatGPT lit de `securitySchemes` (premier niveau ou `_meta`) et la
       forme liste de `_meta["mcp/www_authenticate"]` ; le 401 `invalid_token` sur toute requête au
-      jeton refusé, face aux vrais clients ; mesurer la taille réelle en file du corpus (la taille
-      seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES` ; CORS n'expose pas `WWW-Authenticate` ;
+      jeton refusé, face aux vrais clients ; ~~mesurer la taille réelle en file du corpus (la taille
+      seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES`~~ (sans objet depuis #731 : la réponse ne
+      passe plus par la session) ; CORS n'expose pas `WWW-Authenticate` ;
       la page publique de confidentialité dit encore « Aucun transfert de données hors de l'Union
       européenne » (`frontend/src/infrastructure/portfolio/content/fr.ts` et `en.ts`), contredite par
       le registre §8 à la sortie de la phase 2 (→ #653, commentaire du 2026-10-27) ; un `pdftotext` et une ligne d'audit par appel de
-      l'outil nominatif, sans quota par connexion — et le corpus rendu en entier avant d'être refusé
-      pour sa taille (le refus coûte une lecture), à traiter avec ce quota ; contrôler au smoke
+      l'outil nominatif, sans quota par connexion — ~~et le corpus rendu en entier avant d'être refusé
+      pour sa taille (le refus coûte une lecture)~~ (sans objet depuis #731 : la réponse ne passe plus par
+      la session, le refus de taille est retiré) —, à traiter avec ce quota ; contrôler au smoke
       préprod le `WWW-Authenticate` réel par la recherche de mentions D8
+
+### Montées épinglées (#731) — préalable à l'ouverture publique de la phase 2
+
+Note de recherche `docs/research/2026-11-06-montees-epinglees-731.md` (décisions de l'auteur du 2026-11-06, §7).
+
+- [x] PR 1 — famille Symfony AI en 0.15.0 exacts (#766, fusionnée dans la mère, d639b5db)
+- [ ] PR 2 — `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0 exacts, branche `feature/spec-0007-731-mcp-0-15`,
+      PR vers la mère ; **urgente** : la mère est rouge sur `composer audit` (GHSA-f4rf-6ghj-mhr6). Plan
+      `tasks/plan-731-mcp-0-15.md`, dix tâches (la 10 ajoutée le 2026-11-10), **sensibles** marquées :
+  - [x] 1. La montée, R1 (`publishesListChanges()`), R6 (`execution`), R10 (`Page<TItem>`), `config/reference.php`,
+        prémisse « la réponse ne passe pas par la session » épinglée — **sensible (session, réponse nominative)**
+  - [x] 2. R4 : `allowed_origins` dérivé d'`APP_FRONTEND_BASE_URL`, garde « une origine » par environnement — **sensible (Origin)**
+  - [x] 3. R5 : `declaredClient` lu dans `RequestMeta`, nouveau sens de `durationMs`
+  - [x] 4. R7 : 503 au GET, store de sessions injoignable — **sensible (session)**
+  - [x] 5. R3 : l'identifiant d'une session trop grosse n'existe pas (404) — **sensible (session)**
+  - [x] 6. R2 : `QueuedAnswer` et la borne en file retirés, lien session ↔ connexion rejustifié — **sensible (réponse nominative, session)**
+  - [x] 7. R8, R9, R11 vérifiés ; coût de la session mesuré et épinglé (3 lectures, 1 écriture par `tools/call`) ; `data` et `sessionId` retenus sur le canal `mcp` — **sensible (réponse nominative)**
+  - [x] 8. ADR 0006 D7 amendée, D4 confirmée, D6 précisée (coût de session mesuré), versions au présent renvoyées au pin
+  - [x] 9. Exposition à l'avis, notes client (`tasks/pr-731-mcp-0-15.md`, corps de PR), vérification complète
+  - [x] 10. C2 : identifiant de session retiré du canal `cache` — **sensible (journaux)**
+  - [ ] Fermer #731 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
 
 ### Clôture
 

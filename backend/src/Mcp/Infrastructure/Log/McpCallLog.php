@@ -19,6 +19,7 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Request\GetPromptRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Session\SessionInterface;
+use Mcp\Server\Stateless\RequestMeta;
 use Monolog\Attribute\AsMonologProcessor;
 use Monolog\LogRecord;
 use Psr\Log\LoggerInterface;
@@ -42,9 +43,10 @@ use Throwable;
  * sur les événements que le SDK émet par le répartiteur de Symfony : méthode,
  * outil ou prompt (seulement un nom que le serveur connaît : celui que
  * l'appelant envoie n'a pas de borne), issue ({@see McpCallOutcome}), code
- * d'erreur JSON-RPC, durée, IP tronquée ({@see TruncatedIp}), et le
- * `clientInfo` que le client a **déclaré** à l'`initialize` — d'où le nom de la
- * clé : rien ne le vérifie, chaque champ est borné à
+ * d'erreur JSON-RPC, durée du traitement du message, IP tronquée
+ * ({@see TruncatedIp}), et le `clientInfo` que le client a **déclaré** à
+ * l'`initialize` (dans le `_meta` de chaque requête de l'ère sans session) —
+ * d'où le nom de la clé : rien ne le vérifie, chaque champ est borné à
  * {@see self::MAX_DECLARED_CHARACTERS} caractères, sans caractère de contrôle ni
  * de mise en forme. Un message invalide (une
  * méthode inconnue dans un lot) n'émet aucun événement : la classe l'observe sur
@@ -52,15 +54,26 @@ use Throwable;
  * sans méthode.
  *
  * **La révision sans session `2026-07-28`** (#664) a la même ligne, avec les
- * mêmes champs : le SDK la sert par un autre chemin, sans aucun événement, et
- * {@see ModernExchange} la lit de la requête et de la réponse HTTP, à
- * `kernel.terminate`. Son `declaredClient` est celui que la requête déclare dans
- * son `_meta` (aucune session ne le garde), borné de même. **Sa durée n'est pas
- * la même grandeur** : celle de la requête HTTP entière (pare-feu, écouteurs,
- * envoi de la réponse ; les 30 s d'un `subscriptions/listen` avant qu'il soit
- * refusé, #675), là où l'autre ère mesure le traitement du message — une
- * statistique de durée sépare les deux ères. Elle n'est écrite que pour une
- * réponse du serveur MCP — son contrôleur ou le refus avant le SDK
+ * mêmes champs. Le SDK émet pour elle les mêmes événements (`RequestEvent`,
+ * `ResponseEvent`, `ErrorEvent`, depuis la 0.9 ; aucun en 0.8.1), sur une
+ * session en mémoire, pour chaque requête qu'il confie à un handler : la ligne
+ * s'écrit sur eux, et son `declaredClient` est le `clientInfo` du `_meta`, lu
+ * dans la {@see RequestMeta} que le SDK range dans cette session
+ * ({@see self::declaredClient()}). **La durée a le même sens dans les deux
+ * ères** : celle du traitement du message, de `RequestEvent` à la réponse, et
+ * non plus celle de la requête HTTP entière.
+ *
+ * **Un échange que le SDK sert sans événement** — un refus avant le SDK
+ * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}), le 401
+ * différé, une notification acquittée, `server/discover`, une méthode retirée ou
+ * inconnue, une révision ou une enveloppe refusée — est lu de la requête et de
+ * la réponse HTTP par {@see ModernExchange}, à `kernel.terminate` : son
+ * `declaredClient` est celui de son `_meta`, borné de même, et **sa durée reste
+ * celle de la requête HTTP entière** (pare-feu, écouteurs, envoi de la
+ * réponse). Aucun champ ne dit laquelle des deux grandeurs une ligne porte,
+ * limite acceptée : ces échanges sont des refus et des réponses sans handler.
+ * Cette ligne n'est écrite que pour une réponse du serveur MCP — son contrôleur
+ * ou le refus avant le SDK
  * ({@see ServerAnswersInterface}) : un 4xx du framework sous l'enveloppe moderne, du
  * JSON lui aussi, garde la ligne de repli (audit de #675, C9) — comme, limite
  * acceptée, un 5xx levé par le contrôleur ou une réponse servie qu'un écouteur
@@ -109,7 +122,8 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     private const string INVISIBLE_CHARACTERS = '/[\p{Cc}\p{Cf}]/u';
 
     /**
-     * Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire, en
+     * Ce que le SDK (la version épinglée, composer.json) écrit pour chaque
+     * message de l'ère à poignée de main qu'il n'a pas su lire, en
      * `warning` : au niveau du handler `mcp` de production, sans quoi Monolog
      * n'appellerait pas ce processeur et seule la ligne de repli resterait.
      * Publique pour `McpCallLogTest`, qui relève ce niveau (#673).
@@ -229,7 +243,8 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
                 $this->writeLine($method, $name, McpCallOutcome::ProtocolError, null, $this->millisecondsSince($startedAt), null);
             }
 
-            // La révision sans session : servie sans événement, lue de l'échange HTTP.
+            // Un échange de la révision sans session que le SDK a servi sans
+            // événement : lu de l'échange HTTP.
             if (!$this->wroteALine) {
                 $this->writeModernCall($event, $httpStartedAt);
             }
@@ -272,7 +287,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
      * que pour porter des messages : sans aucun, c'est une erreur de protocole —
      * le SDK répond un JSON illisible en 200 —, sauf un 202 (des réponses du
      * client, acceptées). La révision sans session n'arrive plus ici : elle a sa
-     * ligne d'appel ({@see ModernExchange}).
+     * ligne d'appel, sur les événements du SDK ou par {@see ModernExchange}.
      */
     private function fallbackOutcome(string $httpMethod, int $status): McpCallOutcome
     {
@@ -301,9 +316,9 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     }
 
     /**
-     * Une requête de l'ère moderne n'a pas de session : le client déclare son
-     * `clientInfo` dans le `_meta` de chaque requête, et sa durée est celle de la
-     * requête HTTP qui la porte seule.
+     * Un échange de l'ère moderne que le SDK a servi sans événement : le client
+     * déclare son `clientInfo` dans le `_meta` de la requête, et la durée est
+     * celle de la requête HTTP qui la porte seule.
      *
      * La lecture relit l'échange avec les classes du SDK et du pont PSR-7 : ce
      * qu'elles lèvent — une requête que le pont ne sait pas convertir, que le
@@ -367,8 +382,11 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     }
 
     /**
-     * Le `clientInfo` que le SDK a copié dans la session à l'`initialize`, borné
-     * champ par champ, lu une fois par requête HTTP (une session par requête).
+     * Le `clientInfo` déclaré, borné champ par champ, lu une fois par requête
+     * HTTP (une session par requête) : celui que le SDK a copié dans la session
+     * à l'`initialize` (l'ère à poignée de main), sinon celui de la
+     * {@see RequestMeta} que le SDK range dans la session en mémoire de l'ère
+     * sans session.
      *
      * @return array{name: ?string, version: ?string}|null
      */
@@ -380,7 +398,25 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
 
         $declared = $session->get(self::SDK_CLIENT_INFO);
 
-        return $this->declaredClient = $this->boundedClient(\is_array($declared) ? $declared : null);
+        return $this->declaredClient = $this->boundedClient(\is_array($declared) ? $declared : $this->requestMetaClient($session));
+    }
+
+    /**
+     * Le `clientInfo` que la requête sans session déclare dans son `_meta`, tel
+     * que le SDK l'a lu dans sa {@see RequestMeta} — `null` quand elle n'en
+     * déclare aucun, jamais les défauts d'`Implementation` (`app`, `dev`). Ses
+     * deux champs sont du texte : `Implementation::fromArray()` l'exige, et
+     * {@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener} refuse
+     * avant le SDK un `clientInfo` qu'il ne sait pas lire.
+     *
+     * @return array{name: string, version: string}|null
+     */
+    private function requestMetaClient(SessionInterface $session): ?array
+    {
+        $meta = $session->get(RequestMeta::class);
+        $clientInfo = $meta instanceof RequestMeta ? $meta->clientInfo : null;
+
+        return null === $clientInfo ? null : ['name' => $clientInfo->name, 'version' => $clientInfo->version];
     }
 
     /**

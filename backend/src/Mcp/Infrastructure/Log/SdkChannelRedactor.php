@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
+use JsonException;
+use Mcp\Exception\InvalidCursorException;
 use Mcp\Exception\InvalidInputMessageException;
 use Mcp\Exception\PromptGetException;
 use Mcp\Exception\PromptNotFoundException;
@@ -20,16 +22,20 @@ use Throwable;
  * Borne ce que le SDK MCP écrit sur son canal `mcp` (spec 0007, tâche 4, #643 ;
  * reports des relectures de #640 et #642).
  *
- * Le SDK 0.8.1 et le bundle étiquettent tous leurs services sur ce canal, en
- * dur. Trois défauts, que ce processeur corrige pour tout enregistrement, à
- * tout niveau, avant qu'un handler ne le reçoive :
+ * Le bundle de la version épinglée (composer.json) étiquette tous les services
+ * du SDK sur ce canal, en dur. Trois défauts, que ce processeur corrige pour
+ * tout enregistrement, à tout niveau, avant qu'un handler ne le reçoive :
  *
- *  - **le contenu des échanges** : « Received message to process. » porte le
- *    JSON-RPC brut, « Handling request. » la requête décodée, et les
- *    gestionnaires les arguments — le `role` du prompt est du texte libre où une
- *    personne peut écrire son nom ou celui de son entreprise. Ces clés
- *    ({@see self::WITHHELD_KEYS}) sont remplacées par {@see self::WITHHELD}, de
- *    même que l'identifiant de session, qui vaut accès à la session ;
+ *  - **le contenu des échanges** : le JSON-RPC brut, que porte une ligne
+ *    `debug`, « Received message payload. » (clé `message`), et les arguments
+ *    que journalisent les gestionnaires (« Executing tool ») — le `role` du
+ *    prompt est du texte libre où une personne peut écrire son nom ou celui de
+ *    son entreprise. Ces clés ({@see self::WITHHELD_KEYS}) sont remplacées par
+ *    {@see self::WITHHELD}, de même que l'identifiant de session, qui vaut
+ *    accès à la session. En 0.8.1, le brut était sur « Received message to
+ *    process. » et la requête décodée sur « Handling request. » ; depuis la
+ *    0.9, la première n'a plus de contexte, et la seconde ne porte plus que
+ *    la méthode et l'identifiant de la requête ;
  *  - **les chaînes choisies par l'appelant**, citées sans borne (un nom d'outil
  *    ou de méthode inconnu de 100 Ko, jusqu'à 100 par lot) : le message, chaque
  *    chaîne du contexte et le message de chaque exception sont tronqués à
@@ -43,10 +49,11 @@ use Throwable;
  *    de production (monolog.yaml) : le journal d'appels `mcp_usage` en garde
  *    l'issue et le code JSON-RPC, rien n'est perdu.
  *
- * Le classement des fautes du client est une liste fermée, écrite contre le SDK
- * 0.8.1 : par classe d'exception quand le SDK en a une qui ne désigne que le
+ * Le classement des fautes du client est une liste fermée, écrite contre la
+ * version épinglée (composer.json) : par classe d'exception quand le SDK en a une qui ne désigne que le
  * client, par code (-32602) ou début de message pour une RegistryException, par
- * message exact sinon. Une faute serveur (une exception de câblage,
+ * message exact sinon — l'un d'eux pour une exception donnée seulement
+ * ({@see self::UNPARSEABLE_MODERN_REQUEST}). Une faute serveur (une exception de câblage,
  * {@see \App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException}) garde son
  * niveau. {@see \App\Tests\Mcp\Infrastructure\Log\SdkChannelRecordsTest} provoque
  * chaque faute sur le vrai serveur : une montée de version du SDK qui change un
@@ -63,12 +70,21 @@ final class SdkChannelRedactor
     /**
      * Les clés de contexte du SDK qui portent un échange ou une session.
      *
+     * `data` est ce que le validateur de schémas du SDK validait quand sa
+     * validation a échoué en interne, encodé en JSON : les arguments d'un
+     * outil, et depuis la 0.9 sa **sortie** — pour l'outil nominatif, le
+     * corpus (#731). `sessionId` est l'identifiant de session tel que
+     * l'écrit le transport quand le gestionnaire d'une fibre suspendue
+     * échoue, sous une autre graphie que partout ailleurs. Une valeur ni
+     * scalaire, ni `null`, ni exception (un tableau d'identifiants, un objet)
+     * est déjà réduite à son type par {@see self::bounded()}.
+     *
      * @var list<string>
      */
     public const array WITHHELD_KEYS = [
         'message', 'request', 'response', 'notification', 'arguments', 'params',
-        'structured_content', 'error_args',
-        'session_id', 'payload_session_id', 'expected_session_id',
+        'structured_content', 'error_args', 'data',
+        'session_id', 'sessionId', 'payload_session_id', 'expected_session_id',
     ];
 
     /**
@@ -84,6 +100,11 @@ final class SdkChannelRedactor
         PromptGetException::class,
         // Message JSON-RPC mal formé, méthode inconnue.
         InvalidInputMessageException::class,
+        // Curseur de pagination que le registre n'a pas émis (`tools/list`,
+        // `prompts/list`, les deux listes de ressources) : le SDK ne la lève
+        // que là, sur la valeur reçue, et l'écrit en `warning` dans une
+        // session, « Invalid argument: … » (#731).
+        InvalidCursorException::class,
         // Pas Mcp\Exception\InvalidArgumentException : le SDK la lève aussi pour
         // un défaut de câblage (« Invalid handler type »), et un argument
         // inconvertible arrive enveloppé dans une RegistryException.
@@ -95,12 +116,36 @@ final class SdkChannelRedactor
      * client qu'au décodage de l'entrée, à l'encodage d'une réponse c'est une
      * panne du serveur.
      *
+     * Le `requestState` refusé est celui de la révision sans session : le
+     * serveur ne configure aucun `request_state` (mcp.yaml), il n'en signe
+     * donc aucun, et toute valeur qu'un client envoie est refusée — une ligne
+     * par requête, à volonté pour un anonyme (#731). Son contexte ne porte
+     * que la méthode et un code de raison (`malformed`, `mac`, `expired`).
+     * À rejuger si `request_state` est un jour configuré : un état signé
+     * par le serveur puis refusé (`mac`, `expired`) pourrait alors dire une
+     * faute du serveur (secret changé, horloge) et non plus du client.
+     *
      * @var list<string>
      */
     private const array CLIENT_FAULT_MESSAGES = [
         'Failed to decode json message.',
         'Received an id-less error response from client; cannot correlate it to a pending request.',
+        'Rejected a requestState that failed verification.',
     ];
+
+    /**
+     * Le refus, par la révision sans session, d'une requête que le SDK n'a pas
+     * su remettre à sa fabrique. Faute du client pour un JsonException
+     * seulement : le SDK réencode le message qu'il a décodé, et `json_encode()`
+     * refuse un nombre que `json_decode()` a lu infini (`1e999`) — une ligne
+     * par requête, à volonté pour un anonyme (#731). Toute autre exception
+     * levée là (un TypeError de la fabrique) garde son niveau : elle dirait un
+     * défaut du SDK, ou un message que
+     * {@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener} aurait
+     * dû refuser avant lui. Le contexte porte la méthode telle que le client
+     * l'a écrite, bornée comme toute chaîne, et l'exception.
+     */
+    private const string UNPARSEABLE_MODERN_REQUEST = 'Rejected an unparseable modern-era request.';
 
     /**
      * RegistryException est générique : seuls ces débuts de message, levés par
@@ -144,6 +189,10 @@ final class SdkChannelRedactor
         $exception = $record->context['exception'] ?? null;
         if (!$exception instanceof Throwable) {
             return false;
+        }
+
+        if (self::UNPARSEABLE_MODERN_REQUEST === $record->message) {
+            return $exception instanceof JsonException;
         }
 
         if ($exception instanceof RegistryException) {

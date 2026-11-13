@@ -12,20 +12,22 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  * ({@see \App\Mcp\Presentation\Tool\GetNominativeCorpusTool}) délègue, comme
  * les outils adossés délèguent à {@see RoutePayloadReaderInterface}.
  *
- * **En deux temps, parce que la borne de la réponse est une affaire du SDK.**
- * L'outil doit mesurer la réponse telle que le SDK la mettra en file dans la
- * session (`QueuedAnswer::bytes()`, sur le `CallToolResult`), et la ligne
- * d'audit ne doit être écrite que pour une réponse **effectivement servie**,
- * donc après cette mesure. {@see self::open()} décide l'accès et rend le
- * corpus ; l'outil met en forme et mesure ; {@see self::recordServed()}
- * journalise ce qu'il sert. Écartés : une mesure dans l'Application (le SDK y
- * entrerait, ses classes de réponse et son encodage), un rappel passé à
- * `open()` pour mesurer (une abstraction pour un seul appelant, qui cache
- * l'ordre au lieu de l'écrire), et l'audit dans l'outil (la décision et la
- * trace d'une lecture nominative dans un adaptateur, six dépendances).
- * Le prix : rien n'empêche un appelant d'oublier `recordServed()` —
- * GetNominativeCorpusToolTest lit la ligne après chaque lecture servie, et
- * son absence après chaque refus.
+ * **En deux temps, pour que l'audit suive la construction du résultat.** La
+ * ligne d'audit ne doit être écrite que pour une réponse **que l'outil sert** :
+ * {@see self::open()} décide l'accès et rend le corpus ; l'outil le met à la
+ * forme MCP (le `CallToolResult`, une affaire de SDK, donc de Presentation) ;
+ * {@see self::recordServed()} journalise alors ce qu'il sert. Jusqu'à #731,
+ * l'outil mesurait aussi la réponse entre les deux et la refusait au-delà
+ * d'une borne (la réponse passait par la session du SDK) : la mesure est
+ * partie, l'ordre reste — une mise en forme qui échoue (un corpus qui ne
+ * s'encode pas en JSON) ne laisse pas de ligne de lecture. Écartés : la mise
+ * en forme dans l'Application (le SDK y entrerait, ses classes de réponse et
+ * son encodage), un rappel passé à `open()` pour la faire (une abstraction
+ * pour un seul appelant, qui cache l'ordre au lieu de l'écrire), et l'audit
+ * dans l'outil (la décision et la trace d'une lecture nominative dans un
+ * adaptateur, six dépendances). Le prix : rien n'empêche un appelant
+ * d'oublier `recordServed()` — GetNominativeCorpusToolTest lit la ligne après
+ * chaque lecture servie, et son absence après chaque refus.
  */
 interface NominativeCorpusReaderInterface
 {
@@ -45,7 +47,7 @@ interface NominativeCorpusReaderInterface
 
     /**
      * La ligne `nominative-corpus-read` du journal de sécurité pour un corpus
-     * que l'outil sert, à n'appeler qu'une fois la réponse acceptée.
+     * que l'outil sert, à n'appeler qu'une fois le résultat construit.
      */
     public function recordServed(NominativeCorpus $corpus): void;
 }

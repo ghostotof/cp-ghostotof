@@ -29,7 +29,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * rétrocompatibilité. ChatGPT fige la liste à l'approbation du connecteur :
  * les deux places sont donc tenues dès la première publication, plutôt que
  * d'attendre de savoir en préprod laquelle il lit (#653). `Mcp\Schema\Tool`
- * 0.8.1 ne connaît que `_meta` : `getTools()` rend chaque outil de la page en
+ * de la version épinglée (composer.json) ne connaît que `_meta`, comme en
+ * 0.8.1 : `getTools()` rend chaque outil de la page en
  * {@see ToolWithSecuritySchemes}, dont la valeur est lue dans ce `_meta` — la
  * seule source, l'attribut `#[McpTool(meta: …)]` de l'outil. Un outil qui
  * n'en déclare pas fait échouer `tools/list` ({@see ToolWithoutSecuritySchemesException},
@@ -44,8 +45,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * du SDK, réponse entière comprise. Décoré, le registre ne change que la
  * donnée que lit le gestionnaire du SDK, qui reste le seul à répondre — dans
  * une session comme sous l'enveloppe sans session 2026-07-28 ;
- * `server/discover` ne liste pas d'outil en 0.8.1, `SecuritySchemesTest` le
- * vérifie.
+ * `server/discover` ne liste pas d'outil dans la version épinglée
+ * (composer.json), ni en 0.8.1, `SecuritySchemesTest` le vérifie.
  *
  * Tout le reste est délégué tel quel, **`getTool()` compris** : l'appel d'un
  * outil, le journal des appels ({@see \App\Mcp\Infrastructure\Log\McpCallLog},
@@ -53,15 +54,24 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * (`getTool() === …`) lisent les références du registre décoré, jamais une
  * recopie.
  *
- * Écart accepté : le builder du SDK charge un registre fourni par
- * `setRegistry()` par `Registry::loadFrom()` quand c'est sa propre classe
- * (`final`), qui tait les événements de changement de la liste pendant le
- * chargement, et directement sinon. Décoré, le chargement émet donc un
+ * {@see self::publishesListChanges()} est déléguée elle aussi : « A decorator
+ * forwards the answer of the registry it wraps », dit le contrat du SDK
+ * (`RegistryInterface`, depuis la 0.9 ; sans elle le noyau ne démarre plus).
+ *
+ * Écart accepté, relu dans `Server\Builder` et `Capability\Registry` de la
+ * version épinglée (composer.json) : le builder du SDK charge un registre
+ * fourni par `setRegistry()` par `Registry::loadFrom()` quand c'est sa propre
+ * classe (`final`), qui tait les événements de changement de la liste pendant
+ * le chargement, et directement sinon. Décoré, le chargement émet donc un
  * `ToolListChangedEvent` par outil (un `PromptListChangedEvent` par prompt)
  * sur le répartiteur de Symfony, à chaque construction du serveur. Aucun
- * écouteur ne les reçoit : le seul abonné du SDK (`RegistryChangePublisher`)
- * n'est câblé qu'avec un bus de notifications, et ce serveur n'en a pas
- * (`TruthfulCapabilitiesPass`, aucun `listChanged` annoncé).
+ * écouteur ne les reçoit : ce qui les publierait (`RegistryChangePublisher`,
+ * appelé par `PublishingEventDispatcher`) n'entoure le répartiteur du registre
+ * qu'avec un bus de notifications (`subscriptions.bus`, `none` par défaut),
+ * et ce serveur n'en a pas. L'annonce, elle, ne dépend pas de ce registre :
+ * les capacités sont écrites (`TruthfulCapabilitiesPass`), et
+ * `AnnouncedCapabilitiesTest` reste le garde qu'aucun `listChanged` n'est
+ * annoncé.
  *
  * Aucun journal ici : la décoration déplace les tags du service décoré, dont
  * son canal Monolog, vers le décorateur (`.claude/rules/mcp.md`). Le registre
@@ -83,7 +93,11 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     /**
      * La page du registre décoré, chaque outil recopié avec ses
      * `securitySchemes` au premier niveau ; ses clés (les noms) et son
-     * curseur sont gardés.
+     * curseur sont gardés. La page reste une `Page<Tool>`, le type du
+     * contrat (`Page` est invariante) : chaque {@see ToolWithSecuritySchemes}
+     * est un `Tool`.
+     *
+     * @return Page<Tool>
      *
      * @throws ToolWithoutSecuritySchemesException
      */
@@ -91,9 +105,10 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     {
         $page = $this->inner->getTools($limit, $cursor);
 
+        /** @var array<int|string, Tool> $tools */
         $tools = [];
         foreach ($page->references as $name => $tool) {
-            $tools[$name] = $tool instanceof Tool ? ToolWithSecuritySchemes::of($tool) : $tool;
+            $tools[$name] = ToolWithSecuritySchemes::of($tool);
         }
 
         return new Page($tools, $page->nextCursor);
@@ -153,6 +168,17 @@ final readonly class SecuritySchemesRegistry implements RegistryInterface
     public function unregisterPrompt(string $name): void
     {
         $this->inner->unregisterPrompt($name);
+    }
+
+    /**
+     * La réponse du registre décoré, telle quelle : « A decorator forwards
+     * the answer of the registry it wraps » (contrat du SDK). Fausse ici,
+     * faute de bus de notifications ; le builder ne la lit de toute façon que
+     * pour des capacités détectées, et celles de ce serveur sont écrites.
+     */
+    public function publishesListChanges(): bool
+    {
+        return $this->inner->publishesListChanges();
     }
 
     public function hasTool(string $name): bool

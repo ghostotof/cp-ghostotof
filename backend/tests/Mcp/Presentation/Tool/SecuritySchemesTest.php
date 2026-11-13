@@ -65,7 +65,8 @@ final class SecuritySchemesTest extends WebTestCase
 
     /**
      * La révision sans session découvre le serveur par `server/discover`, qui
-     * ne liste aucun outil en 0.8.1 : les outils s'y découvrent par
+     * ne liste aucun outil dans la version épinglée (composer.json), ni en
+     * 0.8.1 (révisions, capacités, instructions) : les outils s'y découvrent par
      * `tools/list`, couvert ci-dessus. Le jour où une montée du SDK y met la
      * liste, ce test rougit, et la liste doit y porter ses schémas aussi.
      */

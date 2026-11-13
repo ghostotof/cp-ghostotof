@@ -20,7 +20,6 @@ use App\Tests\Mcp\Presentation\Tool\GetAboutToolTest;
 use App\Tests\Mcp\Presentation\Tool\RouteBackedToolsTest;
 use App\Tests\Mcp\Support\ReadsPortfolioRegistry;
 use App\Tests\Mcp\Support\UnreadableAccessRuleException;
-use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionNamedType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -107,8 +106,8 @@ final class McpExposureSymmetryTest extends KernelTestCase
     public const array TOOLS_WITHOUT_ROUTE = [
         'get_contact_info' => ['Adresse de la page publique du formulaire de contact (palier anonyme) : la route /api/contact est une écriture.', ['string']],
         'get_nominative_corpus' => [
-            'Corpus nominatif (palier de confiance, connexion MCP, #648) : ses sources sont celles que CorpusSourcesTest fixe, rendues par le renderer de l\'assistant de parcours. L\'outil délègue l\'accès, le rendu et l\'audit à NominativeCorpusReaderInterface, qui lit l\'identité par Security seulement (ADR 0006 D4) ; refusé, l\'erreur d\'outil et son défi (BearerChallenge) ; au-delà de sa borne, le refus et un warning aux tailles seules (LoggerInterface).',
-            [NominativeCorpusReaderInterface::class, BearerChallenge::class, LoggerInterface::class],
+            'Corpus nominatif (palier de confiance, connexion MCP, #648) : ses sources sont celles que CorpusSourcesTest fixe, rendues par le renderer de l\'assistant de parcours. L\'outil délègue l\'accès, le rendu et l\'audit à NominativeCorpusReaderInterface, qui lit l\'identité par Security seulement (ADR 0006 D4) ; refusé, l\'erreur d\'outil et son défi (BearerChallenge).',
+            [NominativeCorpusReaderInterface::class, BearerChallenge::class],
         ],
     ];
 

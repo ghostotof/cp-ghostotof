@@ -20,15 +20,19 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Ce que le serveur MCP refuse avant le SDK (#644), parce que le SDK le
- * servirait ou le recopierait en session sans borne :
+ * servirait, le recopierait en session sans borne ou, pour une réponse du
+ * client, la journaliserait en `warning` à volonté :
  *
- * - un lot JSON-RPC de plusieurs messages : le SDK 0.8.1 en accepte jusqu'à
- *   100 par requête HTTP, codé en dur — 100 `tools/call` pour une seule
- *   requête comptée par la zone nginx `mcp` ;
+ * - un lot JSON-RPC de plusieurs messages : le SDK de la version épinglée
+ *   (composer.json) en accepte jusqu'à 100 par requête HTTP, codé en dur —
+ *   100 `tools/call` pour une seule requête comptée par la zone nginx `mcp` ;
  * - un `initialize` dont les déclarations (`clientInfo`, `capabilities`)
  *   dépassent la borne : le SDK les recopie telles quelles en session ;
- * - une réponse du client : le SDK la range en session sous un identifiant
- *   que le client choisit, et ce serveur n'envoie aucune requête au client ;
+ * - une réponse du client : en 0.8.1 le SDK la rangeait en session sous un
+ *   identifiant que le client choisit ; depuis la 0.9 il n'y range que la
+ *   réponse à une requête qu'il a envoyée, et écrit un `warning` pour toute
+ *   autre (une erreur sans identifiant a son propre message) — ce serveur
+ *   n'envoie aucune requête au client ;
  * - `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
  *   php-fpm pris, pour un serveur qui n'émet aucune notification.
  */
@@ -260,9 +264,17 @@ final class InboundMessageRefusalTest extends WebTestCase
     /**
      * Le SDK lit `error`, puis `result`, avant `method`
      * ({@see \Mcp\JsonRpc\MessageFactory}) : une requête qui porte un résultat
-     * ou une erreur est pour lui une réponse, rangée en session sous
-     * l'identifiant choisi (#671). Elle passait le refus, qui exigeait
-     * l'absence de `method`, et la session grossissait à chaque envoi.
+     * ou une erreur est pour lui une réponse. En 0.8.1 il la rangeait en
+     * session sous l'identifiant choisi par le client (#671) : elle passait le
+     * refus, qui exigeait l'absence de `method`, et la session grossissait à
+     * chaque envoi.
+     *
+     * Depuis la 0.9 il ne range que la réponse à une requête qu'il attend,
+     * sous un UUID qu'il a tiré lui-même ({@see Protocol::handleResponse()}) :
+     * la seconde assertion, « aucune réponse rangée », serait donc vraie sans
+     * le refus. Elle est gardée en défense, contre un SDK qui rangerait de
+     * nouveau une réponse non attendue ; c'est la première, le refus, qui
+     * mord toujours.
      */
     #[DataProvider('requestsCarryingAResponse')]
     public function testARequestCarryingAResponseIsRefusedAndStoresNoResponse(string $message): void
@@ -558,7 +570,8 @@ final class InboundMessageRefusalTest extends WebTestCase
 
     /**
      * La clé sous laquelle {@see Protocol::handleResponse()} range les réponses
-     * (`_mcp.responses` en 0.8.1), lue dans le SDK : renommée, elle fait
+     * (`_mcp.responses` dans la version épinglée, composer.json, comme en
+     * 0.8.1), lue dans le SDK : renommée, elle fait
      * échouer la lecture au lieu de la laisser vide.
      */
     private function sdkResponsesKey(): string

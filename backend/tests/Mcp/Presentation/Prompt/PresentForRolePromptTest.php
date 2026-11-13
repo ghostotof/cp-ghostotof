@@ -39,7 +39,12 @@ final class PresentForRolePromptTest extends WebTestCase
     /** La balise du bloc : `role-` et un nonce de 8 octets en hexadécimal ({@see \App\Mcp\Presentation\Prompt\RoleBlockTag}). */
     private const string TAG = '/<(role-[0-9a-f]{16})>/';
 
-    /** -32603 : la seule erreur que le SDK 0.8.1 laisse rendre à un prompt (`PromptGetException`). */
+    /**
+     * -32603 : le code de `PromptGetException`, la seule erreur de refus d'une
+     * valeur que le SDK de la version épinglée (composer.json) laisse rendre à
+     * un prompt avec son message. `PromptNotFoundException`, rendue en -32602,
+     * désigne un prompt inconnu, pas une valeur refusée.
+     */
     private const int PROMPT_ERROR = -32603;
 
     /** Un seul client par test : `createClient()` refuse un noyau déjà démarré. */

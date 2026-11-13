@@ -7,6 +7,10 @@ namespace App\Tests\Mcp\Infrastructure\Session;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Tests\Mcp\Fixtures\ConnectionPrincipal;
 use App\Tests\Mcp\Fixtures\RecordingSessionStore;
+use App\Tests\Mcp\Fixtures\UnreachableSimpleCache;
+use Mcp\Exception\SessionStoreException;
+use Mcp\Server\Protocol;
+use Mcp\Server\Session\Psr16SessionStore;
 use Mcp\Server\Session\Session;
 use Mcp\Server\Session\SessionStoreInterface;
 use Monolog\Handler\TestHandler;
@@ -19,20 +23,35 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Les échecs que `Psr16SessionStore` avale (il rend `false` sur toute
- * exception) laissent une trace sur le canal `mcp` : sans elle, une session
- * vidée en silence n'expliquerait rien des erreurs que voit le client.
+ * exception d'une lecture, d'une écriture ou d'une destruction) laissent une
+ * trace sur le canal `mcp` : sans elle, une session vidée en silence
+ * n'expliquerait rien des erreurs que voit le client. Celui qu'il n'avale
+ * pas — son contrôle d'existence lève quand le cache échoue — traverse le
+ * décorateur tel quel (#731).
  *
  * Et la liaison d'une session à la connexion MCP qui l'a utilisée la
  * première (#648, décision de l'auteur du 2026-10-24) : une fois liée, elle
  * n'existe pour aucune autre requête que celles de cette connexion, et la
- * liaison part dans la même écriture que la file qui porte la réponse.
+ * liaison part dans la même écriture que la session. Gardée en défense en
+ * profondeur depuis #731 : la réponse d'un outil ne passe plus par la session
+ * (GetNominativeCorpusToolTest l'épingle), qui porte encore ce que la
+ * connexion a déclaré et, le jour où un outil interrogerait le client, les
+ * requêtes en attente et les réponses qu'il y ferait.
  */
 final class BoundedSessionStoreTest extends TestCase
 {
+    /** Le `warning` d'une session liée à une autre connexion que celle de la requête, recopié du décorateur. */
+    private const string FOREIGN_BINDING = 'MCP session refused: bound to another MCP connection than the request\'s.';
+
     /** L'en-tête d'une session liée, recopié du décorateur : un oracle à part. */
     private const string BOUND_TO = 'mcp-connection:';
 
-    /** La clé de la file sortante du SDK (`Protocol::SESSION_OUTGOING_QUEUE`, privée). */
+    /**
+     * La clé de la file sortante du SDK (`Protocol::SESSION_OUTGOING_QUEUE`,
+     * privée) : des messages dont le serveur a l'initiative, jamais une
+     * réponse — et pas la requête qu'un outil suspendu adresse au client
+     * pendant un `POST`, qui part dans une file propre au transport.
+     */
     private const string OUTGOING_QUEUE = '_mcp.outgoing_queue';
 
     private TestHandler $mcpLog;
@@ -59,6 +78,33 @@ final class BoundedSessionStoreTest extends TestCase
         // de lire la session (Mcp\Server\Protocol::resolveSession()).
         self::assertFalse($store->exists($id));
         self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+    }
+
+    /**
+     * Un store injoignable n'est pas une session absente (#731, R7). Sous un
+     * cache en panne, le `Psr16SessionStore` du SDK avale l'échec de la
+     * lecture (`false`) mais lève {@see SessionStoreException} au contrôle
+     * d'existence : le décorateur la laisse passer, telle quelle. Le SDK en
+     * fait un 503 au POST (`Protocol::resolveSession()`), le contrôleur au
+     * GET — la session existe peut-être, le client réessaie. Rendue `false`,
+     * elle devenait un 404, qui fait se réinitialiser le client et abandonner
+     * une session peut-être intacte.
+     *
+     * Aucun `warning` « MCP session unreadable » non plus : on ne sait rien
+     * de la ligne, ni présente ni illisible. La trace de la panne est le
+     * `error` de celui qui répond 503.
+     */
+    public function testAnUnreachableStoreIsNotAnAbsentSession(): void
+    {
+        $store = new BoundedSessionStore(new Psr16SessionStore(new UnreachableSimpleCache()), new TokenStorage(), new Logger('mcp', [$this->mcpLog]));
+
+        $this->expectException(SessionStoreException::class);
+
+        try {
+            $store->exists(Uuid::v4());
+        } finally {
+            self::assertFalse($this->mcpLog->hasWarningRecords());
+        }
     }
 
     /**
@@ -194,7 +240,7 @@ final class BoundedSessionStoreTest extends TestCase
     {
         $inner = new RecordingSessionStore();
         $id = Uuid::v4();
-        $stored = $this->bound(Uuid::v7(), '{"_mcp":{"outgoing_queue":[{"message":"corpus"}]}}');
+        $stored = $this->bound(Uuid::v7(), '{"_mcp":{"outgoing_queue":[{"message":"server-initiated"}]}}');
         $inner->seed($id, $stored);
         $store = $this->storeAs($inner, null);
 
@@ -274,45 +320,154 @@ final class BoundedSessionStoreTest extends TestCase
     }
 
     /**
-     * La file qui porte la réponse n'est jamais écrite sans la liaison : la
-     * séquence du SDK rejouée avec sa vraie classe `Session` — le contrôle
-     * d'existence (`Protocol::resolveSession()`), la réponse mise en file
-     * puis `save()`, enfin la vidange de la file
-     * (`Protocol::consumeOutgoingMessages()`, une seconde `Session` sur le même
-     * identifiant). Chaque écriture confiée au store, et pas seulement la
-     * dernière, porte la connexion : aucune fenêtre où la ligne contient la
-     * réponse et n'est pas liée.
+     * Chaque écriture d'une session utilisée par une connexion porte sa
+     * liaison : la séquence d'un `tools/call` rejouée avec la vraie classe
+     * `Session` du SDK, telle que la version épinglée (composer.json) la
+     * déroule sans verrou de session.
+     *
+     *  1. `Protocol::resolveSession()` : le contrôle d'existence de
+     *     l'identifiant reçu, puis une `Session` sur cet identifiant ;
+     *  2. `Protocol::handleRequest()` : le `_meta` de la requête posé dans la
+     *     session, ce qui la lit — la réponse, elle, part au transport
+     *     (`Protocol::sendResponse()`), jamais dans la session ;
+     *  3. `Protocol::handleMessages()` : `Session::save()`, qui rappelle le
+     *     contrôle d'existence, relit ce que le store porte, y reporte les
+     *     clés changées, puis écrit ;
+     *  4. `StreamableHttpTransport::createJsonResponse()` :
+     *     `Protocol::consumeOutgoingMessages()`, une seconde `Session` sur le
+     *     même identifiant, qui lit la file de la session et ne réécrit
+     *     rien quand elle est vide.
+     *
+     * En 0.8.1 la réponse était mise en file dans la session à l'étape 3,
+     * puis la file vidée et réécrite à l'étape 4 : deux écritures, dont une
+     * portait le corpus. Il en reste une par requête, sans réponse.
+     *
+     * Deux requêtes de la même connexion, sur une session ouverte
+     * anonymement : la première la lie, la seconde écrit sous la liaison que
+     * la ligne porte. Chaque écriture confiée au store commence par la
+     * connexion — aucune fenêtre où la ligne est écrite pour elle sans la
+     * désigner.
      */
-    public function testTheQueueHoldingTheAnswerIsNeverWrittenUnbound(): void
+    public function testEveryWriteOfABoundSessionCarriesItsBinding(): void
     {
         $inner = new RecordingSessionStore();
         $connection = Uuid::v7();
         $id = Uuid::v4();
         // Ouverte anonymement : pas encore liée.
-        $inner->seed($id, '{"initialized":true}');
-        $store = $this->storeAs($inner, $connection);
-        $answer = [['message' => '{"jsonrpc":"2.0","id":2,"result":{"corpus":"CORPUS"}}', 'context' => ['type' => 'response']]];
+        $inner->seed($id, '{"initialized":true,"client_info":{"name":"client"}}');
 
-        self::assertTrue($store->exists($id));
-        $handled = new Session($store, $id);
-        $handled->set(self::OUTGOING_QUEUE, $answer);
-        self::assertTrue($handled->save());
+        foreach ([['progressToken' => 'first'], ['progressToken' => 'second']] as $requestMeta) {
+            // Une requête HTTP : son propre décorateur, sans mémoire de la précédente.
+            $store = $this->storeAs($inner, $connection);
 
-        $drain = new Session($store, $id);
-        self::assertSame($answer, $drain->get(self::OUTGOING_QUEUE, []));
-        $drain->set(self::OUTGOING_QUEUE, []);
-        self::assertTrue($drain->save());
+            self::assertTrue($store->exists($id));
+            $handled = new Session($store, $id);
+            $handled->set(Protocol::SESSION_ACTIVE_REQUEST_META, $requestMeta);
+            self::assertTrue($handled->save());
 
-        self::assertCount(2, $inner->writes());
-        self::assertStringContainsString('CORPUS', $inner->writes()[0]);
+            $drain = new Session($store, $id);
+            self::assertSame([], $drain->get(self::OUTGOING_QUEUE, []));
+            self::assertSame('client', $drain->get('client_info.name'), 'La connexion relit la session qu\'elle a écrite.');
+        }
+
+        self::assertCount(2, $inner->writes(), 'Une écriture par requête : la vidange d\'une file vide ne réécrit rien.');
         foreach ($inner->writes() as $written) {
             self::assertStringStartsWith(self::BOUND_TO.$connection->toRfc4122()."\n", $written);
         }
+        self::assertStringContainsString('"progressToken":"second"', $inner->writes()[1]);
+        self::assertFalse($this->mcpLog->hasWarningRecords());
     }
 
     /**
-     * La borne compte la session du SDK, pas l'en-tête de liaison : la
-     * relation entre `QUEUED_ANSWER_MAX_BYTES` et `MAX_BYTES` ne bouge pas.
+     * La file de la session ne sort que vers sa connexion, et sa vidange est
+     * écrite liée elle aussi. `Protocol::consumeOutgoingMessages()` rejouée :
+     * la file lue, puis réécrite vide.
+     *
+     * Ce qui la remplirait, dans la version épinglée (composer.json) :
+     * `Protocol::sendRequest()` ou `sendNotification()` appelées hors du
+     * fiber d'un outil, et `Protocol::handleFiberYield()` quand le transport
+     * n'est plus là — pas la requête qu'un outil suspendu adresse au client
+     * pendant un `POST`, rangée dans une file propre au transport
+     * (`Protocol::queueFiberOutgoing()`). Aucun de ces chemins n'est emprunté
+     * aujourd'hui ; le message mis en file ici en tient lieu.
+     */
+    public function testAQueueOfServerInitiatedMessagesIsDrainedByItsConnectionOnly(): void
+    {
+        $inner = new RecordingSessionStore();
+        $connection = Uuid::v7();
+        $id = Uuid::v4();
+        $queue = [['message' => '{"jsonrpc":"2.0","method":"notifications/resources/updated"}', 'context' => ['type' => 'notification']]];
+        $inner->seed($id, $this->bound($connection, '{"initialized":true,"_mcp":{"outgoing_queue":'.json_encode($queue, \JSON_THROW_ON_ERROR).'}}'));
+
+        $foreign = new Session($this->storeAs($inner, null), $id);
+        self::assertSame([], $foreign->get(self::OUTGOING_QUEUE, []), 'Une requête anonyme ne lit pas la file d\'une session liée.');
+        self::assertSame([], $inner->writes());
+
+        $drain = new Session($this->storeAs($inner, $connection), $id);
+        self::assertSame($queue, $drain->get(self::OUTGOING_QUEUE, []));
+        $drain->set(self::OUTGOING_QUEUE, []);
+        self::assertTrue($drain->save());
+
+        self::assertSame([$this->bound($connection, '{"initialized":true,"_mcp":{"outgoing_queue":[]}}')], $inner->writes());
+    }
+
+    /**
+     * La course que le SDK laisse sans verrou (#762), mesurée sur sa vraie
+     * classe `Session` : une requête a passé le contrôle d'existence sur une
+     * session non liée, puis une autre connexion la lie avant sa sauvegarde.
+     *
+     * `Session::save()` rappelle le contrôle d'existence avant d'écrire : le
+     * décorateur y relit la ligne, la voit liée à une autre connexion, et la
+     * dit absente — `save()` rend `false` **sans écrire**. C'est le cas joué
+     * ici : la liaison précède le début de la sauvegarde. La vidange
+     * (`Protocol::consumeOutgoingMessages()`) relit ensuite la session : même
+     * refus, une file vide, rien de réécrit. Deux `warning`, donc, dans cet
+     * ordre : le contrôle d'existence de la sauvegarde, puis la lecture de la
+     * vidange — aucune écriture refusée, la requête n'en tente pas. En 0.8.1
+     * c'était la lecture de la vidange puis son écriture, refusée, et la
+     * sauvegarde avait déjà réécrit la ligne avec ce que la requête avait lu.
+     *
+     * Ce test tient donc aussi un comportement du SDK : `save()` rappelle le
+     * contrôle d'existence avant d'écrire, et celui du décorateur lit la
+     * ligne et relève sa liaison (la relecture qui suit dans `save()` est
+     * servie de ce qu'il a lu, sans seconde requête). Un SDK qui écrirait de
+     * nouveau depuis sa mémoire, sans ce contrôle, ferait réécrire la ligne
+     * par la requête dépassée, non liée : ce test rougirait sur l'écriture.
+     * La fenêtre qui reste va de cette lecture à l'écriture, dans `save()`
+     * même — une liaison qui y tomberait n'est pas jouée ici (limite
+     * acceptée, `.claude/rules/mcp-sessions.md`).
+     */
+    public function testARequestOvertakenByAnotherConnectionWritesNothing(): void
+    {
+        $inner = new RecordingSessionStore();
+        $id = Uuid::v4();
+        $inner->seed($id, '{"initialized":true}');
+        $store = $this->storeAs($inner, null);
+
+        self::assertTrue($store->exists($id));
+        $handled = new Session($store, $id);
+        $handled->set(Protocol::SESSION_ACTIVE_REQUEST_META, ['progressToken' => 'overtaken']);
+
+        // Entre-temps, la requête d'une connexion a lié la session.
+        $bound = $this->bound(Uuid::v7(), '{"initialized":true,"client_info":{"name":"other"}}');
+        $inner->seed($id, $bound);
+
+        self::assertFalse($handled->save());
+        self::assertSame([], $inner->writes());
+        self::assertSame([self::FOREIGN_BINDING], $this->warnings(), 'Un seul `warning` à la sauvegarde : son contrôle d\'existence.');
+
+        $drain = new Session($store, $id);
+        self::assertSame([], $drain->get(self::OUTGOING_QUEUE, []));
+        self::assertSame([self::FOREIGN_BINDING, self::FOREIGN_BINDING], $this->warnings(), 'Le second `warning` : la lecture de la vidange.');
+
+        self::assertSame([], $inner->writes());
+        self::assertSame([], $inner->destroyed());
+        self::assertSame($bound, $inner->row($id));
+    }
+
+    /**
+     * La borne compte la session du SDK, pas l'en-tête de liaison : une
+     * session exactement à la borne s'écrit, liée, sans `warning`.
      */
     public function testTheBoundCountsTheSessionNotTheBinding(): void
     {
@@ -323,6 +478,44 @@ final class BoundedSessionStoreTest extends TestCase
         self::assertFalse($store->read($id));
         self::assertTrue($store->write($id, str_repeat('a', BoundedSessionStore::MAX_BYTES)));
         self::assertFalse($this->mcpLog->hasWarningRecords());
+    }
+
+    /**
+     * Un identifiant détruit pour dépassement n'existe plus pour le reste de
+     * la requête, quoi que le store contienne ensuite : ni contrôle
+     * d'existence, ni lecture, ni écriture — jusqu'à `reset()`. En 0.8.1, le
+     * SDK réécrivait aussitôt la session, vide, en vidant sa file sortante ;
+     * depuis la 0.9 il ne le fait plus (il ne réécrit qu'une file non vide,
+     * et une session détruite se relit absente), si bien que plus aucun test
+     * du point d'entrée ne voit cette mémoire (mesuré le 2026-11-10, #731 :
+     * retirée, `McpEndpointTest` reste vert). La règle est tenue ici, pas par
+     * l'ordre des appels du SDK : ce test la garde. La ligne remise dans le
+     * store tient lieu de ce qui la ferait réapparaître — une requête
+     * concurrente de la même session, un SDK qui réécrirait.
+     */
+    public function testAnIdDestroyedOverTheBoundStaysGoneForTheRestOfTheRequest(): void
+    {
+        $inner = new RecordingSessionStore();
+        $store = $this->storeAs($inner, null);
+        $id = Uuid::v4();
+        $inner->seed($id, '{"initialized":true}');
+
+        self::assertTrue($store->exists($id));
+        self::assertFalse($store->write($id, str_repeat('a', BoundedSessionStore::MAX_BYTES + 1)));
+        self::assertSame([$id->toRfc4122()], $inner->destroyed());
+        self::assertTrue($this->mcpLog->hasWarning('MCP session refused: over the size bound.'));
+
+        $inner->seed($id, '{"initialized":true}');
+
+        self::assertFalse($store->exists($id));
+        self::assertFalse($store->read($id));
+        self::assertFalse($store->write($id, '[]'));
+        self::assertSame([], $inner->writes());
+        self::assertSame('{"initialized":true}', $inner->row($id));
+
+        // Un runtime persistant : la requête suivante repart du store.
+        $store->reset();
+        self::assertTrue($store->exists($id));
     }
 
     /**
@@ -337,6 +530,23 @@ final class BoundedSessionStoreTest extends TestCase
 
         self::assertFalse($this->storeAs($inner, null)->exists($id));
         self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+    }
+
+    /**
+     * Les `warning` du canal `mcp`, dans l'ordre.
+     *
+     * @return list<string>
+     */
+    private function warnings(): array
+    {
+        $messages = [];
+        foreach ($this->mcpLog->getRecords() as $record) {
+            if (Level::Warning === $record->level) {
+                $messages[] = $record->message;
+            }
+        }
+
+        return $messages;
     }
 
     /** Ce qu'une requête de `$connection` (anonyme si `null`) voit du store. */

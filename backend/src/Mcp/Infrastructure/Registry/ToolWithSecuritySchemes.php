@@ -8,14 +8,16 @@ use App\Mcp\Application\ToolSecuritySchemes;
 use Mcp\Schema\Icon;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
+use Mcp\Schema\ToolExecution;
 use stdClass;
 
 /**
  * Un outil tel que `tools/list` le publie : celui du SDK, recopié champ pour
  * champ, plus `securitySchemes` au premier niveau (#648, ADR 0006 D3).
  *
- * `Mcp\Schema\Tool` 0.8.1 ne connaît pas ce champ, que la référence de l'Apps
- * SDK d'OpenAI lit au premier niveau de l'outil (elle tient
+ * `Mcp\Schema\Tool` de la version épinglée (composer.json) ne connaît pas ce
+ * champ (ni en 0.8.1 ; la 0.9 a ajouté `execution`), que la référence de
+ * l'Apps SDK d'OpenAI lit au premier niveau de l'outil (elle tient
  * `_meta["securitySchemes"]` pour un miroir de rétrocompatibilité) : sans lui,
  * ChatGPT n'offre pas la liaison de compte. La valeur est **lue** dans le
  * `_meta["securitySchemes"]` de l'outil, que l'attribut `#[McpTool(meta: …)]`
@@ -51,6 +53,7 @@ final class ToolWithSecuritySchemes extends Tool
             icons: $tool->icons,
             meta: $tool->meta,
             outputSchema: $tool->outputSchema,
+            execution: $tool->execution,
         );
     }
 
@@ -92,6 +95,7 @@ final class ToolWithSecuritySchemes extends Tool
      *     icons?: Icon[],
      *     _meta?: array<string, mixed>,
      *     outputSchema?: ToolOutputSchema|stdClass,
+     *     execution?: ToolExecution,
      *     securitySchemes: list<array<string, mixed>>
      * }
      */

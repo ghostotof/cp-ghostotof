@@ -64,10 +64,11 @@ final readonly class PresentForRolePrompt
 
     /**
      * Les deux paramètres sont **non typés** (#663) : typés `string`, le SDK
-     * 0.8.1 convertissait lui-même un argument d'un autre type (un tableau en
-     * « Array », avec un avertissement PHP). Le type est contrôlé ici, avant
-     * toute conversion ; `prompts/list` n'en publie aucun (MCP ne déclare que
-     * des chaînes).
+     * convertirait lui-même un argument d'un autre type (un tableau en
+     * « Array », avec un avertissement PHP) — en 0.8.1 comme dans la version
+     * épinglée (composer.json), `ReferenceHandler`. Le type est contrôlé ici,
+     * avant toute conversion ; `prompts/list` n'en publie aucun (MCP ne déclare
+     * que des chaînes).
      *
      * La langue se complète (#693) : le serveur annonce `completions`, et le
      * SDK propose les cas de {@see Locale} — ceux que `Locale::tryFrom()`
