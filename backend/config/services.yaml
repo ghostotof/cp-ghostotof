@@ -59,6 +59,14 @@ parameters:
     app.mcp.lifetime.connection_idle: 'P30D'
     app.mcp.lifetime.connection_maximum: 'P90D'
     app.mcp.lifetime.connection_unexchanged: 'PT1H'
+    # Domaines dont un client MCP peut s'identifier par l'URL de son document
+    # de métadonnées (CIMD, #651), lus par AllowedClientDomains
+    # (Mcp/Connection/Domain/ValueObject) : l'hôte du `client_id` doit être
+    # l'une de ces entrées, tel quel — aucun sous-domaine implicite. Des noms
+    # d'hôte en minuscules, sans schéma, port ni chemin ; une liste vide éteint
+    # CIMD. Une seule valeur pour tous les environnements, jamais de `%env()%`,
+    # comme les durées ci-dessus.
+    app.mcp.cimd.allowed_domains: ['claude.ai', 'chatgpt.com']
     # Rétention des connexions MCP révoquées ou expirées (#649) : la purge
     # quotidienne (`app:mcp:purge`, défaut de `--older-than`) supprime celles
     # révoquées avant ce délai. Une expression relative PHP, lue par
@@ -174,6 +182,24 @@ services:
             $idleLifetime: '%app.mcp.lifetime.connection_idle%'
             $maximumLifetime: '%app.mcp.lifetime.connection_maximum%'
             $unexchangedLifetime: '%app.mcp.lifetime.connection_unexchanged%'
+
+    # Les domaines dont un client CIMD est admis (#651), construits depuis le
+    # paramètre `app.mcp.cimd.allowed_domains` ci-dessus. Un objet valeur à
+    # constructeur privé, d'où la fabrique, qui refuse une entrée mal formée.
+    #
+    # Public, et dans tous les environnements : CimdWiringTest lit dans le
+    # conteneur le service que cette définition construit, or un service privé
+    # que rien ne reçoit encore par injection est retiré à la compilation. Le
+    # rendre public sous `when@test` seulement est refusé par
+    # SecurityServicesEnvironmentParityTest (#698 : une définition `App\` est la
+    # même partout). Un objet valeur sans secret : la liste est versionnée
+    # ci-dessus. À rendre privé dès qu'un service le reçoit (l'admission d'un
+    # client CIMD, #651).
+    App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains:
+        public: true
+        factory: ['App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains', 'fromList']
+        arguments:
+            $domains: '%app.mcp.cimd.allowed_domains%'
 
 when@test:
     services:
