@@ -31,11 +31,17 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *   (`::ffff:0:0/96`), compatible (`::/96`), NAT64 (`64:ff9b::/96`,
  *   `64:ff9b:1::/48`), 6to4 (`2002::/16`), Teredo (`2001::/32`) — la juger
  *   demanderait de la décoder, la refuser ne coûte qu'un client mal hébergé ;
- * - le multicast (`224.0.0.0/4`, `ff00::/8`).
+ * - le multicast (`224.0.0.0/4`, `ff00::/8`) ;
+ * - les autres plages à usage spécial ou réservées : affectations de
+ *   protocoles de l'IETF (`192.0.0.0/24`), relais 6to4 (`192.88.99.0/24`),
+ *   préfixe de rejet (`100::/64`), ORCHID (`2001:10::/28`, `2001:20::/28`),
+ *   documentation (`3fff::/20`), identifiants de segment SRv6 (`5f00::/16`),
+ *   site local déprécié (`fec0::/10`).
  *
- * Tout cela est la liste de Symfony, IpUtils::PRIVATE_SUBNETS, sauf le
- * multicast, qu'elle ne couvre pas et que cette classe ajoute. Le test le
- * dit le jour où Symfony l'y ajoute : l'ajout local se retire alors.
+ * La liste de Symfony, IpUtils::PRIVATE_SUBNETS, couvre tout cela sauf les
+ * deux derniers points, que cette classe ajoute (MULTICAST_SUBNETS,
+ * UNLISTED_SPECIAL_PURPOSE_SUBNETS). Le test le dit le jour où Symfony
+ * couvre l'une de ces plages : l'entrée locale se retire alors.
  *
  * Une chaîne qui n'est pas une adresse IP n'est pas publique : un nom d'hôte,
  * la chaîne vide, une adresse suivie d'un blanc, les notations que certains
@@ -50,6 +56,22 @@ final readonly class PublicAddressPolicy
      */
     private const array MULTICAST_SUBNETS = ['224.0.0.0/4', 'ff00::/8'];
 
+    /**
+     * Les autres plages à usage spécial ou réservées, absentes elles aussi de
+     * la liste de Symfony (registres d'adresses à usage spécial de l'IANA,
+     * RFC 6890, et l'ancien site local).
+     */
+    private const array UNLISTED_SPECIAL_PURPOSE_SUBNETS = [
+        '192.0.0.0/24',   // affectations de protocoles de l'IETF (RFC 6890)
+        '192.88.99.0/24', // relais 6to4, déprécié (RFC 7526)
+        '100::/64',       // préfixe de rejet (RFC 6666)
+        '2001:10::/28',   // ORCHID, déprécié (RFC 4843)
+        '2001:20::/28',   // ORCHIDv2 (RFC 7343)
+        '3fff::/20',      // documentation (RFC 9637)
+        '5f00::/16',      // identifiants de segment SRv6 (RFC 9602)
+        'fec0::/10',      // site local, déprécié (RFC 3879)
+    ];
+
     public function isPublic(string $address): bool
     {
         // D'abord la forme : IpUtils::checkIp() rend « hors de la plage »
@@ -58,6 +80,10 @@ final readonly class PublicAddressPolicy
             return false;
         }
 
-        return !IpUtils::checkIp($address, [...IpUtils::PRIVATE_SUBNETS, ...self::MULTICAST_SUBNETS]);
+        return !IpUtils::checkIp($address, [
+            ...IpUtils::PRIVATE_SUBNETS,
+            ...self::MULTICAST_SUBNETS,
+            ...self::UNLISTED_SPECIAL_PURPOSE_SUBNETS,
+        ]);
     }
 }
