@@ -36,16 +36,20 @@ use Throwable;
  *    celle du handler (PsrLogMessageProcessor), après les processeurs du
  *    canal, donc sur la clé déjà réécrite —, mais Symfony Cache y colle le
  *    message de l'exception ;
- *  - l'exception du contexte, quand un maillon de sa chaîne cite
- *    l'identifiant : elle devient sa forme normalisée (classe, message, code,
- *    fichier:ligne, `previous`, celle du formateur JSON sans la pile), ce
- *    message-là réécrit. PostgreSQL cite les paramètres liés dans le
+ *  - toute exception du contexte : elle devient sa forme normalisée (classe,
+ *    message, code, fichier:ligne, `previous`, celle du formateur JSON sans
+ *    la pile), chaque message réécrit. Toute, et pas seulement celle dont un
+ *    message cite l'identifiant : le formateur normalise une exception
+ *    `JsonSerializable` par ce que renvoie `jsonSerialize()`, et un
+ *    `SoapFault` avec ses champs (faultcode, faultactor, detail), qui peuvent
+ *    porter la clé sans que son message la cite (constat n°1 de l'audit de
+ *    sécurité de la PR 2 de #731). La forme normalisée n'en garde que le
+ *    message, réécrit. PostgreSQL cite les paramètres liés dans le
  *    `CONTEXT:` de son erreur dès que `log_parameter_max_length_on_error`
  *    n'est pas nul (mesuré), et le paramètre est la clé ; sur les connexions
  *    Doctrine,
  *    {@see \App\Shared\Infrastructure\Doctrine\DriverErrorRedactionMiddleware}
- *    retire déjà cette ligne. Une exception qui ne cite rien reste l'objet
- *    qu'elle était.
+ *    retire déjà cette ligne.
  *
  * Tout autre enregistrement sort tel quel, le même objet : la clé d'un
  * limiteur ou du signal de redémarrage des workers est le signal
@@ -93,7 +97,7 @@ final class SessionKeyCacheChannelRedactor
             $context[$name] = match (true) {
                 \is_string($value) => self::without($identifiers, $value),
                 \is_array($value) => array_map(static fn (mixed $entry): mixed => \is_string($entry) ? self::without($identifiers, $entry) : $entry, $value),
-                $value instanceof Throwable && $this->quotes($identifiers, $value) => self::normalizedWithout($identifiers, $value),
+                $value instanceof Throwable => self::normalizedWithout($identifiers, $value),
                 default => $value,
             };
         }
@@ -132,20 +136,6 @@ final class SessionKeyCacheChannelRedactor
     private static function without(array $identifiers, string $text): string
     {
         return str_replace($identifiers, self::WITHHELD, $text);
-    }
-
-    /**
-     * @param list<string> $identifiers
-     */
-    private function quotes(array $identifiers, Throwable $exception): bool
-    {
-        for ($link = $exception; null !== $link; $link = $link->getPrevious()) {
-            if (array_any($identifiers, static fn (string $identifier): bool => str_contains($link->getMessage(), $identifier))) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

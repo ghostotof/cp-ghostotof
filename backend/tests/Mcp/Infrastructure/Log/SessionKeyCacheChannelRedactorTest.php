@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Infrastructure\Log;
 
 use App\Mcp\Infrastructure\Log\SessionKeyCacheChannelRedactor;
+use App\Tests\Mcp\Infrastructure\Log\Fixtures\KeyCarryingException;
 use App\Tests\Support\ReadsAllChannelsLog;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
@@ -129,8 +130,14 @@ final class SessionKeyCacheChannelRedactorTest extends KernelTestCase
 
         self::assertSame(self::SESSION_KEY_PREFIX.SessionKeyCacheChannelRedactor::WITHHELD, $record->context['key']);
         self::assertSame('Failed to fetch key "{key}": the database is gone', $record->message);
-        // Le reste de la ligne est le signal d'exploitation : il ne bouge pas.
-        self::assertSame($exception, $record->context['exception']);
+        // Le reste de la ligne est le signal d'exploitation : il ne bouge pas,
+        // l'exception sous la forme que le formateur JSON lui donne.
+        self::assertSame([
+            'class' => RuntimeException::class,
+            'message' => 'the database is gone',
+            'code' => 0,
+            'file' => $exception->getFile().':'.$exception->getLine(),
+        ], $record->context['exception']);
         self::assertSame('DoctrineDbalAdapter', $record->context['cache-adapter']);
         self::assertSame(Level::Warning, $record->level);
         self::assertSame('cache', $record->channel);
@@ -187,6 +194,32 @@ final class SessionKeyCacheChannelRedactorTest extends KernelTestCase
                 'code' => 0,
                 'file' => $driver->getFile().':'.$driver->getLine(),
             ],
+        ], $record->context['exception']);
+        self::assertStringNotContainsString(self::SESSION_ID, (new JsonFormatter())->format($record));
+    }
+
+    /**
+     * Une exception peut porter la clé ailleurs que dans un message : Monolog
+     * rend une exception `JsonSerializable` par son `jsonSerialize()` (et un
+     * `SoapFault` par son `detail`). Dès que l'enregistrement désigne une
+     * session, toute exception du contexte devient donc sa forme normalisée,
+     * qui ne garde que classe, message, code, fichier:ligne et `previous`
+     * (constat n°1 de l'audit de sécurité de la PR 2).
+     */
+    public function testEveryExceptionOfASessionRecordIsNormalised(): void
+    {
+        $exception = new KeyCarryingException(self::SESSION_KEY_PREFIX.self::SESSION_ID);
+
+        $record = (new SessionKeyCacheChannelRedactor())($this->record(
+            'Failed to delete key "{key}": the database is gone',
+            ['key' => self::SESSION_KEY_PREFIX.self::SESSION_ID, 'exception' => $exception],
+        ));
+
+        self::assertSame([
+            'class' => KeyCarryingException::class,
+            'message' => 'the database is gone',
+            'code' => 0,
+            'file' => $exception->getFile().':'.$exception->getLine(),
         ], $record->context['exception']);
         self::assertStringNotContainsString(self::SESSION_ID, (new JsonFormatter())->format($record));
     }

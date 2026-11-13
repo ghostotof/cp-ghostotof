@@ -185,9 +185,11 @@ paths:
   environment) rewrites **only** a record whose `key`, or an entry of `keys`, starts with its `SESSION_KEY_PREFIX` and
   carries something after it: the key becomes `mcp-portfolio-` + `WITHHELD` — the prefix still says which pool failed —
   and the id is removed wherever the record carries it: the message, every string of the context (one level of
-  array), and the context's exception when a link of its chain quotes it, which then becomes its normalised form
-  without a trace (class, message, code, `file:line`, `previous`), an exception quoting nothing staying the object it
-  was. `{key}` is not yet replaced when the processor runs: Monolog runs a channel's processors before any handler
+  array), and **every** exception of the context, which becomes its normalised form without a trace (class, message,
+  code, `file:line`, `previous`), each message rewritten — every one, not only one whose message quotes the id:
+  Monolog's formatter renders a `JsonSerializable` exception by its `jsonSerialize()` and a `SoapFault` with its
+  fields, which can carry the key while no message quotes it (finding 1 of PR 2's security audit, pinned by
+  `testEveryExceptionOfASessionRecordIsNormalised`). `{key}` is not yet replaced when the processor runs: Monolog runs a channel's processors before any handler
   (`Logger::addRecord()`), and the interpolation is the handler's own `PsrLogMessageProcessor`, so it writes the
   rewritten key. Any other record is returned as is, the same object — a limiter's key, the workers' restart signal:
   **a processor rather than `!cache` on `main`**, which would have silenced every failure of every pool. What it
