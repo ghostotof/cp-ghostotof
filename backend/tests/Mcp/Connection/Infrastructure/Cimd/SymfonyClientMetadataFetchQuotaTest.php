@@ -14,15 +14,25 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
 
 /**
- * Le quota de récupération des documents CIMD (#651, D-F) : dix par dix
- * minutes, par adresse IP, sur le limiteur `mcp_client_metadata` du
- * conteneur (donc son stockage en base et son verrou partagé, contrôlés par
- * RateLimiterStorageTest).
+ * Le quota de récupération des documents CIMD (#651, D-F) : deux limiteurs du
+ * conteneur (donc leur stockage en base et leur verrou partagé, contrôlés par
+ * RateLimiterStorageTest), `mcp_client_metadata` par appelant (dix par dix
+ * minutes) et `mcp_client_metadata_global` commun à tous (cent par dix
+ * minutes).
  *
- * Ce que le test prouve : la clé (l'IP du client de la requête principale,
- * une IPv6 comptée par son /64, une IPv4 écrite en IPv6 par l'IPv4 qu'elle
- * porte, FetchQuotaKey) et le plafond. Aucune horloge n'est avancée : la fenêtre de dix minutes est
- * le réglage du limiteur, pas du code testé ici.
+ * Ce que le test prouve :
+ *  - la clé de l'appelant (l'IP du client de la requête principale,
+ *    FetchQuotaKey) : une IPv6 comptée par son /64, une IPv4 entière, et
+ *    chaque forme qui porte une IPv4 (mappée, NAT64, 6to4, compatible) comptée
+ *    comme cette IPv4 ;
+ *  - le plafond par appelant, puis le plafond commun ;
+ *  - l'ordre des refus : le plafond commun est regardé d'abord, sans être
+ *    consommé ; un appelant refusé par son quota ne consomme rien du plafond ;
+ *    un appelant refusé par le plafond garde tout son quota ; chaque refus
+ *    porte le `retryAfter` du limiteur qui l'a prononcé.
+ *
+ * Aucune horloge n'est avancée : les fenêtres sont le réglage des limiteurs,
+ * pas du code testé ici.
  */
 final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
 {
