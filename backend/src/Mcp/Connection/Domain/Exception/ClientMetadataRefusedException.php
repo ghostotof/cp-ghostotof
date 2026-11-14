@@ -17,6 +17,15 @@ use Throwable;
  * étant choisi par un tiers. L'exception précédente, quand il y en a une, est
  * celle du transport : elle reste chaînée pour le diagnostic, jamais lue pour
  * décider.
+ *
+ * N'implémente pas `ProblemExceptionInterface`, volontairement : la règle des
+ * exceptions (`.claude/rules/backend-conventions.md`) réserve l'interface aux
+ * erreurs que l'API rend en `application/problem+json` par un mapping. Celle-ci
+ * ne sort jamais d'une route de l'API : le point d'autorisation OAuth la
+ * convertit en `OAuthServerException` (plan de la tâche 12, Task 9, Step 3),
+ * dont la réponse suit le protocole OAuth, et elle n'a ni `type` ni `detail`
+ * de problème à porter. Rendue telle quelle, faute de conversion, elle reste
+ * un 500 `critical`, ce qui est le comportement voulu d'un défaut de câblage.
  */
 final class ClientMetadataRefusedException extends RuntimeException
 {
