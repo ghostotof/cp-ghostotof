@@ -69,8 +69,11 @@ framework:
             interval: '10 minutes'
 
         # Plafond commun à tous les appelants de la récupération des documents
-        # CIMD (#651, D-F), consommé après le quota ci-dessus et seulement s'il
-        # a accepté. Il existe parce qu'aucun préfixe ne borne un attaquant qui
+        # CIMD (#651, D-F). Il est regardé sans être consommé avant le quota
+        # ci-dessus (plein, l'appelant est refusé et ne perd rien), puis
+        # consommé après lui : un appelant refusé par son quota ne lui coûte
+        # rien (ordre et course acceptée : SymfonyClientMetadataFetchQuota).
+        # Il existe parce qu'aucun préfixe ne borne un attaquant qui
         # tient un bloc plus grand qu'un /64 : un /48, que reçoit couramment un
         # VPS, contient 65 536 /64, donc 65 536 quotas par appelant. Clé constante :
         # c'est le total des récupérations sortantes du service, quelle qu'en soit
