@@ -14,6 +14,7 @@ use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
 use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * La liste des domaines dont un client CIMD est admis vient de la
@@ -71,6 +72,32 @@ final class CimdWiringTest extends KernelTestCase
 
         self::assertNotNull($subnets, 'sans liste, Symfony retombe sur sa liste par défaut');
         self::assertSame(PublicAddressPolicy::SUBNETS, $subnets);
+    }
+
+    /**
+     * Le transport est celui du service seul, non le `http_client` partagé :
+     * avec curl, `resolve` s'écrit dans le cache DNS du multi-handle partagé
+     * (`$multi->dnsCache->hostnames`) et les connexions sont réutilisées,
+     * d'un appel à l'autre et d'un service à l'autre. Un transport propre en
+     * garde l'effet pour ce seul service.
+     *
+     * Ce que l'assertion prouve : l'objet décoré n'est pas celui du client
+     * partagé (identité, par réflexion sur la propriété privée du décorateur).
+     * Ce qu'elle ne prouve pas : l'absence de tout état partagé plus bas (le
+     * `MockHttpClient` des autres tests ne peut pas décorer une fabrique), ni
+     * le cache DNS lui-même, propre à curl.
+     */
+    public function testTheMetadataHttpClientHasItsOwnTransport(): void
+    {
+        $inner = new ReflectionProperty(NoPrivateNetworkHttpClient::class, 'client')
+            ->getValue($this->service('app.mcp.cimd.http_client'));
+
+        self::assertInstanceOf(HttpClientInterface::class, $inner);
+        self::assertNotSame(
+            self::getContainer()->get('http_client'),
+            $inner,
+            'le client du document ne décore pas le client partagé du framework',
+        );
     }
 
     public function testTheFetcherIsTheHttpImplementation(): void

@@ -202,10 +202,16 @@ services:
             $domains: '%app.mcp.cimd.allowed_domains%'
 
     # Le client HTTP de la récupération d'un document CIMD (#651, D-D couche 5) :
-    # le `http_client` du framework entouré de NoPrivateNetworkHttpClient, qui
-    # refuse toute requête vers une adresse privée ou réservée, celle qu'on lui
-    # épingle comme celle où la connexion aboutit réellement. Le client partagé
-    # par les autres appels sortants n'est pas modifié.
+    # un transport à lui, entouré de NoPrivateNetworkHttpClient, qui refuse toute
+    # requête vers une adresse privée ou réservée, celle qu'on lui épingle comme
+    # celle où la connexion aboutit réellement.
+    #
+    # Le transport n'est PAS le `http_client` du framework : avec curl, l'option
+    # `resolve` s'écrit dans le cache DNS du multi-handle (`$multi->dnsCache->hostnames`)
+    # et les connexions sont réutilisées, or ce multi-handle est celui de tous les
+    # appels sortants qui partagent le service. L'adresse épinglée pour le nom d'un
+    # tiers y survivrait à la requête, au profit (ou au détriment) des autres.
+    # Un transport propre garde l'effet de `resolve` pour ce seul service.
     #
     # Public pour la même raison que AllowedClientDomains : CimdWiringTest le
     # lit dans le conteneur, et ce service ne peut pas devenir public sous
@@ -214,11 +220,19 @@ services:
         class: Symfony\Component\HttpClient\NoPrivateNetworkHttpClient
         public: true
         arguments:
-            - '@http_client'
+            - '@app.mcp.cimd.transport'
             # La liste de la couche 2 (PublicAddressPolicy, source unique), non
             # celle par défaut de Symfony, qui omet le multicast et les blocs
             # d'affectations de protocoles. CimdWiringTest le vérifie.
             - !php/const App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy::SUBNETS
+
+    # Le transport du client ci-dessus : HttpClient::create() choisit curl s'il
+    # est disponible, sinon le transport natif, comme le fait le framework, mais
+    # sans partager son état. Aucune option par défaut : chaque requête porte les
+    # siennes (HttpClientMetadataFetcher).
+    app.mcp.cimd.transport:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
 
     # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
     # Les tests le remplacent par une doublure, jamais par un DNS réel.
