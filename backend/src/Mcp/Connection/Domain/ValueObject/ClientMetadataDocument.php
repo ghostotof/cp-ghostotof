@@ -19,7 +19,10 @@ use JsonException;
  *    à l'URL demandée (§4.1) — sinon un hôte pourrait servir le document d'un
  *    autre client ;
  *  - un client public : ni `client_secret` ni `client_secret_expires_at`
- *    (même `null`), et `token_endpoint_auth_method` absent ou exactement `none` ;
+ *    (même `null`), et `token_endpoint_auth_method` **déclaré** et valant exactement
+ *    `none`. Absent, il vaudrait `client_secret_basic` (RFC 7591 §2, valeur par
+ *    défaut) : un client confidentiel, que ce serveur ne sert pas. Un document
+ *    qui se tait là est refusé : on refuse en cas de doute, le caractère public se déclare ;
  *  - le flux par code : `grant_types` et `response_types`, quand ils sont
  *    déclarés, sont des listes de chaînes qui contiennent `authorization_code`
  *    et `code` (absents, la valeur par défaut de la RFC 7591 est celle-là) ;
@@ -77,8 +80,9 @@ final readonly class ClientMetadataDocument
             }
         }
 
-        if (\array_key_exists('token_endpoint_auth_method', $document)
-            && self::PUBLIC_CLIENT_AUTH_METHOD !== $document['token_endpoint_auth_method']) {
+        // Requis : absent, la RFC 7591 §2 donne `client_secret_basic` (un client confidentiel).
+        if (!\array_key_exists('token_endpoint_auth_method', $document)
+            || self::PUBLIC_CLIENT_AUTH_METHOD !== $document['token_endpoint_auth_method']) {
             throw InvalidClientMetadataDocumentException::unsupportedAuthMethod();
         }
 

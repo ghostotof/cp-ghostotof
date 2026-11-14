@@ -44,10 +44,10 @@ final class InvalidClientMetadataDocumentException extends InvalidArgumentExcept
         return new self('The client metadata document declares a client_secret.');
     }
 
-    /** `token_endpoint_auth_method` autre que `none`. */
+    /** `token_endpoint_auth_method` absent ou autre que `none` (RFC 7591 §2 : absent, `client_secret_basic`). */
     public static function unsupportedAuthMethod(): self
     {
-        return new self('The client metadata document declares a token_endpoint_auth_method other than none.');
+        return new self('The client metadata document must declare token_endpoint_auth_method as none.');
     }
 
     /** `grant_types` déclaré sans `authorization_code`. */

@@ -161,6 +161,9 @@ final class ClientMetadataDocumentTest extends TestCase
         yield 'null' => [self::documentWith(['token_endpoint_auth_method' => null])];
         yield 'liste' => [self::documentWith(['token_endpoint_auth_method' => ['none']])];
         yield 'none en majuscules' => [self::documentWith(['token_endpoint_auth_method' => 'NONE'])];
+
+        // RFC 7591 §2 : absent, la méthode vaut `client_secret_basic`, un client confidentiel.
+        yield 'absent' => [self::documentWith(removed: ['token_endpoint_auth_method'])];
     }
 
     #[DataProvider('confidentialAuthMethods')]
@@ -169,12 +172,10 @@ final class ClientMetadataDocumentTest extends TestCase
         $this->assertRefusedAs(InvalidClientMetadataDocumentException::unsupportedAuthMethod(), $json);
     }
 
-    public function testAnAbsentOrNoneAuthMethodIsAccepted(): void
+    public function testAnExplicitNoneAuthMethodIsAccepted(): void
     {
-        $absent = ClientMetadataDocument::fromJson($this->expected(), self::documentWith(removed: ['token_endpoint_auth_method']));
         $none = ClientMetadataDocument::fromJson($this->expected(), self::documentWith(['token_endpoint_auth_method' => 'none']));
 
-        self::assertSame('Claude Code', (string) $absent->name);
         self::assertSame('Claude Code', (string) $none->name);
     }
 

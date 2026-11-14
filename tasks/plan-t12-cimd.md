@@ -242,7 +242,7 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
   - `testAClientIdThatDiffersOnlyByCaseOrTrailingSlashIsRefused` : `client_id` absent, non-chaîne, d'une autre URL, de la même URL avec une majuscule dans le chemin, avec une barre finale → `clientIdMismatch` *(Review Focus 3)*.
   - `testWhatIsNotAJsonObjectIsRefused` : texte non JSON, `[]`, `"x"`, `null`, un objet imbriqué sur plus de 8 niveaux.
   - `testADeclaredSecretIsRefused` : `client_secret` présent (même `null`), `client_secret_expires_at` présent.
-  - `testOnlyAPublicClientIsAccepted` : `token_endpoint_auth_method` valant `client_secret_post`, `client_secret_basic`, `client_secret_jwt`, `private_key_jwt`, `x`, ou non-chaîne → refus ; absent ou `none` → accepté.
+  - `testOnlyAPublicClientIsAccepted` : `token_endpoint_auth_method` valant `client_secret_post`, `client_secret_basic`, `client_secret_jwt`, `private_key_jwt`, `x`, ou non-chaîne → refus, **absent compris** (RFC 7591 §2 : le défaut est `client_secret_basic`, un client confidentiel) ; seul `none`, déclaré, → accepté.
   - `testTheGrantAndResponseTypesMustIncludeTheCodeFlow` : `grant_types` présent sans `authorization_code` ou qui n'est pas une liste de chaînes → refus ; `response_types` présent sans `code` → refus ; les deux absents → accepté.
   - `testTheNameIsRequiredAndBounded` : `client_name` absent, non-chaîne, vide, de 101 caractères, portant un caractère de contrôle → refus.
   - `testTheRedirectUrisAreRequiredBoundedAndEachValid` : absent, liste vide, objet, membre non-chaîne, 11 membres, un membre que `RedirectUri` refuse (`http://example.test/cb`, `https://x.test/cb#f`, `javascript:alert(1)`) → refus du document entier.
@@ -465,6 +465,7 @@ Textes, sous `oauthConsent.client` (clés nouvelles ; les clés existantes ne ch
 - **Le blocage de `NoPrivateNetworkHttpClient` se lit `unreachable`** au journal d'audit, pas `address-blocked` : son exception n'a pas de type propre, et son message n'est pas lu (Task 3).
 - **Le résolveur natif n'a pas de test** dans la suite ; son essai est celui de la préprod (T14).
 - **Le résolveur natif n'a aucun délai propre** (acceptée le 2026-11-14) : `dns_get_record()` suit `resolv.conf` (délai × tentatives × serveurs), hors des 3 s de `max_duration`. Un DNS lent d'un domaine autorisé retient un worker FPM ; la liste de domaines réduit le scénario à une panne du DNS de `claude.ai` ou `chatgpt.com`. À mesurer en préprod (T14), qui décidera d'un `dnsConfig` du pod.
+- **Un document qui omet `token_endpoint_auth_method` est refusé** (RFC 7591 §2) ; si celui de ChatGPT l'omet, à rediscuter à l'essai de T14.
 - **Un hôte IPv6 seul est refusé**, ainsi qu'un `client_id` portant un port.
 - **Un document dont une seule redirection est irrecevable est refusé en entier** ; si celui de ChatGPT en déclare une que `RedirectUri` refuse, ChatGPT ne passera pas tant que la règle n'est pas rediscutée (essai de T14).
 - **Le nom affiché dans « Mes connexions MCP » est celui du dernier accord** donné à ce client, par quiconque.
