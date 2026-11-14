@@ -552,8 +552,9 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
-     * @param string|iterable<string> $body
-     * @param array<string, string>   $headers
+     * @param string|iterable<string>                    $body
+     * @param array<string, string|list<string>>|list<string> $headers en-têtes à une valeur, à plusieurs
+     *                                                                valeurs, ou lignes brutes « Nom: valeur »
      */
     private function response(string|iterable $body, int $status, array $headers = []): MockResponse
     {
