@@ -58,7 +58,9 @@ framework:
         # (#651, D-F), consommé par le résolveur seulement sur un cache manqué :
         # une récupération sort du serveur vers un hôte choisi par un tiers. Clé :
         # l'IP de l'appelant, jamais le `client_id` (un attaquant en changerait à
-        # chaque essai ; cf. SymfonyClientMetadataFetchQuota). Stocké dans
+        # chaque essai) ; **une IPv6 y est comptée par son /64**, une IPv4 entière,
+        # une IPv4 écrite en IPv6 comme cette IPv4 (FetchQuotaKey : qui tient un /64
+        # changerait d'adresse à volonté). Pour ce limiteur seulement. Stocké dans
         # cache.app, donc en base, sous le verrou partagé entre pods (ADR 0005).
         mcp_client_metadata:
             policy: 'sliding_window'

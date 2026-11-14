@@ -18,17 +18,21 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * principale, lue ici, pour que la couche applicative n'ait pas à connaître
  * HTTP.
  *
- * Hors requête (une commande console, un test sans pile), la clé est
- * `unknown` : tous ces appels partagent alors un seul compteur, la voie sûre
- * (elle limite trop, jamais pas assez).
+ * La clé est celle de {@see FetchQuotaKey}, non l'adresse brute : **une IPv6
+ * est comptée par son /64** (qui tient un /64 change d'adresse à volonté et
+ * obtiendrait sinon un quota neuf à chaque essai), une IPv4 reste entière, une
+ * IPv4 écrite en IPv6 (`::ffff:a.b.c.d`) compte comme cette IPv4. Pour ce
+ * limiteur seulement.
+ *
+ * Hors requête (une commande console, un test sans pile) ou pour une adresse
+ * illisible, la clé est `unknown` : tous ces appels partagent alors un seul
+ * compteur, la voie sûre (elle limite trop, jamais pas assez).
  *
  * Le décompte vit dans `cache.rate_limiter`, donc en base, sous le verrou
  * partagé entre pods du projet (RateLimiterStorageTest, ADR 0005).
  */
 final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFetchQuotaInterface
 {
-    private const string UNKNOWN_CLIENT = 'unknown';
-
     public function __construct(
         #[Autowire(service: 'limiter.mcp_client_metadata')]
         private RateLimiterFactory $rateLimiterFactory,
@@ -38,9 +42,9 @@ final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFe
 
     public function consume(): void
     {
-        $address = $this->requests->getMainRequest()?->getClientIp() ?? self::UNKNOWN_CLIENT;
+        $key = FetchQuotaKey::forAddress($this->requests->getMainRequest()?->getClientIp());
 
-        $limit = $this->rateLimiterFactory->create($address)->consume();
+        $limit = $this->rateLimiterFactory->create($key)->consume();
 
         if (!$limit->isAccepted()) {
             throw new ClientMetadataFetchRateLimitExceededException($limit->getRetryAfter());
