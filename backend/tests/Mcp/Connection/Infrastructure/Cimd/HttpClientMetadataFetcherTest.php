@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Infrastructure\Cimd;
 
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher;
@@ -483,6 +484,25 @@ final class HttpClientMetadataFetcherTest extends TestCase
         }
     }
 
+    public function testAHostOutsideTheDomainListIsRefusedBeforeAnyResolution(): void
+    {
+        // Un hôte public et joignable, mais que la liste n'admet pas : le
+        // récupérateur ne le résout pas et ne lui envoie rien (couche 1).
+        $resolver = new FixedHostAddressResolver(['evil.example' => ['1.1.1.1']]);
+        $clientId = CimdClientId::tryFrom('https://evil.example/oauth/metadata');
+        self::assertNotNull($clientId);
+
+        try {
+            $this->fetcher($resolver, $this->documentResponse())->fetch($clientId);
+            self::fail('La récupération devait être refusée.');
+        } catch (ClientMetadataRefusedException $refused) {
+            self::assertSame(ClientMetadataRefusal::DomainNotAllowed, $refused->refusal);
+        }
+
+        self::assertSame([], $resolver->resolvedHosts(), 'aucune résolution pour un hôte hors liste');
+        self::assertSame([], $this->requests, 'aucune requête pour un hôte hors liste');
+    }
+
     private function refusalOf(FixedHostAddressResolver $resolver, ?MockResponse $response = null): ClientMetadataRefusal
     {
         try {
@@ -508,7 +528,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
             },
         ), PublicAddressPolicy::SUBNETS));
 
-        return new HttpClientMetadataFetcher($client, $resolver, new PublicAddressPolicy());
+        return new HttpClientMetadataFetcher($client, $resolver, new PublicAddressPolicy(), AllowedClientDomains::fromList(['claude.ai']));
     }
 
     private function publicHost(): FixedHostAddressResolver

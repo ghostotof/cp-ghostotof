@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\Cimd;
 use App\Mcp\Connection\Application\Cimd\ClientMetadataFetcherInterface;
 use App\Mcp\Connection\Application\Cimd\FetchedClientMetadata;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
@@ -18,6 +19,12 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * plan de la tâche 12, D-D). L'hôte vient d'un tiers : tout ce qui suit sert
  * à ce que la requête n'atteigne jamais le réseau du serveur.
  *
+ * 0. L'hôte doit figurer dans la liste des domaines admis
+ *    ({@see AllowedClientDomains}) : sinon il est refusé
+ *    ({@see ClientMetadataRefusal::DomainNotAllowed}) avant toute résolution,
+ *    sans une requête DNS ni un octet émis. Le contrôle est aussi fait à
+ *    l'admission (Task 9) : la défense est en profondeur, ce récupérateur ne
+ *    compte pas sur son appelant.
  * 1. Le nom est résolu ici, par le port {@see HostAddressResolverInterface},
  *    et non par le client HTTP : une liste vide est un refus transitoire.
  * 2. TOUTES les adresses rendues doivent être publiques
@@ -98,11 +105,17 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
         private HttpClientInterface $client,
         private HostAddressResolverInterface $resolver,
         private PublicAddressPolicy $policy,
+        private AllowedClientDomains $domains,
     ) {
     }
 
     public function fetch(CimdClientId $clientId): FetchedClientMetadata
     {
+        // Couche 1 : un hôte hors liste n'est ni résolu ni interrogé.
+        if (!$this->domains->allows($clientId)) {
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::DomainNotAllowed);
+        }
+
         $host = $clientId->host();
         $addresses = $this->resolver->resolve($host);
 
