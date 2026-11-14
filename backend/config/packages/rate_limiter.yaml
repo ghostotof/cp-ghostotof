@@ -78,6 +78,14 @@ framework:
         # VPS, contient 65 536 /64, donc 65 536 quotas par appelant. Clé constante :
         # c'est le total des récupérations sortantes du service, quelle qu'en soit
         # l'origine. Même stockage et même verrou que les autres limiteurs.
+        #
+        # Dix sources suffisent à le remplir : un client déjà déclaré (ligne `cimd`
+        # dans `mcp_client`) passe donc par une voie qui l'ignore
+        # (`consumeForKnownClient()` : le quota de l'appelant seul), pour que cette
+        # saturation ne ferme pas la porte aux clients que des personnes de
+        # confiance ont déjà approuvés. Un attaquant ne s'y glisse pas : il lui
+        # faut un document valide sur un domaine de la liste et l'approbation d'une
+        # personne du palier de confiance, qui écrit cette ligne.
         mcp_client_metadata_global:
             policy: 'sliding_window'
             limit: 100

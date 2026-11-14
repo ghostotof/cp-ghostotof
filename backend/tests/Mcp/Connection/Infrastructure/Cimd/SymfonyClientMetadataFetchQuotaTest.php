@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Infrastructure\Cimd;
 
 use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException;
+use App\Mcp\Connection\Infrastructure\Cimd\FetchQuotaKey;
 use App\Mcp\Connection\Infrastructure\Cimd\SymfonyClientMetadataFetchQuota;
+use App\Tests\Mcp\Connection\Support\GlanceThenRefuseCeiling;
 use DateTimeImmutable;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
 
 /**
@@ -250,7 +253,7 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
         $this->refusalOf($this->quotaWith($perCaller, $global, '198.51.100.7'));
 
-        self::assertSame(10, $perCaller->create('198.51.100.7')->consume(0)->getRemainingTokens());
+        self::assertSame(10, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());
     }
 
     /**
@@ -276,7 +279,7 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $this->refusalOf($quota);
 
         // Une seule unité du plafond est prise : celle de la récupération acceptée.
-        self::assertSame(99, $global->create('global')->consume(0)->getRemainingTokens());
+        self::assertSame(99, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens());
     }
 
     public function testTheRefusalCarriesTheRetryAfterOfTheGlobalCeilingWhenItRefuses(): void
@@ -288,6 +291,71 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $refused = $this->refusalOf($this->quotaWith($this->inMemoryLimiter('second', 10, '10 minutes'), $global, '198.51.100.8'));
 
         self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter);
+    }
+
+    /**
+     * Le plafond commun sature (cent récupérations de cent appelants), mais un
+     * client déjà déclaré passe : sa voie ne regarde ni ne consomme le plafond.
+     * Sans elle, dix sources suffiraient à refuser aussi les clients que des
+     * personnes de confiance ont déjà approuvés.
+     */
+    public function testAKnownClientPassesASaturatedCeiling(): void
+    {
+        $global = $this->inMemoryLimiter('global', 2, '1 hour');
+        $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(2);
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $this->quotaWith($perCaller, $global, '198.51.100.7')->consumeForKnownClient();
+
+        self::assertSame(0, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Le plafond est resté tel quel.');
+        self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens(), 'Une unité est prise au quota de l\'appelant.');
+    }
+
+    /** La voie des clients connus reste bornée par le quota de l'appelant, avec son `retryAfter`. */
+    public function testAKnownClientIsStillBoundByItsCallerQuota(): void
+    {
+        $quota = $this->quotaWith(
+            $this->inMemoryLimiter('caller', 1, '10 minutes'),
+            $this->inMemoryLimiter('global', 100, '1 hour'),
+            '198.51.100.7',
+        );
+        $quota->consumeForKnownClient();
+
+        try {
+            $quota->consumeForKnownClient();
+            self::fail('Le second appel aurait dû être refusé.');
+        } catch (ClientMetadataFetchRateLimitExceededException $refused) {
+            self::assertGreaterThan(new DateTimeImmutable(), $refused->retryAfter);
+            self::assertLessThanOrEqual(new DateTimeImmutable('+11 minutes'), $refused->retryAfter, 'Le retryAfter est celui de l\'appelant, pas du plafond d\'une heure.');
+        }
+    }
+
+    public function testAnUnknownClientIsRefusedByASaturatedCeiling(): void
+    {
+        $global = $this->inMemoryLimiter('global', 1, '1 hour');
+        $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume();
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $refused = $this->refusalOf($this->quotaWith($perCaller, $global, '198.51.100.7'));
+
+        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter);
+        self::assertSame(10, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());
+    }
+
+    /**
+     * La course acceptée : le plafond répond « il reste un jeton » au coup d'œil,
+     * puis refuse la consommation. Le refus rendu est celui du plafond, et
+     * l'unité de l'appelant, déjà consommée, est perdue (limite documentée de la
+     * classe, que ce test rend visible plutôt que de la taire).
+     */
+    public function testACeilingFilledBetweenTheGlanceAndTheConsumptionRefusesAndCostsTheCallerOneUnit(): void
+    {
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $refused = $this->refusalOf($this->quotaWith($perCaller, new GlanceThenRefuseCeiling(), '198.51.100.7'));
+
+        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter, 'Le retryAfter est celui du plafond.');
+        self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());
     }
 
     private function refusalOf(SymfonyClientMetadataFetchQuota $quota): ClientMetadataFetchRateLimitExceededException
@@ -310,7 +378,7 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         );
     }
 
-    private function quotaWith(RateLimiterFactory $perCaller, RateLimiterFactory $global, string $ip): SymfonyClientMetadataFetchQuota
+    private function quotaWith(RateLimiterFactoryInterface $perCaller, RateLimiterFactoryInterface $global, string $ip): SymfonyClientMetadataFetchQuota
     {
         $requests = new RequestStack();
         $requests->push(Request::create('/oauth/authorize', server: ['REMOTE_ADDR' => $ip]));

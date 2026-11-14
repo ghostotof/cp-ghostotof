@@ -40,9 +40,11 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * `::`.
  *
  * Une forme ajoutée à l'extracteur (un nouveau case de
- * {@see EmbeddedIpv4Form}) doit recevoir ici sa troncature explicite : sans
- * elle, le `match` de {@see self::tryFrom()} la rangerait avec les IPv6
- * quelconques, tronquées en /48.
+ * {@see EmbeddedIpv4Form}) doit recevoir ici sa troncature explicite. Le
+ * `match` de {@see self::tryFrom()} n'a pas de branche par défaut (la branche
+ * `null` ne couvre que l'absence de forme) : sans elle, il lève
+ * `UnhandledMatchError` à l'exécution, et PHPStan signale avant cela un `match`
+ * non exhaustif sur l'énumération.
  */
 final readonly class TruncatedIp
 {

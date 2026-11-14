@@ -9,12 +9,16 @@ use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededExce
 use DateTimeImmutable;
 
 /**
- * Doublure du quota de récupération (#651) : compte les unités consommées et
- * refuse à partir de la `$limit`-ième + 1 (jamais, par défaut).
+ * Doublure du quota de récupération (#651) : compte les unités consommées, par
+ * voie (client inconnu, client connu), et refuse à partir de la `$limit`-ième + 1
+ * de la voie des clients inconnus (jamais, par défaut) ; la voie des clients
+ * connus ne refuse jamais ici.
  */
 final class CountingFetchQuota implements ClientMetadataFetchQuotaInterface
 {
     private int $consumed = 0;
+
+    private int $consumedForKnownClient = 0;
 
     public function __construct(private readonly ?int $limit = null)
     {
@@ -29,8 +33,20 @@ final class CountingFetchQuota implements ClientMetadataFetchQuotaInterface
         ++$this->consumed;
     }
 
+    public function consumeForKnownClient(): void
+    {
+        ++$this->consumedForKnownClient;
+    }
+
+    /** Les unités prises par la voie des clients inconnus. */
     public function consumed(): int
     {
         return $this->consumed;
+    }
+
+    /** Les unités prises par la voie des clients connus. */
+    public function consumedForKnownClient(): int
+    {
+        return $this->consumedForKnownClient;
     }
 }

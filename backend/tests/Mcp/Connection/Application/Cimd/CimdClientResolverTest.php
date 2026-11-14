@@ -5,21 +5,26 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application\Cimd;
 
 use App\Mcp\Connection\Application\Cimd\CimdClientResolver;
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
 use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
+use App\Tests\Mcp\Connection\Application\McpClientRepositoryFake;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Mcp\Connection\Support\CountingFetchQuota;
 use App\Tests\Mcp\Connection\Support\InMemoryClientMetadataStore;
 use App\Tests\Mcp\Connection\Support\ScriptedMetadataFetcher;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
 /**
  * La résolution d'un `client_id` CIMD (#651, D-G) : juger la liste des
- * domaines, lire le magasin, sinon consommer le quota, récupérer, valider, garder, rendre. Les trois
+ * domaines, lire le magasin, sinon consommer le quota, récupérer, valider, garder, rendre. Les
  * collaborateurs sont des doublures : aucun réseau, aucune base.
  *
  * Ce que ces tests prouvent : l'ordre et les conditions des étapes (un domaine
@@ -27,7 +32,9 @@ use Throwable;
  * qui répond ne coûte ni quota ni récupération ; seul un document valide est
  * gardé ; la durée suit `max-age` dans ses bornes). Ils ne prouvent ni le
  * stockage (CachedClientMetadataStoreTest) ni le décompte du quota
- * (SymfonyClientMetadataFetchQuotaTest).
+ * (SymfonyClientMetadataFetchQuotaTest). Ils prouvent aussi le choix de la voie
+ * du quota (client déjà déclaré ou non : un cache manqué seulement, jamais de
+ * lecture des enregistrements pour un cache qui répond ou un domaine hors liste).
  */
 final class CimdClientResolverTest extends TestCase
 {
@@ -39,7 +46,7 @@ final class CimdClientResolverTest extends TestCase
         $quota = new CountingFetchQuota();
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
 
-        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains())->resolve($clientId);
+        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains(), new McpClientRepositoryFake(null, null))->resolve($clientId);
 
         self::assertSame('Claude Code', (string) $document->name);
         self::assertSame(0, $quota->consumed(), 'Un cache qui répond ne consomme pas le quota.');
@@ -53,7 +60,7 @@ final class CimdClientResolverTest extends TestCase
         $quota = new CountingFetchQuota();
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json(), 600);
 
-        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains())->resolve($clientId);
+        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains(), new McpClientRepositoryFake(null, null))->resolve($clientId);
 
         self::assertSame('Claude Code', (string) $document->name);
         self::assertSame(1, $quota->consumed());
@@ -75,6 +82,7 @@ final class CimdClientResolverTest extends TestCase
             new CountingFetchQuota(),
             ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json(), $maxAge),
             $this->claudeDomains(),
+            new McpClientRepositoryFake(null, null),
         )->resolve($this->claudeClientId());
 
         self::assertSame($expectedTtl, $store->saves()[0]['ttl']);
@@ -103,6 +111,7 @@ final class CimdClientResolverTest extends TestCase
             // Le document désigne un autre client_id que celui demandé.
             ScriptedMetadataFetcher::serving('{"client_id":"https://claude.ai/autre","client_name":"X","redirect_uris":["http://localhost/callback"]}'),
             $this->claudeDomains(),
+            new McpClientRepositoryFake(null, null),
         ));
 
         self::assertSame(ClientMetadataRefusal::InvalidDocument, $refusal->refusal);
@@ -114,7 +123,7 @@ final class CimdClientResolverTest extends TestCase
     {
         $store = new InMemoryClientMetadataStore();
         $fetcher = ScriptedMetadataFetcher::refusing(ClientMetadataRefusal::Redirected);
-        $resolver = new CimdClientResolver($store, new CountingFetchQuota(), $fetcher, $this->claudeDomains());
+        $resolver = new CimdClientResolver($store, new CountingFetchQuota(), $fetcher, $this->claudeDomains(), new McpClientRepositoryFake(null, null));
 
         $refusal = $this->refusalOf($resolver);
 
@@ -130,7 +139,7 @@ final class CimdClientResolverTest extends TestCase
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
         $store = new InMemoryClientMetadataStore();
 
-        $refusal = $this->refusalOf(new CimdClientResolver($store, new CountingFetchQuota(0), $fetcher, $this->claudeDomains()));
+        $refusal = $this->refusalOf(new CimdClientResolver($store, new CountingFetchQuota(0), $fetcher, $this->claudeDomains(), new McpClientRepositoryFake(null, null)));
 
         self::assertSame(ClientMetadataRefusal::Throttled, $refusal->refusal);
         self::assertSame(0, $fetcher->calls(), 'Le quota épuisé arrête avant toute sortie réseau.');
@@ -145,7 +154,7 @@ final class CimdClientResolverTest extends TestCase
         $quota = new CountingFetchQuota();
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
 
-        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains())->resolve($clientId);
+        $document = new CimdClientResolver($store, $quota, $fetcher, $this->claudeDomains(), new McpClientRepositoryFake(null, null))->resolve($clientId);
 
         self::assertSame('Claude Code', (string) $document->name);
         self::assertSame(1, $quota->consumed(), 'Un corps du cache qui ne passe plus la validation coûte une unité.');
@@ -162,7 +171,7 @@ final class CimdClientResolverTest extends TestCase
         $quota = new CountingFetchQuota();
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
 
-        $refusal = $this->refusalOf(new CimdClientResolver($store, $quota, $fetcher, AllowedClientDomains::fromList(['chatgpt.com'])));
+        $refusal = $this->refusalOf(new CimdClientResolver($store, $quota, $fetcher, AllowedClientDomains::fromList(['chatgpt.com']), new McpClientRepositoryFake(null, null)));
 
         self::assertSame(ClientMetadataRefusal::DomainNotAllowed, $refusal->refusal);
         self::assertSame(0, $quota->consumed(), 'Un domaine retiré de la liste ne coûte aucune unité de quota.');
@@ -180,11 +189,112 @@ final class CimdClientResolverTest extends TestCase
             $quota,
             $fetcher,
             AllowedClientDomains::fromList(['chatgpt.com']),
+            new McpClientRepositoryFake(null, null),
         ));
 
         self::assertSame(ClientMetadataRefusal::DomainNotAllowed, $refusal->refusal);
         self::assertSame(0, $quota->consumed(), 'Un refus local ne consomme pas le quota de sortie réseau.');
         self::assertSame(0, $fetcher->calls(), 'Le refus tombe avant le récupérateur.');
+    }
+
+    /**
+     * Un client déjà déclaré (sa ligne `cimd` existe) qui revient : sa voie ne
+     * consomme que le quota de l'appelant, jamais le plafond commun. Dix
+     * sources qui saturent le plafond ne doivent pas fermer la porte aux
+     * clients que des personnes de confiance ont déjà approuvés.
+     */
+    public function testAKnownClientMissConsumesOnlyTheCallerQuota(): void
+    {
+        $quota = new CountingFetchQuota();
+        $registrations = new McpClientRepositoryFake($this->discoveredClient(), null);
+
+        new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            $quota,
+            ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json()),
+            $this->claudeDomains(),
+            $registrations,
+        )->resolve($this->claudeClientId());
+
+        self::assertSame(1, $quota->consumedForKnownClient());
+        self::assertSame(0, $quota->consumed(), 'La voie des clients connus ne touche pas le plafond commun.');
+    }
+
+    public function testAnUnknownClientMissConsumesTheCeilingToo(): void
+    {
+        $quota = new CountingFetchQuota();
+        $registrations = new McpClientRepositoryFake(null, null);
+
+        new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            $quota,
+            ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json()),
+            $this->claudeDomains(),
+            $registrations,
+        )->resolve($this->claudeClientId());
+
+        self::assertSame(1, $quota->consumed());
+        self::assertSame(0, $quota->consumedForKnownClient());
+        self::assertSame(1, $registrations->discoveryChecks);
+    }
+
+    /** Un client pré-enregistré n'est pas « connu » au sens du quota : seul un client déclaré l'est. */
+    public function testAPreregisteredClientIsNotTreatedAsKnown(): void
+    {
+        $quota = new CountingFetchQuota();
+        $preregistered = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Pré-enregistré', ['https://claude.ai/cb']);
+
+        new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            $quota,
+            ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json()),
+            $this->claudeDomains(),
+            new McpClientRepositoryFake($preregistered, null),
+        )->resolve($this->claudeClientId());
+
+        self::assertSame(1, $quota->consumed());
+        self::assertSame(0, $quota->consumedForKnownClient());
+    }
+
+    public function testACachedDocumentNeverReadsTheRegistrations(): void
+    {
+        $clientId = $this->claudeClientId();
+        $store = new InMemoryClientMetadataStore();
+        $store->seed($clientId, ClaudeCodeMetadata::json());
+        $registrations = new McpClientRepositoryFake(null, null);
+
+        new CimdClientResolver(
+            $store,
+            new CountingFetchQuota(),
+            ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json()),
+            $this->claudeDomains(),
+            $registrations,
+        )->resolve($clientId);
+
+        self::assertSame(0, $registrations->discoveryChecks, 'Un cache qui répond ne coûte aucune lecture de la base.');
+    }
+
+    public function testADomainOutsideTheListNeverReadsTheRegistrations(): void
+    {
+        $registrations = new McpClientRepositoryFake(null, null);
+
+        $this->refusalOf(new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            new CountingFetchQuota(),
+            ScriptedMetadataFetcher::refusing(ClientMetadataRefusal::DomainNotAllowed),
+            AllowedClientDomains::fromList(['chatgpt.com']),
+            $registrations,
+        ));
+
+        self::assertSame(0, $registrations->discoveryChecks, 'Un domaine hors liste est refusé avant toute lecture de la base.');
+    }
+
+    private function discoveredClient(): McpClient
+    {
+        return McpClient::discovered(
+            ClientMetadataDocument::fromJson($this->claudeClientId(), ClaudeCodeMetadata::json()),
+            new DateTimeImmutable('2026-11-13T10:00:00+01:00'),
+        );
     }
 
     private function claudeDomains(): AllowedClientDomains

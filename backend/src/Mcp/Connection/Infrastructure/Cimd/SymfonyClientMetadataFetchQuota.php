@@ -9,7 +9,7 @@ use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededExce
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\RateLimiter\RateLimit;
-use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**
  * Adosse ClientMetadataFetchQuotaInterface à deux limiteurs de
@@ -42,9 +42,20 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * toujours vrai pour `consume(0)`.
  *
  * Course acceptée : le plafond peut se remplir entre (a) et (c), sous un autre
- * appelant. L'unité de l'appelant, consommée en (b), est alors perdue. Fermer
- * cette fenêtre demanderait un verrou commun aux deux limiteurs, hors de
- * proportion avec une unité sur dix perdue, une fois, au pire.
+ * appelant. L'unité de l'appelant, consommée en (b), est alors perdue. La
+ * fenêtre est de quelques millisecondes, mais **sous saturation chaque essai
+ * qui passe (a) puis échoue en (c) peut y perdre une unité** : pas une fois au
+ * total, un appelant qui insiste pendant qu'une attaque tient le plafond plein
+ * peut voir fondre son propre quota. Accepté : ce cas ne se produit que
+ * plafond déjà plein, où l'appelant est de toute façon refusé. Fermer cette
+ * fenêtre demanderait un verrou commun aux deux limiteurs, hors de proportion
+ * avec ce coût. `testACeilingFilledBetweenTheGlanceAndTheConsumption…` la
+ * rend visible.
+ *
+ * {@see self::consumeForKnownClient()} ne touche pas le plafond (voie des
+ * clients connus, D-F : voir ClientMetadataFetchQuotaInterface) : un appelant
+ * qui y passe n'est jamais concerné par cette course, et reste borné par le
+ * quota de son adresse, avec la même clé et le même limiteur.
  *
  * Les trois refus lèvent la même exception, avec le `retryAfter` du limiteur
  * qui a refusé.
@@ -69,14 +80,18 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  */
 final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFetchQuotaInterface
 {
-    /** La clé du plafond commun : une seule, tous les appelants la partagent. */
-    private const string GLOBAL_KEY = 'global';
+    /**
+     * La clé du plafond commun : une seule, tous les appelants la partagent.
+     * Publique pour que les tests lisent le même compteur que le code, sans la
+     * recopier ; aucun appelant de production n'a de raison de la lire.
+     */
+    public const string GLOBAL_KEY = 'global';
 
     public function __construct(
         #[Autowire(service: 'limiter.mcp_client_metadata')]
-        private RateLimiterFactory $rateLimiterFactory,
+        private RateLimiterFactoryInterface $rateLimiterFactory,
         #[Autowire(service: 'limiter.mcp_client_metadata_global')]
-        private RateLimiterFactory $globalRateLimiterFactory,
+        private RateLimiterFactoryInterface $globalRateLimiterFactory,
         private RequestStack $requests,
     ) {
     }
@@ -97,6 +112,14 @@ final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFe
 
         // (c) Le plafond : il a pu se remplir depuis (a), course acceptée.
         $this->refuseUnlessAccepted($global->consume());
+    }
+
+    public function consumeForKnownClient(): void
+    {
+        $key = FetchQuotaKey::forAddress($this->requests->getMainRequest()?->getClientIp());
+
+        // Le seul quota de l'appelant : le plafond commun n'est ni regardé ni consommé.
+        $this->refuseUnlessAccepted($this->rateLimiterFactory->create($key)->consume());
     }
 
     private function refuseUnlessAccepted(RateLimit $limit): void
