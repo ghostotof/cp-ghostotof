@@ -226,13 +226,18 @@ services:
             # d'affectations de protocoles. CimdWiringTest le vérifie.
             - !php/const App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy::SUBNETS
 
-    # Le transport du client ci-dessus : HttpClient::create() choisit curl s'il
-    # est disponible, sinon le transport natif, comme le fait le framework, mais
-    # sans partager son état. Aucune option par défaut : chaque requête porte les
-    # siennes (HttpClientMetadataFetcher).
+    # Le transport du client ci-dessus : toujours curl, jamais le transport natif
+    # de PHP. L'épinglage (`CURLOPT_RESOLVE`), `max_connect_duration`
+    # (`CURLOPT_CONNECTTIMEOUT_MS`) et les bornes de HttpClientMetadataFetcher
+    # ont été vérifiés pour curl seul ; le transport natif plafonne par exemple
+    # toute lecture de socket à `max_connect_duration` (1 s au lieu des 2 s de
+    # `timeout`). Une fabrique `HttpClient::create()` y retomberait en silence
+    # sans l'extension ; ici, sans elle, le service échoue à sa construction
+    # (`LogicException` du constructeur de CurlHttpClient) : échec fermé. Aucune
+    # option par défaut : chaque requête porte les siennes. CimdWiringTest en
+    # vérifie la classe.
     app.mcp.cimd.transport:
-        class: Symfony\Contracts\HttpClient\HttpClientInterface
-        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        class: Symfony\Component\HttpClient\CurlHttpClient
 
     # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
     # Les tests le remplacent par une doublure, jamais par un DNS réel.

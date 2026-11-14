@@ -13,6 +13,7 @@ use App\Mcp\Connection\Infrastructure\Cimd\NativeHostAddressResolver;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
 use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -98,6 +99,26 @@ final class CimdWiringTest extends KernelTestCase
             $inner,
             'le client du document ne décore pas le client partagé du framework',
         );
+    }
+
+    /**
+     * Le transport est toujours curl, jamais le transport natif de PHP : le
+     * fetcher compte sur `CURLOPT_RESOLVE` (l'épinglage de l'adresse vérifiée)
+     * et sur `max_connect_duration` (`CURLOPT_CONNECTTIMEOUT_MS`). Le transport
+     * natif plafonne toute lecture de socket à `max_connect_duration`
+     * (`NativeHttpClient`, 1 s au lieu des 2 s de `timeout`) : une fabrique qui
+     * y retomberait dégraderait la borne en silence.
+     *
+     * Ce que l'assertion prouve : l'objet que le décorateur enveloppe (propriété
+     * privée, par réflexion) est de la classe `CurlHttpClient`. Ce qu'elle ne
+     * prouve pas : le comportement de curl, qu'aucun test ne joint sans réseau.
+     */
+    public function testTheMetadataHttpClientAlwaysSpeaksCurl(): void
+    {
+        $inner = new ReflectionProperty(NoPrivateNetworkHttpClient::class, 'client')
+            ->getValue($this->service('app.mcp.cimd.http_client'));
+
+        self::assertInstanceOf(CurlHttpClient::class, $inner);
     }
 
     public function testTheFetcherIsTheHttpImplementation(): void
