@@ -37,11 +37,17 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *    (DNS rebinding). Le nom reste celui de l'URL pour le SNI et la
  *    vérification du certificat.
  * 4. Aucune redirection n'est suivie, et la requête est bornée en délai de
- *    connexion et en durée totale.
+ *    connexion ({@see self::MAX_CONNECT_DURATION}), en silence
+ *    ({@see self::TIMEOUT}) et en durée totale ({@see self::MAX_DURATION}).
  * 5. Le client injecté est entouré de `NoPrivateNetworkHttpClient`
- *    (`app.mcp.cimd.http_client`), qui revérifie l'adresse épinglée et celle
- *    où la connexion a réellement abouti (`primary_ip`) : cette couche tient
- *    seule si les précédentes avaient une faille.
+ *    (`app.mcp.cimd.http_client`), un filet de plus, non un second juge
+ *    suffisant. Il revérifie d'abord l'adresse épinglée (l'option `resolve`
+ *    gagne sur sa propre résolution), puis l'adresse où la connexion a
+ *    réellement abouti (`primary_ip`), lue dans `on_progress` : APRÈS la
+ *    connexion. Cette dernière vérification coupe la lecture de la réponse,
+ *    elle n'empêche pas l'émission du GET (SSRF aveugle) ; c'est la couche 2
+ *    et l'épinglage de la couche 3 qui évitent que la requête parte vers une
+ *    adresse privée.
  *
  * Limite : toute `TransportExceptionInterface` est rangée en
  * {@see ClientMetadataRefusal::Unreachable}, sans lire son message. Le blocage
