@@ -241,6 +241,75 @@ final class HttpClientMetadataFetcherTest extends TestCase
         yield 'json en texte' => [['content-type' => 'text/json']];
     }
 
+    /**
+     * Bombe de décompression : 5 120 octets bornent le corps reçu, pas le corps
+     * décompressé. Un `Accept-Encoding` explicite est ce qui désactive
+     * l'inflate automatique de Symfony HttpClient (curl comme natif) : sans lui,
+     * un document gzip de quelques Ko serait rendu en plusieurs Go, un morceau
+     * à la fois mais sans borne de mémoire sur le chunk.
+     */
+    public function testTheRequestAsksForNoCompression(): void
+    {
+        $this->fetcher($this->publicHost(), $this->documentResponse())->fetch($this->clientId());
+
+        $options = $this->requests[0]['options'];
+        self::assertIsArray($options['normalized_headers']);
+        self::assertSame(['Accept-Encoding: identity'], $options['normalized_headers']['accept-encoding']);
+    }
+
+    /**
+     * Un hôte qui compresse malgré `identity` est refusé avant toute lecture :
+     * la connexion est fermée, rien n'est décompressé.
+     */
+    #[DataProvider('compressedEncodings')]
+    public function testACompressedResponseIsRefusedAndTheConnectionClosed(string $encoding): void
+    {
+        $response = $this->response(self::DOCUMENT, 200, [
+            'content-type' => 'application/json',
+            'content-encoding' => $encoding,
+        ]);
+
+        $refusal = $this->refusalOf($this->publicHost(), $response);
+
+        self::assertSame(ClientMetadataRefusal::UnexpectedContentType, $refusal);
+        self::assertFalse($refusal->isTransient());
+        self::assertTrue($this->client?->lastResponse()->getInfo('canceled'), 'la connexion est fermée');
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function compressedEncodings(): iterable
+    {
+        yield 'gzip' => ['gzip'];
+        yield 'casse et espaces' => ['  GZip '];
+        yield 'deflate' => ['deflate'];
+        yield 'brotli' => ['br'];
+        yield 'chaîne' => ['gzip, identity'];
+    }
+
+    #[DataProvider('identityEncodings')]
+    public function testAnIdentityEncodedResponseIsAccepted(string $encoding): void
+    {
+        $response = $this->response(self::DOCUMENT, 200, [
+            'content-type' => 'application/json',
+            'content-encoding' => $encoding,
+        ]);
+
+        $fetched = $this->fetcher($this->publicHost(), $response)->fetch($this->clientId());
+
+        self::assertSame(self::DOCUMENT, $fetched->body);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function identityEncodings(): iterable
+    {
+        yield 'identity' => ['identity'];
+        yield 'casse et espaces' => ['  Identity '];
+    }
+
     #[DataProvider('acceptedContentTypes')]
     public function testAJsonContentTypeIsAcceptedWhateverItsParametersAndCase(string $contentType): void
     {

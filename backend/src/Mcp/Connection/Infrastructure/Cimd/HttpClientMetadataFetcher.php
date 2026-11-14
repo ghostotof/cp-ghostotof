@@ -52,6 +52,16 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *    octet de trop. Un silence plus long que {@see self::TIMEOUT} ferme aussi
  *    la connexion (transitoire).
  *
+ * 7. Aucune compression n'est acceptée (bombe de décompression : la borne
+ *    ci-dessus mesure les octets reçus, non les octets décompressés). La
+ *    requête envoie `Accept-Encoding: identity` : un en-tête `accept-encoding`
+ *    explicite désactive l'inflate automatique de `symfony/http-client` (8.1,
+ *    vérifié dans `CurlHttpClient::request()`, qui n'ajoute `gzip` que sans lui,
+ *    et dans `CurlResponse`, `inflate = !isset(…['accept-encoding'])`). Un hôte
+ *    qui compresse malgré tout est refusé avant lecture
+ *    ({@see ClientMetadataRefusal::UnexpectedContentType} : ce n'est pas le
+ *    contenu demandé, définitif comme un mauvais type), la connexion fermée.
+ *
  * Non prouvé par les tests, faute de réseau : `MockResponse` produit tout le
  * corps d'un coup à la première lecture, il ne modélise donc ni le gain de
  * `stream()` (ne pas télécharger ce qu'on refuse), ni la fermeture réelle de la
@@ -107,6 +117,7 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
                 'buffer' => false,
                 'headers' => [
                     'Accept' => 'application/json',
+                    'Accept-Encoding' => 'identity',
                     'User-Agent' => self::USER_AGENT,
                 ],
             ]);
@@ -145,6 +156,12 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
 
         $headers = $response->getHeaders(false);
 
+        if (!$this->isUncompressed($headers['content-encoding'][0] ?? '')) {
+            $response->cancel();
+
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::UnexpectedContentType);
+        }
+
         if (!$this->isJson($headers['content-type'][0] ?? '')) {
             $response->cancel();
 
@@ -160,6 +177,18 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
         }
 
         return $headers;
+    }
+
+    /**
+     * Aucun codage, ou `identity` (casse et espaces ignorés) : tout autre
+     * `Content-Encoding` est un corps compressé que la borne d'octets ne
+     * mesure pas.
+     */
+    private function isUncompressed(string $contentEncoding): bool
+    {
+        $encoding = strtolower(trim($contentEncoding));
+
+        return '' === $encoding || 'identity' === $encoding;
     }
 
     /** `application/json`, quels que soient la casse, les espaces et les paramètres (`; charset=…`). */
