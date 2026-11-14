@@ -51,6 +51,10 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * UNLISTED_SPECIAL_PURPOSE_SUBNETS). Le test le dit le jour où Symfony
  * couvre l'une de ces plages : l'entrée locale se retire alors.
  *
+ * La liste complète, {@see self::SUBNETS}, est la source unique : la couche 2
+ * (`isPublic()`) et la couche 5 (`NoPrivateNetworkHttpClient`, câblé dans
+ * `services.yaml`) la lisent, pour que ce que l'une refuse, l'autre le refuse.
+ *
  * Une chaîne qui n'est pas une adresse IP n'est pas publique : un nom d'hôte,
  * la chaîne vide, une adresse suivie d'un blanc, les notations que certains
  * résolveurs lisent comme une adresse (`0x7f.1`, `017700000001`). La
@@ -80,6 +84,16 @@ final readonly class PublicAddressPolicy
         'fec0::/10',      // site local, déprécié (RFC 3879)
     ];
 
+    /**
+     * Tout ce qui n'est pas public, en notation CIDR : la liste de Symfony et
+     * les deux ajouts ci-dessus. Publique pour être la liste de la couche 5.
+     */
+    public const array SUBNETS = [
+        ...IpUtils::PRIVATE_SUBNETS,
+        ...self::MULTICAST_SUBNETS,
+        ...self::UNLISTED_SPECIAL_PURPOSE_SUBNETS,
+    ];
+
     public function isPublic(string $address): bool
     {
         // D'abord la forme : IpUtils::checkIp() rend « hors de la plage »
@@ -88,10 +102,6 @@ final readonly class PublicAddressPolicy
             return false;
         }
 
-        return !IpUtils::checkIp($address, [
-            ...IpUtils::PRIVATE_SUBNETS,
-            ...self::MULTICAST_SUBNETS,
-            ...self::UNLISTED_SPECIAL_PURPOSE_SUBNETS,
-        ]);
+        return !IpUtils::checkIp($address, self::SUBNETS);
     }
 }

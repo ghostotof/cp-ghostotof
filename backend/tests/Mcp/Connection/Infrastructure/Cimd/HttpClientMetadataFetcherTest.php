@@ -141,6 +141,36 @@ final class HttpClientMetadataFetcherTest extends TestCase
         self::assertTrue($refusal->isTransient());
     }
 
+    /**
+     * La couche 5 juge avec la même liste que la couche 2
+     * ({@see PublicAddressPolicy::SUBNETS}) : la liste par défaut de Symfony
+     * ne couvre ni le multicast ni les blocs d'affectations de protocoles, une
+     * connexion qui y aboutirait passerait. `primary_ip` est l'adresse où la
+     * connexion a abouti, fixée par la `MockResponse` : aucun réseau.
+     */
+    #[DataProvider('landingAddressesOfRangesSymfonyDoesNotList')]
+    public function testAConnectionThatLandsOnARangeOfThePolicyIsRefused(string $landing): void
+    {
+        $response = new MockResponse(self::DOCUMENT, [
+            'primary_ip' => $landing,
+            'response_headers' => ['content-type' => 'application/json'],
+        ]);
+
+        self::assertSame(ClientMetadataRefusal::Unreachable, $this->refusalOf($this->publicHost(), $response));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function landingAddressesOfRangesSymfonyDoesNotList(): iterable
+    {
+        yield 'multicast IPv4' => ['224.0.0.1'];
+        yield 'affectations de protocoles IPv4' => ['192.0.0.1'];
+        yield 'relais 6to4' => ['192.88.99.1'];
+        yield 'multicast IPv6' => ['ff02::1'];
+        yield 'préfixe factice IPv6' => ['100:0:0:1::1'];
+    }
+
     #[DataProvider('cacheControls')]
     public function testAPublishedDocumentIsReturnedWithItsMaxAge(?string $cacheControl, ?int $maxAge): void
     {
@@ -468,6 +498,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
 
     private function fetcher(FixedHostAddressResolver $resolver, MockResponse $response): HttpClientMetadataFetcher
     {
+        // La couche 5 comme `services.yaml` la câble : la liste de la politique.
         $this->client = $client = new LastResponseHttpClient(new NoPrivateNetworkHttpClient(new MockHttpClient(
             function (string $method, string $url, array $options) use ($response): ResponseInterface {
                 /** @var array<string, mixed> $options */
@@ -475,7 +506,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
 
                 return $response;
             },
-        )));
+        ), PublicAddressPolicy::SUBNETS));
 
         return new HttpClientMetadataFetcher($client, $resolver, new PublicAddressPolicy());
     }

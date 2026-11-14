@@ -215,6 +215,10 @@ services:
         public: true
         arguments:
             - '@http_client'
+            # La liste de la couche 2 (PublicAddressPolicy, source unique), non
+            # celle par défaut de Symfony, qui omet le multicast et les blocs
+            # d'affectations de protocoles. CimdWiringTest le vérifie.
+            - !php/const App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy::SUBNETS
 
     # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
     # Les tests le remplacent par une doublure, jamais par un DNS réel.

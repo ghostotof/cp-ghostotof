@@ -10,6 +10,8 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher;
 use App\Mcp\Connection\Infrastructure\Cimd\NativeHostAddressResolver;
+use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 
@@ -47,6 +49,28 @@ final class CimdWiringTest extends KernelTestCase
     public function testTheMetadataHttpClientRefusesPrivateNetworks(): void
     {
         self::assertInstanceOf(NoPrivateNetworkHttpClient::class, $this->service('app.mcp.cimd.http_client'));
+    }
+
+    /**
+     * La couche 5 juge avec la liste de la couche 2, non avec celle de Symfony
+     * (qui omet le multicast et les blocs d'affectations de protocoles).
+     *
+     * Ce que l'assertion prouve : la configuration. Elle lit la liste que le
+     * service du conteneur détient (propriété privée du décorateur, par
+     * réflexion) : le client réel ne peut pas être exercé sans réseau, et un
+     * essai contre une adresse littérale tente une vraie connexion. Le
+     * comportement de cette liste est prouvé par
+     * `HttpClientMetadataFetcherTest::testAConnectionThatLandsOnARangeOfThePolicyIsRefused`
+     * (`primary_ip` d'une `MockResponse`). Ce qu'elle ne prouve pas : que
+     * Symfony lise toujours cette propriété comme on l'attend.
+     */
+    public function testTheMetadataHttpClientJudgesWithThePublicAddressPolicyList(): void
+    {
+        $subnets = new ReflectionProperty(NoPrivateNetworkHttpClient::class, 'subnets')
+            ->getValue($this->service('app.mcp.cimd.http_client'));
+
+        self::assertNotNull($subnets, 'sans liste, Symfony retombe sur sa liste par défaut');
+        self::assertSame(PublicAddressPolicy::SUBNETS, $subnets);
     }
 
     public function testTheFetcherIsTheHttpImplementation(): void
