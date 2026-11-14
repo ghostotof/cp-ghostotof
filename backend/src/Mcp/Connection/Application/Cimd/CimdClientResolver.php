@@ -45,12 +45,15 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
  *    sur un cache manqué seulement, après la liste des domaines et le magasin,
  *    le résolveur demande au dépôt si le `client_id` est déjà déclaré (mode
  *    `cimd`) et choisit {@see ClientMetadataFetchQuotaInterface::consumeForKnownClient()}
- *    (le quota de l'appelant seul) plutôt que `consume()` (le plafond commun
- *    en plus). Pourquoi : dix sources saturent le plafond commun, et sans cette
- *    voie elles fermeraient aussi les clients que des personnes de confiance ont
- *    déjà approuvés. Un attaquant ne s'y glisse pas : il lui faut un document
- *    valide sur un domaine de la liste et l'approbation d'une personne du palier
- *    de confiance, qui écrit la ligne. Aucune lecture de la base pour un document
+ *    (le compteur de ce client puis le quota de l'appelant) plutôt que
+ *    `consume()` (le plafond commun puis le quota de l'appelant). Pourquoi :
+ *    dix sources saturent le plafond commun, et sans cette voie elles
+ *    fermeraient aussi les clients que des personnes de confiance ont déjà
+ *    approuvés. Un attaquant ne peut pas *rendre* un client connu : il lui
+ *    faudrait un document valide sur un domaine de la liste et l'approbation
+ *    d'une personne du palier de confiance, qui écrit la ligne. Il peut en
+ *    revanche *nommer* un client approuvé : le compteur par client l'y borne,
+ *    quels que soient ses appelants. Aucune lecture de la base pour un document
  *    en cache ni pour un domaine hors liste.
  *
  * Elle ne tient aucune transaction : le quota écrit en base, et le validateur
@@ -93,9 +96,10 @@ final readonly class CimdClientResolver implements CimdClientResolverInterface
         }
 
         try {
-            // Un client déjà déclaré ne passe pas par le plafond commun (D-F) : la lecture n'a lieu que sur ce cache manqué.
+            // Un client déjà déclaré ne passe pas par le plafond commun, mais par le compteur de ce client (D-F) :
+            // la lecture n'a lieu que sur ce cache manqué.
             if ($this->registrations->isDiscovered($clientId->toMcpClientId())) {
-                $this->quota->consumeForKnownClient();
+                $this->quota->consumeForKnownClient($clientId);
             } else {
                 $this->quota->consume();
             }

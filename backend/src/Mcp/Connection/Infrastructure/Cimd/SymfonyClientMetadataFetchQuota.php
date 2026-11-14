@@ -6,19 +6,23 @@ namespace App\Mcp\Connection\Infrastructure\Cimd;
 
 use App\Mcp\Connection\Application\Cimd\ClientMetadataFetchQuotaInterface;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\RateLimiter\RateLimit;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**
- * Adosse ClientMetadataFetchQuotaInterface à deux limiteurs de
+ * Adosse ClientMetadataFetchQuotaInterface à trois limiteurs de
  * config/packages/rate_limiter.yaml (fenêtre glissante, #651 D-F) :
  *
  *  - `mcp_client_metadata`, **par appelant** : 10 récupérations par 10
  *    minutes ;
  *  - `mcp_client_metadata_global`, **commun à tous les appelants** : 100 par
- *    10 minutes, sous une clé constante.
+ *    10 minutes, sous une clé constante ;
+ *  - `mcp_client_metadata_known_client`, **par client déjà déclaré**, quels
+ *    que soient ses appelants : 10 par 10 minutes, sous l'empreinte SHA-256 du
+ *    `client_id`.
  *
  * Le plafond commun existe parce qu'aucun préfixe ne borne un attaquant qui
  * tient un bloc plus grand que celui qu'on compte : une IPv6 est comptée par
@@ -52,12 +56,28 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * avec ce coût. `testACeilingFilledBetweenTheGlanceAndTheConsumption…` la
  * rend visible.
  *
- * {@see self::consumeForKnownClient()} ne touche pas le plafond (voie des
- * clients connus, D-F : voir ClientMetadataFetchQuotaInterface) : un appelant
- * qui y passe n'est jamais concerné par cette course, et reste borné par le
- * quota de son adresse, avec la même clé et le même limiteur.
+ * {@see self::consumeForKnownClient()} (voie des clients connus, D-F : voir
+ * ClientMetadataFetchQuotaInterface) **ne touche jamais le plafond commun** :
+ * dix sources qui le saturent ne ferment pas la porte aux clients déjà
+ * approuvés. Elle suit le même ordre en trois temps, le compteur du client à
+ * la place du plafond :
  *
- * Les trois refus lèvent la même exception, avec le `retryAfter` du limiteur
+ *  a. le compteur du client est regardé sans être consommé ;
+ *  b. l'appelant est consommé, par la même méthode que pour `consume()` ;
+ *  c. le compteur du client est consommé.
+ *
+ * Le compteur du client existe parce que n'importe qui peut nommer un
+ * `client_id` approuvé : sans lui, un attaquant passerait par cette voie, à
+ * l'abri du plafond, borné seulement par ses /64. Il borne les récupérations
+ * d'un même client, quels que soient ses appelants ; l'ensemble de ses clés
+ * est borné par les clients approuvés. Mêmes propriétés, même course acceptée
+ * que ci-dessus, compteur du client pour plafond.
+ *
+ * Sa clé est l'empreinte SHA-256 du `client_id`, jamais le `client_id` en
+ * clair : CacheStorage garde l'identifiant du limiteur dans la valeur
+ * sérialisée, et la table `cache_items` ne doit pas tenir d'URL de client.
+ *
+ * Les refus lèvent tous la même exception, avec le `retryAfter` du limiteur
  * qui a refusé.
  *
  * Même patron que SymfonyBaseAccessRateLimiter, à ceci près que la clé de
@@ -65,11 +85,11 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * la requête principale, lue ici, pour que la couche applicative n'ait pas à
  * connaître HTTP.
  *
- * La clé est celle de {@see FetchQuotaKey}, non l'adresse brute : **une IPv6
- * est comptée par son /64** (qui tient un /64 change d'adresse à volonté et
- * obtiendrait sinon un quota neuf à chaque essai), une IPv4 reste entière, une
- * IPv4 portée par une IPv6 (mappée, NAT64, 6to4, compatible) compte comme cette
- * IPv4. Pour ce limiteur seulement.
+ * La clé de l'appelant est celle de {@see FetchQuotaKey}, non l'adresse brute :
+ * **une IPv6 est comptée par son /64** (qui tient un /64 change d'adresse à
+ * volonté et obtiendrait sinon un quota neuf à chaque essai), une IPv4 reste
+ * entière, une IPv4 portée par une IPv6 (mappée, NAT64, 6to4, compatible)
+ * compte comme cette IPv4. Pour ce limiteur seulement.
  *
  * Hors requête (une commande console, un test sans pile) ou pour une adresse
  * illisible, la clé est `unknown` : tous ces appels partagent alors un seul
@@ -92,34 +112,61 @@ final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFe
         private RateLimiterFactoryInterface $rateLimiterFactory,
         #[Autowire(service: 'limiter.mcp_client_metadata_global')]
         private RateLimiterFactoryInterface $globalRateLimiterFactory,
+        #[Autowire(service: 'limiter.mcp_client_metadata_known_client')]
+        private RateLimiterFactoryInterface $knownClientRateLimiterFactory,
         private RequestStack $requests,
     ) {
     }
 
     public function consume(): void
     {
-        $key = FetchQuotaKey::forAddress($this->requests->getMainRequest()?->getClientIp());
         $global = $this->globalRateLimiterFactory->create(self::GLOBAL_KEY);
 
         // (a) Regarder le plafond sans le consommer : plein, l'appelant ne perd rien.
-        $glance = $global->consume(0);
-        if ($glance->getRemainingTokens() < 1) {
-            throw new ClientMetadataFetchRateLimitExceededException($glance->getRetryAfter());
-        }
+        $this->refuseUnlessATokenRemains($global->consume(0));
 
         // (b) L'appelant : son refus ne coûte rien au plafond commun.
-        $this->refuseUnlessAccepted($this->rateLimiterFactory->create($key)->consume());
+        $this->consumeForCaller();
 
         // (c) Le plafond : il a pu se remplir depuis (a), course acceptée.
         $this->refuseUnlessAccepted($global->consume());
     }
 
-    public function consumeForKnownClient(): void
+    public function consumeForKnownClient(CimdClientId $clientId): void
+    {
+        // L'empreinte, jamais le client_id en clair : CacheStorage le garderait dans `cache_items`.
+        $client = $this->knownClientRateLimiterFactory->create(hash('sha256', $clientId->value()));
+
+        // (a) Regarder le compteur du client sans le consommer : plein, l'appelant ne perd rien.
+        $this->refuseUnlessATokenRemains($client->consume(0));
+
+        // (b) L'appelant : son refus ne coûte rien au compteur du client. Le plafond commun n'est jamais touché.
+        $this->consumeForCaller();
+
+        // (c) Le compteur du client : il a pu se remplir depuis (a), même course acceptée.
+        $this->refuseUnlessAccepted($client->consume());
+    }
+
+    /**
+     * Consomme une unité du quota de l'appelant courant, sous la clé de
+     * {@see FetchQuotaKey} : la seule écriture de ce quota, commune aux deux voies.
+     */
+    private function consumeForCaller(): void
     {
         $key = FetchQuotaKey::forAddress($this->requests->getMainRequest()?->getClientIp());
 
-        // Le seul quota de l'appelant : le plafond commun n'est ni regardé ni consommé.
         $this->refuseUnlessAccepted($this->rateLimiterFactory->create($key)->consume());
+    }
+
+    /**
+     * Le refus d'un regard (`consume(0)`) : lu sur les jetons restants,
+     * `isAccepted()` étant toujours vrai pour zéro jeton.
+     */
+    private function refuseUnlessATokenRemains(RateLimit $glance): void
+    {
+        if ($glance->getRemainingTokens() < 1) {
+            throw new ClientMetadataFetchRateLimitExceededException($glance->getRetryAfter());
+        }
     }
 
     private function refuseUnlessAccepted(RateLimit $limit): void

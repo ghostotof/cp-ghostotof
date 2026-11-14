@@ -66,6 +66,7 @@ final class RateLimiterStorageTest extends KernelTestCase
         yield 'career_assistant' => ['career_assistant'];
         yield 'mcp_client_metadata' => ['mcp_client_metadata'];
         yield 'mcp_client_metadata_global' => ['mcp_client_metadata_global'];
+        yield 'mcp_client_metadata_known_client' => ['mcp_client_metadata_known_client'];
         // Les deux limiteurs que `login_throttling` déclare pour le firewall
         // `login` (par couple IP+identifiant, puis par IP seule).
         yield 'login throttling (local)' => ['_login_local_login'];

@@ -81,12 +81,27 @@ framework:
         #
         # Dix sources suffisent à le remplir : un client déjà déclaré (ligne `cimd`
         # dans `mcp_client`) passe donc par une voie qui l'ignore
-        # (`consumeForKnownClient()` : le quota de l'appelant seul), pour que cette
-        # saturation ne ferme pas la porte aux clients que des personnes de
-        # confiance ont déjà approuvés. Un attaquant ne s'y glisse pas : il lui
-        # faut un document valide sur un domaine de la liste et l'approbation d'une
-        # personne du palier de confiance, qui écrit cette ligne.
+        # (`consumeForKnownClient()` : le quota de l'appelant et le compteur de ce
+        # client, ci-dessous), pour que cette saturation ne ferme pas la porte aux
+        # clients que des personnes de confiance ont déjà approuvés. Un attaquant
+        # peut nommer un client approuvé et emprunter cette voie : c'est le
+        # compteur par client qui l'y borne.
         mcp_client_metadata_global:
             policy: 'sliding_window'
             limit: 100
+            interval: '10 minutes'
+
+        # Compteur par client déjà déclaré (#651, D-F), sur la voie qui ignore le
+        # plafond commun : il borne le total des récupérations du document d'un
+        # même client connu, quels que soient les appelants (dix sources qui
+        # nomment le même client approuvé partagent ce compteur). Regardé sans être
+        # consommé avant le quota de l'appelant, puis consommé après lui, comme le
+        # plafond commun (SymfonyClientMetadataFetchQuota). Clé : le SHA-256 du
+        # `client_id`, jamais le `client_id` en clair. L'ensemble des clés est borné :
+        # seuls les clients approuvés (ligne `cimd`) passent par cette voie, un
+        # `client_id` inconnu reste sur le plafond commun. Même stockage et même
+        # verrou que les autres limiteurs.
+        mcp_client_metadata_known_client:
+            policy: 'sliding_window'
+            limit: 10
             interval: '10 minutes'

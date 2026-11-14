@@ -198,12 +198,13 @@ final class CimdClientResolverTest extends TestCase
     }
 
     /**
-     * Un client déjà déclaré (sa ligne `cimd` existe) qui revient : sa voie ne
-     * consomme que le quota de l'appelant, jamais le plafond commun. Dix
-     * sources qui saturent le plafond ne doivent pas fermer la porte aux
-     * clients que des personnes de confiance ont déjà approuvés.
+     * Un client déjà déclaré (sa ligne `cimd` existe) qui revient : sa voie
+     * consomme le quota de l'appelant et le compteur de ce client, jamais le
+     * plafond commun. Dix sources qui saturent le plafond ne doivent pas
+     * fermer la porte aux clients que des personnes de confiance ont déjà
+     * approuvés.
      */
-    public function testAKnownClientMissConsumesOnlyTheCallerQuota(): void
+    public function testAKnownClientMissNeverConsumesTheCeiling(): void
     {
         $quota = new CountingFetchQuota();
         $registrations = new McpClientRepositoryFake($this->discoveredClient(), null);
@@ -218,6 +219,46 @@ final class CimdClientResolverTest extends TestCase
 
         self::assertSame(1, $quota->consumedForKnownClient());
         self::assertSame(0, $quota->consumed(), 'La voie des clients connus ne touche pas le plafond commun.');
+    }
+
+    /**
+     * Le compteur par client est tenu sous le `client_id` que le résolveur
+     * résout : transmettre un autre identifiant ferait payer à un client le
+     * compteur d'un autre.
+     */
+    public function testAKnownClientMissHandsItsClientIdToTheCounter(): void
+    {
+        $quota = new CountingFetchQuota();
+
+        new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            $quota,
+            ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json()),
+            $this->claudeDomains(),
+            new McpClientRepositoryFake($this->discoveredClient(), null),
+        )->resolve($this->claudeClientId());
+
+        self::assertNotNull($quota->lastKnownClientId());
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $quota->lastKnownClientId()->value());
+    }
+
+    /** Le refus du compteur d'un client connu est le même refus `Throttled`, avant toute sortie réseau. */
+    public function testAKnownClientRefusedByItsCounterIsThrottledWithoutFetching(): void
+    {
+        $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
+        $store = new InMemoryClientMetadataStore();
+
+        $refusal = $this->refusalOf(new CimdClientResolver(
+            $store,
+            new CountingFetchQuota(null, 0),
+            $fetcher,
+            $this->claudeDomains(),
+            new McpClientRepositoryFake($this->discoveredClient(), null),
+        ));
+
+        self::assertSame(ClientMetadataRefusal::Throttled, $refusal->refusal);
+        self::assertSame(0, $fetcher->calls(), 'Le compteur du client refuse avant toute sortie réseau.');
+        self::assertSame([], $store->saves());
     }
 
     public function testAnUnknownClientMissConsumesTheCeilingToo(): void
