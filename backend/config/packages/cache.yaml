@@ -44,3 +44,15 @@ framework:
             # `session.ttl` dans mcp.yaml : le store la passe à chaque écriture.
             cache.mcp_sessions:
                 adapter: cache.adapter.doctrine_dbal
+
+            # Documents de métadonnées des clients CIMD (#651, D-G) : le corps
+            # JSON d'un document déjà validé, gardé de cinq minutes à une heure
+            # selon le `max-age` de l'hôte (le résolveur borne la durée à chaque
+            # écriture ; `default_lifetime` n'est que le filet d'une écriture
+            # sans durée). Même table, même purge, même MAC que `cache.app` ; un
+            # pool à part pour que ces clés, dérivées d'une URL qu'un tiers
+            # choisit, ne côtoient ni les limiteurs ni les sessions. Jamais une
+            # erreur ni un document invalide dedans (draft §6.2).
+            cache.mcp_client_metadata:
+                adapter: cache.adapter.doctrine_dbal
+                default_lifetime: 3600

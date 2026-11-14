@@ -53,3 +53,14 @@ framework:
             policy: 'sliding_window'
             limit: 30
             interval: '1 hour'
+
+        # Quota de récupération des documents de métadonnées des clients CIMD
+        # (#651, D-F), consommé par le résolveur seulement sur un cache manqué :
+        # une récupération sort du serveur vers un hôte choisi par un tiers. Clé :
+        # l'IP de l'appelant, jamais le `client_id` (un attaquant en changerait à
+        # chaque essai ; cf. SymfonyClientMetadataFetchQuota). Stocké dans
+        # cache.app, donc en base, sous le verrou partagé entre pods (ADR 0005).
+        mcp_client_metadata:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '10 minutes'

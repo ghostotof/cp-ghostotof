@@ -60,6 +60,11 @@ framework:
         # rendait le 429 avant la journalisation du noyau, qui ne le voyait
         # jamais ; il passe désormais par logKernelException, et sans cette
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
+        # Quota de récupération des documents CIMD (#651) : un refus attendu,
+        # converti en refus OAuth par le point d'autorisation et tracé par
+        # `mcp-client-metadata-refused` ; sans cette entrée, `critical`.
+        App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException:
+            log_level: info
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
         # Refus de `login_throttling` (issue #399) : la défense anti-brute-force

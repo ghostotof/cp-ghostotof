@@ -270,7 +270,7 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
   - `CachedClientMetadataStore::__construct(#[Autowire(service: 'cache.mcp_client_metadata')] CacheItemPoolInterface $pool)` — clé `hash('sha256', $clientId->value())`.
   - `SymfonyClientMetadataFetchQuota::__construct(#[Autowire(service: 'limiter.mcp_client_metadata')] RateLimiterFactory $factory, RequestStack $requests)` — clé `getMainRequest()?->getClientIp() ?? 'unknown'`, sur le modèle de `SymfonyBaseAccessRateLimiter`.
 
-- [ ] **Step 1 : tests rouges.**
+- [x] **Step 1 : tests rouges.**
   - `CimdClientResolverTest` (doublures en mémoire, aucun conteneur) :
     - `testACachedDocumentIsServedWithoutQuotaNorFetch` ;
     - `testAMissConsumesTheQuotaFetchesValidatesAndStores` (une unité de quota, une récupération, le corps brut rangé) ;
@@ -282,10 +282,10 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
   - `CachedClientMetadataStoreTest` (`KernelTestCase`) : `save()` puis `find()` rend le corps ; un autre `client_id` rend `null` ; aucune clé de `cache_items` ne contient `claude.ai` (la clé est une empreinte).
   - `SymfonyClientMetadataFetchQuotaTest` (`KernelTestCase`, `RequestStack` portant une requête d'adresse `198.51.100.7`, pool `cache.rate_limiter` vidé au départ) : dix `consume()` passent, le onzième lève `ClientMetadataFetchRateLimitExceededException` ; une requête d'une autre adresse passe.
   - Les trois tests transverses complétés (limiteur en base et sous verrou, pool authentifié, quota justifié).
-- [ ] **Step 2 : vérifier l'échec** — `--filter 'CimdClientResolverTest|CachedClientMetadataStoreTest|SymfonyClientMetadataFetchQuotaTest|RateLimiterStorageTest|CacheItemsAreAuthenticatedTest|ThrottledRequestAuditCoverageTest'` : classes, pool et limiteur absents.
-- [ ] **Step 3 : implémenter.** `resolve()` : lecture du magasin ; un corps présent qui valide est rendu ; sinon `consume()` (quota dépassé → `Throttled`), `fetch()`, `fromJson()` (`InvalidClientMetadataDocumentException` → `InvalidDocument`, l'exception d'origine en précédente), `save()` avec `max(MIN_TTL, min(MAX_TTL, $maxAge ?? MIN_TTL))`, puis le document. Rien n'est rangé sur un refus (draft §6.2). Le quota n'est jamais consommé dans une transaction : le validateur tourne avant celle de l'approbation (le docblock le rappelle).
-- [ ] **Step 4 : vérifier** — tests verts, `make back-quality` vert.
-- [ ] **Step 5 : commit** — `feat(mcp): le document d'un client est gardé en base un temps borné, sa récupération sous quota (#651)`.
+- [x] **Step 2 : vérifier l'échec** — `--filter 'CimdClientResolverTest|CachedClientMetadataStoreTest|SymfonyClientMetadataFetchQuotaTest|RateLimiterStorageTest|CacheItemsAreAuthenticatedTest|ThrottledRequestAuditCoverageTest'` : classes, pool et limiteur absents.
+- [x] **Step 3 : implémenter.** `resolve()` : lecture du magasin ; un corps présent qui valide est rendu ; sinon `consume()` (quota dépassé → `Throttled`), `fetch()`, `fromJson()` (`InvalidClientMetadataDocumentException` → `InvalidDocument`, l'exception d'origine en précédente), `save()` avec `max(MIN_TTL, min(MAX_TTL, $maxAge ?? MIN_TTL))`, puis le document. Rien n'est rangé sur un refus (draft §6.2). Le quota n'est jamais consommé dans une transaction : le validateur tourne avant celle de l'approbation (le docblock le rappelle).
+- [x] **Step 4 : vérifier** — tests verts, `make back-quality` vert.
+- [x] **Step 5 : commit** — `feat(mcp): le document d'un client est gardé en base un temps borné, sa récupération sous quota (#651)`.
 
 ### Task 7 : le mode d'enregistrement d'un client, en base
 
