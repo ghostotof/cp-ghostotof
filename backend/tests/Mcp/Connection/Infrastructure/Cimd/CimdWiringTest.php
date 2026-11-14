@@ -54,7 +54,7 @@ final class CimdWiringTest extends KernelTestCase
     }
 
     /**
-     * La couche 5 juge avec la liste de la couche 2, non avec celle de Symfony
+     * La couche 5 juge avec la liste de la couche 3, non avec celle de Symfony
      * (qui omet le multicast et les blocs d'affectations de protocoles).
      *
      * Ce que l'assertion prouve : la configuration. Elle lit la liste que le

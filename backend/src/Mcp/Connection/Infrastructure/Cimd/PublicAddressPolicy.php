@@ -51,7 +51,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * UNLISTED_SPECIAL_PURPOSE_SUBNETS). Le test le dit le jour où Symfony
  * couvre l'une de ces plages : l'entrée locale se retire alors.
  *
- * La liste complète, {@see self::SUBNETS}, est la source unique : la couche 2
+ * La liste complète, {@see self::SUBNETS}, est la source unique : la couche 3
  * (`isPublic()`) et la couche 5 (`NoPrivateNetworkHttpClient`, câblé dans
  * `services.yaml`) la lisent, pour que ce que l'une refuse, l'autre le refuse.
  *

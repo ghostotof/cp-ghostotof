@@ -187,14 +187,16 @@ services:
     # paramètre `app.mcp.cimd.allowed_domains` ci-dessus. Un objet valeur à
     # constructeur privé, d'où la fabrique, qui refuse une entrée mal formée.
     #
-    # Public, et dans tous les environnements : CimdWiringTest lit dans le
-    # conteneur le service que cette définition construit, or un service privé
-    # que rien ne reçoit encore par injection est retiré à la compilation. Le
-    # rendre public sous `when@test` seulement est refusé par
+    # Public, et dans tous les environnements, pour une seule raison :
+    # CimdWiringTest lit dans le conteneur le service que cette définition
+    # construit (un service privé utilisé une fois est inliné, donc introuvable
+    # par le test). Le rendre public sous `when@test` seulement est refusé par
     # SecurityServicesEnvironmentParityTest (#698 : une définition `App\` est la
     # même partout). Un objet valeur sans secret : la liste est versionnée
-    # ci-dessus. À rendre privé dès qu'un service le reçoit (l'admission d'un
-    # client CIMD, #651).
+    # ci-dessus. Il est déjà reçu par injection (HttpClientMetadataFetcher) : ce
+    # n'est donc plus un service sans consommateur. Il ne deviendra privé que le
+    # jour où ce test cesse de le lire ; le plan de la tâche 12 ne fixe pas ce
+    # moment, et la Task 9 (admission) n'y change rien.
     App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains:
         public: true
         factory: ['App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains', 'fromList']
@@ -221,7 +223,7 @@ services:
         public: true
         arguments:
             - '@app.mcp.cimd.transport'
-            # La liste de la couche 2 (PublicAddressPolicy, source unique), non
+            # La liste de la couche 3 (PublicAddressPolicy, source unique), non
             # celle par défaut de Symfony, qui omet le multicast et les blocs
             # d'affectations de protocoles. CimdWiringTest le vérifie.
             - !php/const App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy::SUBNETS
@@ -246,8 +248,8 @@ services:
         public: true
 
     # Le port de récupération du document d'un client CIMD, adossé au client
-    # HTTP ci-dessus. Public pour CimdWiringTest ; à rendre privé dès qu'un
-    # service le reçoit (l'admission d'un client CIMD, #651).
+    # HTTP ci-dessus. Public pour CimdWiringTest, qui le lit dans le conteneur,
+    # pour la même raison qu'AllowedClientDomains (voir plus haut).
     App\Mcp\Connection\Application\Cimd\ClientMetadataFetcherInterface:
         alias: App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher
         public: true

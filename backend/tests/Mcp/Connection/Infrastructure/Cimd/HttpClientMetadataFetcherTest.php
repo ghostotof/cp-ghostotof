@@ -145,7 +145,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
-     * La couche 5 juge avec la même liste que la couche 2
+     * La couche 5 juge avec la même liste que la couche 3
      * ({@see PublicAddressPolicy::SUBNETS}) : la liste par défaut de Symfony
      * ne couvre ni le multicast ni les blocs d'affectations de protocoles, une
      * connexion qui y aboutirait passerait. `primary_ip` est l'adresse où la

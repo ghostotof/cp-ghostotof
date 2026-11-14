@@ -12,8 +12,8 @@ use App\Mcp\Connection\Domain\Exception\InvalidAllowedClientDomainException;
  *
  * L'hôte du `client_id` doit figurer dans la liste **tel quel** : aucun
  * sous-domaine implicite (`evil.claude.ai`), aucune comparaison de suffixe ni
- * de préfixe (`notclaude.ai`, `claude.ai.evil.test`). Deuxième moitié de la
- * première couche contre le SSRF (plan de la tâche 12, D-D) : hors de la
+ * de préfixe (`notclaude.ai`, `claude.ai.evil.test`). Seconde moitié de la
+ * couche 1 contre le SSRF (plan de la tâche 12, D-D) : hors de la
  * liste, aucune récupération ne part, et le client se confond avec un client
  * inconnu. Une liste vide éteint CIMD.
  */

@@ -19,34 +19,34 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * plan de la tâche 12, D-D). L'hôte vient d'un tiers : tout ce qui suit sert
  * à ce que la requête n'atteigne jamais le réseau du serveur.
  *
- * 0. L'hôte doit figurer dans la liste des domaines admis
+ * Les cinq couches contre le SSRF suivent la numérotation de D-D (plan de la
+ * tâche 12), la même dans toute la classe, `services.yaml` et les tests.
+ *
+ * Couche 1. L'hôte doit figurer dans la liste des domaines admis
  *    ({@see AllowedClientDomains}) : sinon il est refusé
  *    ({@see ClientMetadataRefusal::DomainNotAllowed}) avant toute résolution,
  *    sans une requête DNS ni un octet émis. Le contrôle est aussi fait à
  *    l'admission (Task 9) : la défense est en profondeur, ce récupérateur ne
  *    compte pas sur son appelant.
- * 1. Le nom est résolu ici, par le port {@see HostAddressResolverInterface},
+ * Couche 2. Le nom est résolu ici, par le port {@see HostAddressResolverInterface},
  *    et non par le client HTTP : une liste vide est un refus transitoire.
- * 2. TOUTES les adresses rendues doivent être publiques
+ * Couche 3. TOUTES les adresses rendues doivent être publiques
  *    ({@see PublicAddressPolicy}) : un hôte qui en mêle une privée à des
  *    publiques est refusé, car un client HTTP qui en choisirait une autre
  *    que celle qui a été vérifiée contournerait le contrôle.
- * 3. La première adresse vérifiée est épinglée par l'option `resolve`
+ * Couche 4. La première adresse vérifiée est épinglée par l'option `resolve`
  *    (`CURLOPT_RESOLVE`) : la connexion va à l'adresse jugée, jamais à une
  *    seconde résolution que l'hôte aurait fait changer entre-temps
  *    (DNS rebinding). Le nom reste celui de l'URL pour le SNI et la
  *    vérification du certificat.
- * 4. Aucune redirection n'est suivie, et la requête est bornée en délai de
- *    connexion ({@see self::MAX_CONNECT_DURATION}), en silence
- *    ({@see self::TIMEOUT}) et en durée totale ({@see self::MAX_DURATION}).
- * 5. Le client injecté est entouré de `NoPrivateNetworkHttpClient`
+ * Couche 5. Le client injecté est entouré de `NoPrivateNetworkHttpClient`
  *    (`app.mcp.cimd.http_client`), un filet de plus, non un second juge
  *    suffisant. Il revérifie d'abord l'adresse épinglée (l'option `resolve`
  *    gagne sur sa propre résolution), puis l'adresse où la connexion a
  *    réellement abouti (`primary_ip`), lue dans `on_progress` : APRÈS la
  *    connexion. Cette dernière vérification coupe la lecture de la réponse,
- *    elle n'empêche pas l'émission du GET (SSRF aveugle) ; c'est la couche 2
- *    et l'épinglage de la couche 3 qui évitent que la requête parte vers une
+ *    elle n'empêche pas l'émission du GET (SSRF aveugle) ; ce sont la couche 3
+ *    et l'épinglage de la couche 4 qui évitent que la requête parte vers une
  *    adresse privée.
  *
  * Limite : toute `TransportExceptionInterface` est rangée en
@@ -55,7 +55,13 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * et transitoire, et non « adresse bloquée ». Le message d'un transport peut
  * porter ce que l'hôte a choisi d'envoyer, il ne décide de rien.
  *
- * 6. La réponse est lue avec les bornes de D-E : le statut doit être 200
+ * Hors des cinq couches, les gardes de la lecture (D-E) :
+ *
+ * a. Aucune redirection n'est suivie, et la requête est bornée en délai de
+ *    connexion ({@see self::MAX_CONNECT_DURATION}), en silence
+ *    ({@see self::TIMEOUT}) et en durée totale ({@see self::MAX_DURATION}).
+ *
+ * b. La réponse est lue avec les bornes de D-E : le statut doit être 200
  *    (3xx = {@see ClientMetadataRefusal::Redirected}, 429 et 5xx =
  *    {@see ClientMetadataRefusal::UpstreamError}, transitoire), le type
  *    `application/json` (paramètres ignorés), et le corps n'est jamais lu
@@ -65,7 +71,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *    octet de trop. Un silence plus long que {@see self::TIMEOUT} ferme aussi
  *    la connexion (transitoire).
  *
- * 7. Aucune compression n'est acceptée (bombe de décompression : la borne
+ * c. Aucune compression n'est acceptée (bombe de décompression : la borne
  *    ci-dessus mesure les octets reçus, non les octets décompressés). La
  *    requête envoie `Accept-Encoding: identity` : un en-tête `accept-encoding`
  *    explicite désactive l'inflate automatique de `symfony/http-client` (8.1,
@@ -75,7 +81,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *    ({@see ClientMetadataRefusal::UnexpectedContentType} : ce n'est pas le
  *    contenu demandé, définitif comme un mauvais type), la connexion fermée.
  *
- * 8. Aucun proxy d'environnement : `symfony/http-client` lit `https_proxy`,
+ * d. Aucun proxy d'environnement : `symfony/http-client` lit `https_proxy`,
  *    `HTTPS_PROXY` (et `all_proxy`) quand l'option `proxy` est absente ; la
  *    connexion irait alors au proxy, qui résout le nom lui-même, et l'adresse
  *    épinglée n'est plus celle contactée. `no_proxy: *` l'écarte (vérifié dans

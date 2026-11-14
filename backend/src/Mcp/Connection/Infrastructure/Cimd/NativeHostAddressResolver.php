@@ -19,7 +19,7 @@ namespace App\Mcp\Connection\Infrastructure\Cimd;
  * `max_duration` de {@see HttpClientMetadataFetcher}. Un DNS lent pour un
  * domaine admis retiendrait donc un worker FPM bien au-delà de 3 secondes.
  * Acceptée parce que la liste de domaines ({@see HttpClientMetadataFetcher},
- * couche 0) réduit le scénario à une panne du DNS de `claude.ai` ou de
+ * couche 1) réduit le scénario à une panne du DNS de `claude.ai` ou de
  * `chatgpt.com` : un hôte choisi par un tiers n'est jamais résolu. À mesurer
  * en préprod à la tâche 14 (#653), qui décidera d'un éventuel `dnsConfig` du
  * pod.
