@@ -188,7 +188,7 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
 
         $headers = $response->getHeaders(false);
 
-        if (!$this->isUncompressed($headers['content-encoding'][0] ?? '')) {
+        if (!$this->isUncompressed($headers['content-encoding'] ?? [])) {
             $response->cancel();
 
             throw ClientMetadataRefusedException::because(ClientMetadataRefusal::UnexpectedContentType);
@@ -214,13 +214,26 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
     /**
      * Aucun codage, ou `identity` (casse et espaces ignorés) : tout autre
      * `Content-Encoding` est un corps compressé que la borne d'octets ne
-     * mesure pas.
+     * mesure pas. Chaque ligne d'en-tête est lue, et chaque valeur d'une ligne
+     * séparée par une virgule : `identity` puis `gzip` — sur deux lignes ou sur
+     * une — est un corps compressé. Une valeur vide (ligne vide, virgule en
+     * trop) ne désigne aucun codage et n'est pas refusée.
+     *
+     * @param list<string> $contentEncodings les lignes `Content-Encoding` reçues
      */
-    private function isUncompressed(string $contentEncoding): bool
+    private function isUncompressed(array $contentEncodings): bool
     {
-        $encoding = strtolower(trim($contentEncoding));
+        foreach ($contentEncodings as $line) {
+            foreach (explode(',', $line) as $value) {
+                $encoding = strtolower(trim($value));
 
-        return '' === $encoding || 'identity' === $encoding;
+                if ('' !== $encoding && 'identity' !== $encoding) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /** `application/json`, quels que soient la casse, les espaces et les paramètres (`; charset=…`). */

@@ -305,10 +305,14 @@ final class HttpClientMetadataFetcherTest extends TestCase
 
     /**
      * Un hôte qui compresse malgré `identity` est refusé avant toute lecture :
-     * la connexion est fermée, rien n'est décompressé.
+     * la connexion est fermée, rien n'est décompressé. Chaque ligne d'en-tête et
+     * chaque valeur d'une liste séparée par une virgule est contrôlée : `identity`
+     * suivi de `gzip`, sur deux lignes ou sur une, est refusé comme `gzip` seul.
+     *
+     * @param string|list<string> $encoding une ligne, ou plusieurs lignes `Content-Encoding`
      */
     #[DataProvider('compressedEncodings')]
-    public function testACompressedResponseIsRefusedAndTheConnectionClosed(string $encoding): void
+    public function testACompressedResponseIsRefusedAndTheConnectionClosed(string|array $encoding): void
     {
         $response = $this->response(self::DOCUMENT, 200, [
             'content-type' => 'application/json',
@@ -323,7 +327,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string|list<string>}>
      */
     public static function compressedEncodings(): iterable
     {
@@ -332,10 +336,17 @@ final class HttpClientMetadataFetcherTest extends TestCase
         yield 'deflate' => ['deflate'];
         yield 'brotli' => ['br'];
         yield 'chaîne' => ['gzip, identity'];
+        yield 'chaîne, identity d\'abord' => ['identity, gzip'];
+        yield 'deux lignes, identity d\'abord' => [['identity', 'gzip']];
+        yield 'deux lignes, identity ensuite' => [['gzip', 'identity']];
+        yield 'deux lignes, liste sur la seconde' => [['identity', ' Identity , BR ']];
     }
 
+    /**
+     * @param string|list<string> $encoding
+     */
     #[DataProvider('identityEncodings')]
-    public function testAnIdentityEncodedResponseIsAccepted(string $encoding): void
+    public function testAnIdentityEncodedResponseIsAccepted(string|array $encoding): void
     {
         $response = $this->response(self::DOCUMENT, 200, [
             'content-type' => 'application/json',
@@ -348,12 +359,14 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string|list<string>}>
      */
     public static function identityEncodings(): iterable
     {
         yield 'identity' => ['identity'];
         yield 'casse et espaces' => ['  Identity '];
+        yield 'liste de identity' => ['identity, Identity'];
+        yield 'deux lignes identity' => [['identity', 'IDENTITY']];
     }
 
     #[DataProvider('acceptedContentTypes')]
