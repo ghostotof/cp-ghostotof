@@ -212,7 +212,9 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
 
     public function testTheRefusalCarriesTheRetryAfterOfTheCallerQuotaWhenItRefuses(): void
     {
-        // Appelant : dix minutes ; plafond : une heure et largement entamé par personne.
+        // Appelant : une unité par dix minutes, épuisée ; plafond : une heure, large. Les
+        // deux fenêtres se distinguent : un retryAfter de l'appelant tient dans les onze
+        // minutes, celui du plafond viendrait de la fenêtre d'une heure.
         $quota = $this->quotaWith(
             $this->inMemoryLimiter('caller', 1, '10 minutes'),
             $this->inMemoryLimiter('global', 100, '1 hour'),
@@ -222,7 +224,49 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
 
         $refused = $this->refusalOf($quota);
 
+        self::assertGreaterThan(new DateTimeImmutable(), $refused->retryAfter);
         self::assertLessThanOrEqual(new DateTimeImmutable('+11 minutes'), $refused->retryAfter);
+    }
+
+    /**
+     * Un appelant que le plafond commun refuse n'a rien consommé de son propre
+     * quota : le refus d'un autre ne doit pas lui coûter une récupération.
+     */
+    public function testACallerRefusedByTheGlobalCeilingKeepsItsWholeQuota(): void
+    {
+        $global = $this->inMemoryLimiter('global', 1, '1 hour');
+        $this->quotaWith($this->inMemoryLimiter('other', 10, '10 minutes'), $global, '198.51.100.8')->consume();
+
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+        $this->refusalOf($this->quotaWith($perCaller, $global, '198.51.100.7'));
+
+        self::assertSame(10, $perCaller->create('198.51.100.7')->consume(0)->getRemainingTokens());
+    }
+
+    /**
+     * Les deux refus possibles en même temps : le plafond est regardé avant
+     * l'appelant, c'est donc son `retryAfter` qui est rendu.
+     */
+    public function testTheGlobalCeilingRefusalWinsWhenTheCallerQuotaIsExhaustedToo(): void
+    {
+        $global = $this->inMemoryLimiter('global', 1, '1 hour');
+        $quota = $this->quotaWith($this->inMemoryLimiter('caller', 1, '10 minutes'), $global, '198.51.100.7');
+        $quota->consume();
+
+        $refused = $this->refusalOf($quota);
+
+        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter);
+    }
+
+    public function testACallerRefusedByItsOwnQuotaLeavesTheGlobalCeilingUntouched(): void
+    {
+        $global = $this->inMemoryLimiter('global', 100, '1 hour');
+        $quota = $this->quotaWith($this->inMemoryLimiter('caller', 1, '10 minutes'), $global, '198.51.100.7');
+        $quota->consume();
+        $this->refusalOf($quota);
+
+        // Une seule unité du plafond est prise : celle de la récupération acceptée.
+        self::assertSame(99, $global->create('global')->consume(0)->getRemainingTokens());
     }
 
     public function testTheRefusalCarriesTheRetryAfterOfTheGlobalCeilingWhenItRefuses(): void
