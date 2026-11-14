@@ -99,6 +99,9 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
     /** La durée totale maximale de la requête, en secondes. */
     public const float MAX_DURATION = 3.0;
 
+    /** Le délai maximal d'établissement de la connexion, en secondes. */
+    public const float MAX_CONNECT_DURATION = 1.0;
+
     private const string USER_AGENT = 'cp-ghostotof (+https://github.com/ghostotof/cp-ghostotof)';
 
     public function __construct(
@@ -135,6 +138,7 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
                 'max_redirects' => 0,
                 'no_proxy' => '*',
                 'timeout' => self::TIMEOUT,
+                'max_connect_duration' => self::MAX_CONNECT_DURATION,
                 'max_duration' => self::MAX_DURATION,
                 'buffer' => false,
                 'headers' => [

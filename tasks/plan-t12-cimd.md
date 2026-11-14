@@ -182,7 +182,7 @@ Les tests de chaque tâche sont nommés dans la tâche ; tous vivent sous `backe
   - `HttpClientMetadataFetcher::__construct(HttpClientInterface $client, HostAddressResolverInterface $resolver, PublicAddressPolicy $policy)` ; constantes publiques `MAX_BYTES = 5120`, `TIMEOUT = 2.0`, `MAX_DURATION = 3.0`.
 
 - [ ] **Step 1 : tests rouges.** Le client testé est `new NoPrivateNetworkHttpClient(new MockHttpClient($rappel))`, le rappel compte les requêtes et garde `$options`. Le document servi est celui de Claude Code (voir Task 5), en 200 `application/json`.
-  - `testTheRequestGoesToTheVerifiedAddress` : résolveur `['claude.ai' => ['1.1.1.1']]` → une requête `GET` sur l'URL du `client_id`, `$options['resolve']['claude.ai'] === '1.1.1.1'`, `max_redirects === 0`, `timeout === 2.0`, `max_duration === 3.0`, en-tête `Accept: application/json`, même `User-Agent` que `EndOfLifeDateClient` ; le résolveur a reçu `claude.ai`.
+  - `testTheRequestGoesToTheVerifiedAddress` : résolveur `['claude.ai' => ['1.1.1.1']]` → une requête `GET` sur l'URL du `client_id`, `$options['resolve']['claude.ai'] === '1.1.1.1'`, `max_redirects === 0`, `timeout === 2.0`, `max_duration === 3.0`, `max_connect_duration === 1.0`, en-tête `Accept: application/json`, même `User-Agent` que `EndOfLifeDateClient` ; le résolveur a reçu `claude.ai`.
   - `testAHostThatDoesNotResolveIsRefusedAsTransient` : résolveur vide → `Unresolvable`, zéro requête.
   - `testAHostResolvingToASpecialAddressIsRefused` (fournisseur : `127.0.0.1`, `10.0.0.5`, `169.254.169.254`, `192.168.0.1`, `224.0.0.1`) → `AddressBlocked`, zéro requête.
   - `testAHostWithOnePrivateAddressAmongPublicOnesIsRefused` : `['1.1.1.1', '10.0.0.5']` → `AddressBlocked`, zéro requête *(Review Focus 1)*.

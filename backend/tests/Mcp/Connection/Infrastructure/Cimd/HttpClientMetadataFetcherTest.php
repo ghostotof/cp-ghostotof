@@ -75,6 +75,8 @@ final class HttpClientMetadataFetcherTest extends TestCase
         self::assertSame(2.0, $options['timeout']);
         self::assertSame(HttpClientMetadataFetcher::MAX_DURATION, $options['max_duration']);
         self::assertSame(3.0, $options['max_duration']);
+        self::assertSame(HttpClientMetadataFetcher::MAX_CONNECT_DURATION, $options['max_connect_duration']);
+        self::assertSame(1.0, $options['max_connect_duration'], 'la connexion elle-même est bornée');
         self::assertIsArray($options['normalized_headers']);
         self::assertSame(['Accept: application/json'], $options['normalized_headers']['accept']);
         self::assertSame(['User-Agent: '.self::USER_AGENT], $options['normalized_headers']['user-agent']);
