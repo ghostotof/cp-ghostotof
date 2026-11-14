@@ -193,8 +193,8 @@ services:
     # par le test). Le rendre public sous `when@test` seulement est refusé par
     # SecurityServicesEnvironmentParityTest (#698 : une définition `App\` est la
     # même partout). Un objet valeur sans secret : la liste est versionnée
-    # ci-dessus. Il est déjà reçu par injection (HttpClientMetadataFetcher) : ce
-    # n'est donc plus un service sans consommateur. Il ne deviendra privé que le
+    # ci-dessus. Il est déjà reçu par injection (HttpClientMetadataFetcher et
+    # CimdClientResolver) : ce n'est donc plus un service sans consommateur. Il ne deviendra privé que le
     # jour où ce test cesse de le lire ; le plan de la tâche 12 ne fixe pas ce
     # moment, et la Task 9 (admission) n'y change rien.
     App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains:
