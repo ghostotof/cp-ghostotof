@@ -258,6 +258,19 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
+     * Le client HTTP lit `https_proxy` / `all_proxy` dans l'environnement du
+     * processus : derrière un proxy, la connexion irait au proxy, qui résout le
+     * nom lui-même, et l'adresse épinglée ne serait plus celle contactée.
+     * `no_proxy: *` écarte le proxy de l'environnement (curl et natif).
+     */
+    public function testTheRequestNeverGoesThroughAnEnvironmentProxy(): void
+    {
+        $this->fetcher($this->publicHost(), $this->documentResponse())->fetch($this->clientId());
+
+        self::assertSame('*', $this->requests[0]['options']['no_proxy']);
+    }
+
+    /**
      * Un hôte qui compresse malgré `identity` est refusé avant toute lecture :
      * la connexion est fermée, rien n'est décompressé.
      */

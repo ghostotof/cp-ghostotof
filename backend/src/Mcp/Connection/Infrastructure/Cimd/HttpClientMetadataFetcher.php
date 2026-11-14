@@ -62,6 +62,14 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *    ({@see ClientMetadataRefusal::UnexpectedContentType} : ce n'est pas le
  *    contenu demandé, définitif comme un mauvais type), la connexion fermée.
  *
+ * 8. Aucun proxy d'environnement : `symfony/http-client` lit `https_proxy`,
+ *    `HTTPS_PROXY` (et `all_proxy`) quand l'option `proxy` est absente ; la
+ *    connexion irait alors au proxy, qui résout le nom lui-même, et l'adresse
+ *    épinglée n'est plus celle contactée. `no_proxy: *` l'écarte (vérifié dans
+ *    le vendor 8.1 : `CurlHttpClient` le passe à `CURLOPT_NOPROXY`, où `*`
+ *    exclut tout hôte, et `NativeHttpClient::configureHeadersAndProxy()` rend
+ *    la main sans proxy sur la règle `*`).
+ *
  * Non prouvé par les tests, faute de réseau : `MockResponse` produit tout le
  * corps d'un coup à la première lecture, il ne modélise donc ni le gain de
  * `stream()` (ne pas télécharger ce qu'on refuse), ni la fermeture réelle de la
@@ -112,6 +120,7 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
             $response = $this->client->request('GET', $clientId->value(), [
                 'resolve' => [$host => $addresses[0]],
                 'max_redirects' => 0,
+                'no_proxy' => '*',
                 'timeout' => self::TIMEOUT,
                 'max_duration' => self::MAX_DURATION,
                 'buffer' => false,
