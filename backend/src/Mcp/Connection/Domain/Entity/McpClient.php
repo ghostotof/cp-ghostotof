@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
@@ -26,9 +28,10 @@ use Symfony\Component\Uid\Uuid;
  * McpClientName, chaque redirection par {@see RedirectUri} (https exacte, ou
  * boucle locale comparée sans port). La commande `app:mcp:client:register` et
  * le futur backoffice (#652) partagent ainsi les mêmes règles. Le nom d'un
- * client pré-enregistré est celui que l'administrateur du site a saisi ; un
- * client CIMD (#651) déclarera le sien, que la page de consentement marquera
- * comme tel. Les redirections sont stockées en liste JSON, et
+ * client pré-enregistré est celui que l'administrateur du site a saisi ; celui
+ * d'un client CIMD (#651, {@see self::discovered()}) vient de son document, et
+ * la page de consentement le marque comme tel. Le mode d'enregistrement
+ * ({@see ClientRegistration}) distingue les deux. Les redirections sont stockées en liste JSON, et
  * allowsRedirect() les relit par RedirectUri.
  */
 #[ORM\Entity(repositoryClass: McpClientRepository::class)]
@@ -69,16 +72,21 @@ class McpClient
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private DateTimeImmutable $registeredAt;
 
+    /** Qui a jugé ce client : une personne (`preregistered`) ou son document (`cimd`), #651. */
+    #[ORM\Column(type: 'string', length: 16, enumType: ClientRegistration::class, options: ['default' => 'preregistered'])]
+    private ClientRegistration $registration;
+
     /**
      * @param list<string> $redirectUris
      */
-    private function __construct(string $clientId, string $name, array $redirectUris, DateTimeImmutable $registeredAt)
+    private function __construct(string $clientId, string $name, array $redirectUris, DateTimeImmutable $registeredAt, ClientRegistration $registration)
     {
         $this->id = Uuid::v7();
         $this->clientId = $clientId;
         $this->name = $name;
         $this->redirectUris = $redirectUris;
         $this->registeredAt = $registeredAt;
+        $this->registration = $registration;
     }
 
     /**
@@ -93,7 +101,24 @@ class McpClient
     {
         $distinct = array_values(array_unique(array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris)));
 
-        return new self((string) $clientId, (string) $name, $distinct, $at);
+        return new self((string) $clientId, (string) $name, $distinct, $at, ClientRegistration::Preregistered);
+    }
+
+    /**
+     * Déclare un client à l'instant `$at`, à partir du document que le domaine
+     * vient de juger ({@see ClientMetadataDocument}) : l'identifiant est
+     * l'URL du document, le nom et les redirections sont les siens. Le mode est
+     * `cimd` : ce client peut être rafraîchi depuis un document plus récent, ce
+     * qu'un client pré-enregistré ne peut jamais.
+     *
+     * Le document a déjà écarté les redirections inadmissibles ; une
+     * redirection répétée n'est gardée qu'une fois, dans l'ordre reçu.
+     */
+    public static function discovered(ClientMetadataDocument $document, DateTimeImmutable $at): self
+    {
+        $distinct = array_values(array_unique(array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $document->redirectUris)));
+
+        return new self((string) $document->clientId->toMcpClientId(), (string) $document->name, $distinct, $at, ClientRegistration::Cimd);
     }
 
     public function getId(): Uuid
@@ -120,6 +145,11 @@ class McpClient
     public function registeredAt(): DateTimeImmutable
     {
         return $this->registeredAt;
+    }
+
+    public function registration(): ClientRegistration
+    {
+        return $this->registration;
     }
 
     /**
