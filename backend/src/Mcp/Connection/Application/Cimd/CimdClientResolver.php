@@ -7,17 +7,28 @@ namespace App\Mcp\Connection\Application\Cimd;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
 use App\Mcp\Connection\Domain\Exception\InvalidClientMetadataDocumentException;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 
 /**
- * La résolution d'un `client_id` CIMD (#651, D-G) : le magasin d'abord, puis,
- * sur un manque seulement, le quota, la récupération, la validation et la
- * garde.
+ * La résolution d'un `client_id` CIMD (#651, D-G) : la liste des domaines
+ * admis d'abord, puis le magasin et, sur un manque seulement, le quota, la
+ * récupération, la validation et la garde.
  *
- * Trois propriétés tenues ici, parce qu'aucun des trois collaborateurs ne peut
- * les tenir seul :
+ * Quatre propriétés tenues ici, parce qu'aucun des collaborateurs ne peut les
+ * tenir seul :
+ *  - **la liste des domaines est jugée avant tout le reste**
+ *    ({@see AllowedClientDomains}), même si le récupérateur la juge aussi
+ *    (défense en profondeur : il ne compte pas sur son appelant). Deux
+ *    raisons de la juger ici. Le document gardé vit en base (`cache_items`) et
+ *    survit au retrait d'un domaine de `app.mcp.cimd.allowed_domains` : sans ce
+ *    contrôle, un domaine retiré resterait admis jusqu'à {@see self::MAX_TTL}.
+ *    Et un refus local ne sort pas sur le réseau : il ne coûte aucune unité de
+ *    quota, qui ne doit pas s'user sur des `client_id` que le serveur refuse
+ *    de toute façon. L'admission (Task 9) le juge aussi, avant d'appeler le
+ *    résolveur : le résolveur ne compte pas sur elle non plus ;
  *  - **un cache qui répond ne coûte ni quota ni sortie réseau** ; un corps
  *    gardé est revalidé à chaque lecture, et s'il ne passe plus (règles
  *    durcies depuis, entrée altérée) il est traité comme un manque : aucun
@@ -26,7 +37,9 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
  *  - **seul un document valide est gardé** : ni refus de récupération, ni
  *    document invalide, ne passent par `save()` (draft §6.2) ;
  *  - **le quota est consommé avant la récupération**, jamais après : un refus
- *    de l'hôte compte, c'est la sortie réseau qui est bornée, pas le succès.
+ *    de l'hôte (réponse invalide, redirection, injoignable) compte, c'est la
+ *    sortie réseau qui est bornée, pas le succès. Un refus local de domaine ne
+ *    compte pas : aucune sortie n'a eu lieu.
  *
  * Elle ne tient aucune transaction : le quota écrit en base, et le validateur
  * de la demande d'autorisation qui l'appelle tourne avant celle de
@@ -50,11 +63,17 @@ final readonly class CimdClientResolver implements CimdClientResolverInterface
         private ClientMetadataStoreInterface $store,
         private ClientMetadataFetchQuotaInterface $quota,
         private ClientMetadataFetcherInterface $fetcher,
+        private AllowedClientDomains $domains,
     ) {
     }
 
     public function resolve(CimdClientId $clientId): ClientMetadataDocument
     {
+        // Avant le magasin (un document gardé d'un domaine retiré) et avant le quota.
+        if (!$this->domains->allows($clientId)) {
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::DomainNotAllowed);
+        }
+
         $cached = $this->fromStore($clientId);
         if (null !== $cached) {
             return $cached;
