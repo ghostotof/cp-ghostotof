@@ -11,9 +11,12 @@ use DateTimeImmutable;
 use DomainException;
 
 /**
- * Levée lorsqu'une même adresse IP a déclenché trop de récupérations de
- * documents de métadonnées CIMD sur la fenêtre du quota (#651, D-F, cf.
+ * Levée lorsqu'un appelant a déclenché trop de récupérations de documents de
+ * métadonnées CIMD sur la fenêtre de son quota, ou que tous les appelants
+ * ensemble en ont déclenché trop sur celle du plafond commun (#651, D-F, cf.
  * {@see \App\Mcp\Connection\Infrastructure\Cimd\SymfonyClientMetadataFetchQuota}).
+ * Une seule exception pour les deux : l'effet est le même, un refus
+ * temporaire ; son `retryAfter` est celui du limiteur qui a refusé.
  *
  * La récupération sort du serveur vers un hôte choisi par un tiers : sans
  * plafond, un anonyme qui présente des `client_id` toujours différents ferait
@@ -34,6 +37,6 @@ final class ClientMetadataFetchRateLimitExceededException extends DomainExceptio
 
     public function __construct(public readonly DateTimeImmutable $retryAfter)
     {
-        parent::__construct('Trop de documents de client récupérés depuis cette adresse IP. Réessayez plus tard.');
+        parent::__construct('Trop de documents de client récupérés. Réessayez plus tard.');
     }
 }
