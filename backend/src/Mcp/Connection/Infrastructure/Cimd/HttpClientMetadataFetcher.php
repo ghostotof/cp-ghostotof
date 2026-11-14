@@ -11,6 +11,7 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Demande à l'hôte d'un `client_id` CIMD le document qu'il publie (#651,
@@ -41,8 +42,26 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * et transitoire, et non « adresse bloquée ». Le message d'un transport peut
  * porter ce que l'hôte a choisi d'envoyer, il ne décide de rien.
  *
- * Le statut, le type du contenu et la lecture bornée du corps sont l'objet de
- * la tâche suivante : ici le corps est rendu tel quel.
+ * 6. La réponse est lue avec les bornes de D-E : le statut doit être 200
+ *    (3xx = {@see ClientMetadataRefusal::Redirected}, 429 et 5xx =
+ *    {@see ClientMetadataRefusal::UpstreamError}, transitoire), le type
+ *    `application/json` (paramètres ignorés), et le corps n'est jamais lu
+ *    au-delà de {@see self::MAX_BYTES} : un `Content-Length` annoncé au-dessus
+ *    de la borne est refusé avant toute lecture, sinon le flux est cumulé
+ *    morceau par morceau et la connexion est fermée (`cancel()`) au premier
+ *    octet de trop. Un silence plus long que {@see self::TIMEOUT} ferme aussi
+ *    la connexion (transitoire).
+ *
+ * Non prouvé par les tests, faute de réseau : `MockResponse` produit tout le
+ * corps d'un coup à la première lecture, il ne modélise donc ni le gain de
+ * `stream()` (ne pas télécharger ce qu'on refuse), ni la fermeture réelle de la
+ * connexion par `cancel()`, ni `timeout` / `max_duration` appliqués par curl,
+ * ni `CURLOPT_RESOLVE`, ni un `Content-Length` qui mentirait. Les tests
+ * prouvent la logique d'ici (quel refus pour quelle réponse, `cancel()` appelé,
+ * borne exacte) ; le comportement de curl est celui que documente
+ * `symfony/http-client` (8.1) : `NoPrivateNetworkHttpClient::stream()` délègue à
+ * `AsyncResponse::stream()`, qui rend le chunk de délai dépassé à
+ * `isTimeout()`. `max_duration` n'est lu par aucun test.
  */
 final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherInterface
 {
@@ -92,13 +111,106 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
                 ],
             ]);
 
-            // Le corps est lu ici, sous le même try : c'est à la lecture que
-            // la connexion s'établit, donc que le transport peut échouer.
-            $body = $response->getContent(false);
+            // Statut, en-têtes et corps sont lus sous le même try : c'est là
+            // que la connexion s'établit, donc que le transport peut échouer.
+            $headers = $this->checkedHeaders($response);
+
+            return new FetchedClientMetadata($this->boundedBody($response), $this->maxAge($headers));
         } catch (TransportExceptionInterface $transport) {
             throw ClientMetadataRefusedException::because(ClientMetadataRefusal::Unreachable, $transport);
         }
+    }
 
-        return new FetchedClientMetadata($body, null);
+    /**
+     * Vérifie le statut, le type du contenu et la taille annoncée, avant de lire
+     * le corps ; rend les en-têtes (clés en minuscules).
+     *
+     * @return array<string, list<string>>
+     */
+    private function checkedHeaders(ResponseInterface $response): array
+    {
+        $status = $response->getStatusCode();
+        $refusal = match (true) {
+            200 === $status => null,
+            $status >= 300 && $status < 400 => ClientMetadataRefusal::Redirected,
+            429 === $status || $status >= 500 => ClientMetadataRefusal::UpstreamError,
+            default => ClientMetadataRefusal::UnexpectedStatus,
+        };
+
+        if (null !== $refusal) {
+            $response->cancel();
+
+            throw ClientMetadataRefusedException::because($refusal);
+        }
+
+        $headers = $response->getHeaders(false);
+
+        if (!$this->isJson($headers['content-type'][0] ?? '')) {
+            $response->cancel();
+
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::UnexpectedContentType);
+        }
+
+        $announced = $headers['content-length'][0] ?? '';
+
+        if (1 === preg_match('/\A\d+\z/', $announced) && (int) $announced > self::MAX_BYTES) {
+            $response->cancel();
+
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::TooLarge);
+        }
+
+        return $headers;
+    }
+
+    /** `application/json`, quels que soient la casse, les espaces et les paramètres (`; charset=…`). */
+    private function isJson(string $contentType): bool
+    {
+        return 'application/json' === strtolower(trim(explode(';', $contentType)[0]));
+    }
+
+    /**
+     * Lit le corps en flux, sans jamais en garder plus que la borne : au premier
+     * octet de trop, ou au premier silence, la connexion est fermée et le reste
+     * n'est pas téléchargé.
+     */
+    private function boundedBody(ResponseInterface $response): string
+    {
+        $body = '';
+
+        foreach ($this->client->stream($response) as $chunk) {
+            if ($chunk->isTimeout()) {
+                $response->cancel();
+
+                throw ClientMetadataRefusedException::because(ClientMetadataRefusal::Unreachable);
+            }
+
+            $body .= $chunk->getContent();
+
+            if (\strlen($body) > self::MAX_BYTES) {
+                $response->cancel();
+
+                throw ClientMetadataRefusedException::because(ClientMetadataRefusal::TooLarge);
+            }
+        }
+
+        return $body;
+    }
+
+    /**
+     * La durée de fraîcheur annoncée (`max-age`, en secondes), ou null : une
+     * directive entière seulement (`s-maxage` n'est pas `max-age`), de un à
+     * neuf chiffres. La politique d'usage (plancher, plafond) n'est pas ici.
+     *
+     * @param array<string, list<string>> $headers
+     */
+    private function maxAge(array $headers): ?int
+    {
+        foreach (explode(',', strtolower(implode(',', $headers['cache-control'] ?? []))) as $directive) {
+            if (1 === preg_match('/\Amax-age=(\d{1,9})\z/', trim($directive), $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return null;
     }
 }

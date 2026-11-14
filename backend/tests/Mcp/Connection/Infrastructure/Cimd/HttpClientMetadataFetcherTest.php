@@ -10,6 +10,8 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
 use App\Tests\Mcp\Connection\Support\FixedHostAddressResolver;
+use App\Tests\Mcp\Connection\Support\LastResponseHttpClient;
+use Generator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -48,6 +50,8 @@ final class HttpClientMetadataFetcherTest extends TestCase
      */
     private array $requests = [];
 
+    private ?LastResponseHttpClient $client = null;
+
     public function testTheRequestGoesToTheVerifiedAddress(): void
     {
         $resolver = new FixedHostAddressResolver(['claude.ai' => ['1.1.1.1']]);
@@ -55,7 +59,7 @@ final class HttpClientMetadataFetcherTest extends TestCase
         $fetched = $this->fetcher($resolver, $this->documentResponse())->fetch($this->clientId());
 
         self::assertSame(self::DOCUMENT, $fetched->body);
-        self::assertNull($fetched->maxAge, 'la lecture du max-age est la tâche 4');
+        self::assertNull($fetched->maxAge, 'sans Cache-Control, aucune durée n\'est annoncée');
         self::assertSame(['claude.ai'], $resolver->resolvedHosts());
         self::assertCount(1, $this->requests);
 
@@ -137,6 +141,236 @@ final class HttpClientMetadataFetcherTest extends TestCase
         self::assertTrue($refusal->isTransient());
     }
 
+    #[DataProvider('cacheControls')]
+    public function testAPublishedDocumentIsReturnedWithItsMaxAge(?string $cacheControl, ?int $maxAge): void
+    {
+        $headers = ['content-type' => 'application/json'];
+        if (null !== $cacheControl) {
+            $headers['cache-control'] = $cacheControl;
+        }
+
+        $fetched = $this->fetcher($this->publicHost(), $this->response(self::DOCUMENT, 200, $headers))->fetch($this->clientId());
+
+        self::assertSame(self::DOCUMENT, $fetched->body);
+        self::assertSame($maxAge, $fetched->maxAge);
+    }
+
+    /**
+     * @return iterable<string, array{?string, ?int}>
+     */
+    public static function cacheControls(): iterable
+    {
+        yield 'max-age publié' => ['public, max-age=300', 300];
+        yield 'max-age seul' => ['max-age=60', 60];
+        yield 'majuscules' => ['Public, Max-Age=120', 120];
+        yield 'max-age nul' => ['max-age=0', 0];
+        yield 'aucun en-tête' => [null, null];
+        yield 'no-store' => ['no-store', null];
+        yield 'max-age illisible' => ['max-age=abc', null];
+        yield 'max-age négatif' => ['max-age=-5', null];
+        yield 'max-age démesuré' => ['max-age=99999999999999999999', null];
+        yield 's-maxage n\'est pas max-age' => ['s-maxage=300', null];
+    }
+
+    #[DataProvider('redirectStatuses')]
+    public function testARedirectionIsRefusedAndNeverFollowed(int $status): void
+    {
+        $response = $this->response('', $status, ['location' => 'http://169.254.169.254/latest/meta-data/']);
+
+        $refusal = $this->refusalOf($this->publicHost(), $response);
+
+        self::assertSame(ClientMetadataRefusal::Redirected, $refusal);
+        self::assertFalse($refusal->isTransient());
+        self::assertCount(1, $this->requests, 'la cible de la redirection n\'est jamais demandée');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function redirectStatuses(): iterable
+    {
+        foreach ([301, 302, 303, 307, 308] as $status) {
+            yield (string) $status => [$status];
+        }
+    }
+
+    #[DataProvider('refusedStatuses')]
+    public function testAnyStatusOtherThan200IsRefused(int $status, ClientMetadataRefusal $expected): void
+    {
+        $refusal = $this->refusalOf($this->publicHost(), $this->response(self::DOCUMENT, $status));
+
+        self::assertSame($expected, $refusal);
+        self::assertSame($expected->isTransient(), ClientMetadataRefusal::UpstreamError === $expected);
+    }
+
+    /**
+     * @return iterable<string, array{int, ClientMetadataRefusal}>
+     */
+    public static function refusedStatuses(): iterable
+    {
+        yield '204 sans contenu' => [204, ClientMetadataRefusal::UnexpectedStatus];
+        yield '206 partiel' => [206, ClientMetadataRefusal::UnexpectedStatus];
+        yield '401' => [401, ClientMetadataRefusal::UnexpectedStatus];
+        yield '404' => [404, ClientMetadataRefusal::UnexpectedStatus];
+        yield '429 trop de requêtes' => [429, ClientMetadataRefusal::UpstreamError];
+        yield '500' => [500, ClientMetadataRefusal::UpstreamError];
+        yield '503' => [503, ClientMetadataRefusal::UpstreamError];
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    #[DataProvider('wrongContentTypes')]
+    public function testAnUnexpectedContentTypeIsRefused(array $headers): void
+    {
+        $refusal = $this->refusalOf($this->publicHost(), $this->response(self::DOCUMENT, 200, $headers));
+
+        self::assertSame(ClientMetadataRefusal::UnexpectedContentType, $refusal);
+        self::assertFalse($refusal->isTransient());
+    }
+
+    /**
+     * @return iterable<string, array{array<string, string>}>
+     */
+    public static function wrongContentTypes(): iterable
+    {
+        yield 'html' => [['content-type' => 'text/html']];
+        yield 'en-tête absent' => [[]];
+        yield 'jsonp' => [['content-type' => 'application/jsonp']];
+        yield 'préfixe seulement' => [['content-type' => 'application/json-seq']];
+        yield 'json en texte' => [['content-type' => 'text/json']];
+    }
+
+    #[DataProvider('acceptedContentTypes')]
+    public function testAJsonContentTypeIsAcceptedWhateverItsParametersAndCase(string $contentType): void
+    {
+        $fetched = $this->fetcher($this->publicHost(), $this->response(self::DOCUMENT, 200, ['content-type' => $contentType]))->fetch($this->clientId());
+
+        self::assertSame(self::DOCUMENT, $fetched->body);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function acceptedContentTypes(): iterable
+    {
+        yield 'simple' => ['application/json'];
+        yield 'avec charset' => ['application/json; charset=utf-8'];
+        yield 'casse' => ['Application/JSON'];
+        yield 'espaces' => ['  application/json ;charset=UTF-8'];
+    }
+
+    /**
+     * Le document annonce une taille au-delà de la borne : refus sur l'en-tête,
+     * la connexion est fermée.
+     *
+     * Non prouvable ici : que rien n'est lu. `MockResponse` produit tout le
+     * corps d'un coup à la première lecture, quoi qu'on fasse ensuite.
+     */
+    public function testAnAnnouncedOversizedBodyIsRefusedAndTheConnectionClosed(): void
+    {
+        $body = str_repeat('a', HttpClientMetadataFetcher::MAX_BYTES + 1);
+        $response = $this->response($body, 200, [
+            'content-type' => 'application/json',
+            'content-length' => (string) \strlen($body),
+        ]);
+
+        $refusal = $this->refusalOf($this->publicHost(), $response);
+
+        self::assertSame(ClientMetadataRefusal::TooLarge, $refusal);
+        self::assertFalse($refusal->isTransient());
+        self::assertTrue($this->client?->lastResponse()->getInfo('canceled'), 'la connexion est fermée');
+    }
+
+    /**
+     * Aucune taille annoncée : c'est le cumul des morceaux reçus qui borne la
+     * lecture, et la connexion est fermée dès qu'il dépasse.
+     */
+    public function testAnUnannouncedOversizedBodyStopsAtTheBound(): void
+    {
+        $chunks = (static function (): Generator {
+            for ($i = 0; $i < 100; ++$i) {
+                yield str_repeat('a', 1024);
+            }
+        })();
+
+        $refusal = $this->refusalOf($this->publicHost(), $this->response($chunks, 200, ['content-type' => 'application/json']));
+
+        self::assertSame(ClientMetadataRefusal::TooLarge, $refusal);
+        self::assertTrue($this->client?->lastResponse()->getInfo('canceled'), 'la connexion est fermée');
+    }
+
+    public function testABodyOfExactlyTheBoundIsAccepted(): void
+    {
+        $body = str_repeat('a', HttpClientMetadataFetcher::MAX_BYTES);
+        $response = $this->response($body, 200, [
+            'content-type' => 'application/json',
+            'content-length' => (string) \strlen($body),
+        ]);
+
+        $fetched = $this->fetcher($this->publicHost(), $response)->fetch($this->clientId());
+
+        self::assertSame($body, $fetched->body);
+    }
+
+    /**
+     * Un serveur qui envoie un octet puis se tait : le délai d'inactivité
+     * coupe, c'est un refus transitoire (le serveur peut répondre demain).
+     */
+    public function testAStalledBodyIsRefusedAsTransient(): void
+    {
+        $stalled = (static function (): Generator {
+            yield 'x';
+            yield '';
+        })();
+
+        $refusal = $this->refusalOf($this->publicHost(), $this->response($stalled, 200, ['content-type' => 'application/json']));
+
+        self::assertSame(ClientMetadataRefusal::Unreachable, $refusal);
+        self::assertTrue($refusal->isTransient());
+        self::assertTrue($this->client?->lastResponse()->getInfo('canceled'), 'la connexion est fermée');
+    }
+
+    public function testATransportFailureIsRefusedAsTransient(): void
+    {
+        $refusal = $this->refusalOf($this->publicHost(), new MockResponse('', ['error' => 'refused']));
+
+        self::assertSame(ClientMetadataRefusal::Unreachable, $refusal);
+        self::assertTrue($refusal->isTransient());
+    }
+
+    /**
+     * Ce que le serveur envoie (corps, `Location`, type) n'entre jamais dans
+     * le message d'un refus, ni dans celui de son exception précédente : le
+     * message finit dans les journaux.
+     *
+     * Le message d'une erreur de transport, lui, reste chaîné en précédente
+     * (décision de la tâche 3, voir le docblock du récupérateur) : il n'est pas
+     * ce que l'hôte a choisi d'envoyer, mais un texte du client HTTP.
+     */
+    public function testARefusalNeverCarriesWhatTheServerSent(): void
+    {
+        $marker = 'JETON-'.bin2hex(random_bytes(8));
+        $cases = [
+            $this->response($marker, 301, ['location' => 'http://'.$marker.'.example/']),
+            $this->response($marker, 404, ['content-type' => 'text/'.$marker]),
+            $this->response($marker, 200, ['content-type' => 'text/'.$marker]),
+            $this->response(str_repeat($marker, 600), 200, ['content-type' => 'application/json']),
+        ];
+
+        foreach ($cases as $response) {
+            try {
+                $this->fetcher($this->publicHost(), $response)->fetch($this->clientId());
+                self::fail('La récupération devait être refusée.');
+            } catch (ClientMetadataRefusedException $refused) {
+                self::assertStringNotContainsString($marker, $refused->getMessage());
+                for ($previous = $refused->getPrevious(); null !== $previous; $previous = $previous->getPrevious()) {
+                    self::assertStringNotContainsString($marker, $previous->getMessage());
+                }
+            }
+        }
+    }
+
     private function refusalOf(FixedHostAddressResolver $resolver, ?MockResponse $response = null): ClientMetadataRefusal
     {
         try {
@@ -152,16 +386,30 @@ final class HttpClientMetadataFetcherTest extends TestCase
 
     private function fetcher(FixedHostAddressResolver $resolver, MockResponse $response): HttpClientMetadataFetcher
     {
-        $client = new NoPrivateNetworkHttpClient(new MockHttpClient(
+        $this->client = $client = new LastResponseHttpClient(new NoPrivateNetworkHttpClient(new MockHttpClient(
             function (string $method, string $url, array $options) use ($response): ResponseInterface {
                 /** @var array<string, mixed> $options */
                 $this->requests[] = ['method' => $method, 'url' => $url, 'options' => $options];
 
                 return $response;
             },
-        ));
+        )));
 
         return new HttpClientMetadataFetcher($client, $resolver, new PublicAddressPolicy());
+    }
+
+    private function publicHost(): FixedHostAddressResolver
+    {
+        return new FixedHostAddressResolver(['claude.ai' => ['1.1.1.1']]);
+    }
+
+    /**
+     * @param string|iterable<string> $body
+     * @param array<string, string>   $headers
+     */
+    private function response(string|iterable $body, int $status, array $headers = []): MockResponse
+    {
+        return new MockResponse($body, ['http_code' => $status, 'response_headers' => $headers]);
     }
 
     private function documentResponse(): MockResponse
