@@ -112,6 +112,32 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $this->quotaFor('::ffff:198.51.100.7')->consume();
     }
 
+    /**
+     * Un serveur IPv6 derrière un traducteur NAT64 voit ses clients IPv4 sous
+     * `64:ff9b::/96` : leur compteur est celui de leur IPv4, ni un compteur
+     * commun à tous les clients, ni 65 536 compteurs par IPv4 en 6to4.
+     */
+    public function testAnIpv4CarriedByNat64Or6to4SharesTheQuotaOfThatIpv4(): void
+    {
+        $plain = $this->quotaFor('198.51.100.7');
+        for ($i = 0; $i < 10; ++$i) {
+            $plain->consume();
+        }
+
+        $refused = [];
+        foreach (['64:ff9b::198.51.100.7', '2002:c633:6407::1', '2002:c633:6407:ffff::2', '64:ff9b::198.51.100.8'] as $carried) {
+            try {
+                $this->quotaFor($carried)->consume();
+            } catch (ClientMetadataFetchRateLimitExceededException) {
+                $refused[] = $carried;
+            }
+        }
+
+        // Les trois adresses qui portent 198.51.100.7 partagent son quota
+        // épuisé ; une autre IPv4 derrière le même traducteur a son compteur.
+        self::assertSame(['64:ff9b::198.51.100.7', '2002:c633:6407::1', '2002:c633:6407:ffff::2'], $refused);
+    }
+
     public function testTwoDistinctIpv4AddressesOfTheSameNetworkDoNotShareTheirQuota(): void
     {
         $exhausted = $this->quotaFor('198.51.100.7');

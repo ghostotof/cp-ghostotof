@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Cimd;
 
+use App\Shared\Infrastructure\Network\EmbeddedIpv4;
+
 /**
  * La clé du quota de récupération des documents CIMD (#651, D-F) : ce que
  * deux adresses source partagent comme compteur.
@@ -16,9 +18,14 @@ namespace App\Mcp\Connection\Infrastructure\Cimd;
  *    (compressée, développée, majuscules) ;
  *  - **une IPv4 reste entière** : un /24 mêlerait des voisins sans rapport,
  *    alors qu'une IPv4 n'est pas, à elle seule, un réseau qu'on tient ;
- *  - **une IPv4 écrite en IPv6** (`::ffff:a.b.c.d`, une socket double pile)
- *    est comptée comme cette IPv4 entière : c'est la même source que celle
- *    d'une socket IPv4, elle partage donc son compteur ;
+ *  - **une IPv4 portée par une IPv6 est comptée comme cette IPv4 entière**,
+ *    quelle que soit la forme (mappée `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96`,
+ *    6to4 `2002::/16`, compatible `::/96`, voir {@see EmbeddedIpv4}) : c'est la
+ *    même source que celle d'une socket IPv4, elle partage son compteur. Sans
+ *    cela, tous les clients derrière un traducteur NAT64 partageaient un seul
+ *    /64, et un titulaire 6to4 avait 65 536 /64 par IPv4. Le `::/96` en entier,
+ *    comme `TruncatedIp` : `::` et `::1` comptent comme `0.0.0.0` et `0.0.0.1`,
+ *    deux clés distinctes qu'aucun client routable n'utilise ;
  *  - **une adresse absente ou illisible** garde la clé `unknown`, la voie sûre
  *    (tous ces appels partagent un seul compteur : il limite trop, jamais pas
  *    assez).
@@ -36,8 +43,6 @@ final readonly class FetchQuotaKey
     /** Octets gardés d'une IPv6 : son /64. */
     private const int IPV6_KEPT_BYTES = 8;
 
-    private const string IPV4_MAPPED_PREFIX = "\0\0\0\0\0\0\0\0\0\0\xFF\xFF";
-
     public static function forAddress(?string $address): string
     {
         // Refuse aussi une zone (`fe80::1%eth0`), des crochets et un préfixe (`/64`).
@@ -47,12 +52,14 @@ final readonly class FetchQuotaKey
 
         $bytes = (string) inet_pton($address);
 
-        if (str_starts_with($bytes, self::IPV4_MAPPED_PREFIX)) {
-            $bytes = substr($bytes, \strlen(self::IPV4_MAPPED_PREFIX));
-        }
-
         if (4 === \strlen($bytes)) {
             return (string) inet_ntop($bytes);
+        }
+
+        $embedded = EmbeddedIpv4::tryFromPacked($bytes);
+
+        if (null !== $embedded) {
+            return $embedded->address;
         }
 
         // Les octets du /64, le reste à zéro : `inet_ntop()` en donne l'écriture canonique.

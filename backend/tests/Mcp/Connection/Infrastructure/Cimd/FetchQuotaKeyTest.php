@@ -31,6 +31,15 @@ final class FetchQuotaKeyTest extends TestCase
         yield 'IPv4 mappée, forme décimale' => ['198.51.100.7', '::ffff:198.51.100.7'];
         yield 'IPv4 mappée, forme hexadécimale' => ['198.51.100.7', '::ffff:c633:6407'];
         yield 'IPv4 mappée développée' => ['198.51.100.7', '0:0:0:0:0:ffff:c633:6407'];
+        // NAT64 (RFC 6052) : tous les clients IPv4 derrière un traducteur
+        // partageaient la clé `64:ff9b::/64` ; chacun a la sienne, celle de son IPv4.
+        yield 'NAT64, forme décimale' => ['198.51.100.7', '64:ff9b::198.51.100.7'];
+        yield 'NAT64, forme hexadécimale' => ['198.51.100.7', '64:ff9b::c633:6407'];
+        // 6to4 (RFC 3056) : l'IPv4 est dans l'adresse, le reste est le choix de
+        // son titulaire (65 536 /64 par IPv4, autant de compteurs sinon).
+        yield '6to4' => ['198.51.100.7', '2002:c633:6407::1'];
+        yield '6to4, autre /64 et autre hôte' => ['2002:c633:6407::1', '2002:c633:6407:ffff::2'];
+        yield 'IPv4 compatible' => ['198.51.100.7', '::198.51.100.7'];
     }
 
     #[DataProvider('addressesSharingAKey')]
@@ -53,6 +62,24 @@ final class FetchQuotaKeyTest extends TestCase
         yield 'de part et d\'autre de la frontière' => ['2001:db8:1:1:ffff:ffff:ffff:ffff', '2001:db8:1:2::'];
         yield 'IPv4 et IPv6 sans rapport' => ['198.51.100.7', '2001:db8:1:2::1'];
         yield 'IPv4 mappée et une autre IPv4' => ['::ffff:198.51.100.7', '198.51.100.8'];
+        yield 'deux IPv4 compatibles distinctes' => ['::198.51.100.7', '::198.51.100.8'];
+        yield 'deux IPv4 NAT64 distinctes' => ['64:ff9b::198.51.100.7', '64:ff9b::198.51.100.8'];
+        yield 'deux IPv4 6to4 distinctes' => ['2002:c633:6407::1', '2002:c633:6408::1'];
+        yield 'une IPv6 globale et un 6to4' => ['2001:c633:6407::1', '2002:c633:6407::1'];
+    }
+
+    /**
+     * `::` et `::1` suivent l'extracteur partagé (EmbeddedIpv4, `::/96` en
+     * entier, comme le journal d'appels) : ce sont l'IPv4 « compatible »
+     * `0.0.0.0` et `0.0.0.1`, non la clé commune d'un /64 `::/64`. Ni l'une
+     * ni l'autre ne peut être l'adresse d'un client routable ; la boucle locale
+     * ne compte pas pour `unknown`, et ne partage rien avec une IPv6 voisine.
+     */
+    public function testTheUnspecifiedAndLoopbackAddressesFollowTheSharedExtractor(): void
+    {
+        self::assertSame('0.0.0.0', FetchQuotaKey::forAddress('::'));
+        self::assertSame('0.0.0.1', FetchQuotaKey::forAddress('::1'));
+        self::assertNotSame(FetchQuotaKey::forAddress('::1'), FetchQuotaKey::forAddress('::2'));
     }
 
     #[DataProvider('addressesWithTheirOwnKey')]

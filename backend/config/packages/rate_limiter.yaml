@@ -59,9 +59,10 @@ framework:
         # une récupération sort du serveur vers un hôte choisi par un tiers. Clé :
         # l'IP de l'appelant, jamais le `client_id` (un attaquant en changerait à
         # chaque essai) ; **une IPv6 y est comptée par son /64**, une IPv4 entière,
-        # une IPv4 écrite en IPv6 comme cette IPv4 (FetchQuotaKey : qui tient un /64
-        # changerait d'adresse à volonté). Pour ce limiteur seulement. Stocké dans
-        # cache.app, donc en base, sous le verrou partagé entre pods (ADR 0005).
+        # une IPv4 portée par une IPv6 (mappée, NAT64, 6to4, compatible) comme cette
+        # IPv4 (FetchQuotaKey : qui tient un /64 changerait d'adresse à volonté).
+        # Pour ce limiteur seulement. Stocké dans `cache.rate_limiter`, qui repose
+        # sur `cache.app`, donc en base, sous le verrou partagé entre pods (ADR 0005).
         mcp_client_metadata:
             policy: 'sliding_window'
             limit: 10

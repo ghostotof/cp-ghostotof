@@ -39,8 +39,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * La clé est celle de {@see FetchQuotaKey}, non l'adresse brute : **une IPv6
  * est comptée par son /64** (qui tient un /64 change d'adresse à volonté et
  * obtiendrait sinon un quota neuf à chaque essai), une IPv4 reste entière, une
- * IPv4 écrite en IPv6 (`::ffff:a.b.c.d`) compte comme cette IPv4. Pour ce
- * limiteur seulement.
+ * IPv4 portée par une IPv6 (mappée, NAT64, 6to4, compatible) compte comme cette
+ * IPv4. Pour ce limiteur seulement.
  *
  * Hors requête (une commande console, un test sans pile) ou pour une adresse
  * illisible, la clé est `unknown` : tous ces appels partagent alors un seul
