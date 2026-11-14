@@ -17,8 +17,9 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *
  * La reconnaissance des formes d'IPv6 qui portent une IPv4 est celle de
  * {@see EmbeddedIpv4} (`Shared`), partagée avec le quota des documents CIMD ;
- * seule la façon de tronquer chacune reste ici. Trois formes portent une IPv4, qu'un /48 garderait entière ou
- * effacerait :
+ * seule la façon de tronquer chacune reste ici. Quatre formes portent une
+ * IPv4, qu'un /48 garderait entière ou effacerait ; trois ont leur troncature
+ * propre, la quatrième (la compatible) est traitée à part, plus bas :
  *
  *  - **l'IPv4 écrite en IPv6** (`::ffff:203.0.113.42`, une socket double pile) :
  *    elle est rendue en IPv4 (`203.0.113.0`), pour qu'un même /24 n'apparaisse
@@ -37,6 +38,11 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * avant de lui passer l'adresse. Elle tronque en /24, comme une IPv4,
  * l'IPv4 « compatible » (`::203.0.113.42`, dépréciée), qu'un /48 réduisait à
  * `::`.
+ *
+ * Une forme ajoutée à l'extracteur (un nouveau case de
+ * {@see EmbeddedIpv4Form}) doit recevoir ici sa troncature explicite : sans
+ * elle, le `match` de {@see self::tryFrom()} la rangerait avec les IPv6
+ * quelconques, tronquées en /48.
  */
 final readonly class TruncatedIp
 {
