@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\FailSafeAudit;
+use Closure;
 use Error;
+use LogicException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -25,26 +27,9 @@ final class FailSafeAuditTest extends TestCase
 
     private TestHandler $handler;
 
-    /** Le fichier où le `error_log()` de dernier recours est capté (sinon il pollue la sortie de PHPUnit). */
-    private string $errorLogFile;
-
-    private string $previousErrorLog;
-
     protected function setUp(): void
     {
         $this->handler = new TestHandler();
-
-        $file = tempnam(sys_get_temp_dir(), 'failsafe');
-        self::assertNotFalse($file);
-        $this->errorLogFile = $file;
-        $this->previousErrorLog = (string) \ini_get('error_log');
-        ini_set('error_log', $file);
-    }
-
-    protected function tearDown(): void
-    {
-        ini_set('error_log', $this->previousErrorLog);
-        unlink($this->errorLogFile);
     }
 
     /** Le cas nominal : l'écriture a lieu, une fois, et rien n'est journalisé. */
@@ -123,11 +108,13 @@ final class FailSafeAuditTest extends TestCase
             ->willThrowException(new RuntimeException('journal indisponible'));
 
         $ran = false;
-        (new FailSafeAudit($logger))->attempt(static function () use (&$ran): never {
-            $ran = true;
+        $this->captureErrorLog(static function () use ($logger, &$ran): void {
+            (new FailSafeAudit($logger))->attempt(static function () use (&$ran): never {
+                $ran = true;
 
-            throw new RuntimeException('panne de l\'audit');
-        }, self::FAILURE_MESSAGE);
+                throw new RuntimeException('panne de l\'audit');
+            }, self::FAILURE_MESSAGE);
+        });
 
         self::assertTrue($ran, 'L\'écriture a été tentée, et rien n\'a remonté.');
     }
@@ -140,20 +127,48 @@ final class FailSafeAuditTest extends TestCase
      */
     public function testAFailureOfTheLoggerLeavesALastResortTraceWithTheClassOnly(): void
     {
+        // Deux classes distinctes : la trace doit porter celle du JOURNAL, jamais
+        // celle de l'audit (rougit si `$failure::class` remplace `$loggerFailure::class`).
         $logger = self::createStub(LoggerInterface::class);
-        $logger->method('critical')->willThrowException(new RuntimeException('secret du journal'));
+        $logger->method('critical')->willThrowException(new LogicException('secret du journal'));
 
-        (new FailSafeAudit($logger))->attempt(static function (): never {
-            throw new RuntimeException('panne de l\'audit');
-        }, self::FAILURE_MESSAGE);
-
-        $trace = (string) file_get_contents($this->errorLogFile);
+        $trace = $this->captureErrorLog(static function () use ($logger): void {
+            (new FailSafeAudit($logger))->attempt(static function (): never {
+                throw new RuntimeException('panne de l\'audit');
+            }, self::FAILURE_MESSAGE);
+        });
 
         self::assertStringContainsString('Audit failure could not be logged.', $trace);
-        self::assertStringContainsString(RuntimeException::class, $trace);
+        self::assertStringContainsString(LogicException::class, $trace);
+        self::assertStringNotContainsString(RuntimeException::class, $trace);
         self::assertStringNotContainsString('secret du journal', $trace);
         self::assertStringNotContainsString('panne de l\'audit', $trace);
         self::assertStringNotContainsString(self::FAILURE_MESSAGE, $trace);
+    }
+
+    /**
+     * Exécute `$run` avec `error_log` redirigé vers un fichier temporaire (le
+     * `error_log()` de dernier recours pollue sinon la sortie de PHPUnit) et
+     * rend ce qui y a été écrit. Réglage limité aux deux tests qui font tomber
+     * le journal ; l'ini et le fichier sont restaurés quoi qu'il arrive.
+     *
+     * @param Closure(): void $run
+     */
+    private function captureErrorLog(Closure $run): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'failsafe');
+        self::assertNotFalse($file);
+        $previous = (string) \ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+
+            return (string) file_get_contents($file);
+        } finally {
+            ini_set('error_log', $previous);
+            unlink($file);
+        }
     }
 
     private function audit(): FailSafeAudit
