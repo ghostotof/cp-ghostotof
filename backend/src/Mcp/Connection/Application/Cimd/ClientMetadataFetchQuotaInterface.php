@@ -33,13 +33,17 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
  * approbation qui écrit la ligne `cimd`. Il peut en revanche **nommer** un
  * client déjà approuvé (son `client_id` est public) et emprunter cette voie :
  * pendant une panne du document de ce client, rien n'est gardé en cache et
- * chaque essai repart vers son hôte. Le compteur par client borne alors le
- * total de ces récupérations, quel que soit le nombre d'appelants. Il **ne
- * refuse jamais seul** : épuisé par un attaquant (dix demandes simultanées à
- * l'expiration du cache, depuis une seule adresse), il renvoie les appelants
- * suivants au plafond commun, qui accepte tant qu'il a de la place. Fermer la
- * porte à un client connu demande donc de saturer son compteur et le plafond
- * commun ; un client connu n'est jamais plus refusé qu'un inconnu.
+ * chaque essai repart vers son hôte. Le compteur par client **ne borne pas le
+ * total** de ces récupérations : il décide **qui paie**. Les dix premières de
+ * la fenêtre, quel que soit le nombre d'appelants, passent hors du plafond
+ * commun ; les suivantes le paient. Le total des sorties vers les domaines
+ * autorisés est donc borné par le plafond commun plus dix par client approuvé,
+ * par fenêtre de dix minutes. Le compteur **ne refuse jamais seul** : épuisé par
+ * un attaquant (dix demandes simultanées à l'expiration du cache, depuis une
+ * seule adresse), il renvoie les appelants suivants au plafond commun, qui
+ * accepte tant qu'il a de la place. Fermer la porte à un client connu demande
+ * donc de saturer son compteur et le plafond commun ; un client connu n'est
+ * jamais plus refusé qu'un inconnu.
  */
 interface ClientMetadataFetchQuotaInterface
 {

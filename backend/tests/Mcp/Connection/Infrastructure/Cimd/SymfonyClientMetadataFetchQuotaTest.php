@@ -366,6 +366,12 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume(0)->getRemainingTokens(), 'Le compteur du premier client est sous l\'empreinte de son client_id.');
         self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_B)))->consume(0)->getRemainingTokens(), 'Le second client a consommé son propre compteur.');
         self::assertSame(100, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Chaque client avait de la place : le plafond commun n\'est pas touché.');
+
+        // Du côté du premier client : son compteur est plein, l'appel suivant se replie sur le plafond commun.
+        $quota->consumeForKnownClient($this->clientId(self::CLIENT_A));
+
+        self::assertSame(99, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Le compteur plein du premier client a fait payer le plafond commun.');
+        self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_B)))->consume(0)->getRemainingTokens(), 'Le compteur du second client est resté le sien : le repli du premier n\'y a rien pris.');
     }
 
     /**
@@ -453,7 +459,14 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
 
         // Une personne de confiance, d'une autre adresse, nomme le même client : acceptée.
         $this->quotaFor('198.51.100.7')->consumeForKnownClient($this->clientId(self::CLIENT_A));
-        self::addToAssertionCount(1);
+
+        $counter = self::getContainer()->get('limiter.mcp_client_metadata_known_client')->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)));
+        self::assertSame(0, $counter->consume(0)->getRemainingTokens(), 'Le compteur du client a gardé exactement ses dix unités : les refus de l\'attaquant ne viennent pas de lui.');
+        $ceiling = self::getContainer()->get('limiter.mcp_client_metadata_global')->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY);
+        self::assertSame(99, $ceiling->consume(0)->getRemainingTokens(), 'Le plafond a payé l\'appel de la seconde personne, et lui seul : les refus de l\'attaquant n\'y ont rien pris.');
+        $callerQuota = self::getContainer()->get('limiter.mcp_client_metadata');
+        self::assertSame(9, $callerQuota->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens(), 'La seconde personne a payé son propre quota.');
+        self::assertSame(0, $callerQuota->create(FetchQuotaKey::forAddress('203.0.113.9'))->consume(0)->getRemainingTokens(), 'L\'attaquant est refusé par son quota d\'appelant.');
     }
 
     /** Refusé par son propre quota, l'appelant ne consomme rien du compteur du client, qu'il ne peut donc pas user en insistant. */

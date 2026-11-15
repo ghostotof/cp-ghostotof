@@ -72,9 +72,13 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  *
  * Tant que le compteur a de la place, le plafond commun n'est ni regardé ni
  * consommé : dix sources qui saturent le plafond ne ferment pas la porte aux
- * clients déjà approuvés. Le compteur existe parce que n'importe qui peut
- * nommer un `client_id` approuvé : sans lui, un attaquant passerait par cette
- * voie à l'abri du plafond, borné seulement par ses /64. Mais il **ne peut pas
+ * clients déjà approuvés. Le compteur **décide qui paie, il ne borne pas le
+ * total** : n'importe qui peut nommer un `client_id` approuvé, et sans lui un
+ * attaquant passerait par cette voie à l'abri du plafond, borné seulement par
+ * ses /64 ; avec lui, les dix premières récupérations de ce client dans la
+ * fenêtre passent hors du plafond, les suivantes le paient. Le total des sorties
+ * vers les domaines autorisés est donc borné par le plafond commun plus dix par
+ * client approuvé, par fenêtre. Il **ne peut pas
  * devenir une arme contre le client** : l'épuiser (dix demandes simultanées à
  * l'expiration du cache, depuis une seule adresse) renvoie les suivants au
  * plafond commun, qui accepte tant qu'il a de la place. Fermer la porte à un

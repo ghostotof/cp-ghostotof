@@ -242,22 +242,45 @@ final class CimdClientResolverTest extends TestCase
         self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $quota->lastKnownClientId()->value());
     }
 
-    /** Le refus du compteur d'un client connu est le même refus `Throttled`, avant toute sortie réseau. */
-    public function testAKnownClientRefusedByItsCounterIsThrottledWithoutFetching(): void
+    /**
+     * Un client connu dont le compteur est plein n'est pas refusé pour autant : la
+     * voie se replie sur le plafond commun, comme en production. Tant que le
+     * plafond a de la place, la récupération a lieu, payée par le plafond.
+     */
+    public function testAKnownClientWhoseCounterIsFullFallsBackOnTheCeiling(): void
+    {
+        $quota = new CountingFetchQuota(null, 0);
+        $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
+
+        new CimdClientResolver(
+            new InMemoryClientMetadataStore(),
+            $quota,
+            $fetcher,
+            $this->claudeDomains(),
+            new McpClientRepositoryFake($this->discoveredClient(), null),
+        )->resolve($this->claudeClientId());
+
+        self::assertSame(1, $fetcher->calls(), 'Le plafond a de la place : la récupération a lieu.');
+        self::assertSame(1, $quota->consumed(), 'Le repli est payé par le plafond commun.');
+        self::assertSame(0, $quota->consumedForKnownClient(), 'Un compteur plein ne consomme rien de plus.');
+    }
+
+    /** Compteur du client plein et plafond plein : le même refus `Throttled`, avant toute sortie réseau. */
+    public function testAKnownClientRefusedByTheCounterAndTheCeilingIsThrottledWithoutFetching(): void
     {
         $fetcher = ScriptedMetadataFetcher::serving(ClaudeCodeMetadata::json());
         $store = new InMemoryClientMetadataStore();
 
         $refusal = $this->refusalOf(new CimdClientResolver(
             $store,
-            new CountingFetchQuota(null, 0),
+            new CountingFetchQuota(0, 0),
             $fetcher,
             $this->claudeDomains(),
             new McpClientRepositoryFake($this->discoveredClient(), null),
         ));
 
         self::assertSame(ClientMetadataRefusal::Throttled, $refusal->refusal);
-        self::assertSame(0, $fetcher->calls(), 'Le compteur du client refuse avant toute sortie réseau.');
+        self::assertSame(0, $fetcher->calls(), 'Le plafond refuse avant toute sortie réseau.');
         self::assertSame([], $store->saves());
     }
 

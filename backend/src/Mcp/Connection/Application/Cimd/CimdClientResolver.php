@@ -52,10 +52,12 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
  *    approuvés. Un attaquant ne peut pas *rendre* un client connu : il lui
  *    faudrait un document valide sur un domaine de la liste et l'approbation
  *    d'une personne du palier de confiance, qui écrit la ligne. Il peut en
- *    revanche *nommer* un client approuvé : le compteur par client l'y borne,
- *    quels que soient ses appelants, sans jamais le refuser seul : compteur
- *    plein, la voie se replie sur le plafond commun, comme pour un client
- *    inconnu. Aucune lecture de la base pour un document en cache ni pour un
+ *    revanche *nommer* un client approuvé : le compteur par client décide
+ *    alors qui paie, il ne borne pas le total (ses dix premières
+ *    récupérations de la fenêtre passent hors du plafond commun, quels que
+ *    soient les appelants, les suivantes le paient) et ne refuse jamais
+ *    seul : compteur plein, la voie se replie sur le plafond commun, comme
+ *    pour un client inconnu. Aucune lecture de la base pour un document en cache ni pour un
  *    domaine hors liste.
  *
  * Elle ne tient aucune transaction : le quota écrit en base, et le validateur

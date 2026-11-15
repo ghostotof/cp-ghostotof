@@ -11,12 +11,14 @@ use DateTimeImmutable;
 
 /**
  * Doublure du quota de récupération (#651) : compte les unités consommées, par
- * voie (client inconnu, client connu), et refuse sur chaque voie à partir de la
- * `limit`-ième + 1 (`$limit` pour les clients inconnus, `$knownClientLimit` pour
- * les clients connus ; jamais, par défaut). Un refus ne consomme rien. Simplification
- * de test : le vrai quota ne refuse jamais sur le seul compteur d'un client connu
- * (il se replie sur le plafond commun), la limite d'un client connu simule ici
- * le refus final de la voie.
+ * voie (client inconnu, client connu). La voie des clients inconnus refuse à
+ * partir de la `limit`-ième + 1 (`$limit`, jamais par défaut). La voie des
+ * clients connus se comporte comme en production : tant que son compteur
+ * (`$knownClientLimit`, jamais plein par défaut) a de la place, elle le consomme
+ * et ne touche pas au plafond ; une fois plein, elle se replie sur la voie des
+ * clients inconnus (`consume()`), qui seule peut alors refuser, sans que le
+ * compteur du client compte une unité de plus. Un refus ne consomme rien.
+ * Simplification de test : le quota de l'appelant n'est pas modélisé ici.
  */
 final class CountingFetchQuota implements ClientMetadataFetchQuotaInterface
 {
@@ -43,11 +45,14 @@ final class CountingFetchQuota implements ClientMetadataFetchQuotaInterface
 
     public function consumeForKnownClient(CimdClientId $clientId): void
     {
-        // Mémorisé avant le refus : un test lit l'identifiant que la voie a reçu, refusée ou non.
+        // Mémorisé avant tout refus : un test lit l'identifiant que la voie a reçu, refusée ou non.
         $this->lastKnownClientId = $clientId;
 
         if (null !== $this->knownClientLimit && $this->consumedForKnownClient >= $this->knownClientLimit) {
-            throw new ClientMetadataFetchRateLimitExceededException(new DateTimeImmutable('2030-01-01 00:00:00 UTC'));
+            // Compteur plein : repli sur le plafond commun, qui décide seul du refus.
+            $this->consume();
+
+            return;
         }
 
         ++$this->consumedForKnownClient;

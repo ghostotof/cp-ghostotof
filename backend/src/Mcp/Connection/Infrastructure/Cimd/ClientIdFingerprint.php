@@ -26,8 +26,13 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
  * garde la valeur écrite en dur). Une classe dédiée, sur le modèle de
  * {@see FetchQuotaKey}, plutôt que deux `hash()` recopiés.
  */
-final readonly class ClientIdFingerprint
+final class ClientIdFingerprint
 {
+    /** Classe utilitaire statique : jamais instanciée. */
+    private function __construct()
+    {
+    }
+
     public static function of(CimdClientId $clientId): string
     {
         return hash('sha256', $clientId->value());
