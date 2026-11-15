@@ -25,9 +25,26 @@ final class FailSafeAuditTest extends TestCase
 
     private TestHandler $handler;
 
+    /** Le fichier où le `error_log()` de dernier recours est capté (sinon il pollue la sortie de PHPUnit). */
+    private string $errorLogFile;
+
+    private string $previousErrorLog;
+
     protected function setUp(): void
     {
         $this->handler = new TestHandler();
+
+        $file = tempnam(sys_get_temp_dir(), 'failsafe');
+        self::assertNotFalse($file);
+        $this->errorLogFile = $file;
+        $this->previousErrorLog = (string) \ini_get('error_log');
+        ini_set('error_log', $file);
+    }
+
+    protected function tearDown(): void
+    {
+        ini_set('error_log', $this->previousErrorLog);
+        unlink($this->errorLogFile);
     }
 
     /** Le cas nominal : l'écriture a lieu, une fois, et rien n'est journalisé. */
@@ -110,6 +127,30 @@ final class FailSafeAuditTest extends TestCase
         }, self::FAILURE_MESSAGE);
 
         self::assertTrue($ran, 'L\'écriture a été tentée, et rien n\'a remonté.');
+    }
+
+    /**
+     * Dernier recours : le journal en panne ne laisse pas l'audit manqué sans
+     * aucune trace. Un `error_log()` sans contexte : un message constant et la
+     * classe de la panne du journal, jamais son message (il peut porter des
+     * données).
+     */
+    public function testAFailureOfTheLoggerLeavesALastResortTraceWithTheClassOnly(): void
+    {
+        $logger = self::createStub(LoggerInterface::class);
+        $logger->method('critical')->willThrowException(new RuntimeException('secret du journal'));
+
+        (new FailSafeAudit($logger))->attempt(static function (): never {
+            throw new RuntimeException('panne de l\'audit');
+        }, self::FAILURE_MESSAGE);
+
+        $trace = (string) file_get_contents($this->errorLogFile);
+
+        self::assertStringContainsString('Audit failure could not be logged.', $trace);
+        self::assertStringContainsString(RuntimeException::class, $trace);
+        self::assertStringNotContainsString('secret du journal', $trace);
+        self::assertStringNotContainsString('panne de l\'audit', $trace);
+        self::assertStringNotContainsString(self::FAILURE_MESSAGE, $trace);
     }
 
     private function audit(): FailSafeAudit

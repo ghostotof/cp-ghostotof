@@ -22,7 +22,8 @@ use Throwable;
  * constante de l'appelant, qui nomme ce qui n'a pas été audité.
  *
  * La panne du journal lui-même est avalée aussi : l'audit ne change jamais
- * l'issue, même quand il ne peut plus dire qu'il a échoué.
+ * l'issue, même quand il ne peut plus dire qu'il a échoué (elle laisse alors
+ * un `error_log()` de dernier recours, la classe seule).
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
@@ -46,10 +47,16 @@ final readonly class FailSafeAudit
         } catch (Throwable $failure) {
             try {
                 $this->logger->critical($failureMessage, ['exceptionClass' => $failure::class]);
-            } catch (Throwable) {
-                // Le journal lui-même en panne : rien de plus à tenter, et le
-                // refus OAuth reste celui que l'appelant va rendre (400/401),
-                // jamais un 500 né de l'audit.
+            } catch (Throwable $loggerFailure) {
+                // Le journal lui-même en panne : le refus OAuth reste celui que
+                // l'appelant va rendre (400/401), jamais un 500 né de l'audit.
+                // Ce chemin vaut pour TOUS les appelants (point d'autorisation,
+                // endpoint de jeton, purge `app:mcp:purge`). Dernier recours,
+                // sans contexte : un message constant et la classe de la panne
+                // du journal (pas son message, qui peut porter des données).
+                // `error_log()` écrit sur le flux d'erreurs de PHP, sans passer
+                // par le journal défaillant ; sa propre panne est sans suite.
+                error_log('Audit failure could not be logged. Logger failure: '.$loggerFailure::class);
             }
         }
     }
