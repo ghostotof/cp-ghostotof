@@ -118,10 +118,18 @@ interface SecurityAuditLoggerInterface
      * Issue #651 : le document de métadonnées d'un client MCP (CIMD) n'a pas été
      * récupéré ou a été refusé. Aucun compte n'est en cause : l'acteur est
      * anonyme par défaut. Le contexte porte l'hôte, tel que
-     * `CimdClientId::host()` le rend (alphabet `[a-z0-9.-]`, déjà dans la liste
-     * des valeurs autorisées), et la cause, un slug fixe ; ni l'URL, ni le
-     * `client_id`, ni le corps reçu n'y entrent. Deux chaînes simples : le
-     * contexte Security ne dépend d'aucun type de `Mcp`.
+     * `CimdClientId::host()` le rend (alphabet `[a-z0-9.-]`), et la cause, un
+     * slug fixe ; ni l'URL, ni le `client_id`, ni le corps reçu n'y entrent.
+     * Deux chaînes simples : le contexte Security ne dépend d'aucun type de
+     * `Mcp`.
+     *
+     * Contrat de l'appelant : seul un hôte déjà admis par la liste des domaines
+     * autorisés de `Mcp/Connection` (`AllowedClientDomains`) est tracé. Un
+     * domaine hors liste ne l'est jamais, même refusé en défense en profondeur
+     * par le résolveur ou le récupérateur : il ne déclenche aucune récupération
+     * ni aucun quota, et le tracer donnerait à un anonyme une écriture d'audit
+     * par requête, choisie par lui et bornée par nginx seul (plan T12, D-G).
+     * Cette méthode ne vérifie rien : la garde est chez l'appelant.
      */
     public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
 
