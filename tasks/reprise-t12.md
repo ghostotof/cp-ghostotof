@@ -49,9 +49,13 @@
   - **M2** (côté résumé) : port DDD — une interface d'`Application` expose le `McpClient` jugé, plus
     d'import d'`Infrastructure` dans le résumé ; `registration()` et domaine dérivés une seule fois ;
     accord des libellés des fournisseurs (« d'une octet nul »).
-- **Prochaine action** : M1, puis M2, puis relecture `diff a9a7671f...HEAD (branche
+- **M1 faite** : `e4e62b47` (sonnet/high), évènement `mcp-client-row-not-admitted` (hôte seul, via
+  `FailSafeAudit`), témoin positif et variante sans `code_challenge`, commentaire du pont corrigé ;
+  preuve contrôlée par le fil principal (PHPUnit `tests/Mcp/Connection tests/Security` 2554 tests OK,
+  PHPStan vert).
+- **Prochaine action** : M2 (+ la phrase « 30 since S4 » périmée de la règle d'audit, réel 32), puis relecture `diff a9a7671f...HEAD (branche
   feature/spec-0007-t12-cimd)`, puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `a9a7671f`, puis ce commit d'état.
+- `HEAD` au 2026-11-15 : `e4e62b47`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
