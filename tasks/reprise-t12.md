@@ -82,14 +82,28 @@
   `CimdAuthorizationTest::testACimdClientExchangesItsCodeAtTheTokenEndpointFromItsStoredRow` (mutation rouge).
   Preuve contrôlée : `tests/Mcp/Connection` 1396 tests OK, suite complète 6401 OK, PHPStan/Rector verts,
   commits signés Opus 5.5, arbre propre.
-- **Prochaine action** : relecture `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit),
-  puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `b00263f3`, puis ce commit d'état.
+- **Relecture de la série n° 3** (`/code-review medium` + audit sécurité opus/high, au point `121415fe`) :
+  aucun critique/haut/moyen, boucle close. Micro-série n° 4 retenue par l'utilisateur (les quatre groupes) :
+  - **agent A (code)** : H1 l'audit `mcp-client-metadata-refused` de `CimdClientAdmission` passe par
+    `FailSafeAudit::attempt()` (une panne d'audit ne fait plus un 500), avec test ; F5/CR3 `error_log()` de
+    dernier recours dans `FailSafeAudit` quand le logger lui-même lève (message constant + classe, sans
+    contexte) ; CR4 `FailSafeAuditTest` : mock `expects(once())->method('critical')` sur le logger qui lève ;
+  - **agent B (textes + test PKCE)**, après A : F1 deux déclencheurs (divergence du `client_id`, ou ligne
+    `cimd` à identifiant non CIMD → `unreadable`) dans l'interface et `security-authentication-audit.md` ;
+    F2/CR1 docblocks « domaine retiré » (`LoopbackAwareAuthCodeGrant::getClientEntityOrFail()`, test
+    `testAStoredCimdRowTheAdmissionDidNotVouchForIsNeverServed`) ; F3 « impossible » du garde ; F4
+    `mcp-oauth-audits.md` (panne du logger avalée + trace de dernier recours, compte des appelants) ; F8
+    `McpClient::cimdHost()` au lieu de `CimdClientId::host()` ; F7/CR2 docblock décalé de `McpClientTest` ;
+    F6/CR5 test PKCE fusionné dans `testAStaleCimdRowIsRefusedWithoutRedirectOnThePkceRefusalPathToo`
+    (`invalid_client`, pas de redirection, audit une fois).
+- **Prochaine action** : agent A de la micro-série n° 4 (sonnet/high), puis agent B, puis relecture
+  `diff 121415fe...HEAD` (demander pour l'audit), puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `121415fe`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : micro-séries M1 + M2, au point `0d90fea3` (série `a9a7671f...0d90fea3`).
-- Prochaine série : `diff 0d90fea3...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 3, au point `121415fe` (série `0d90fea3...121415fe`).
+- Prochaine série : `diff 121415fe...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -169,6 +183,13 @@
 - Relecture de M1 + M2, écrits : le port `JudgedClientInterface` ne retire qu'une partie de la dépendance
   à league (le résumé lit encore `AuthorizationRequest`, I3) ; repli `Preregistered` d'un client non jugé
   (fail-open de libellé, inatteignable) ; altitude du refus (grant plutôt que validateur), rejetée.
+- Relecture de la série n° 3, écrits : CR6 le test `unreadable` pose `clientId` par réflexion (fragile si
+  la propriété devient `readonly`) ; CR7 `McpClient::cimdHost()` répond aussi pour une ligne
+  `preregistered` à forme CIMD (chaque appelant filtre `registration()`, API fragile) ; CR8 / F9 l'acteur
+  `userId` à la revalidation du consentement et le cas « vrai » de l'identité côté `ConsentService` sans
+  témoin ; CR9 l'identité `===` tenue par convention (commentaire), pas par un marqueur ; CR10 trois
+  commits de l'agent A signés « Sonnet 5.5 » (`81c756de`, `f7d4f28f`, `98c0e37a`), pas de réécriture sans
+  accord ; F10 fenêtre théorique entre les deux lectures de la ligne (refus, rien ne s'ouvre).
 
 ## Interdits des briefs
 
