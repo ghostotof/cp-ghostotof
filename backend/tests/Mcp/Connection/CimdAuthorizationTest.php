@@ -19,6 +19,8 @@ use App\Tests\Support\ReadsSecurityAuditLog;
 use Closure;
 use Generator;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -251,6 +253,44 @@ final class CimdAuthorizationTest extends WebTestCase
     }
 
     /**
+     * Une ligne `cimd` stockée dont l'identifiant est valable pour
+     * McpClientId::fromString() mais hors de la forme CIMD (écrite à la main, ou
+     * avant une règle plus stricte) : la vraie admission rend `null` (l'identifiant
+     * n'est pas de forme CIMD), league lit pourtant la ligne, et le garde la refuse
+     * en `invalid_client`, sans redirection, avec un seul audit dont l'hôte est
+     * `unreadable`. Rien n'est simulé : ni l'admission, ni le dépôt, ni le journal.
+     *
+     * @param non-empty-string $storedClientId
+     */
+    #[DataProvider('clientIdsOutsideTheCimdForm')]
+    public function testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable(string $storedClientId): void
+    {
+        $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
+        // Le résolveur se remplace avant que l'admission, qui en dépend, soit instanciée.
+        $this->resolver();
+        self::assertNull(
+            self::getContainer()->get(CimdClientAdmissionInterface::class)->admit($storedClientId),
+            'Précondition : la vraie admission ne reconnaît pas cet identifiant comme un identifiant CIMD.',
+        );
+        $this->aStoredCimdRowWhoseClientIdIs($storedClientId);
+
+        $response = $this->authorize($this->cimdParameters(['client_id' => $storedClientId]));
+
+        $this->assertInvalidClient($response);
+        self::assertSame(0, $this->outboundRequests);
+        self::assertSame('unreadable', self::singleSecurityAuditEvent('mcp-client-row-not-admitted')['clientHost']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function clientIdsOutsideTheCimdForm(): iterable
+    {
+        yield 'sans chemin' => ['https://claude.ai'];
+        yield 'avec un port' => ['https://claude.ai:8443/oauth/client.json'];
+    }
+
+    /**
      * La décision du consentement revalide la demande par le même chemin
      * (ConsentService::decide()) : un `client_id` entouré de blancs y est
      * refusé de même, rien n'est accordé ni écrit, la ligne périmée n'est pas servie.
@@ -393,6 +433,21 @@ final class CimdAuthorizationTest extends WebTestCase
     {
         $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
         $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new MockClock('2026-11-01 10:00:00')->now());
+
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($row);
+    }
+
+    /**
+     * Une ligne `cimd` dont l'identifiant a été réécrit hors de la forme CIMD :
+     * `discovered()` n'accepte qu'un CimdClientId, la réflexion pose ce qu'une
+     * écriture à la main aurait laissé en base. La ligne passe ensuite par le
+     * vrai dépôt.
+     */
+    private function aStoredCimdRowWhoseClientIdIs(string $storedClientId): void
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
+        $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new MockClock('2026-11-01 10:00:00')->now());
+        new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, $storedClientId);
 
         self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($row);
     }

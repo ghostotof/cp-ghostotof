@@ -281,6 +281,8 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * league, ou une ligne `cimd` dont l'identifiant n'a plus la forme CIMD
      * (`admit()` rend `null`). Un domaine retiré de la liste n'y parvient pas :
      * `admit()` lève `DomainNotAllowed` avant league (D-G).
+     *
+     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
      */
     public function testAStoredCimdRowTheAdmissionDidNotVouchForIsNeverServed(): void
     {
@@ -328,6 +330,8 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * redirigé vers une redirection que rien n'a relue. L'audit
      * `mcp-client-row-not-admitted` est écrit une seule fois, avec l'hôte
      * seul : c'est l'unique ligne d'audit, celle du garde.
+     *
+     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
      */
     public function testAStaleCimdRowIsRefusedWithoutRedirectOnThePkceRefusalPathToo(): void
     {
@@ -355,6 +359,8 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * Le refus du garde est tracé : l'état qu'il signale (une ligne `cimd`
      * atteinte sans admission) relève de la défense en profondeur. L'hôte seul,
      * jamais le `client_id` brut.
+     *
+     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
      */
     public function testTheRefusalOfAStoredCimdRowIsAudited(): void
     {
