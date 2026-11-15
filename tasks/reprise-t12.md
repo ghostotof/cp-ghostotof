@@ -181,7 +181,14 @@
   `backend/`, 7 sites vérifiés par le fil principal ; catch aligné ; fd 2 = tube vers le maître, bloqué
   borné par `request_terminate_timeout = 65s`) ; CimdClientAdmission (classe de la panne du journal) ;
   LoopbackAwareAuthCodeGrantTest (`with()` relu sous `once()` seulement, `Matcher::verify()` l. 245-257).
-- **Prochaine action** : C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
+- **C3 fait** (`b66afa23` constante `EXPIRED_NOT_AUDITED`, `898021ce` `@see` courts, `8b46c42a`
+  `ClaudeCodeMetadata::storedRowWhoseClientIdIs()` partagé + `array{non-empty-string}` ; Sonnet 5.5 ;
+  mutation du helper : 2 + 1 tests rouges). **Point « résolveur inutile » infondé, non fait** : l'appel
+  `$this->resolver()` remplace le service avant l'instanciation de l'admission par la précondition
+  `admit()` ; retiré, 2 tests en erreur (`TestContainer.php:86`). Commentaire juste, gardé. Écrit, non
+  corrigé : `cimdRow()` (test du grant) et `aDiscoveredRowFromAnEarlierAuthorization()` reconstruisent
+  encore la même ligne valide.
+- **Série n° 6 close.** **Prochaine action** : relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
