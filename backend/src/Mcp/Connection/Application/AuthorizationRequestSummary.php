@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
-use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
 
@@ -70,7 +69,7 @@ final readonly class AuthorizationRequestSummary
             return null;
         }
 
-        return CimdClientId::tryFrom($judged->getClientId())?->host();
+        return $judged->cimdHost();
     }
 
     /**

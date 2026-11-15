@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
@@ -150,6 +151,17 @@ class McpClient
     public function registration(): ClientRegistration
     {
         return $this->registration;
+    }
+
+    /**
+     * L'hôte de l'identifiant quand celui-ci a la forme d'un identifiant CIMD
+     * ({@see CimdClientId}), `null` sinon (identifiant pré-enregistré
+     * ordinaire, ou ligne écrite à la main que la forme ne lit plus). Une seule
+     * lecture de l'identifiant, pour l'audit et pour le résumé de consentement.
+     */
+    public function cimdHost(): ?string
+    {
+        return CimdClientId::tryFrom($this->clientId)?->host();
     }
 
     /**

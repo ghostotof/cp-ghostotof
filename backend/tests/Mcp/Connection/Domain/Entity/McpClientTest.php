@@ -71,6 +71,29 @@ final class McpClientTest extends TestCase
     }
 
     /** Une redirection répétée à l'identique n'est enregistrée qu'une fois, dans l'ordre reçu. */
+    /** Un client dont l'identifiant a la forme CIMD donne l'hôte de cet identifiant. */
+    public function testACimdShapedClientIdExposesItsHost(): void
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($clientId);
+        $client = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new DateTimeImmutable());
+
+        self::assertSame('claude.ai', $client->cimdHost());
+    }
+
+    /** Un identifiant ordinaire (client pré-enregistré) n'a pas de forme CIMD : pas d'hôte. */
+    public function testAnOrdinaryClientIdHasNoCimdHost(): void
+    {
+        $client = McpClient::register(
+            McpClientId::fromString('claude-desktop'),
+            McpClientName::fromString('Client de test'),
+            [RedirectUri::fromString('https://app.example/cb')],
+            new DateTimeImmutable(),
+        );
+
+        self::assertNull($client->cimdHost());
+    }
+
     public function testARepeatedRedirectIsKeptOnce(): void
     {
         $client = $this->client(['http://localhost/callback', 'https://app.example/cb', 'http://localhost/callback']);

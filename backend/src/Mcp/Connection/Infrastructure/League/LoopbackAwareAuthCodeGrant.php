@@ -8,7 +8,6 @@ use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
-use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use DateInterval;
@@ -148,7 +147,7 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
                 && ClientRegistration::Cimd === $client->mcpClient()->registration()) {
                 // Un état que la conception dit impossible : tracé, l'hôte de la
                 // ligne seul. Une panne de l'audit ne change pas le refus.
-                $host = CimdClientId::tryFrom($client->mcpClient()->getClientId())?->host() ?? 'unreadable';
+                $host = $client->mcpClient()->cimdHost() ?? 'unreadable';
                 $this->failSafeAudit->attempt(
                     fn () => $this->audit->mcpClientRowNotAdmitted($host),
                     'Audit of a refused stored CIMD client row failed.',
