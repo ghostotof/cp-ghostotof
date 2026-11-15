@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
-use App\Mcp\Connection\Application\AuthorizationRequestSummary;
 use App\Mcp\Connection\Application\AuthorizationRequestValidator;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
@@ -16,14 +15,12 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
-use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
-use League\OAuth2\Server\RequestTypes\AuthorizationRequest;
 use LogicException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -205,6 +202,12 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
         yield 'client suivi d\'une espace' => [['client_id' => self::CLIENT_ID.' ']];
         yield 'client suivi d\'un saut de ligne' => [['client_id' => self::CLIENT_ID."\n"]];
         yield 'client déclaré précédé d\'une espace' => [['client_id' => ' '.ClaudeCodeMetadata::CLIENT_ID]];
+        // Les autres blancs que trim() rogne : tabulation, retour chariot, NUL
+        // et tabulation verticale, en tête et en queue.
+        foreach (["\t" => 'tabulation', "\r" => 'retour chariot', "\0" => 'octet nul', "\x0B" => 'tabulation verticale'] as $blank => $name) {
+            yield 'client précédé d\'une '.$name => [['client_id' => $blank.self::CLIENT_ID]];
+            yield 'client suivi d\'une '.$name => [['client_id' => self::CLIENT_ID.$blank]];
+        }
         yield 'client_id en tableau' => [['client_id' => [self::CLIENT_ID]]];
         yield 'state trop long' => [['state' => str_repeat('s', 1025)]];
     }
@@ -237,7 +240,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
         $summary = $this->validatorWith($admission)->validate($this->request());
 
         self::assertSame(self::CLIENT_ID, $summary->clientId);
-        self::assertNull($summary->discoveredClient);
+        self::assertNull($summary->judgedDiscoveredClient());
         self::assertSame(ClientRegistration::Preregistered, $summary->registration());
         self::assertNull($summary->verifiedDomain(), 'Un client pré-enregistré n\'a pas de domaine vérifié.');
     }
@@ -257,7 +260,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
 
         self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $summary->clientId);
         self::assertSame($client->getName(), $summary->clientName);
-        self::assertSame($client, $summary->discoveredClient);
+        self::assertSame($client, $summary->judgedDiscoveredClient());
         self::assertSame(ClientRegistration::Cimd, $summary->registration());
         self::assertSame('claude.ai', $summary->verifiedDomain());
         self::assertNull(
@@ -267,30 +270,25 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     }
 
     /**
-     * Le résumé se tire du client que league a jugé, jamais du seul client
-     * déclaré qu'on lui joint : un client déclaré d'un autre `client_id` que
-     * celui de la demande jugée (la règle de
-     * LoopbackAwareAuthCodeGrant::getClientEntityOrFail()) ne colore ni
-     * l'origine de l'identité, ni le domaine que la page affichera.
+     * Une ligne `cimd` laissée par une autorisation antérieure n'est jamais
+     * servie au point d'autorisation sans que l'admission ait déposé le client
+     * déclaré (domaine retiré de la liste, document jamais relu) : le grant
+     * refuse `invalid_client`, sans redirection, quel que soit le chemin qui
+     * a mené league à cette ligne.
      */
-    public function testADiscoveredClientOfAnotherClientIdNeverColoursTheSummary(): void
+    public function testAStoredCimdRowTheAdmissionDidNotVouchForIsNeverServed(): void
     {
-        $judged = new AuthorizationRequest();
-        $judged->setClient(new OAuthClient(RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback'])));
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($this->discoveredClient());
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn(null);
 
-        $summary = new AuthorizationRequestSummary(
-            clientId: self::CLIENT_ID,
-            clientName: 'Client de test',
-            redirectUri: 'http://localhost/callback',
-            redirectHost: 'localhost',
-            scope: 'nominative:read',
-            resource: $this->resource(),
-            authorizationRequest: $judged,
-            discoveredClient: $this->discoveredClient(),
-        );
-
-        self::assertSame(ClientRegistration::Preregistered, $summary->registration());
-        self::assertNull($summary->verifiedDomain());
+        try {
+            $this->validatorWith($admission)->validate($this->request(['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => 'http://localhost:53124/callback']));
+            self::fail('La ligne périmée aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_client', $exception->getErrorType());
+            self::assertFalse($exception->hasRedirect());
+        }
     }
 
     /**

@@ -228,12 +228,22 @@ final class CimdAuthorizationTest extends WebTestCase
         $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
         $this->aDiscoveredRowFromAnEarlierAuthorization();
 
-        foreach ([' '.ClaudeCodeMetadata::CLIENT_ID, ClaudeCodeMetadata::CLIENT_ID.' ', ClaudeCodeMetadata::CLIENT_ID."\n"] as $padded) {
-            $response = $this->authorize($this->cimdParameters(['client_id' => $padded]));
+        // Chaque blanc que trim() rogne, en tête et en queue ; `\0` part tel quel
+        // (%00) dans la requête et doit arriver comme tel (sinon PHP l'aurait
+        // retiré, et la demande, valable, redirigerait vers le consentement).
+        $padded = [];
+        foreach ([' ', "\t", "\n", "\r", "\0", "\x0B"] as $blank) {
+            $padded[] = $blank.ClaudeCodeMetadata::CLIENT_ID;
+            $padded[] = ClaudeCodeMetadata::CLIENT_ID.$blank;
+        }
 
-            self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode(), $padded);
+        foreach ($padded as $clientId) {
+            $label = bin2hex($clientId);
+            $response = $this->authorize($this->cimdParameters(['client_id' => $clientId]));
+
+            self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode(), $label);
             self::assertNull($response->headers->get('Location'), 'Un refus d\'avant league n\'est jamais une redirection.');
-            self::assertSame('invalid_request', $this->json($response)['error'], $padded);
+            self::assertSame('invalid_request', $this->json($response)['error'], $label);
         }
 
         self::assertSame(0, $this->outboundRequests);
@@ -257,7 +267,37 @@ final class CimdAuthorizationTest extends WebTestCase
         self::assertSame('/errors/authorization-request-rejected', $this->json($response)['type'] ?? null);
         self::assertNull($response->headers->get('Location'));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        // Refusé avant l'admission : aucune récupération du document.
         self::assertSame(0, $this->outboundRequests);
+
+        // Témoin : la même décision, au `client_id` exact, est accordée (le
+        // document est alors récupéré). Seul le blanc du `client_id` a donc
+        // fait refuser la première, rien d'autre dans la demande.
+        $control = $this->decide(approved: true, overrides: ['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => self::CIMD_REDIRECT]);
+
+        self::assertSame(Response::HTTP_OK, $control->getStatusCode(), substr((string) $control->getContent(), 0, 300));
+        self::assertSame(1, $this->outboundRequests);
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+    }
+
+    /**
+     * Le point de jeton n'a aucune admission : l'échange du code d'un client
+     * `cimd` lit la ligne en base, que le consentement a créée. La garde du
+     * point d'autorisation ne doit pas l'atteindre.
+     */
+    public function testACimdClientExchangesItsCodeAtTheTokenEndpointFromItsStoredRow(): void
+    {
+        $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
+        $this->aDiscoveredRowFromAnEarlierAuthorization();
+        $overrides = ['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => self::CIMD_REDIRECT];
+
+        $code = $this->grantedCode($overrides);
+        $outbound = $this->outboundRequests;
+        $response = $this->exchange($code, $overrides);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        self::assertArrayHasKey('access_token', $this->json($response));
+        self::assertSame($outbound, $this->outboundRequests, 'Le point de jeton ne récupère aucun document.');
     }
 
     public function testThePreregisteredFlowMakesNoOutboundCall(): void

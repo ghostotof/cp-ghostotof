@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -40,10 +41,23 @@ use Psr\Http\Message\ServerRequestInterface;
 final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
 {
     /**
+     * L'attribut que validateAuthorizationRequest() pose sur la requête qu'il
+     * donne à league : « ce client se juge au point d'autorisation ». Un
+     * attribut de la requête, pas un état du grant (un service partagé).
+     * Il ne vient jamais du client : le pont PSR-7 ne copie que des chaînes de
+     * routage, et ce grant le pose lui-même, après elles.
+     */
+    private const string AUTHORIZATION_POINT_ATTRIBUTE = 'mcp.authorization_point';
+
+    /**
      * @throws OAuthServerException `invalid_request` redirigé quand PKCE n'est pas `S256` ; les refus de league sinon
      */
     public function validateAuthorizationRequest(ServerRequestInterface $request): AuthorizationRequestInterface
     {
+        // À partir d'ici, tout client lu par league l'est au point
+        // d'autorisation : getClientEntityOrFail() y exige l'admission d'un
+        // client `cimd`.
+        $request = $request->withAttribute(self::AUTHORIZATION_POINT_ATTRIBUTE, true);
         $refusal = $this->pkceRefusal($request);
 
         if (null === $refusal) {
@@ -75,17 +89,41 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * dépose un, et l'identifiant comparé empêche qu'il serve pour un autre
      * `client_id` que celui qu'il a jugé.
      *
-     * **L'échange du code**, au point d'accès des jetons, n'a aucun attribut :
-     * il lit toujours la ligne en base, que le consentement a créée.
+     * **Au point d'autorisation seulement, une ligne `cimd` n'est jamais servie
+     * seule.** Quand league lit la ligne en base (pas de client déclaré
+     * admis pour ce `client_id`) et que cette ligne est un client déclaré
+     * (ClientRegistration::Cimd) — laissée par une autorisation antérieure —,
+     * le refus est `invalid_client`, sans redirection, comme celui de
+     * l'admission : le domaine a pu quitter la liste, le document changer, et
+     * rien ne les a relus. Cela ferme, à la racine, tout chemin (un
+     * `client_id` que l'admission ne reconnaît pas, un blanc qu'un contrôle
+     * aurait laissé passer) par lequel league lirait la ligne sans admission.
      *
-     * @throws OAuthServerException `invalid_client` (client inconnu), `unauthorized_client` (grant non pris en charge)
+     * **L'échange du code**, au point d'accès des jetons, n'a aucun attribut ni
+     * admission (AbstractGrant::validateClient() l'appelle sans passer par
+     * validateAuthorizationRequest()) : il lit toujours la ligne en base, que
+     * le consentement a créée, et n'est pas gardé. La distinction tient à
+     * l'attribut AUTHORIZATION_POINT_ATTRIBUTE, posé par le seul point
+     * d'autorisation.
+     *
+     * @throws OAuthServerException `invalid_client` (client inconnu, ou ligne `cimd` non admise au point d'autorisation), `unauthorized_client` (grant non pris en charge)
      */
     protected function getClientEntityOrFail(string $clientId, ServerRequestInterface $request): ClientEntityInterface
     {
         $discovered = $request->getAttribute(CimdClientAdmissionInterface::REQUEST_ATTRIBUTE);
 
         if (!$discovered instanceof McpClient || $discovered->getClientId() !== $clientId) {
-            return parent::getClientEntityOrFail($clientId, $request);
+            $client = parent::getClientEntityOrFail($clientId, $request);
+
+            if (true === $request->getAttribute(self::AUTHORIZATION_POINT_ATTRIBUTE)
+                && $client instanceof OAuthClient
+                && ClientRegistration::Cimd === $client->mcpClient()->registration()) {
+                $this->getEmitter()->emit(new RequestEvent(RequestEvent::CLIENT_AUTHENTICATION_FAILED, $request));
+
+                throw OAuthServerException::invalidClient($request);
+            }
+
+            return $client;
         }
 
         $client = new OAuthClient($discovered);
