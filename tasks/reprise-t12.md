@@ -1,0 +1,42 @@
+# T12 (#651) — Reprise
+
+État tenu par `/cpg-dev` : lu en premier par `/cpg-dev reprise spec-0007-t12`.
+
+## Où en est la tâche
+
+- Branche : `feature/spec-0007-t12-cimd` (locale, non poussée), empilée sur la mère
+  `feature/379-mcp-paliers` (`origin`, tête `0c0733fb`).
+- Étape : **05**, Task 9 du plan `tasks/plan-t12-cimd.md`, découpée en trois parties après deux
+  agents morts sur « Autocompact is thrashing » (mémoire `feedback_agents_budget_regles_mcp.md`) :
+  - **9A** faite : `ea6d6554` — `CimdClientAdmission` et son test unitaire ;
+  - **9B1** à faire : `AuthorizationRequestSummary` (`discoveredClient`, `registration()`,
+    `verifiedDomain()`), `AuthorizationRequestValidator` (appel de `admit()`, conversion des refus,
+    attribut de requête) et son test, `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()` ;
+  - **9B2** à faire : `CimdAuthorizationTest` (fonctionnel), `Retry-After` du 429 dans
+    `AuthorizeController::refusal()`, docblock de `OAuthServerMetadata` (l. 30).
+- Puis : relecture de la série Task 9 (étape 07, `/code-review medium` + audit sécurité, la série
+  touche l'identification du client), puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `ea6d6554`.
+
+## Point fixe de relecture
+
+- Dernière relecture : Task 8, corrigée par `88b01252` et `f6ab033e`.
+- Prochaine série : `diff f6ab033e...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+
+## Décisions de l'utilisateur
+
+- Voie des clients connus (D-F) : décidée le 2026-11-14, compteur qui se replie sur le plafond
+  commun quand il est plein (décision du 2026-11-15).
+- Régime des agents : table par défaut de `/cpg-dev` (pas de `-hme`).
+
+## Constats écrits non corrigés
+
+- (aucun à ce jour pour la série Task 9)
+
+## Interdits des briefs
+
+- Jamais lire `.env.local`, `.env.test.local` ni aucun fichier de secret.
+- Jamais relire à la main une règle `.claude/rules/mcp*.md` (chargées d'office, ~180 Ko) ; un seul
+  `Read` par zone, le reste en `sed -n` / `grep -n` ; jamais le plan entier ; sorties coupées.
+- Jamais `git checkout` / `switch` / `stash` ; un commit par tâche, fichiers nommés.
+- PHPStan, Rector, PHPUnit dans le conteneur en `-u dev`.
