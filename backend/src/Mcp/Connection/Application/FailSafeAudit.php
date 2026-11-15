@@ -21,6 +21,9 @@ use Throwable;
  * chiffrement pourrait citer l'artefact ou la connexion. Le message est une
  * constante de l'appelant, qui nomme ce qui n'a pas été audité.
  *
+ * La panne du journal lui-même est avalée aussi : l'audit ne change jamais
+ * l'issue, même quand il ne peut plus dire qu'il a échoué.
+ *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
  * message — une panne tentée par ligne, pour qu'aucune n'en taise une autre.
@@ -41,7 +44,13 @@ final readonly class FailSafeAudit
         try {
             $write();
         } catch (Throwable $failure) {
-            $this->logger->critical($failureMessage, ['exceptionClass' => $failure::class]);
+            try {
+                $this->logger->critical($failureMessage, ['exceptionClass' => $failure::class]);
+            } catch (Throwable) {
+                // Le journal lui-même en panne : rien de plus à tenter, et le
+                // refus OAuth reste celui que l'appelant va rendre (400/401),
+                // jamais un 500 né de l'audit.
+            }
         }
     }
 }

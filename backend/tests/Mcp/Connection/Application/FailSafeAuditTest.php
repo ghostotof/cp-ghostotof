@@ -11,6 +11,7 @@ use Monolog\Level;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 /**
@@ -90,6 +91,25 @@ final class FailSafeAuditTest extends TestCase
 
         self::assertSame(['seconde'], $written);
         self::assertCount(1, $this->handler->getRecords());
+    }
+
+    /**
+     * La panne du journal lui-même (canal saturé, handler qui lève) ne
+     * remonte pas non plus : le refus OAuth reste 400/401, jamais un 500.
+     */
+    public function testAFailureOfTheLoggerItselfIsSwallowed(): void
+    {
+        $logger = self::createStub(LoggerInterface::class);
+        $logger->method('critical')->willThrowException(new RuntimeException('journal indisponible'));
+
+        $ran = false;
+        (new FailSafeAudit($logger))->attempt(static function () use (&$ran): never {
+            $ran = true;
+
+            throw new RuntimeException('panne de l\'audit');
+        }, self::FAILURE_MESSAGE);
+
+        self::assertTrue($ran, 'L\'écriture a été tentée, et rien n\'a remonté.');
     }
 
     private function audit(): FailSafeAudit
