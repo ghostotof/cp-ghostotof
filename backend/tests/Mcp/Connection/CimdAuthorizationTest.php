@@ -20,7 +20,6 @@ use Closure;
 use Generator;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
-use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -282,7 +281,7 @@ final class CimdAuthorizationTest extends WebTestCase
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{non-empty-string}>
      */
     public static function clientIdsOutsideTheCimdForm(): iterable
     {
@@ -438,18 +437,13 @@ final class CimdAuthorizationTest extends WebTestCase
     }
 
     /**
-     * Une ligne `cimd` dont l'identifiant a été réécrit hors de la forme CIMD :
-     * `discovered()` n'accepte qu'un CimdClientId, la réflexion pose ce qu'une
-     * écriture à la main aurait laissé en base. La ligne passe ensuite par le
-     * vrai dépôt.
+     * Une ligne `cimd` dont l'identifiant est hors de la forme CIMD, passée par
+     * le vrai dépôt (la fabrique, et pourquoi elle réécrit l'identifiant :
+     * {@see ClaudeCodeMetadata::storedRowWhoseClientIdIs()}).
      */
     private function aStoredCimdRowWhoseClientIdIs(string $storedClientId): void
     {
-        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
-        $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new MockClock('2026-11-01 10:00:00')->now());
-        new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, $storedClientId);
-
-        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($row);
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered(ClaudeCodeMetadata::storedRowWhoseClientIdIs($storedClientId));
     }
 
     private function clearPools(): void

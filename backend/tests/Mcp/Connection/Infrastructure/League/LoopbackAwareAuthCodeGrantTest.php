@@ -23,7 +23,6 @@ use Monolog\Level;
 use Monolog\Logger;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
-use ReflectionProperty;
 use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 
@@ -66,8 +65,7 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
      */
     public function testAStoredCimdRowWhoseClientIdIsUnreadableIsAuditedAsUnreadable(): void
     {
-        $row = $this->cimdRow();
-        new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, 'pas-un-identifiant-cimd');
+        $row = ClaudeCodeMetadata::storedRowWhoseClientIdIs('pas-un-identifiant-cimd');
         $audit = $this->createMock(SecurityAuditLoggerInterface::class);
         // L'hôte reçu est relevé puis comparé à la fin : un choix de lisibilité
         // (un message d'échec explicite), non une nécessité. Sous `once()`, un
