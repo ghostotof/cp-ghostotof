@@ -167,7 +167,16 @@
      résolveur (et son commentaire) retiré du test `unreadable` de `CimdAuthorizationTest` ; paragraphe
      recopié dans trois docblocks d'`AuthorizationRequestValidatorTest` réduit à un `@see` court ; réflexion
      sur `clientId` en une aide de fixture commune (avec `LoopbackAwareAuthCodeGrantTest`).
-- **Prochaine action** : C1, C2, C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
+- **C1 fait** (`68dd540f` conf FPM, `00b33727` textes jq ; Sonnet 5.5) : **prémisse du constat moyen
+  infondée** — l'image officielle fixe déjà `log_limit = 8192` (`php-fpm.d/docker.conf`, hérité par
+  `production`/`preprod`, aucun stage ne le retire) ; `php-fpm -tt` en dev : 8192. Valeur désormais
+  explicite (défense en profondeur), défaut mesuré 1024 sans `docker.conf` (ligne de 3031 o → 3 morceaux).
+  jq retenu : `jq -cR '. as $l | (try fromjson catch null) as $r | if ($r | type) == "object" then $r |
+  select(…) else {unparsed: $l} end'` (vérifié par le fil principal). Lignes du maître FPM et `access.log`
+  du pool listées parmi les non-JSON. Pas de rebuild (valeur effective déjà 8192). Écrit, non corrigé :
+  `k8s/README.md` ~l. 824/2064/2079, `grep '"channel":…' | jq` sans `-R` (morceau coupé → jq s'arrête,
+  improbable à 8192). À reprendre dans la PR : constat moyen fondé sur une valeur que l'image surcharge.
+- **Prochaine action** : C2, C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
