@@ -129,7 +129,15 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * profondeur) ; (b) une ligne `cimd` dont l'identifiant n'a plus la forme
      * CIMD (écrite à la main, ou avant une règle plus stricte) : `admit()` rend
      * alors `null`, league lit la ligne, le garde refuse et l'audit écrit
-     * l'hôte `unreadable`. Un domaine retiré de la liste n'atteint pas ce
+     * l'hôte `unreadable`. (b) ne vaut que pour un identifiant encore valide
+     * selon `McpClientId::fromString()` mais hors forme CIMD : un identifiant
+     * que `McpClientId` refuse n'est jamais cherché par le dépôt league
+     * (`ClientRepository::getClientEntity()`, `LeagueRepositoriesTest::
+     * testAnUnreadableClientIdIsUnknownWithoutAQuery`) et donne un
+     * `invalid_client` « client inconnu », sans cet audit ; le cas (b) est
+     * joué de bout en bout par `CimdAuthorizationTest::
+     * testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`.
+     * Un domaine retiré de la liste n'atteint pas ce
      * garde : `admit()` lève `DomainNotAllowed` avant league, sans audit
      * (décision D-G). Cela ferme, à la racine, tout chemin par lequel league
      * lirait la ligne sans admission.

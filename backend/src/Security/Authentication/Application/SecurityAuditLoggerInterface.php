@@ -151,7 +151,12 @@ interface SecurityAuditLoggerInterface
      * impossible) ; (b) une ligne `cimd` dont l'identifiant n'a plus la forme
      * CIMD (écrite à la main, ou avant une règle plus stricte) : `admit()`
      * rend alors `null`, league lit la ligne, le garde refuse et l'hôte écrit
-     * est `unreadable`. L'écriture passe par `FailSafeAudit` : sa panne ne
+     * est `unreadable`. (b) ne vaut que pour un identifiant encore valide selon
+     * `McpClientId::fromString()` mais hors forme CIMD : un identifiant que
+     * `McpClientId` refuse n'est jamais cherché par le dépôt league (client
+     * inconnu, `invalid_client`, sans cet audit) ; le test de bout en bout est
+     * `CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`.
+     * L'écriture passe par `FailSafeAudit` : sa panne ne
      * remplace jamais le refus. Le retrait d'un domaine de la liste autorisée n'en est
      * pas un : il lève `DomainNotAllowed` avant le garde et n'est pas audité
      * (décision D-G).

@@ -69,8 +69,11 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         $row = $this->cimdRow();
         new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, 'pas-un-identifiant-cimd');
         $audit = $this->createMock(SecurityAuditLoggerInterface::class);
-        // L'hôte reçu est relevé, non comparé dans le mock : FailSafeAudit avalerait
-        // l'échec d'une attente `with()`, levée dans l'écriture de l'audit.
+        // L'hôte reçu est relevé puis comparé à la fin : un choix de lisibilité
+        // (un message d'échec explicite), non une nécessité. Un `with()` sur un
+        // `once()` serait aussi vérifié : FailSafeAudit avale bien l'échec levé
+        // dans l'écriture de l'audit, mais PHPUnit 13.4.6 le mémorise
+        // (`Parameters::apply()`) et `Matcher::verify()` le relance en fin de test.
         $received = [];
         $audit->expects(self::once())->method('mcpClientRowNotAdmitted')
             ->willReturnCallback(static function (string $clientHost) use (&$received): void {

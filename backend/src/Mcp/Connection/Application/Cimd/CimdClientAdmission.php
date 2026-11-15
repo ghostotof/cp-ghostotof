@@ -37,9 +37,12 @@ use Psr\Clock\ClockInterface;
  * donnerait à n'importe qui la plume sur ses lignes (contrat de
  * {@see SecurityAuditLoggerInterface::mcpClientMetadataRefused()}).
  *
- * L'audit `mcpClientMetadataRefused` passe par {@see FailSafeAudit} : la panne
- * du journal est consignée en dernier recours et ne remplace jamais le refus
- * `ClientMetadataRefusedException`, relancé tel quel.
+ * L'audit `mcpClientMetadataRefused` passe par {@see FailSafeAudit}, et sa
+ * panne ne remplace jamais le refus `ClientMetadataRefusedException`, relancé
+ * tel quel. Deux pannes se distinguent : celle de l'écriture de l'audit de
+ * sécurité sort en `critical` sur le canal principal ; celle du journal
+ * principal lui-même, qui ne peut plus rien dire, laisse seulement un
+ * `error_log()` de dernier recours (constante et classe de la panne).
  */
 final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
 {

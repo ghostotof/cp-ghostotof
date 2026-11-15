@@ -11,8 +11,10 @@ use Throwable;
 /**
  * Un audit dont la panne ne change jamais l'issue (#725, la règle de
  * l'auteur du 2026-10-27, appliquée par #726 au point de jeton et à la
- * purge), **écrit une fois** (#726, S1) : le refus de league rendu tel quel,
- * les jetons émis, la purge menée à son terme.
+ * purge), **écrit une fois** (#726, S1) : l'issue reste celle que
+ * l'appelant rend (le refus de league, les jetons émis, la purge menée à son
+ * terme, le refus 400/429/503 d'une admission, le 401 d'un garde, la
+ * révocation) — la liste exacte des sites est `grep -rn -- '->attempt(' src`.
  *
  * La ligne est tentée ; une panne, quelle qu'elle soit (`Throwable` : une
  * erreur du pilote, du chiffrement, du journal lui-même), sort en `critical`
@@ -23,7 +25,12 @@ use Throwable;
  *
  * La panne du journal lui-même est avalée aussi : l'audit ne change jamais
  * l'issue, même quand il ne peut plus dire qu'il a échoué (elle laisse alors
- * un `error_log()` de dernier recours, la classe seule).
+ * un `error_log()` de dernier recours, la classe seule). Ce dernier recours
+ * n'est pas une garantie de trace : `error_log` et le gestionnaire `main` de
+ * Monolog (`php://stderr`) écrivent tous deux sur le descripteur 2 du
+ * conteneur (`php.prod.ini`, `monolog.yaml`). Il couvre donc une panne du
+ * processeur, du formateur ou du gestionnaire, non celle de stderr même : si
+ * le descripteur 2 est fermé ou plein, ni le `critical` ni la trace n'existent.
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
@@ -48,10 +55,11 @@ final readonly class FailSafeAudit
             try {
                 $this->logger->critical($failureMessage, ['exceptionClass' => $failure::class]);
             } catch (Throwable $loggerFailure) {
-                // Le journal lui-même en panne : le refus OAuth reste celui que
-                // l'appelant va rendre (400/401), jamais un 500 né de l'audit.
-                // Ce chemin vaut pour TOUS les appelants (point d'autorisation,
-                // endpoint de jeton, purge `app:mcp:purge`). Dernier recours,
+                // Le journal lui-même en panne : l'issue reste celle que
+                // l'appelant va rendre, jamais un 500 né de l'audit.
+                // Ce chemin vaut pour TOUS les appelants (chaque site de
+                // `->attempt(`, la liste exacte est dans la docblock de la
+                // classe). Dernier recours,
                 // sans contexte : un message constant et la classe de la panne
                 // du journal (pas son message, qui peut porter des données).
                 // `error_log()` écrit sur le flux d'erreurs de PHP, sans passer

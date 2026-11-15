@@ -83,7 +83,10 @@ paths:
   that no admission vouched for — two real triggers: (a) a divergence between the `client_id` the admission judged and
   the one league reads (defence in depth); (b) a `cimd` row whose identifier no longer has the CIMD shape (hand-written,
   or stored before a stricter rule): `admit()` returns `null`, league reads the row, the guard refuses and the host is
-  `unreadable`; refused `invalid_client`; a domain removed from the allowed list is **not**
+  `unreadable`; (b) holds for an identifier **still valid under `McpClientId::fromString()`** but outside the CIMD form —
+  one `McpClientId` refuses is never looked up by league's repository (`ClientRepository::getClientEntity()`,
+  `LeagueRepositoriesTest::testAnUnreadableClientIdIsUnknownWithoutAQuery`): an `invalid_client` « unknown client », no such audit;
+  end to end, `CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`; refused `invalid_client`; a domain removed from the allowed list is **not**
   audited (D-G: `DomainNotAllowed` is thrown before the guard); `clientHost` only, read from the **row**
   (`McpClient::cimdHost()`, or `unreadable`), never the raw `client_id` an anonymous sent; actor from
   `currentActor()`: `anonymous` at the authorization point (`oauth` firewall), the `userId` when the consent is
