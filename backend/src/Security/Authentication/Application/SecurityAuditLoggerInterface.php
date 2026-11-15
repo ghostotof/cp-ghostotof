@@ -138,18 +138,25 @@ interface SecurityAuditLoggerInterface
     public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
 
     /**
-     * Événement `mcp-client-row-not-admitted` (#651) : le point d'autorisation
-     * a atteint la ligne `cimd` d'un client que l'admission n'a pas rendu — un
-     * état que la conception dit impossible (l'admission précède toujours
-     * league), refusé `invalid_client` par `LoopbackAwareAuthCodeGrant`.
-     * Acteur anonyme. Le contexte ne porte que l'hôte de la ligne
+     * Événement `mcp-client-row-not-admitted` (#651) : league a lu la ligne
+     * `cimd` d'un client que l'admission n'a pas rendu au point
+     * d'autorisation, refusé `invalid_client` par
+     * `LoopbackAwareAuthCodeGrant`. Le seul déclencheur réel est une
+     * divergence entre le `client_id` jugé par l'admission et celui que lit
+     * league (défense en profondeur : un état que la conception dit
+     * impossible). Le retrait d'un domaine de la liste autorisée n'en est
+     * pas un : il lève `DomainNotAllowed` avant le garde et n'est pas audité
+     * (décision D-G).
+     *
+     * Acteur : celui de la requête courante (`currentActor()`) — `anonymous`
+     * au point d'autorisation (firewall `oauth`, sans authentificateur), le
+     * `userId` de la personne à la revalidation du consentement (firewall
+     * `api`). Le contexte ne porte que l'hôte de la ligne
      * (`CimdClientId::host()`), ou `unreadable` si son identifiant n'a pas la
      * forme CIMD ; jamais le `client_id` brut, qui vient d'un anonyme.
      *
-     * Contrat de l'appelant : l'hôte est lu sur la ligne en base, que le
-     * consentement a créée — pas sur la valeur demandée —, donc un hôte déjà
-     * admis un jour ; il a pu quitter la liste des domaines autorisés depuis,
-     * ce qui est précisément le cas à voir. Cette méthode ne vérifie rien.
+     * Contrat de l'appelant : l'hôte est lu sur la ligne en base, pas sur la
+     * valeur demandée. Cette méthode ne vérifie rien.
      */
     public function mcpClientRowNotAdmitted(string $clientHost): void;
 
