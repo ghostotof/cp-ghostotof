@@ -43,6 +43,9 @@ use Psr\Clock\ClockInterface;
  */
 final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
 {
+    /** Le message d'une panne de l'audit du refus d'un document de métadonnées, constant (#651). */
+    private const string METADATA_REFUSAL_NOT_AUDITED = 'Refused CIMD client metadata not audited.';
+
     public function __construct(
         private McpClientRepositoryInterface $clients,
         private AllowedClientDomains $allowed,
@@ -77,7 +80,7 @@ final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
                 // remplacer le refus (l'appelant n'attrape que celui-ci).
                 $this->failSafeAudit->attempt(
                     fn () => $this->audit->mcpClientMetadataRefused($id->host(), $refused->refusal->value),
-                    'Audit of a refused CIMD client metadata document failed.',
+                    self::METADATA_REFUSAL_NOT_AUDITED,
                 );
             }
 

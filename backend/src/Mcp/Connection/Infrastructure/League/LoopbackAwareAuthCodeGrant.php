@@ -60,6 +60,9 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      */
     private const string AUTHORIZATION_POINT_ATTRIBUTE = 'mcp.authorization_point';
 
+    /** Le message d'une panne de l'audit du refus d'une ligne `cimd` non admise, constant (#651). */
+    private const string STALE_ROW_REFUSAL_NOT_AUDITED = 'Refused stored CIMD client row not audited.';
+
     /**
      * L'audit est injecté avec la ligne d'audit tolérante à sa panne
      * ({@see FailSafeAudit}, #725) : le refus de league ne dépend jamais de lui.
@@ -157,7 +160,7 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
                 $host = $client->mcpClient()->cimdHost() ?? 'unreadable';
                 $this->failSafeAudit->attempt(
                     fn () => $this->audit->mcpClientRowNotAdmitted($host),
-                    'Audit of a refused stored CIMD client row failed.',
+                    self::STALE_ROW_REFUSAL_NOT_AUDITED,
                 );
                 $this->getEmitter()->emit(new RequestEvent(RequestEvent::CLIENT_AUTHENTICATION_FAILED, $request));
 
