@@ -78,12 +78,14 @@ paths:
   remove one line among several already written; the rate is bounded upstream by the nginx zones, and that replay is
   what the person reading the log wants to see).
   `mcp-client-metadata-refused` (#651, `CimdClientAdmission`: `clientHost`, `cause`; only a host of the allowed
-  list, never the URL, the `client_id` nor the body) and `mcp-client-row-not-admitted` (#651,
+  list, never the URL, the `client_id` nor the body; written through `FailSafeAudit`, so an audit failure never replaces the refusal) and `mcp-client-row-not-admitted` (#651,
   `LoopbackAwareAuthCodeGrant`, `mcpClientRowNotAdmitted()`: league read the stored row of a `cimd` client
-  that no admission vouched for — the only real trigger is a divergence between the `client_id` the admission judged and
-  the one league reads (defence in depth), refused `invalid_client`; a domain removed from the allowed list is **not**
+  that no admission vouched for — two real triggers: (a) a divergence between the `client_id` the admission judged and
+  the one league reads (defence in depth); (b) a `cimd` row whose identifier no longer has the CIMD shape (hand-written,
+  or stored before a stricter rule): `admit()` returns `null`, league reads the row, the guard refuses and the host is
+  `unreadable`; refused `invalid_client`; a domain removed from the allowed list is **not**
   audited (D-G: `DomainNotAllowed` is thrown before the guard); `clientHost` only, read from the **row**
-  (`CimdClientId::host()`, or `unreadable`), never the raw `client_id` an anonymous sent; actor from
+  (`McpClient::cimdHost()`, or `unreadable`), never the raw `client_id` an anonymous sent; actor from
   `currentActor()`: `anonymous` at the authorization point (`oauth` firewall), the `userId` when the consent is
   revalidated (`api` firewall); written through `FailSafeAudit`, so an audit failure leaves the refusal unchanged and
   `critical` on the main channel).

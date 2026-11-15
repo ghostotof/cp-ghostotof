@@ -134,6 +134,10 @@ interface SecurityAuditLoggerInterface
      * par nginx seul, comme tout quota anonyme du site (`contactThrottled()`,
      * `baseAccessThrottled()`) ; mais sa valeur ne sort jamais de la liste.
      * Cette méthode ne vérifie rien : la garde est chez l'appelant.
+     *
+     * L'appelant (`CimdClientAdmission`) l'invoque au travers de
+     * `FailSafeAudit` : la panne de l'audit ne remplace jamais le refus
+     * `ClientMetadataRefusedException`, seul attrapé en amont.
      */
     public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
 
@@ -141,10 +145,14 @@ interface SecurityAuditLoggerInterface
      * Événement `mcp-client-row-not-admitted` (#651) : league a lu la ligne
      * `cimd` d'un client que l'admission n'a pas rendu au point
      * d'autorisation, refusé `invalid_client` par
-     * `LoopbackAwareAuthCodeGrant`. Le seul déclencheur réel est une
+     * `LoopbackAwareAuthCodeGrant`. Deux déclencheurs : (a) une
      * divergence entre le `client_id` jugé par l'admission et celui que lit
      * league (défense en profondeur : un état que la conception dit
-     * impossible). Le retrait d'un domaine de la liste autorisée n'en est
+     * impossible) ; (b) une ligne `cimd` dont l'identifiant n'a plus la forme
+     * CIMD (écrite à la main, ou avant une règle plus stricte) : `admit()`
+     * rend alors `null`, league lit la ligne, le garde refuse et l'hôte écrit
+     * est `unreadable`. L'écriture passe par `FailSafeAudit` : sa panne ne
+     * remplace jamais le refus. Le retrait d'un domaine de la liste autorisée n'en est
      * pas un : il lève `DomainNotAllowed` avant le garde et n'est pas audité
      * (décision D-G).
      *
@@ -152,7 +160,7 @@ interface SecurityAuditLoggerInterface
      * au point d'autorisation (firewall `oauth`, sans authentificateur), le
      * `userId` de la personne à la revalidation du consentement (firewall
      * `api`). Le contexte ne porte que l'hôte de la ligne
-     * (`CimdClientId::host()`), ou `unreadable` si son identifiant n'a pas la
+     * (`McpClient::cimdHost()`), ou `unreadable` si son identifiant n'a pas la
      * forme CIMD ; jamais le `client_id` brut, qui vient d'un anonyme.
      *
      * Contrat de l'appelant : l'hôte est lu sur la ligne en base, pas sur la

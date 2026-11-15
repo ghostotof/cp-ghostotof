@@ -87,13 +87,18 @@ paths:
   read it from HTTP Basic, where the audit did not see who presented the grant. A body those two refuse is not audited:
   its parameters do not read unambiguously. **An audit failure never changes the answer** (decided):
   `TokenEndpoint::audit()` (and its unproven-replay twin) goes through `Application/FailSafeAudit::attempt($write,
-  $message)` — written once (#726, S1) for its four sites: `TokenEndpoint::audit()` and
-  `TokenEndpoint::auditUnprovenReplay()` (both `Grant refusal not audited.`), `CodeExchangeSupersession::auditSuperseded()`
-  (`Superseded connection not audited.`, after the exchange's COMMIT) and the purge's `McpConnectionPurger::auditExpired()`
-  (`Expired connection not audited.`): it catches any `Throwable` of the write and logs the caller's constant message,
-  here `Grant refusal not audited.`, at `critical` on the main
+  $message)` — written once (#726, S1), then reused by #651: it has seven call sites in `Mcp/Connection` (counted with `->attempt(`):
+  `TokenEndpoint::audit()` and `TokenEndpoint::auditUnprovenReplay()` (both `Grant refusal not audited.`),
+  `CodeExchangeSupersession::auditSuperseded()` (`Superseded connection not audited.`, after the exchange's COMMIT),
+  the purge's `McpConnectionPurger::auditExpired()` (`Expired connection not audited.`), `RevokedConnectionAudit::record()`
+  (the revocation audit), `CimdClientAdmission::admit()` (`mcpClientMetadataRefused`, so that its failure never replaces
+  the metadata refusal) and `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()` (`mcpClientRowNotAdmitted`,
+  `Audit of a refused stored CIMD client row failed.`): it catches any `Throwable` of the write and logs the caller's
+  constant message, here `Grant refusal not audited.`, at `critical` on the main
   channel (`['exceptionClass' => …]`, the class only, never a message that could quote the grant;
-  `FailSafeAuditTest`); league's refusal is then thrown unchanged —
+  `FailSafeAuditTest`). **If the logger itself throws, that failure is swallowed too**: the last resort is a bare
+  `error_log('Audit failure could not be logged. Logger failure: <class>')` (constant message plus the logger failure's
+  class, no context, no message), so the refusal the caller returns is never replaced by a 500; league's refusal is then thrown unchanged —
   `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured);
   its twin `testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged` replaces `GrantRefusalAuditInterface` (league
   reads the connection under its lock before the replay is recognised, so the table cannot be hidden): « Authorization
