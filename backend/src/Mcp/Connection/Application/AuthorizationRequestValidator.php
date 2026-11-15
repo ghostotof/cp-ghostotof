@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
@@ -11,7 +15,8 @@ use League\Uri\Uri;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * La demande d'autorisation de la connexion MCP (#647), jugée en trois temps,
+ * La demande d'autorisation de la connexion MCP (#647), jugée en trois temps
+ * (et, entre le premier et le deuxième, l'admission d'un client déclaré),
  * dans un ordre qui décide de la forme du refus :
  *
  * 1. **Avant league, sans redirection** — rien n'est encore validé, un refus
@@ -32,6 +37,14 @@ use Psr\Http\Message\ServerRequestInterface;
  *      sans le port qu'un client natif a ouvert (RFC 8252 §7.3) ;
  *    - `state` au-delà de STATE_MAX_LENGTH : il serait recopié dans chaque
  *      redirection et dans l'URL de la page de consentement ; jamais renvoyé.
+ *    **Entre les deux, l'admission** (#651) : quand le `client_id` est l'URL d'un
+ *    document de métadonnées que le client publie (CIMD), l'admission décide si
+ *    league le juge par ce document (un client non persisté, déposé dans la
+ *    requête) ou par les lignes en base. Le refus d'un document, définitif
+ *    (`invalid_client`) ou passager (`temporarily_unavailable`, 429 ou 503),
+ *    ne redirige jamais : aucune URI n'est validée, le document est le
+ *    seul à en déclarer. Après les contrôles de forme, jamais avant : une
+ *    demande mal formée ne déclenche aucune récupération.
  * 2. **league** : client connu, redirection enregistrée (sinon
  *    `invalid_client`, sans redirection), PKCE `S256` (le grant, seul à en
  *    décider), scope (`invalid_scope`, redirigé).
@@ -61,12 +74,22 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     public function __construct(
         private AuthorizationServer $server,
         private OAuthEndpoints $endpoints,
+        private CimdClientAdmissionInterface $admission,
     ) {
     }
 
     public function validate(ServerRequestInterface $request): AuthorizationRequestSummary
     {
         $parameters = $this->wellFormedParameters($request);
+        $discovered = $this->admitted($parameters['client_id'], $request);
+
+        // League juge le client déclaré par celui que l'admission dépose ici
+        // (LoopbackAwareAuthCodeGrant::getClientEntityOrFail()) ; sans client
+        // déclaré, la requête reste intacte et league lit les lignes.
+        if (null !== $discovered) {
+            $request = $request->withAttribute(CimdClientAdmissionInterface::REQUEST_ATTRIBUTE, $discovered);
+        }
+
         $authorization = $this->server->validateAuthorizationRequest($request);
         // La redirection que league a validée et retenue (rognée) ; jamais
         // nulle ici, la demande en portait une non blanche.
@@ -85,6 +108,42 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
             scope: $this->scopeOf($authorization),
             resource: $resource,
             authorizationRequest: $authorization,
+            discoveredClient: $discovered,
+        );
+    }
+
+    /**
+     * Le client déclaré que l'admission rend, `null` quand league juge par les
+     * lignes. Un refus du document devient une erreur OAuth sans redirection :
+     * passager, `temporarily_unavailable` (429 pour le quota, 503 pour l'hôte
+     * ou le réseau) que le client peut réessayer ; définitif, `invalid_client`,
+     * comme un client inconnu. L'exception d'origine reste chaînée (`previous`) :
+     * le contrôleur en tire `Retry-After`, le diagnostic la lit ; sa cause
+     * n'est jamais rendue au client (le message de l'erreur est constant).
+     *
+     * @throws OAuthServerException sans redirection
+     */
+    private function admitted(string $clientId, ServerRequestInterface $request): ?McpClient
+    {
+        try {
+            return $this->admission->admit($clientId);
+        } catch (ClientMetadataRefusedException $refused) {
+            throw $this->unavailableOrUnknown($refused, $request);
+        }
+    }
+
+    private function unavailableOrUnknown(ClientMetadataRefusedException $refused, ServerRequestInterface $request): OAuthServerException
+    {
+        if (!$refused->refusal->isTransient()) {
+            return OAuthServerException::invalidClient($request);
+        }
+
+        return new OAuthServerException(
+            'The client metadata document is temporarily unavailable.',
+            0,
+            'temporarily_unavailable',
+            ClientMetadataRefusal::Throttled === $refused->refusal ? 429 : 503,
+            previous: $refused,
         );
     }
 

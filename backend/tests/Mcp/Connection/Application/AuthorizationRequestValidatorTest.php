@@ -4,15 +4,28 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\AuthorizationRequestValidator;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
+use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
+use App\Mcp\Connection\Application\OAuthEndpoints;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
+use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
+use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use LogicException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Clock\MockClock;
 
 /**
  * Le validateur de la demande d'autorisation (#647) tel que le conteneur le
@@ -198,6 +211,197 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
             self::assertSame('invalid_request', $exception->getErrorType());
             self::assertFalse($exception->hasRedirect());
         }
+    }
+
+    /**
+     * Un identifiant que l'admission ne prend pas en charge (`null`) est jugé
+     * par les lignes en base, comme avant #651 : l'admission est interrogée
+     * une fois, sur le `client_id` reçu, et le résumé reste « pré-enregistré ».
+     */
+    public function testAnIdentifierTheAdmissionLeavesToTheRowsIsJudgedByTheRows(): void
+    {
+        $admission = $this->createMock(CimdClientAdmissionInterface::class);
+        $admission->expects(self::once())->method('admit')->with(self::CLIENT_ID)->willReturn(null);
+
+        $summary = $this->validatorWith($admission)->validate($this->request());
+
+        self::assertSame(self::CLIENT_ID, $summary->clientId);
+        self::assertNull($summary->discoveredClient);
+        self::assertSame(ClientRegistration::Preregistered, $summary->registration());
+        self::assertNull($summary->verifiedDomain(), 'Un client pré-enregistré n\'a pas de domaine vérifié.');
+    }
+
+    /**
+     * Un client déclaré (CIMD) n'a pas de ligne : league le juge par celui que
+     * l'admission dépose dans la requête, et le résumé nomme le domaine
+     * du `client_id`, que la page de consentement affichera.
+     */
+    public function testADiscoveredClientIsJudgedByLeagueAndSummarisedAsCimd(): void
+    {
+        $client = $this->discoveredClient();
+        $admission = $this->createMock(CimdClientAdmissionInterface::class);
+        $admission->expects(self::once())->method('admit')->with(ClaudeCodeMetadata::CLIENT_ID)->willReturn($client);
+
+        $summary = $this->validatorWith($admission)->validate($this->request(['client_id' => ClaudeCodeMetadata::CLIENT_ID]));
+
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $summary->clientId);
+        self::assertSame($client->getName(), $summary->clientName);
+        self::assertSame($client, $summary->discoveredClient);
+        self::assertSame(ClientRegistration::Cimd, $summary->registration());
+        self::assertSame('claude.ai', $summary->verifiedDomain());
+        self::assertNull(
+            self::getContainer()->get(McpClientRepositoryInterface::class)->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID),
+            'Le client déclaré n\'est pas persisté par l\'admission.',
+        );
+    }
+
+    /**
+     * La redirection d'un client déclaré est jugée par son document :
+     * une redirection qu'il ne déclare pas reste un `invalid_client` sans
+     * redirection.
+     */
+    public function testADiscoveredClientIsHeldToTheRedirectsOfItsDocument(): void
+    {
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn($this->discoveredClient());
+
+        try {
+            $this->validatorWith($admission)->validate($this->request(['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => 'https://evil.test/callback']));
+            self::fail('La demande aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_client', $exception->getErrorType());
+            self::assertFalse($exception->hasRedirect());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{ClientMetadataRefusal}>
+     */
+    public static function definitiveRefusals(): iterable
+    {
+        foreach (ClientMetadataRefusal::cases() as $refusal) {
+            if (!$refusal->isTransient()) {
+                yield $refusal->value => [$refusal];
+            }
+        }
+    }
+
+    /**
+     * Une cause définitive est un client inconnu : `invalid_client`, 401, sans
+     * redirection (aucune URI n'est validée), la cause n'étant pas rendue.
+     */
+    #[DataProvider('definitiveRefusals')]
+    public function testADefinitiveRefusalIsAnUnknownClientWithoutRedirect(ClientMetadataRefusal $refusal): void
+    {
+        $exception = $this->refusedBy(ClientMetadataRefusedException::because($refusal));
+
+        self::assertSame('invalid_client', $exception->getErrorType());
+        self::assertSame(401, $exception->getHttpStatusCode());
+        self::assertFalse($exception->hasRedirect());
+    }
+
+    /**
+     * Le quota épuisé : 429 `temporarily_unavailable`, sans redirection ; le
+     * refus d'origine reste chaîné (`previous`) pour que l'en-tête
+     * `Retry-After` en soit tiré plus haut.
+     */
+    public function testAnExhaustedQuotaIsA429WithoutRedirect(): void
+    {
+        $original = ClientMetadataRefusedException::because(ClientMetadataRefusal::Throttled);
+
+        $exception = $this->refusedBy($original);
+
+        self::assertSame('temporarily_unavailable', $exception->getErrorType());
+        self::assertSame(429, $exception->getHttpStatusCode());
+        self::assertFalse($exception->hasRedirect());
+        self::assertSame($original, $exception->getPrevious());
+    }
+
+    /**
+     * @return iterable<string, array{ClientMetadataRefusal}>
+     */
+    public static function transientRefusalsOtherThanTheQuota(): iterable
+    {
+        foreach (ClientMetadataRefusal::cases() as $refusal) {
+            if ($refusal->isTransient() && ClientMetadataRefusal::Throttled !== $refusal) {
+                yield $refusal->value => [$refusal];
+            }
+        }
+    }
+
+    /**
+     * Une cause passagère de l'hôte ou du réseau : 503 `temporarily_unavailable`,
+     * sans redirection, le client peut réessayer.
+     */
+    #[DataProvider('transientRefusalsOtherThanTheQuota')]
+    public function testATransientRefusalIsA503WithoutRedirect(ClientMetadataRefusal $refusal): void
+    {
+        $original = ClientMetadataRefusedException::because($refusal);
+
+        $exception = $this->refusedBy($original);
+
+        self::assertSame('temporarily_unavailable', $exception->getErrorType());
+        self::assertSame(503, $exception->getHttpStatusCode());
+        self::assertFalse($exception->hasRedirect());
+        self::assertSame($original, $exception->getPrevious());
+    }
+
+    /**
+     * La demande mal formée est refusée avant l'admission : rien n'est lu ni
+     * récupéré pour une demande que league n'aurait de toute façon pas jugée.
+     *
+     * @param array<string, string|list<string>|null> $overrides
+     */
+    #[DataProvider('refusedBeforeLeague')]
+    public function testAMalformedRequestNeverReachesTheAdmission(array $overrides): void
+    {
+        $admission = $this->createMock(CimdClientAdmissionInterface::class);
+        $admission->expects(self::never())->method('admit');
+
+        try {
+            $this->validatorWith($admission)->validate($this->request($overrides));
+            self::fail('La demande aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_request', $exception->getErrorType());
+        }
+    }
+
+    private function refusedBy(ClientMetadataRefusedException $refusal): OAuthServerException
+    {
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willThrowException($refusal);
+
+        try {
+            $this->validatorWith($admission)->validate($this->request());
+        } catch (OAuthServerException $exception) {
+            return $exception;
+        }
+
+        self::fail('La demande aurait dû être refusée.');
+    }
+
+    private function discoveredClient(): McpClient
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
+
+        return McpClient::discovered(
+            ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()),
+            new MockClock('2026-11-01 10:00:00')->now(),
+        );
+    }
+
+    /**
+     * Le validateur construit avec le serveur et les points d'accès du
+     * conteneur, l'admission remplacée par une doublure (le service du
+     * conteneur est privé : il ne se remplace pas).
+     */
+    private function validatorWith(CimdClientAdmissionInterface $admission): AuthorizationRequestValidatorInterface
+    {
+        return new AuthorizationRequestValidator(
+            server: self::getContainer()->get(AuthorizationServer::class),
+            endpoints: self::getContainer()->get(OAuthEndpoints::class),
+            admission: $admission,
+        );
     }
 
     private function validator(): AuthorizationRequestValidatorInterface

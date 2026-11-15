@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
 
 /**
@@ -16,6 +19,12 @@ use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
  * Tout y a été validé : le client et sa redirection par league (la
  * redirection jugée par McpClient::allowsRedirect()), PKCE par le grant, la
  * ressource par AuthorizationRequestValidator.
+ *
+ * Le client est soit une ligne pré-enregistrée, soit — quand le `client_id`
+ * est l'URL d'un document que le client publie (CIMD, #651) — un client
+ * « déclaré », non persisté, que l'admission a rendu à league : la page de
+ * consentement dit alors d'où il tient son identité (registration(),
+ * verifiedDomain()).
  */
 final readonly class AuthorizationRequestSummary
 {
@@ -23,6 +32,7 @@ final readonly class AuthorizationRequestSummary
      * @param string $redirectUri  la redirection **demandée**, telle que league l'a retenue (rognée), celle vers laquelle le code partira
      * @param string $redirectHost son hôte, tel que League\Uri le lit (`[::1]` entre crochets)
      * @param string $scope        les scopes retenus par league, séparés par une espace (RFC 6749 §3.3)
+     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée
      */
     public function __construct(
         public string $clientId,
@@ -32,7 +42,31 @@ final readonly class AuthorizationRequestSummary
         public string $scope,
         public string $resource,
         public AuthorizationRequestInterface $authorizationRequest,
+        public ?McpClient $discoveredClient = null,
     ) {
+    }
+
+    /**
+     * D'où le client tient son identité : le document qu'il publie (`Cimd`)
+     * quand l'admission en a rendu un, la ligne enregistrée sinon.
+     */
+    public function registration(): ClientRegistration
+    {
+        return null === $this->discoveredClient ? ClientRegistration::Preregistered : ClientRegistration::Cimd;
+    }
+
+    /**
+     * Le domaine que le document prouve : l'hôte du `client_id` d'un client
+     * déclaré, `null` pour un client pré-enregistré (aucun domaine n'y est
+     * vérifié, le nom vient de l'administrateur du site).
+     */
+    public function verifiedDomain(): ?string
+    {
+        if (ClientRegistration::Cimd !== $this->registration()) {
+            return null;
+        }
+
+        return CimdClientId::tryFrom($this->clientId)?->host();
     }
 
     /**

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
 use App\Mcp\Connection\Application\OAuthProfile;
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -56,6 +58,44 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
             $refusal,
             $this->validatedErrorRedirectUri($request),
         );
+    }
+
+    /**
+     * Le client que league juge : celui que l'admission a déposé dans la requête
+     * quand le `client_id` est l'URL d'un document que le client publie (CIMD,
+     * #651), sinon la ligne que le dépôt de clients rend.
+     *
+     * **Pourquoi le test de type suffit contre un attribut contrefait.**
+     * L'attribut n'est lu que s'il est un {@see McpClient} dont l'identifiant
+     * est celui demandé. Une requête ne peut pas en poser un : le pont PSR-7
+     * recopie les attributs de la requête Symfony, tous des chaînes de routage
+     * (`_route`, `_controller`…), et un paramètre de requête, qu'il s'appelle
+     * `mcp.cimd.discovered_client` ou non, n'est jamais un attribut. Seul le
+     * code du serveur (AuthorizationRequestValidator, après l'admission) en
+     * dépose un, et l'identifiant comparé empêche qu'il serve pour un autre
+     * `client_id` que celui qu'il a jugé.
+     *
+     * **L'échange du code**, au point d'accès des jetons, n'a aucun attribut :
+     * il lit toujours la ligne en base, que le consentement a créée.
+     *
+     * @throws OAuthServerException `invalid_client` (client inconnu), `unauthorized_client` (grant non pris en charge)
+     */
+    protected function getClientEntityOrFail(string $clientId, ServerRequestInterface $request): ClientEntityInterface
+    {
+        $discovered = $request->getAttribute(CimdClientAdmissionInterface::REQUEST_ATTRIBUTE);
+
+        if (!$discovered instanceof McpClient || $discovered->getClientId() !== $clientId) {
+            return parent::getClientEntityOrFail($clientId, $request);
+        }
+
+        $client = new OAuthClient($discovered);
+
+        // Le contrôle du parent, pour le client qu'il n'a pas lu.
+        if (!$this->supportsGrantType($client, $this->getIdentifier())) {
+            throw OAuthServerException::unauthorizedClient();
+        }
+
+        return $client;
     }
 
     /**
