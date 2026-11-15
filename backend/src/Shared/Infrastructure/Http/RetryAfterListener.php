@@ -54,8 +54,14 @@ use Symfony\Component\HttpKernel\KernelEvents;
  */
 final readonly class RetryAfterListener
 {
-    /** Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter. */
-    private const string REQUEST_ATTRIBUTE = '_app_retry_after';
+    /**
+     * Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter.
+     *
+     * Public pour un contrôleur qui rend lui-même son 429 sans lever
+     * l'exception (le point d'autorisation OAuth) : `kernel.exception` ne passe
+     * pas, il note donc l'échéance ici et `kernel.response` pose l'en-tête.
+     */
+    public const string REQUEST_ATTRIBUTE = '_app_retry_after';
 
     private const int MICROSECONDS_PER_SECOND = 1_000_000;
 
