@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application\Cimd;
 
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
@@ -44,6 +45,7 @@ final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
         private CimdClientResolverInterface $resolver,
         private SecurityAuditLoggerInterface $audit,
         private ClockInterface $clock,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -67,7 +69,12 @@ final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
             $document = $this->resolver->resolve($id);
         } catch (ClientMetadataRefusedException $refused) {
             if (ClientMetadataRefusal::DomainNotAllowed !== $refused->refusal) {
-                $this->audit->mcpClientMetadataRefused($id->host(), $refused->refusal->value);
+                // L'audit ne change jamais l'issue : sa panne ne doit pas
+                // remplacer le refus (l'appelant n'attrape que celui-ci).
+                $this->failSafeAudit->attempt(
+                    fn () => $this->audit->mcpClientMetadataRefused($id->host(), $refused->refusal->value),
+                    'Audit of a refused CIMD client metadata document failed.',
+                );
             }
 
             throw $refused;

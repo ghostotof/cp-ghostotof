@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Application\Cimd;
 
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmission;
 use App\Mcp\Connection\Application\Cimd\CimdClientResolverInterface;
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
 use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
@@ -20,6 +21,8 @@ use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\Exception as MockException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 
 /**
@@ -138,6 +141,26 @@ final class CimdClientAdmissionTest extends TestCase
     }
 
     /**
+     * Un audit qui lève (handler du canal de sécurité en panne) ne remplace
+     * jamais le refus : l'appelant n'attrape que ClientMetadataRefusedException,
+     * l'exception de l'audit sortirait en 500 au lieu du 400/429/503 attendu.
+     */
+    public function testAFailingAuditNeverReplacesTheRefusal(): void
+    {
+        $refused = ClientMetadataRefusedException::because(ClientMetadataRefusal::Unresolvable);
+        $resolver = self::createStub(CimdClientResolverInterface::class);
+        $resolver->method('resolve')->willThrowException($refused);
+
+        $audit = $this->createMock(SecurityAuditLoggerInterface::class);
+        $audit->expects(self::once())->method('mcpClientMetadataRefused')
+            ->willThrowException(new RuntimeException('handler de sécurité en panne'));
+
+        $admission = $this->admission(new McpClientRepositoryFake(null, null), $resolver, $audit);
+
+        self::assertSame($refused, $this->refusalOf($admission), 'Le refus est relancé tel quel, malgré la panne de l\'audit.');
+    }
+
+    /**
      * @return iterable<string, array{ClientMetadataRefusal}>
      */
     public static function refusalsAfterTheList(): iterable
@@ -161,6 +184,7 @@ final class CimdClientAdmissionTest extends TestCase
             $resolver,
             $audit,
             new MockClock('2026-11-13 10:00:00'),
+            new FailSafeAudit(new NullLogger()),
         );
     }
 
