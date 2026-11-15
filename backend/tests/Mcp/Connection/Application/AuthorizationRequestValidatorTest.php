@@ -338,6 +338,33 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     }
 
     /**
+     * Le refus PKCE atteint le même garde (validatedErrorRedirectUri() relit le
+     * client au point d'autorisation) : l'audit `mcp-client-row-not-admitted`
+     * est écrit une seule fois, avec l'hôte seul, et c'est le seul
+     * enregistrement du journal de sécurité — le refus PKCE lui-même n'est
+     * pas audité, il n'est pas atteint.
+     */
+    public function testTheStaleCimdRowRefusedOnThePkcePathIsAuditedOnce(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($this->discoveredClient());
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn(null);
+
+        try {
+            $this->validatorWith($admission)->validate($this->request([
+                'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+                'redirect_uri' => 'http://localhost:53124/callback',
+                'code_challenge' => null,
+            ]));
+            self::fail('La ligne périmée aurait dû être refusée.');
+        } catch (OAuthServerException) {
+        }
+
+        self::assertSame('claude.ai', self::singleSecurityAuditEvent('mcp-client-row-not-admitted')['clientHost']);
+        self::assertCount(1, self::securityAuditRecords(), 'Un seul enregistrement : l\'audit du garde, une fois.');
+    }
+
+    /**
      * Le refus du garde est tracé : l'état qu'il signale (une ligne `cimd`
      * atteinte sans admission) est impossible par conception. L'hôte seul,
      * jamais le `client_id` brut.
