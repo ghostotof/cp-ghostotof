@@ -74,6 +74,23 @@ final class AuthorizationRequestSummaryTest extends TestCase
         self::assertNull($summary->judgedDiscoveredClient());
     }
 
+    /**
+     * Même `client_id` que le client déclaré, mais le client jugé par league
+     * est une ligne pré-enregistrée : le client déclaré n'est PAS celui qui a
+     * été jugé (identité d'objet, pas d'identifiant) — il n'est pas rendu à la
+     * persistance et ne colore pas le résumé.
+     */
+    public function testAJudgedPreregisteredClientOfTheSameClientIdNeverReturnsTheDiscoveredClient(): void
+    {
+        $judged = new OAuthClient(RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Client de test', ['http://localhost/callback']));
+
+        $summary = $this->summary($judged, $this->declaredClient());
+
+        self::assertSame(ClientRegistration::Preregistered, $summary->registration());
+        self::assertNull($summary->verifiedDomain());
+        self::assertNull($summary->judgedDiscoveredClient());
+    }
+
     private function summary(OAuthClient $judged, ?McpClient $discovered): AuthorizationRequestSummary
     {
         $request = new AuthorizationRequest();

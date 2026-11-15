@@ -184,7 +184,7 @@ paths:
   `Assert\Email` whose value ends up in an e-mail.
   `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
   sentinel values run through every method (login identifiers of the actor and the subject included; it counts the
-  records, 30 since S4, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+  records, 32 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
   every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
   activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
   per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,

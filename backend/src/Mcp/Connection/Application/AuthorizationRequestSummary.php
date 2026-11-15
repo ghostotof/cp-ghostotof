@@ -7,7 +7,6 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
-use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
 
 /**
@@ -33,7 +32,7 @@ final readonly class AuthorizationRequestSummary
      * @param string $redirectUri  la redirection **demandée**, telle que league l'a retenue (rognée), celle vers laquelle le code partira
      * @param string $redirectHost son hôte, tel que League\Uri le lit (`[::1]` entre crochets)
      * @param string $scope        les scopes retenus par league, séparés par une espace (RFC 6749 §3.3)
-     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée ; privé, lu par judgedDiscoveredClient() seulement s'il porte le `client_id` du client que league a jugé
+     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée ; privé, lu par judgedDiscoveredClient() seulement s'il est le client que league a jugé (même objet)
      */
     public function __construct(
         public string $clientId,
@@ -54,9 +53,7 @@ final readonly class AuthorizationRequestSummary
      */
     public function registration(): ClientRegistration
     {
-        $judged = $this->authorizationRequest->getClient();
-
-        return $judged instanceof OAuthClient ? $judged->mcpClient()->registration() : ClientRegistration::Preregistered;
+        return $this->judgedMcpClient()?->registration() ?? ClientRegistration::Preregistered;
     }
 
     /**
@@ -67,20 +64,21 @@ final readonly class AuthorizationRequestSummary
      */
     public function verifiedDomain(): ?string
     {
-        if (ClientRegistration::Cimd !== $this->registration()) {
+        $judged = $this->judgedMcpClient();
+
+        if (null === $judged || ClientRegistration::Cimd !== $judged->registration()) {
             return null;
         }
 
-        return CimdClientId::tryFrom($this->authorizationRequest->getClient()->getIdentifier())?->host();
+        return CimdClientId::tryFrom($judged->getClientId())?->host();
     }
 
     /**
      * Le client déclaré que l'admission a rendu à league, **seulement s'il est
-     * celui que league a jugé** : son `client_id` égal, à l'identique, à celui
-     * du client de la demande — la règle même de
-     * LoopbackAwareAuthCodeGrant::getClientEntityOrFail(). Le seul accès au
-     * client déclaré, destiné à la persistance au consentement (#651) : un
-     * client déclaré d'un autre identifiant n'a pas été jugé, `null`.
+     * celui que league a jugé** : le même objet (`===`), pas seulement le même
+     * `client_id` — une ligne pré-enregistrée du même identifiant n'est pas le
+     * client déclaré. Le seul accès au client déclaré, destiné à la
+     * persistance au consentement (#651) : sinon `null`.
      */
     public function judgedDiscoveredClient(): ?McpClient
     {
@@ -88,9 +86,18 @@ final readonly class AuthorizationRequestSummary
             return null;
         }
 
-        return $this->discoveredClient->getClientId() === $this->authorizationRequest->getClient()->getIdentifier()
-            ? $this->discoveredClient
-            : null;
+        return $this->judgedMcpClient() === $this->discoveredClient ? $this->discoveredClient : null;
+    }
+
+    /**
+     * Le McpClient du client que league a jugé, lu une fois ; `null` si ce
+     * client n'est pas porteur d'un McpClient (JudgedClientInterface).
+     */
+    private function judgedMcpClient(): ?McpClient
+    {
+        $judged = $this->authorizationRequest->getClient();
+
+        return $judged instanceof JudgedClientInterface ? $judged->mcpClient() : null;
     }
 
     /**

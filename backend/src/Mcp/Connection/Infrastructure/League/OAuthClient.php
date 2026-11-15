@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\JudgedClientInterface;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
@@ -16,7 +17,7 @@ use League\OAuth2\Server\Entities\ClientEntityInterface;
  * redirection demandée par McpClient::allowsRedirect() — la seule règle de
  * comparaison du dépôt — au lieu du validateur de league.
  */
-final readonly class OAuthClient implements ClientEntityInterface
+final readonly class OAuthClient implements ClientEntityInterface, JudgedClientInterface
 {
     public function __construct(
         private McpClient $client,

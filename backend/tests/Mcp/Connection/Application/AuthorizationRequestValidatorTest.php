@@ -207,9 +207,9 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
         yield 'client déclaré précédé d\'une espace' => [['client_id' => ' '.ClaudeCodeMetadata::CLIENT_ID]];
         // Les autres blancs que trim() rogne : tabulation, retour chariot, NUL
         // et tabulation verticale, en tête et en queue.
-        foreach (["\t" => 'tabulation', "\r" => 'retour chariot', "\0" => 'octet nul', "\x0B" => 'tabulation verticale'] as $blank => $name) {
-            yield 'client précédé d\'une '.$name => [['client_id' => $blank.self::CLIENT_ID]];
-            yield 'client suivi d\'une '.$name => [['client_id' => self::CLIENT_ID.$blank]];
+        foreach (["\t" => 'une tabulation', "\r" => 'un retour chariot', "\0" => 'un octet nul', "\x0B" => 'une tabulation verticale'] as $blank => $name) {
+            yield 'client précédé d\''.$name => [['client_id' => $blank.self::CLIENT_ID]];
+            yield 'client suivi d\''.$name => [['client_id' => self::CLIENT_ID.$blank]];
         }
         yield 'client_id en tableau' => [['client_id' => [self::CLIENT_ID]]];
         yield 'state trop long' => [['state' => str_repeat('s', 1025)]];
