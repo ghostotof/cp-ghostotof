@@ -132,8 +132,14 @@
      encore valide selon `McpClientId`, sinon client inconnu sans audit) dans `SecurityAuditLoggerInterface`,
      `LoopbackAwareAuthCodeGrant` et les règles ; commentaire « `with()` avalé » de
      `LoopbackAwareAuthCodeGrantTest` l. 68-69 corrigé (PHPUnit 13.4.6 relance l'échec en fin de test).
-- **Prochaine action** : micro-série n° 5 (A1, A2, A3), relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `e0544af7`, puis ce commit d'état.
+- **A1 fait** : `0f0e4a49` (messages `Refused CIMD client metadata not audited.` / `Refused stored CIMD
+  client row not audited.`), `6b4464c5` (témoin `critical` + message + `exceptionClass` aux deux sites, rouge
+  par mutation « catch muet »), `50930ecf` (`LogicException` côté logger, `captureErrorLog()` à la demande au
+  lieu de `setUp`/`tearDown`) ; contrôlé par le fil principal (`tests/Mcp/Connection` 1397 OK ; l'agent :
+  suite complète 6402 OK, PHPStan/Rector verts ; signés Opus 5.5, arbre propre). Reste pour A3 :
+  `mcp-oauth-audits.md` l. 96 cite encore l'ancien message du garde.
+- **Prochaine action** : A2, puis A3, relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `50930ecf`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
