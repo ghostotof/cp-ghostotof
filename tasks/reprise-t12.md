@@ -70,9 +70,12 @@
   6. témoin positif qui exerce vraiment la branche gardée ;
   7. `McpClient::cimdHost()` factorisant la dérivation de l'hôte (grant et résumé) ;
   8. `FailSafeAudit::attempt()` blinde `logger->critical()` : le refus reste un 400, jamais un 500 (I1).
-- **Prochaine action** : série de correction n° 3 (étape 05, sonnet/high), puis sa relecture
-  `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `0d90fea3`, puis ce commit d'état.
+- **Série n° 3, agent A fait** (points 7, 2, 8 ; sonnet/high) : `81c756de` (FailSafeAudit blindé),
+  `f7d4f28f` (`McpClient::cimdHost()`), `98c0e37a` (test de la branche `unreadable`) ; preuve contrôlée
+  (`tests/Mcp/Connection` : 1395 tests OK, arbre propre). Ses commits signent « Sonnet 5.5 » (signalé).
+- **Prochaine action** : agent B de la série n° 3 (points 1, 4, 3, 5, 6 ; étape 05, sonnet/high), puis la
+  relecture `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit), puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `98c0e37a`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
