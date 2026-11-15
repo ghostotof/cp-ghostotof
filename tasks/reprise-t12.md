@@ -73,9 +73,18 @@
 - **Série n° 3, agent A fait** (points 7, 2, 8 ; sonnet/high) : `81c756de` (FailSafeAudit blindé),
   `f7d4f28f` (`McpClient::cimdHost()`), `98c0e37a` (test de la branche `unreadable`) ; preuve contrôlée
   (`tests/Mcp/Connection` : 1395 tests OK, arbre propre). Ses commits signent « Sonnet 5.5 » (signalé).
-- **Prochaine action** : agent B de la série n° 3 (points 1, 4, 3, 5, 6 ; étape 05, sonnet/high), puis la
-  relecture `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `98c0e37a`, puis ce commit d'état.
+- **Série n° 3, agent B fait** (points 1, 4, 5, 6 ; sonnet/high) : `a87c74a7` (contrat de
+  `mcpClientRowNotAdmitted()` ; « 32 today » vérifié exact), `395138ed` (`OAuthClient::mcpClient()` sans copie),
+  `5dae419e` (refus PKCE audité une seule fois), `b00263f3` (docblock du témoin corrigé). Point 3 sans commit :
+  `testADiscoveredClientIsJudgedByLeagueAndSummarisedAsCimd` fait déjà le `assertSame` de bout en bout (deux
+  mutations « clone » rouges, annulées). Point 6 : le garde n'est pas atteignable par une ligne admise au point
+  d'autorisation (branche `new OAuthClient($discovered)`) ; le vrai témoin du garde est
+  `CimdAuthorizationTest::testACimdClientExchangesItsCodeAtTheTokenEndpointFromItsStoredRow` (mutation rouge).
+  Preuve contrôlée : `tests/Mcp/Connection` 1396 tests OK, suite complète 6401 OK, PHPStan/Rector verts,
+  commits signés Opus 5.5, arbre propre.
+- **Prochaine action** : relecture `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit),
+  puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `b00263f3`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
