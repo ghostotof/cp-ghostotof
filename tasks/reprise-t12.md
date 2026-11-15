@@ -25,15 +25,24 @@
   4. tests de régression : 4 lignes de `refusedBeforeLeague()`, test du résumé, deux tests
      fonctionnels (dont `ConsentService::decide()`, rouge avant : 200 et un `code` délivré —
      défaut de gravité **haute**).
-- **Prochaine action** : relecture de cette série, `/code-review medium` sur
-  `diff 68771e24...HEAD (branche feature/spec-0007-t12-cimd)`, audit sécurité opus/high à proposer
-  (la série touche l'identification du client). Puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `dccdb715`, puis ce commit d'état.
+- Relecture de `dccdb715` faite (2026-11-15, `/code-review medium` + audit sécurité opus/high) :
+  audit sans constat critique/haut/moyen ; `/code-review` rend **deux moyens** convergents → série de
+  correction n° 2 (sonnet/high) :
+  1. garde au niveau du grant : au **point d'autorisation seulement**, une ligne `ClientRegistration::Cimd`
+     qu'aucun client admis du même `client_id` ne couvre est refusée `invalid_client` (le point de jeton
+     continue de servir la ligne en base) — ferme le défaut par toute autre porte que les blancs ;
+  2. `registration()` / `verifiedDomain()` du résumé tirés du client **jugé** (`OAuthClient::mcpClient()`),
+     plus du canal `discoveredClient` ; la propriété devient privée, accesseur unique pour la Task 10 ;
+  3. tests : assertion du refus au consentement sur le `client_id` (pas le seul type générique), blancs
+     `\t` `\r` `\0` `\x0B` ajoutés aux fournisseurs, test du résumé dans sa propre classe `TestCase`.
+- **Prochaine action** : série de correction n° 2, puis sa relecture `diff 8fe3fb84...HEAD`, puis
+  Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `8fe3fb84`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : Task 9, au point `68771e24` (série `f6ab033e...68771e24`).
-- Prochaine série : `diff 68771e24...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série de correction `dccdb715`, au point `8fe3fb84` (série `68771e24...8fe3fb84`).
+- Prochaine série : `diff 8fe3fb84...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -44,8 +53,8 @@
   CIMD à la Task 12.
 - Refus transitoire au consentement : traité dans la Task 10 — 503/429 typé avec `Retry-After`, pas
   le 400 générique de `ConsentService::validated()`.
-- Refus des blancs : `client_id` seul (défaut retenu par le fil principal, livré en `dccdb715`,
-  confirmation de l'utilisateur attendue) ; la
+- Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
+- Relecture de la série de correction : `/code-review medium` + audit sécurité opus/high (2026-11-15) ; la
   `redirect_uri` rognée reste acceptée, `AuthorizationRequestValidatorTest::paddedRedirects` intact.
 
 ## À injecter dans le brief de la Task 10
@@ -54,6 +63,8 @@
   aujourd'hui `findOneByClientId`) ; la page n'affiche plus « preregistered » en dur
   (`ConsentController::REGISTRATION`).
 - Refus transitoire au consentement : 503/429 typé, `Retry-After` (décision ci-dessus).
+- `grant()` ne lit le client à persister que par l'accesseur du résumé (client déclaré **jugé**), jamais
+  une propriété publique (audit de `dccdb715`).
 
 ## Constats écrits non corrigés
 
@@ -78,6 +89,13 @@
 - `dccdb715` : `judgedDiscoveredClient()` lèverait sur un `AuthorizationRequest` sans client mais
   porteur d'un client déclaré (cas impossible en production : league pose toujours le client) ; le
   test du résumé construit le Value Object directement.
+
+- Relecture de `dccdb715`, écrits (faibles/info) : garde des blancs dupliquée avec
+  `FormEncodedRequest::refuseSurroundingBlanks()` (#725), messages divergents ; `state`, `scope`,
+  `code_challenge` toujours rognés par league (décision : `client_id` seul) ; la limite acceptée de
+  l'admission laisse un anonyme déclencher une récupération sans PKCE (vérifier `code_challenge` avant
+  l'admission ne coûterait rien — à reproposer à la Task 12) ; révocation (`LeagueRevocationEndpoint`)
+  non relue par l'audit.
 
 ## Interdits des briefs
 
