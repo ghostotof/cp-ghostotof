@@ -279,6 +279,25 @@ final class SecurityAuditLoggerTest extends TestCase
         self::assertArrayNotHasKey('userId', $record->context);
     }
 
+    /**
+     * Issue #651 : le refus d'une ligne `cimd` non admise ne nomme que l'hôte
+     * de la ligne ; jamais le `client_id`, qui vient d'un anonyme.
+     */
+    public function testAStoredCimdRowRefusalNamesOnlyTheHost(): void
+    {
+        $this->pushRequest('/api/oauth/authorize', 'GET');
+
+        $this->auditLogger->mcpClientRowNotAdmitted('claude.ai');
+
+        self::assertSame([
+            'event' => 'mcp-client-row-not-admitted',
+            'clientHost' => 'claude.ai',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/authorize',
+        ], $this->singleRecord()->context);
+    }
+
     public function testBackofficeAccessDeniedNamesTheBaseTierGuestAsActor(): void
     {
         $this->pushRequest('/api/backoffice/users', 'GET');
@@ -934,9 +953,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->mcpGrantRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'refresh_token', 'token-refused', 'https://client.example.test/metadata.json');
         $this->auditLogger->sessionRefusedAfterCredentialsChange($invited, 0);
         $this->auditLogger->mcpClientMetadataRefused('client.example.test', 'address-blocked');
+        $this->auditLogger->mcpClientRowNotAdmitted('client.example.test');
 
         $records = $this->handler->getRecords();
-        self::assertCount(31, $records);
+        self::assertCount(32, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

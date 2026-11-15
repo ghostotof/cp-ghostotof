@@ -17,6 +17,7 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\AuthorizationServer;
@@ -37,6 +38,8 @@ use Symfony\Component\Clock\MockClock;
  */
 final class AuthorizationRequestValidatorTest extends KernelTestCase
 {
+    use ReadsSecurityAuditLog;
+
     private const string CLIENT_ID = 'https://client.example.test/metadata.json';
 
     private const string CODE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
@@ -289,6 +292,72 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
             self::assertSame('invalid_client', $exception->getErrorType());
             self::assertFalse($exception->hasRedirect());
         }
+    }
+
+    /**
+     * Le témoin positif du garde : la même ligne `cimd` en base, mais
+     * l'admission rend cette fois le client (document admis, même
+     * `client_id`) et la demande est servie. Le refus du test précédent vient
+     * donc bien du garde de getClientEntityOrFail(), non de la redirection.
+     */
+    public function testTheSameStoredCimdRowIsServedWhenTheAdmissionVouchesForIt(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($this->discoveredClient());
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn($this->discoveredClient());
+
+        $summary = $this->validatorWith($admission)->validate($this->request(['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => 'http://localhost:53124/callback']));
+
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $summary->clientId);
+        self::assertSame([], self::securityAuditEvents('mcp-client-row-not-admitted'));
+    }
+
+    /**
+     * La voie du refus PKCE (pas de `code_challenge`) relit le client avant de
+     * choisir l'URI d'erreur : une ligne `cimd` périmée y est refusée comme
+     * ailleurs, `invalid_client` sans redirection — jamais un `invalid_request`
+     * redirigé vers une redirection que rien n'a relue.
+     */
+    public function testAStaleCimdRowIsRefusedWithoutRedirectOnThePkceRefusalPathToo(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($this->discoveredClient());
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn(null);
+
+        try {
+            $this->validatorWith($admission)->validate($this->request([
+                'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+                'redirect_uri' => 'http://localhost:53124/callback',
+                'code_challenge' => null,
+            ]));
+            self::fail('La ligne périmée aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_client', $exception->getErrorType());
+            self::assertFalse($exception->hasRedirect());
+        }
+    }
+
+    /**
+     * Le refus du garde est tracé : l'état qu'il signale (une ligne `cimd`
+     * atteinte sans admission) est impossible par conception. L'hôte seul,
+     * jamais le `client_id` brut.
+     */
+    public function testTheRefusalOfAStoredCimdRowIsAudited(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($this->discoveredClient());
+        $admission = self::createStub(CimdClientAdmissionInterface::class);
+        $admission->method('admit')->willReturn(null);
+
+        try {
+            $this->validatorWith($admission)->validate($this->request(['client_id' => ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => 'http://localhost:53124/callback']));
+            self::fail('La ligne périmée aurait dû être refusée.');
+        } catch (OAuthServerException) {
+        }
+
+        $audit = self::singleSecurityAuditEvent('mcp-client-row-not-admitted');
+        self::assertSame('claude.ai', $audit['clientHost']);
+        self::assertStringNotContainsString(ClaudeCodeMetadata::CLIENT_ID, json_encode($audit, \JSON_THROW_ON_ERROR));
+        self::assertArrayNotHasKey('clientId', $audit);
     }
 
     /**

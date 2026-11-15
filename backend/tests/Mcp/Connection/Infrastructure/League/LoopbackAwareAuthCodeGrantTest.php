@@ -1,0 +1,89 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Mcp\Connection\Infrastructure\League;
+
+use App\Mcp\Connection\Application\FailSafeAudit;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
+use App\Mcp\Connection\Infrastructure\League\LoopbackAwareAuthCodeGrant;
+use App\Mcp\Connection\Infrastructure\League\OAuthClient;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
+use DateInterval;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
+use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
+use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
+use LogicException;
+use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use Monolog\Logger;
+use Nyholm\Psr7\ServerRequest;
+use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use Symfony\Component\Clock\MockClock;
+
+/**
+ * Le refus d'une ligne `cimd` que l'admission n'a pas reconnue (#651) et son
+ * audit : une panne de l'audit ne change jamais l'issue (la règle de #725,
+ * FailSafeAudit) — league rend toujours `invalid_client`, sans redirection.
+ */
+final class LoopbackAwareAuthCodeGrantTest extends TestCase
+{
+    public function testAnAuditFailureLeavesTheRefusalOfAStoredCimdRowUnchanged(): void
+    {
+        $audit = $this->createMock(SecurityAuditLoggerInterface::class);
+        $audit->expects(self::once())->method('mcpClientRowNotAdmitted')->with('claude.ai')
+            ->willThrowException(new RuntimeException('secret détail du pilote'));
+        $handler = new TestHandler();
+
+        try {
+            $this->grant($audit, new Logger('app', [$handler]))->validateAuthorizationRequest($this->request());
+            self::fail('La ligne `cimd` non admise aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_client', $exception->getErrorType());
+            self::assertFalse($exception->hasRedirect());
+        }
+
+        self::assertTrue($handler->hasRecordThatContains('', Level::Critical));
+        $records = $handler->getRecords();
+        self::assertSame(['exceptionClass' => RuntimeException::class], $records[0]->context);
+        self::assertStringNotContainsString('secret', $records[0]->message);
+    }
+
+    private function grant(SecurityAuditLoggerInterface $audit, Logger $logger): LoopbackAwareAuthCodeGrant
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
+        $row = new OAuthClient(McpClient::discovered(
+            ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()),
+            new MockClock('2026-11-01 10:00:00')->now(),
+        ));
+        $clients = self::createStub(ClientRepositoryInterface::class);
+        $clients->method('getClientEntity')->willReturn($row);
+
+        $grant = new LoopbackAwareAuthCodeGrant(
+            self::createStub(AuthCodeRepositoryInterface::class),
+            self::createStub(RefreshTokenRepositoryInterface::class),
+            new DateInterval('PT1M'),
+            $audit,
+            new FailSafeAudit($logger),
+        );
+        $grant->setClientRepository($clients);
+
+        return $grant;
+    }
+
+    private function request(): ServerRequest
+    {
+        return new ServerRequest('GET', 'http://localhost/api/oauth/authorize')->withQueryParams([
+            'response_type' => 'code',
+            'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+            'redirect_uri' => 'http://localhost:53124/callback',
+            'code_challenge' => 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+            'code_challenge_method' => 'S256',
+        ]);
+    }
+}

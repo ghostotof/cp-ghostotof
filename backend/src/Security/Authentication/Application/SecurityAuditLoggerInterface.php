@@ -137,6 +137,22 @@ interface SecurityAuditLoggerInterface
      */
     public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
 
+    /**
+     * Événement `mcp-client-row-not-admitted` (#651) : le point d'autorisation
+     * a atteint la ligne `cimd` d'un client que l'admission n'a pas rendu — un
+     * état que la conception dit impossible (l'admission précède toujours
+     * league), refusé `invalid_client` par `LoopbackAwareAuthCodeGrant`.
+     * Acteur anonyme. Le contexte ne porte que l'hôte de la ligne
+     * (`CimdClientId::host()`), ou `unreadable` si son identifiant n'a pas la
+     * forme CIMD ; jamais le `client_id` brut, qui vient d'un anonyme.
+     *
+     * Contrat de l'appelant : l'hôte est lu sur la ligne en base, que le
+     * consentement a créée — pas sur la valeur demandée —, donc un hôte déjà
+     * admis un jour ; il a pu quitter la liste des domaines autorisés depuis,
+     * ce qui est précisément le cas à voir. Cette méthode ne vérifie rien.
+     */
+    public function mcpClientRowNotAdmitted(string $clientHost): void;
+
     /** 403 sur `/api/backoffice` : un appelant authentifié sans ROLE_SUPER. */
     public function backofficeAccessDenied(): void;
 

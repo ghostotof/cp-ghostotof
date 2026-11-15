@@ -118,6 +118,13 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         ]);
     }
 
+    public function mcpClientRowNotAdmitted(string $clientHost): void
+    {
+        $this->record('mcp-client-row-not-admitted', 'MCP client row refused: no admission vouched for it.', [
+            'clientHost' => $clientHost,
+        ]);
+    }
+
     public function backofficeAccessDenied(): void
     {
         $this->record('backoffice-access-denied', 'Backoffice access denied.');
