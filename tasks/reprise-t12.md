@@ -15,15 +15,20 @@
   - **9B2** faite : `135d4a22` — `CimdAuthorizationTest` (fonctionnel), `Retry-After` du 429 dans
     `AuthorizeController::refusal()`, docblock de `OAuthServerMetadata` (l. 30).
 - Task 9 close, relue (`/code-review medium` + audit sécurité, 2026-11-15).
-- **Prochaine action** : série de correction de la relecture Task 9 (étape 05, agent sonnet/high) :
+- Série de correction de la relecture Task 9 **faite** : `dccdb715` (sonnet/high), preuve contrôlée
+  par le fil principal (PHPUnit `tests/Mcp/Connection` 1365 tests OK, PHPStan et Rector verts) :
   1. `client_id` entouré de blancs refusé dans `AuthorizationRequestValidator::wellFormedParameters()`
-     (`invalid_request`, sans redirection, avant league) — league le rogne et servait la ligne `cimd`
-     périmée sans admission (domaine retiré de la liste, document jamais relu, page « preregistered ») ;
-  2. `registration()` / `verifiedDomain()` du résumé tirés du client que league a jugé, pas du seul attribut ;
-  3. docblock de l'ordre de l'admission corrigé (seuls les contrôles de forme la précèdent) ;
-  4. tests de régression, y compris par `ConsentService::decide()`.
-  Puis relecture de cette série (`/code-review medium`, audit sécurité à proposer), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `68771e24`, puis ce commit d'état.
+     (`invalid_request`, sans redirection, avant l'admission et league) ;
+  2. `registration()` / `verifiedDomain()` du résumé tirés de `judgedDiscoveredClient()` (attribut
+     retenu seulement si son `client_id` est celui du client jugé par league) ;
+  3. docblock de l'ordre de l'admission corrigé, limite acceptée écrite ;
+  4. tests de régression : 4 lignes de `refusedBeforeLeague()`, test du résumé, deux tests
+     fonctionnels (dont `ConsentService::decide()`, rouge avant : 200 et un `code` délivré —
+     défaut de gravité **haute**).
+- **Prochaine action** : relecture de cette série, `/code-review medium` sur
+  `diff 68771e24...HEAD (branche feature/spec-0007-t12-cimd)`, audit sécurité opus/high à proposer
+  (la série touche l'identification du client). Puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `dccdb715`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -39,7 +44,8 @@
   CIMD à la Task 12.
 - Refus transitoire au consentement : traité dans la Task 10 — 503/429 typé avec `Retry-After`, pas
   le 400 générique de `ConsentService::validated()`.
-- Refus des blancs : `client_id` seul (défaut retenu par le fil principal, à confirmer) ; la
+- Refus des blancs : `client_id` seul (défaut retenu par le fil principal, livré en `dccdb715`,
+  confirmation de l'utilisateur attendue) ; la
   `redirect_uri` rognée reste acceptée, `AuthorizationRequestValidatorTest::paddedRedirects` intact.
 
 ## À injecter dans le brief de la Task 10
@@ -67,8 +73,11 @@
   dupliquée entre `AuthorizeController` et `RetryAfterListener` ; repli silencieux du grant sur une
   incohérence d'identifiant ; oracle de latence sur l'état du cache (F7) ; le `Retry-After` révèle la
   saturation du plafond (I1) ; 401 et 503 distinguables (I2) ; URL du transport dans la chaîne des
-  `previous`, journalisée en `info` (I4) ; tests manquants (I6 : attribut `McpClient` d'un autre
-  `client_id`, point de jeton avec un client CIMD).
+  `previous`, journalisée en `info` (I4) ; tests manquants (I6 : point de jeton avec un client CIMD ;
+  l'attribut d'un autre `client_id` est couvert depuis `dccdb715`).
+- `dccdb715` : `judgedDiscoveredClient()` lèverait sur un `AuthorizationRequest` sans client mais
+  porteur d'un client déclaré (cas impossible en production : league pose toujours le client) ; le
+  test du résumé construit le Value Object directement.
 
 ## Interdits des briefs
 
