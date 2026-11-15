@@ -121,10 +121,15 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * admis pour ce `client_id`) et que cette ligne est un client déclaré
      * (ClientRegistration::Cimd) — laissée par une autorisation antérieure —,
      * le refus est `invalid_client`, sans redirection, comme celui de
-     * l'admission : le domaine a pu quitter la liste, le document changer, et
-     * rien ne les a relus. Cela ferme, à la racine, tout chemin (un
-     * `client_id` que l'admission ne reconnaît pas, un blanc qu'un contrôle
-     * aurait laissé passer) par lequel league lirait la ligne sans admission.
+     * l'admission. Deux déclencheurs réels : (a) une divergence entre le
+     * `client_id` jugé par l'admission et celui que lit league (défense en
+     * profondeur) ; (b) une ligne `cimd` dont l'identifiant n'a plus la forme
+     * CIMD (écrite à la main, ou avant une règle plus stricte) : `admit()` rend
+     * alors `null`, league lit la ligne, le garde refuse et l'audit écrit
+     * l'hôte `unreadable`. Un domaine retiré de la liste n'atteint pas ce
+     * garde : `admit()` lève `DomainNotAllowed` avant league, sans audit
+     * (décision D-G). Cela ferme, à la racine, tout chemin par lequel league
+     * lirait la ligne sans admission.
      *
      * **L'échange du code**, au point d'accès des jetons, n'a aucun attribut ni
      * admission (AbstractGrant::validateClient() l'appelle sans passer par
@@ -145,8 +150,10 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
             if (true === $request->getAttribute(self::AUTHORIZATION_POINT_ATTRIBUTE)
                 && $client instanceof OAuthClient
                 && ClientRegistration::Cimd === $client->mcpClient()->registration()) {
-                // Un état que la conception dit impossible : tracé, l'hôte de la
-                // ligne seul. Une panne de l'audit ne change pas le refus.
+                // Défense en profondeur (divergence de client_id) ou ligne `cimd`
+                // à identifiant illisible : tracé, l'hôte de la ligne seul
+                // (`unreadable` sans forme CIMD). Une panne de l'audit, au travers
+                // de FailSafeAudit, ne change pas le refus.
                 $host = $client->mcpClient()->cimdHost() ?? 'unreadable';
                 $this->failSafeAudit->attempt(
                     fn () => $this->audit->mcpClientRowNotAdmitted($host),

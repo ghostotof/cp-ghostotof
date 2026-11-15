@@ -36,6 +36,10 @@ use Psr\Clock\ClockInterface;
  * hors liste est choisi librement par un anonyme, et l'écrire au journal
  * donnerait à n'importe qui la plume sur ses lignes (contrat de
  * {@see SecurityAuditLoggerInterface::mcpClientMetadataRefused()}).
+ *
+ * L'audit `mcpClientMetadataRefused` passe par {@see FailSafeAudit} : la panne
+ * du journal est consignée en dernier recours et ne remplace jamais le refus
+ * `ClientMetadataRefusedException`, relancé tel quel.
  */
 final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
 {
