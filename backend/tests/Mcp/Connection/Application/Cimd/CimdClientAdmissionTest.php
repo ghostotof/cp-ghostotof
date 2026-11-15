@@ -18,11 +18,15 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Tests\Mcp\Connection\Application\McpClientRepositoryFake;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use LogicException;
+use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\Exception as MockException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 
 /**
@@ -153,11 +157,21 @@ final class CimdClientAdmissionTest extends TestCase
 
         $audit = $this->createMock(SecurityAuditLoggerInterface::class);
         $audit->expects(self::once())->method('mcpClientMetadataRefused')
-            ->willThrowException(new RuntimeException('handler de sécurité en panne'));
+            ->willThrowException(new LogicException('handler de sécurité en panne'));
+        $handler = new TestHandler();
 
-        $admission = $this->admission(new McpClientRepositoryFake(null, null), $resolver, $audit);
+        $admission = $this->admission(new McpClientRepositoryFake(null, null), $resolver, $audit, null, new Logger('app', [$handler]));
 
         self::assertSame($refused, $this->refusalOf($admission), 'Le refus est relancé tel quel, malgré la panne de l\'audit.');
+
+        // La panne n'est pas muette : UN seul enregistrement `critical`, au
+        // message constant du site et à la classe seule de la panne simulée
+        // (jamais son message). Rougit si FailSafeAudit devient un catch muet.
+        $records = $handler->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(Level::Critical, $records[0]->level);
+        self::assertSame('Refused CIMD client metadata not audited.', $records[0]->message);
+        self::assertSame(['exceptionClass' => LogicException::class], $records[0]->context);
     }
 
     /**
@@ -177,6 +191,7 @@ final class CimdClientAdmissionTest extends TestCase
         CimdClientResolverInterface $resolver,
         SecurityAuditLoggerInterface $audit,
         ?AllowedClientDomains $allowed = null,
+        ?LoggerInterface $logger = null,
     ): CimdClientAdmission {
         return new CimdClientAdmission(
             $clients,
@@ -184,7 +199,7 @@ final class CimdClientAdmissionTest extends TestCase
             $resolver,
             $audit,
             new MockClock('2026-11-13 10:00:00'),
-            new FailSafeAudit(new NullLogger()),
+            new FailSafeAudit($logger ?? new NullLogger()),
         );
     }
 

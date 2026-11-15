@@ -49,8 +49,12 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
             self::assertFalse($exception->hasRedirect());
         }
 
-        self::assertTrue($handler->hasRecordThatContains('', Level::Critical));
+        // La panne sort en UN seul enregistrement `critical`, au message constant
+        // du garde et à la classe seule (jamais le message du pilote).
         $records = $handler->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(Level::Critical, $records[0]->level);
+        self::assertSame('Refused stored CIMD client row not audited.', $records[0]->message);
         self::assertSame(['exceptionClass' => RuntimeException::class], $records[0]->context);
         self::assertStringNotContainsString('secret', $records[0]->message);
     }
