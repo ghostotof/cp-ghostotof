@@ -96,9 +96,14 @@
     `McpClient::cimdHost()` au lieu de `CimdClientId::host()` ; F7/CR2 docblock décalé de `McpClientTest` ;
     F6/CR5 test PKCE fusionné dans `testAStaleCimdRowIsRefusedWithoutRedirectOnThePkceRefusalPathToo`
     (`invalid_client`, pas de redirection, audit une fois).
-- **Prochaine action** : agent A de la micro-série n° 4 (sonnet/high), puis agent B, puis relecture
+- **Micro-série n° 4, agent A fait** : `d1eb38f6` (H1, `CimdClientAdmission` reçoit `FailSafeAudit`),
+  `aa57c73f` (F5, `error_log()` de dernier recours, classe seule), `1bda12aa` (CR4, mock `critical()`) ;
+  preuve contrôlée (`tests/Mcp/Connection` 1398 OK, suite complète 6403 OK, PHPStan/Rector verts, signés
+  Opus 5.5, arbre propre). À ajouter pour B : docblocks de `CimdClientAdmission` et de
+  `SecurityAuditLoggerInterface::mcpClientMetadataRefused()` (l'audit passe par `FailSafeAudit`).
+- **Prochaine action** : agent B de la micro-série n° 4 (sonnet/high), puis relecture
   `diff 121415fe...HEAD` (demander pour l'audit), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `121415fe`, puis ce commit d'état.
+- `HEAD` au 2026-11-15 : `1bda12aa`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
