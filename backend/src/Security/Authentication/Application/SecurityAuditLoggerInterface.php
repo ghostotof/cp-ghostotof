@@ -126,9 +126,13 @@ interface SecurityAuditLoggerInterface
      * Contrat de l'appelant : seul un hôte déjà admis par la liste des domaines
      * autorisés de `Mcp/Connection` (`AllowedClientDomains`) est tracé. Un
      * domaine hors liste ne l'est jamais, même refusé en défense en profondeur
-     * par le résolveur ou le récupérateur : il ne déclenche aucune récupération
-     * ni aucun quota, et le tracer donnerait à un anonyme une écriture d'audit
-     * par requête, choisie par lui et bornée par nginx seul (plan T12, D-G).
+     * par le résolveur ou le récupérateur (plan T12, D-G) : il se confond avec
+     * un client inconnu, que rien ne trace, et son hôte serait une valeur
+     * choisie librement par un anonyme, écrite telle quelle dans le journal.
+     * Le volume n'est pas la raison : un hôte de la liste refusé au-delà du
+     * quota écrit lui aussi une ligne par requête (cause `throttled`), bornée
+     * par nginx seul, comme tout quota anonyme du site (`contactThrottled()`,
+     * `baseAccessThrottled()`) ; mais sa valeur ne sort jamais de la liste.
      * Cette méthode ne vérifie rien : la garde est chez l'appelant.
      */
     public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
