@@ -282,7 +282,9 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * (`admit()` rend `null`). Un domaine retiré de la liste n'y parvient pas :
      * `admit()` lève `DomainNotAllowed` avant league (D-G).
      *
-     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
+     * Le déclencheur (b), `admit()` qui rend `null`, est simulé ici par un double ; il est couvert de bout en bout (vraie admission, vraie ligne) par :
+     *
+     * @see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()
      */
     public function testAStoredCimdRowTheAdmissionDidNotVouchForIsNeverServed(): void
     {
@@ -331,7 +333,9 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * `mcp-client-row-not-admitted` est écrit une seule fois, avec l'hôte
      * seul : c'est l'unique ligne d'audit, celle du garde.
      *
-     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
+     * Le déclencheur (b), `admit()` qui rend `null`, est simulé ici par un double ; il est couvert de bout en bout (vraie admission, vraie ligne) par :
+     *
+     * @see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()
      */
     public function testAStaleCimdRowIsRefusedWithoutRedirectOnThePkceRefusalPathToo(): void
     {
@@ -360,7 +364,9 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
      * atteinte sans admission) relève de la défense en profondeur. L'hôte seul,
      * jamais le `client_id` brut.
      *
-     * Le cas « `admit()` rend `null` » y est simulé par un double : {@see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()} le joue de bout en bout, avec la vraie admission et une vraie ligne.
+     * Le déclencheur (b), `admit()` qui rend `null`, est simulé ici par un double ; il est couvert de bout en bout (vraie admission, vraie ligne) par :
+     *
+     * @see \App\Tests\Mcp\Connection\CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable()
      */
     public function testTheRefusalOfAStoredCimdRowIsAudited(): void
     {
