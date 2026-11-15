@@ -150,13 +150,30 @@
   `src`/`tests`, arbre propre ; l'agent : `tests/Mcp/Connection` 1399 OK, PHPStan, `lint:yaml`,
   `check-claude-rules.sh`, `CommentedClassNamesExistTest` verts ; signés Sonnet 5.5, modèle réel).
   Question rendue : phrase du dernier recours un peu longue dans `mcp-oauth-audits.md` (à voir en relecture).
-- **Micro-série n° 5 close.** **Prochaine action** : relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
+- **Micro-série n° 5 close**, relue (2026-11-15, `/code-review medium` + audit sécurité opus/high,
+  `diff e0544af7...HEAD`, tête relue `9389cac9`) : **un moyen** (code-review ; faible pour l'audit, moyen si
+  une ligne d'audit dépasse 1 Kio) — `log_limit` absent de `www.prod.conf` (défaut FPM 1024) : une ligne
+  coupée est jetée sans bruit par `jq -R 'fromjson? // empty'`. → **série de correction n° 6** (sonnet/high,
+  agents successifs), décisions de l'utilisateur :
+  1. **C1, `log_limit` + jq visible** : `log_limit = 8192` au `[global]` de `www.prod.conf` et
+     `www.dev.conf`, vérifié en dev par une ligne > 1 Kio ; variante `jq` qui garde visibles les lignes non
+     JSON (« unparsed ») dans `monolog.yaml`, `backend-outillage.md`, `McpCallOutcome.php` (docblock sans
+     `-R`) ; lignes NOTICE/WARNING du maître FPM ajoutées à la liste des lignes non JSON ;
+  2. **C2, textes exacts** : `FailSafeAudit` (401/429/503 et non 400 ; commande `grep` exacte qui ne se
+     trouve pas elle-même ; « liste » du commentaire du catch ; descripteur « fermé, ou bloqué : le worker
+     attend ») ; `CimdClientAdmission` (classe de la panne **du journal**) ; `LoopbackAwareAuthCodeGrantTest`
+     (relance sous `once()`, pas sous `any()`/`never()`/`atMost()`) ;
+  3. **C3, cohérence** : `McpConnectionPurger` en constante privée `EXPIRED_NOT_AUDITED` ; appel inutile au
+     résolveur (et son commentaire) retiré du test `unreadable` de `CimdAuthorizationTest` ; paragraphe
+     recopié dans trois docblocks d'`AuthorizationRequestValidatorTest` réduit à un `@see` court ; réflexion
+     sur `clientId` en une aide de fixture commune (avec `LoopbackAwareAuthCodeGrantTest`).
+- **Prochaine action** : C1, C2, C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : micro-série n° 4, au point `e0544af7` (série `121415fe...e0544af7`).
-- Prochaine série : `diff e0544af7...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : micro-série n° 5, au point `9389cac9` (série `e0544af7...9389cac9`).
+- Prochaine série : `diff 9389cac9...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -249,6 +266,11 @@
   (chemin interne, octet NUL ; théorique) ; règle « sept sites » tenue à la main, non imposée ; un
   `Throwable` de programmation (`TypeError`) dans la closure d'audit devient un `critical` au lieu d'un
   échec visible (voulu par `FailSafeAudit`).
+
+- Relecture de la micro-série n° 5, écrits (info) : type du fournisseur `array{string}` contre
+  `non-empty-string` dans `CimdAuthorizationTest` (PHPStan vert, sans objet) ; commentaire PHPUnit lié à
+  une version précise (13.4.6, à revoir à une montée) ; fd 2 du worker = tube vers le maître FPM, non
+  stderr du conteneur (mise en tampon, coupure à `log_limit`).
 
 ## Interdits des briefs
 
