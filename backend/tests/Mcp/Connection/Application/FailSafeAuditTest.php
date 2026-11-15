@@ -116,8 +116,11 @@ final class FailSafeAuditTest extends TestCase
      */
     public function testAFailureOfTheLoggerItselfIsSwallowed(): void
     {
-        $logger = self::createStub(LoggerInterface::class);
-        $logger->method('critical')->willThrowException(new RuntimeException('journal indisponible'));
+        // Un mock, non un stub : l'appel à critical() est ce qui est exercé, et
+        // le test doit rougir s'il disparaît.
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('critical')
+            ->willThrowException(new RuntimeException('journal indisponible'));
 
         $ran = false;
         (new FailSafeAudit($logger))->attempt(static function () use (&$ran): never {
