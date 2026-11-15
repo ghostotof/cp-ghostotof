@@ -112,14 +112,33 @@
   rouges venaient de PHPUnit concurrents sur la même base (agent arrêté, conteneur libre) ; relancée seule
   par le fil principal : 6402 OK, PHPStan vert, signés Opus 5.5, arbre propre. **Leçon pour les briefs** :
   ne jamais lancer PHPUnit en arrière-plan ni deux PHPUnit à la fois (base de test partagée).
-- **Prochaine action** : relecture de la micro-série n° 4
-  `diff 121415fe...HEAD` (demander pour l'audit), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `1978d77a`, puis ce commit d'état.
+- Relecture de la micro-série n° 4 faite (2026-11-15, `/code-review medium` + audit sécurité opus/high,
+  `diff 121415fe...HEAD`, tête relue `e0544af7`) : **aucun critique/haut/moyen** ; l'utilisateur retient
+  les quatre regroupements de faibles en **micro-série n° 5** (sonnet/high, agents successifs) :
+  1. **A1, messages et tests de `FailSafeAudit`** : les deux messages CIMD renommés au motif
+     « … not audited. » (`Refused CIMD client metadata not audited.`, `Refused stored CIMD client row not
+     audited.`, constantes privées) ; `CimdClientAdmissionTest` prouve le `critical` (TestHandler : niveau,
+     message, `exceptionClass`) ; le garde aussi ; `FailSafeAuditTest` : `LogicException` côté logger
+     (classe distincte de l'audit), `tearDown` robuste à un `setUp` raté, fichier `error_log` posé par le
+     seul test qui en a besoin ;
+  2. **A2, test d'intégration du déclencheur (b)** : `AuthorizationRequestValidatorTest`, vraie
+     admission (pas de `admit()` simulé), ligne `cimd` sous un identifiant valide `McpClientId` hors forme
+     CIMD → `invalid_client`, pas de redirection, audit `unreadable` ;
+  3. **A3, textes** : `backend-outillage.md` + `monolog.yaml` (`error_log` reçoit aussi le dernier
+     recours de `FailSafeAudit` ; `jq -R 'fromjson? // empty'`) ; docblock de `FailSafeAudit`
+     (appelants et codes complets, dernier recours borné : même descripteur 2) ; docblock de
+     `CimdClientAdmission` (panne de l'audit → `critical`, panne du journal → `error_log`) ;
+     `mcp-oauth-audits.md` (message constant de chaque site) ; déclencheur (b) précisé (identifiant
+     encore valide selon `McpClientId`, sinon client inconnu sans audit) dans `SecurityAuditLoggerInterface`,
+     `LoopbackAwareAuthCodeGrant` et les règles ; commentaire « `with()` avalé » de
+     `LoopbackAwareAuthCodeGrantTest` l. 68-69 corrigé (PHPUnit 13.4.6 relance l'échec en fin de test).
+- **Prochaine action** : micro-série n° 5 (A1, A2, A3), relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `e0544af7`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 3, au point `121415fe` (série `0d90fea3...121415fe`).
-- Prochaine série : `diff 121415fe...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : micro-série n° 4, au point `e0544af7` (série `121415fe...e0544af7`).
+- Prochaine série : `diff e0544af7...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -206,6 +225,12 @@
   témoin ; CR9 l'identité `===` tenue par convention (commentaire), pas par un marqueur ; CR10 trois
   commits de l'agent A signés « Sonnet 5.5 » (`81c756de`, `f7d4f28f`, `98c0e37a`), pas de réécriture sans
   accord ; F10 fenêtre théorique entre les deux lectures de la ligne (refus, rien ne s'ouvre).
+
+- Relecture de la micro-série n° 4, écrits (info) : `error_log` en texte brut partage le descripteur 2
+  avec le gestionnaire `main` (une panne de stderr même reste muette) ; classe anonyme dans `::class`
+  (chemin interne, octet NUL ; théorique) ; règle « sept sites » tenue à la main, non imposée ; un
+  `Throwable` de programmation (`TypeError`) dans la closure d'audit devient un `critical` au lieu d'un
+  échec visible (voulu par `FailSafeAudit`).
 
 ## Interdits des briefs
 
