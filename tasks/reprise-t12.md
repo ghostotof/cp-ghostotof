@@ -176,7 +176,12 @@
   du pool listées parmi les non-JSON. Pas de rebuild (valeur effective déjà 8192). Écrit, non corrigé :
   `k8s/README.md` ~l. 824/2064/2079, `grep '"channel":…' | jq` sans `-R` (morceau coupé → jq s'arrête,
   improbable à 8192). À reprendre dans la PR : constat moyen fondé sur une valeur que l'image surcharge.
-- **Prochaine action** : C2, C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
+- **C2 fait** (`93899ba0`, Sonnet 5.5) : FailSafeAudit (401 `invalid_client` définitif, 429/503 passager ;
+  `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'` depuis
+  `backend/`, 7 sites vérifiés par le fil principal ; catch aligné ; fd 2 = tube vers le maître, bloqué
+  borné par `request_terminate_timeout = 65s`) ; CimdClientAdmission (classe de la panne du journal) ;
+  LoopbackAwareAuthCodeGrantTest (`with()` relu sous `once()` seulement, `Matcher::verify()` l. 245-257).
+- **Prochaine action** : C3, relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
