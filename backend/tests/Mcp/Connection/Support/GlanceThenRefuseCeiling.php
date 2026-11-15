@@ -12,8 +12,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\RateLimiter\Reservation;
 
 /**
- * Un plafond commun qui se remplit entre le coup d'œil et la consommation
- * (#651, D-F) : il répond « il reste un jeton » à `consume(0)` puis refuse
+ * Un limiteur (plafond commun ou compteur d'un client connu) qui se remplit
+ * entre le coup d'œil et la consommation (#651, D-F) : il répond « il reste un jeton » à `consume(0)` puis refuse
  * `consume(1)`, avec un `retryAfter` d'une heure. C'est la course que le quota
  * accepte (un autre appelant prend la dernière unité entre les deux) : aucun
  * limiteur réel ne la produit à la demande, d'où cette doublure nommée.

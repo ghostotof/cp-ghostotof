@@ -53,8 +53,10 @@ use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
  *    faudrait un document valide sur un domaine de la liste et l'approbation
  *    d'une personne du palier de confiance, qui écrit la ligne. Il peut en
  *    revanche *nommer* un client approuvé : le compteur par client l'y borne,
- *    quels que soient ses appelants. Aucune lecture de la base pour un document
- *    en cache ni pour un domaine hors liste.
+ *    quels que soient ses appelants, sans jamais le refuser seul : compteur
+ *    plein, la voie se replie sur le plafond commun, comme pour un client
+ *    inconnu. Aucune lecture de la base pour un document en cache ni pour un
+ *    domaine hors liste.
  *
  * Elle ne tient aucune transaction : le quota écrit en base, et le validateur
  * de la demande d'autorisation qui l'appelle tourne avant celle de
@@ -96,8 +98,8 @@ final readonly class CimdClientResolver implements CimdClientResolverInterface
         }
 
         try {
-            // Un client déjà déclaré ne passe pas par le plafond commun, mais par le compteur de ce client (D-F) :
-            // la lecture n'a lieu que sur ce cache manqué.
+            // Un client déjà déclaré passe d'abord par le compteur de ce client, et se replie sur le plafond
+            // commun quand il est plein (D-F) : la lecture n'a lieu que sur ce cache manqué.
             if ($this->registrations->isDiscovered($clientId->toMcpClientId())) {
                 $this->quota->consumeForKnownClient($clientId);
             } else {

@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Infrastructure\Cimd;
 
 use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Infrastructure\Cimd\ClientIdFingerprint;
 use App\Mcp\Connection\Infrastructure\Cimd\FetchQuotaKey;
 use App\Mcp\Connection\Infrastructure\Cimd\SymfonyClientMetadataFetchQuota;
 use App\Tests\Mcp\Connection\Support\GlanceThenRefuseCeiling;
@@ -23,7 +24,8 @@ use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
  * RateLimiterStorageTest), `mcp_client_metadata` par appelant (dix par dix
  * minutes), `mcp_client_metadata_global` commun à tous (cent par dix minutes)
  * et `mcp_client_metadata_known_client` par client déjà déclaré (dix par dix
- * minutes, quel que soit le nombre d'appelants).
+ * minutes, quel que soit le nombre d'appelants), dont le compteur plein ne
+ * refuse jamais seul : la voie se replie alors sur le plafond commun.
  *
  * Ce que le test prouve :
  *  - la clé de l'appelant (l'IP du client de la requête principale,
@@ -36,9 +38,14 @@ use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
  *    un appelant refusé par le plafond garde tout son quota ; chaque refus
  *    porte le `retryAfter` du limiteur qui l'a prononcé ;
  *  - la voie des clients connus : un compteur par client, sous l'empreinte
- *    SHA-256 de son `client_id` (jamais en clair dans `cache_items`), regardé
- *    avant le quota de l'appelant et consommé après lui, le plafond commun
- *    jamais touché.
+ *    SHA-256 de son `client_id` (ClientIdFingerprint : une clé de longueur et
+ *    d'alphabet fixes, pas un secret, le `client_id` n'étant pas en clair dans
+ *    `cache_items`), regardé avant le quota de l'appelant et consommé après
+ *    lui. Tant qu'il a de la place, le plafond commun n'est pas touché ; plein,
+ *    la voie se replie sur le chemin d'un client inconnu (plafond regardé,
+ *    appelant, plafond consommé), si bien qu'un client connu n'est jamais plus
+ *    refusé qu'un inconnu : bloquer son compteur ne suffit pas à fermer la
+ *    porte à tous, il faut saturer aussi le plafond commun.
  *
  * Aucune horloge n'est avancée : les fenêtres sont le réglage des limiteurs,
  * pas du code testé ici.
@@ -305,8 +312,8 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
 
     /**
      * Le plafond commun est saturé (un plafond de deux unités, rempli d'un seul
-     * coup), mais un client déjà déclaré passe : sa voie ne regarde ni ne
-     * consomme le plafond.
+     * coup), mais un client déjà déclaré passe : tant que son compteur a de la
+     * place, sa voie ne regarde ni ne consomme le plafond.
      * Sans elle, dix sources suffiraient à refuser aussi les clients que des
      * personnes de confiance ont déjà approuvés.
      */
@@ -345,9 +352,10 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
     public function testTwoKnownClientsHaveTheirOwnCounters(): void
     {
         $knownClient = $this->inMemoryLimiter('known-client', 1, '10 minutes');
+        $global = $this->inMemoryLimiter('global', 100, '1 hour');
         $quota = $this->quotaWith(
             $this->inMemoryLimiter('caller', 10, '10 minutes'),
-            $this->inMemoryLimiter('global', 100, '1 hour'),
+            $global,
             '198.51.100.7',
             $knownClient,
         );
@@ -355,43 +363,97 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $quota->consumeForKnownClient($this->clientId(self::CLIENT_A));
         $quota->consumeForKnownClient($this->clientId(self::CLIENT_B));
 
-        self::assertSame(0, $knownClient->create(hash('sha256', self::CLIENT_A))->consume(0)->getRemainingTokens(), 'Le compteur du premier client est sous l\'empreinte de son client_id.');
-        self::assertSame(0, $knownClient->create(hash('sha256', self::CLIENT_B))->consume(0)->getRemainingTokens(), 'Le second client a consommé son propre compteur.');
-        $this->expectException(ClientMetadataFetchRateLimitExceededException::class);
-        $quota->consumeForKnownClient($this->clientId(self::CLIENT_A));
+        self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume(0)->getRemainingTokens(), 'Le compteur du premier client est sous l\'empreinte de son client_id.');
+        self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_B)))->consume(0)->getRemainingTokens(), 'Le second client a consommé son propre compteur.');
+        self::assertSame(100, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Chaque client avait de la place : le plafond commun n\'est pas touché.');
     }
 
     /**
-     * Dix appelants distincts partagent le compteur d'un même client : le
-     * onzième est refusé, avec le `retryAfter` de la fenêtre de dix minutes,
-     * quel que soit son propre quota. Les limiteurs du conteneur : c'est leur
-     * réglage qui est éprouvé.
+     * Le compteur d'un client est borné à dix par dix minutes, mais il ne
+     * refuse jamais seul : le onzième appel, d'un appelant distinct, se replie
+     * sur le plafond commun et passe tant qu'il a de la place. Un client connu
+     * n'est donc jamais plus refusé qu'un inconnu. Les limiteurs du conteneur :
+     * c'est leur réglage qui est éprouvé.
      */
-    public function testTenCallersShareOneKnownClientCounterAndTheEleventhIsRefused(): void
+    public function testAKnownClientIsNeverRefusedWhileTheCeilingHasRoom(): void
     {
-        for ($i = 1; $i <= 10; ++$i) {
+        for ($i = 1; $i <= 11; ++$i) {
             $this->quotaFor('198.51.100.'.$i)->consumeForKnownClient($this->clientId(self::CLIENT_A));
         }
 
-        $refused = $this->knownRefusalOf($this->quotaFor('198.51.100.11'), $this->clientId(self::CLIENT_A));
-
-        self::assertGreaterThan(new DateTimeImmutable(), $refused->retryAfter);
-        self::assertLessThanOrEqual(new DateTimeImmutable('+11 minutes'), $refused->retryAfter);
+        // Le compteur du client a gardé ses dix unités, le plafond a pris la onzième.
+        $counter = self::getContainer()->get('limiter.mcp_client_metadata_known_client')->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)));
+        self::assertSame(0, $counter->consume(0)->getRemainingTokens(), 'Le compteur du client est plein.');
+        $ceiling = self::getContainer()->get('limiter.mcp_client_metadata_global')->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY);
+        self::assertSame(99, $ceiling->consume(0)->getRemainingTokens(), 'Une seule unité du plafond : celle du onzième appel.');
     }
 
-    /** Refusé par le compteur du client (regardé d'abord), l'appelant ne perd rien de son quota. */
-    public function testARefusalByTheKnownClientLimiterCostsTheCallerNothing(): void
+    /**
+     * Le compteur du client est plein, le plafond libre : accepté par le
+     * plafond, qui prend une unité, comme pour un client inconnu ; le compteur
+     * du client n'est pas touché (il est plein), l'appelant paie une unité, pas deux.
+     */
+    public function testAFullKnownClientCounterFallsBackOnTheCeiling(): void
     {
         $knownClient = $this->inMemoryLimiter('known-client', 1, '10 minutes');
-        $knownClient->create(hash('sha256', self::CLIENT_A))->consume();
+        $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume();
+        $global = $this->inMemoryLimiter('global', 100, '1 hour');
         $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
 
-        $this->knownRefusalOf(
-            $this->quotaWith($perCaller, $this->inMemoryLimiter('global', 100, '1 hour'), '198.51.100.7', $knownClient),
+        $this->quotaWith($perCaller, $global, '198.51.100.7', $knownClient)->consumeForKnownClient($this->clientId(self::CLIENT_A));
+
+        self::assertSame(99, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Une unité du plafond commun.');
+        self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens(), 'Une unité de l\'appelant.');
+        self::assertSame(0, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume(0)->getRemainingTokens(), 'Le compteur du client est resté plein, sans dette.');
+    }
+
+    /**
+     * Le compteur du client et le plafond sont pleins : refus avec le
+     * `retryAfter` du plafond (une heure ici, dix minutes pour le compteur) ;
+     * l'appelant, refusé en regard, ne perd rien de son quota.
+     */
+    public function testAFullKnownClientCounterAndAFullCeilingRefuseWithTheCeilingsRetryAfter(): void
+    {
+        $knownClient = $this->inMemoryLimiter('known-client', 1, '10 minutes');
+        $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume();
+        $global = $this->inMemoryLimiter('global', 1, '1 hour');
+        $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume();
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $refused = $this->knownRefusalOf(
+            $this->quotaWith($perCaller, $global, '198.51.100.7', $knownClient),
             $this->clientId(self::CLIENT_A),
         );
 
-        self::assertSame(10, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());
+        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter, 'Le retryAfter est celui du plafond.');
+        self::assertSame(10, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens(), 'L\'appelant garde tout son quota.');
+    }
+
+    /**
+     * Le scénario de la revue : une adresse épuise le compteur de Claude, par
+     * dix demandes simultanées à l'expiration du cache. Un autre appelant qui
+     * nomme le même client passe, par le plafond commun, au lieu d'être refusé
+     * pour la fenêtre entière ; seul l'appelant épuisé est refusé, par son quota.
+     * Les limiteurs du conteneur.
+     */
+    public function testOneAddressExhaustingAKnownClientCounterDoesNotBlockTheOthers(): void
+    {
+        $attacker = $this->quotaFor('203.0.113.9');
+        $attackerRefused = 0;
+        for ($i = 0; $i < 12; ++$i) {
+            try {
+                $attacker->consumeForKnownClient($this->clientId(self::CLIENT_A));
+            } catch (ClientMetadataFetchRateLimitExceededException) {
+                ++$attackerRefused;
+            }
+        }
+
+        // Dix passent (le compteur du client est plein), les deux suivants sont refusés par le quota de l'appelant.
+        self::assertSame(2, $attackerRefused);
+
+        // Une personne de confiance, d'une autre adresse, nomme le même client : acceptée.
+        $this->quotaFor('198.51.100.7')->consumeForKnownClient($this->clientId(self::CLIENT_A));
+        self::addToAssertionCount(1);
     }
 
     /** Refusé par son propre quota, l'appelant ne consomme rien du compteur du client, qu'il ne peut donc pas user en insistant. */
@@ -406,30 +468,39 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
             $this->clientId(self::CLIENT_A),
         );
 
-        self::assertSame(10, $knownClient->create(hash('sha256', self::CLIENT_A))->consume(0)->getRemainingTokens());
+        self::assertSame(10, $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume(0)->getRemainingTokens());
     }
 
-    /** Les deux refuseraient : le compteur du client, regardé d'abord, donne son `retryAfter` (une heure ici, dix minutes pour l'appelant). */
-    public function testWhenBothWouldRefuseTheRetryAfterIsTheKnownClientLimiters(): void
+    /**
+     * Le compteur du client est plein et l'appelant épuisé : le refus est celui de
+     * l'appelant (le plafond, lui, est libre), son `retryAfter` de dix minutes, et
+     * le plafond commun n'est pas touché.
+     */
+    public function testWhenTheCounterIsFullAndTheCallerExhaustedTheCallersQuotaRefuses(): void
     {
         $perCaller = $this->inMemoryLimiter('caller', 1, '10 minutes');
         $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume();
         $knownClient = $this->inMemoryLimiter('known-client', 1, '1 hour');
-        $knownClient->create(hash('sha256', self::CLIENT_A))->consume();
+        $knownClient->create(ClientIdFingerprint::of($this->clientId(self::CLIENT_A)))->consume();
+        $global = $this->inMemoryLimiter('global', 100, '1 hour');
 
         $refused = $this->knownRefusalOf(
-            $this->quotaWith($perCaller, $this->inMemoryLimiter('global', 100, '1 hour'), '198.51.100.7', $knownClient),
+            $this->quotaWith($perCaller, $global, '198.51.100.7', $knownClient),
             $this->clientId(self::CLIENT_A),
         );
 
-        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter);
+        self::assertLessThanOrEqual(new DateTimeImmutable('+11 minutes'), $refused->retryAfter, 'Le retryAfter est celui de l\'appelant.');
+        self::assertSame(100, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens());
     }
 
     /**
      * Le `client_id` en clair n'est écrit nulle part dans `cache_items` : ni
      * dans la clé (Symfony la passe par `sha1()`), ni dans la valeur, où
-     * l'état sérialisé du limiteur garde l'identifiant qu'il a reçu. Témoin
-     * positif : l'empreinte SHA-256, elle, s'y lit, ce qui prouve que la
+     * l'état sérialisé du limiteur garde l'identifiant qu'il a reçu. Ce n'est
+     * pas une protection : le `client_id` d'un client approuvé est une URL
+     * publique, que quiconque en connaît la candidate recalcule en empreinte.
+     * C'est une clé de longueur et d'alphabet fixes, sans l'URL dans la table.
+     * Témoin positif : l'empreinte SHA-256, elle, s'y lit, ce qui prouve que la
      * recherche lit bien la valeur.
      */
     public function testNoCacheItemHoldsTheClearClientId(): void
@@ -437,7 +508,7 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
         $this->quotaFor('198.51.100.7')->consumeForKnownClient($this->clientId(self::CLIENT_A));
 
         self::assertSame(0, $this->cacheItemsHolding(self::CLIENT_A), 'Le client_id en clair ne doit apparaître dans aucune ligne.');
-        self::assertSame(1, $this->cacheItemsHolding(hash('sha256', self::CLIENT_A)), 'L\'empreinte du client_id doit se lire dans la valeur du compteur.');
+        self::assertSame(1, $this->cacheItemsHolding(ClientIdFingerprint::of($this->clientId(self::CLIENT_A))), 'L\'empreinte du client_id doit se lire dans la valeur du compteur.');
     }
 
     public function testAnUnknownClientIsRefusedByASaturatedCeiling(): void
@@ -453,16 +524,55 @@ final class SymfonyClientMetadataFetchQuotaTest extends KernelTestCase
     }
 
     /**
-     * La course acceptée : le plafond répond « il reste un jeton » au coup d'œil,
-     * puis refuse la consommation. Le refus rendu est celui du plafond, et
-     * l'unité de l'appelant, déjà consommée, est perdue (limite documentée de la
-     * classe, que ce test rend visible plutôt que de la taire).
+     * La course acceptée sur la voie des inconnus : le plafond répond « il reste
+     * un jeton » au coup d'œil, puis refuse la consommation. Le refus rendu est
+     * celui du plafond, et l'unité de l'appelant, déjà consommée, est perdue
+     * (limite documentée de la classe, que ce test rend visible plutôt que de la
+     * taire).
      */
     public function testACeilingFilledBetweenTheGlanceAndTheConsumptionRefusesAndCostsTheCallerOneUnit(): void
     {
         $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
 
         $refused = $this->refusalOf($this->quotaWith($perCaller, new GlanceThenRefuseCeiling(), '198.51.100.7'));
+
+        self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter, 'Le retryAfter est celui du plafond.');
+        self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());
+    }
+
+    /**
+     * La course sur la voie des clients connus : le compteur du client répond
+     * « il reste un jeton » au coup d'œil, puis se remplit avant la
+     * consommation. L'appel se replie sur le plafond, qui l'accepte ; l'appelant,
+     * déjà consommé, n'a perdu qu'une unité, pas deux.
+     */
+    public function testAKnownClientCounterFilledBetweenTheGlanceAndTheConsumptionFallsBackOnTheCeilingWithOneCallerUnit(): void
+    {
+        $global = $this->inMemoryLimiter('global', 100, '1 hour');
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $this->quotaWith($perCaller, $global, '198.51.100.7', new GlanceThenRefuseCeiling())->consumeForKnownClient($this->clientId(self::CLIENT_A));
+
+        self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens(), 'Une seule unité de l\'appelant.');
+        self::assertSame(99, $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume(0)->getRemainingTokens(), 'Le plafond a pris l\'appel.');
+    }
+
+    /**
+     * La même course, le plafond plein aussi : le compteur du client se remplit
+     * après son coup d'œil et le plafond refuse. Refus avec le `retryAfter` du
+     * plafond ; c'est le seul cas où l'appelant perd une unité sans rien
+     * obtenir (limite acceptée, documentée dans la classe), une seule.
+     */
+    public function testWhenTheCounterFillsDuringTheRaceAndTheCeilingIsFullTheCallerLosesItsOneUnit(): void
+    {
+        $global = $this->inMemoryLimiter('global', 1, '1 hour');
+        $global->create(SymfonyClientMetadataFetchQuota::GLOBAL_KEY)->consume();
+        $perCaller = $this->inMemoryLimiter('caller', 10, '10 minutes');
+
+        $refused = $this->knownRefusalOf(
+            $this->quotaWith($perCaller, $global, '198.51.100.7', new GlanceThenRefuseCeiling()),
+            $this->clientId(self::CLIENT_A),
+        );
 
         self::assertGreaterThan(new DateTimeImmutable('+30 minutes'), $refused->retryAfter, 'Le retryAfter est celui du plafond.');
         self::assertSame(9, $perCaller->create(FetchQuotaKey::forAddress('198.51.100.7'))->consume(0)->getRemainingTokens());

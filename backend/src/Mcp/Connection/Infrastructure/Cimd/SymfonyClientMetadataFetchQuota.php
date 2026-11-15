@@ -57,25 +57,44 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * rend visible.
  *
  * {@see self::consumeForKnownClient()} (voie des clients connus, D-F : voir
- * ClientMetadataFetchQuotaInterface) **ne touche jamais le plafond commun** :
- * dix sources qui le saturent ne ferment pas la porte aux clients déjà
- * approuvés. Elle suit le même ordre en trois temps, le compteur du client à
- * la place du plafond :
+ * ClientMetadataFetchQuotaInterface) ajoute un compteur par client, **qui ne
+ * refuse jamais seul** : plein, il fait se replier la voie sur le chemin d'un
+ * client inconnu. Ordre :
  *
- *  a. le compteur du client est regardé sans être consommé ;
- *  b. l'appelant est consommé, par la même méthode que pour `consume()` ;
- *  c. le compteur du client est consommé.
+ *  a. le compteur du client est regardé sans être consommé. S'il ne reste aucun
+ *     jeton, repli sur {@see self::consume()} en entier (plafond regardé,
+ *     appelant, plafond consommé) : l'appelant n'est consommé qu'une fois ;
+ *  b. sinon l'appelant est consommé, par la même méthode que pour `consume()` ;
+ *  c. le compteur du client est consommé. S'il vient de se remplir (course),
+ *     c'est le plafond commun qui est consommé, **sans reprendre d'unité à
+ *     l'appelant**, déjà payée en (b) ; le plafond plein refuse avec son
+ *     `retryAfter`.
  *
- * Le compteur du client existe parce que n'importe qui peut nommer un
- * `client_id` approuvé : sans lui, un attaquant passerait par cette voie, à
- * l'abri du plafond, borné seulement par ses /64. Il borne les récupérations
- * d'un même client, quels que soient ses appelants ; l'ensemble de ses clés
- * est borné par les clients approuvés. Mêmes propriétés, même course acceptée
- * que ci-dessus, compteur du client pour plafond.
+ * Tant que le compteur a de la place, le plafond commun n'est ni regardé ni
+ * consommé : dix sources qui saturent le plafond ne ferment pas la porte aux
+ * clients déjà approuvés. Le compteur existe parce que n'importe qui peut
+ * nommer un `client_id` approuvé : sans lui, un attaquant passerait par cette
+ * voie à l'abri du plafond, borné seulement par ses /64. Mais il **ne peut pas
+ * devenir une arme contre le client** : l'épuiser (dix demandes simultanées à
+ * l'expiration du cache, depuis une seule adresse) renvoie les suivants au
+ * plafond commun, qui accepte tant qu'il a de la place. Fermer la porte à un
+ * client connu demande de saturer son compteur **et** le plafond commun (dix
+ * sources, limite déjà acceptée au plan T12) ; un client connu n'est jamais
+ * plus refusé qu'un inconnu.
  *
- * Sa clé est l'empreinte SHA-256 du `client_id`, jamais le `client_id` en
- * clair : CacheStorage garde l'identifiant du limiteur dans la valeur
- * sérialisée, et la table `cache_items` ne doit pas tenir d'URL de client.
+ * Course acceptée : le compteur peut se remplir entre (a) et (c), sous un autre
+ * appelant. L'appelant ne perd alors une unité sans rien obtenir que si le
+ * plafond commun refuse aussi ; sinon il passe, pour une unité de quota et une
+ * du plafond. Fermer la fenêtre demanderait un verrou commun aux limiteurs,
+ * hors de proportion avec ce coût.
+ *
+ * La clé du compteur est l'empreinte SHA-256 du `client_id`
+ * ({@see ClientIdFingerprint}) : une clé de longueur et d'alphabet fixes, et
+ * l'URL n'est pas écrite en clair dans `cache_items` (CacheStorage garde
+ * l'identifiant du limiteur dans la valeur sérialisée). Ce n'est pas un
+ * secret : le `client_id` d'un client approuvé est une URL publique, que
+ * quiconque en connaît la candidate recalcule en empreinte. Aucune donnée
+ * personnelle n'est stockée.
  *
  * Les refus lèvent tous la même exception, avec le `retryAfter` du limiteur
  * qui a refusé.
@@ -134,22 +153,29 @@ final readonly class SymfonyClientMetadataFetchQuota implements ClientMetadataFe
 
     public function consumeForKnownClient(CimdClientId $clientId): void
     {
-        // L'empreinte, jamais le client_id en clair : CacheStorage le garderait dans `cache_items`.
-        $client = $this->knownClientRateLimiterFactory->create(hash('sha256', $clientId->value()));
+        $client = $this->knownClientRateLimiterFactory->create(ClientIdFingerprint::of($clientId));
 
-        // (a) Regarder le compteur du client sans le consommer : plein, l'appelant ne perd rien.
-        $this->refuseUnlessATokenRemains($client->consume(0));
+        // (a) Regarder le compteur du client sans le consommer. Plein, il ne refuse pas : repli
+        // sur tout le chemin d'un client inconnu, l'appelant n'y étant consommé qu'une fois.
+        if ($client->consume(0)->getRemainingTokens() < 1) {
+            $this->consume();
 
-        // (b) L'appelant : son refus ne coûte rien au compteur du client. Le plafond commun n'est jamais touché.
+            return;
+        }
+
+        // (b) L'appelant : son refus ne coûte rien au compteur du client ni au plafond.
         $this->consumeForCaller();
 
-        // (c) Le compteur du client : il a pu se remplir depuis (a), même course acceptée.
-        $this->refuseUnlessAccepted($client->consume());
+        // (c) Le compteur du client. Il a pu se remplir depuis (a) : course acceptée, le plafond
+        // prend alors l'appel, sans reprendre d'unité à l'appelant, déjà consommé en (b).
+        if (!$client->consume()->isAccepted()) {
+            $this->refuseUnlessAccepted($this->globalRateLimiterFactory->create(self::GLOBAL_KEY)->consume());
+        }
     }
 
     /**
      * Consomme une unité du quota de l'appelant courant, sous la clé de
-     * {@see FetchQuotaKey} : la seule écriture de ce quota, commune aux deux voies.
+     * {@see FetchQuotaKey} : la seule écriture de ce quota, commune aux deux voies et à son repli.
      */
     private function consumeForCaller(): void
     {

@@ -15,9 +15,12 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * les pods), valeurs authentifiées comme tout pool DBAL du projet
  * (CacheItemsAreAuthenticatedTest, `backend-integrite.md`).
  *
- * La clé est le SHA-256 du `client_id` : l'URL est choisie par un tiers, elle
- * peut être longue ou porter des caractères réservés aux clés PSR-6, et elle
- * ne doit jamais se lire dans la table. La valeur est le corps brut du
+ * La clé est l'empreinte du `client_id` ({@see ClientIdFingerprint}, son
+ * SHA-256) : l'URL est choisie par un tiers, elle peut être longue ou porter
+ * des caractères réservés aux clés PSR-6 ; l'empreinte a une longueur et un
+ * alphabet fixes, et l'URL n'est pas écrite en clair dans la table. Ce n'est
+ * pas un secret : le `client_id` d'un client approuvé est une URL publique,
+ * recalculable par quiconque en connaît la candidate. La valeur est le corps brut du
  * document, une chaîne : aucun objet n'est sérialisé, donc aucun objet n'est
  * désérialisé d'un cache, même authentifié.
  */
@@ -53,6 +56,6 @@ final readonly class CachedClientMetadataStore implements ClientMetadataStoreInt
 
     private function keyOf(CimdClientId $clientId): string
     {
-        return hash('sha256', $clientId->value());
+        return ClientIdFingerprint::of($clientId);
     }
 }

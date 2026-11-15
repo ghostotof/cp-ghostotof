@@ -13,7 +13,10 @@ use DateTimeImmutable;
  * Doublure du quota de récupération (#651) : compte les unités consommées, par
  * voie (client inconnu, client connu), et refuse sur chaque voie à partir de la
  * `limit`-ième + 1 (`$limit` pour les clients inconnus, `$knownClientLimit` pour
- * les clients connus ; jamais, par défaut). Un refus ne consomme rien.
+ * les clients connus ; jamais, par défaut). Un refus ne consomme rien. Simplification
+ * de test : le vrai quota ne refuse jamais sur le seul compteur d'un client connu
+ * (il se replie sur le plafond commun), la limite d'un client connu simule ici
+ * le refus final de la voie.
  */
 final class CountingFetchQuota implements ClientMetadataFetchQuotaInterface
 {
