@@ -104,7 +104,10 @@
 - Agent B (7 fichiers) mort sur « Autocompact is thrashing », rien laissé : découpé en **B1** (textes hors
   zone `Mcp` : F1, F8, F4, docblock `mcpClientMetadataRefused` ; code `Mcp` lu par `sed` seulement) puis
   **B2** (4 fichiers `Mcp` : F2, F3, F7, F6, docblock de `CimdClientAdmission`).
-- **Prochaine action** : agents B1 puis B2 de la micro-série n° 4 (sonnet/high), puis relecture
+- **B1 fait** : `3d48c7c8` (F1 deux déclencheurs, F8 `cimdHost()`, `FailSafeAudit` dans les docblocks
+  d'audit, F4 `mcp-oauth-audits.md` : sept sites réels de `FailSafeAudit::attempt()` et `error_log()` de
+  dernier recours) ; contrôlé (signé Opus 5.5, messages constants conformes, arbre propre).
+- **Prochaine action** : agent B2 de la micro-série n° 4 (sonnet/high), puis relecture
   `diff 121415fe...HEAD` (demander pour l'audit), puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `1bda12aa`, puis ce commit d'état.
 
