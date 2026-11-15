@@ -12,11 +12,11 @@
   - **9B1** faite : `9cd80e39` — `AuthorizationRequestSummary` (`discoveredClient`, `registration()`,
     `verifiedDomain()`), `AuthorizationRequestValidator` (appel de `admit()`, conversion des refus,
     attribut de requête) et son test, `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()` ;
-  - **9B2** à faire : `CimdAuthorizationTest` (fonctionnel), `Retry-After` du 429 dans
+  - **9B2** faite : `135d4a22` — `CimdAuthorizationTest` (fonctionnel), `Retry-After` du 429 dans
     `AuthorizeController::refusal()`, docblock de `OAuthServerMetadata` (l. 30).
-- Puis : relecture de la série Task 9 (étape 07, `/code-review medium` + audit sécurité, la série
+- Task 9 close. **Prochaine action** : relecture de la série Task 9 (étape 07, `/code-review medium` + audit sécurité, la série
   touche l'identification du client), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `9cd80e39` (9B1) ; 9B2 en cours.
+- `HEAD` au 2026-11-15 : `135d4a22` (9B2), puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -36,6 +36,11 @@
   `mcp-client-metadata-refused` (sauf hors liste, voulu, D-G).
 - 9B1 : `CimdClientAdmission` est résolue par alias automatique, privée dans le conteneur de test ;
   les tests du validateur le construisent à la main.
+- 9B2 : `Retry-After` du 429 posé par l'attribut `RetryAfterListener::REQUEST_ATTRIBUTE` (rendu public),
+  le contrôleur rendant le 429 sans lever l'exception ; couplage implicite par attribut, documenté.
+- 9B2 : 9 des 10 tests de `CimdAuthorizationTest` étaient verts dès l'écriture (comportement livré par
+  9A/9B1) ; seul le test `Retry-After` a été rouge.
+- La règle `mcp-oauth.md` dit encore « until CIMD (#651) lands » : prévu à la Task 12.
 
 ## Interdits des briefs
 
