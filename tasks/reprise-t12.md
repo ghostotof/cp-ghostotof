@@ -138,8 +138,14 @@
   lieu de `setUp`/`tearDown`) ; contrôlé par le fil principal (`tests/Mcp/Connection` 1397 OK ; l'agent :
   suite complète 6402 OK, PHPStan/Rector verts ; signés Opus 5.5, arbre propre). Reste pour A3 :
   `mcp-oauth-audits.md` l. 96 cite encore l'ancien message du garde.
-- **Prochaine action** : A2, puis A3, relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `50930ecf`, puis ce commit d'état.
+- **A2 fait** : `9c49d208` (`CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`,
+  deux cas `https://claude.ai` et port 8443, vraie admission, rouge par deux mutations ; docblocks des trois
+  tests simulés renvoient au nouveau) ; contrôlé (15 tests CIMD OK ; l'agent : 6404 OK, PHPStan/Rector verts).
+  Décisions : ligne hors forme fabriquée par réflexion sur `clientId`, **gardée** (même limite que CR6) ;
+  signé « Claude Sonnet 5.5 » (modèle réel), **laissé** (s'ajoute à CR10 ; les briefs demandent désormais
+  la signature du modèle réel).
+- **Prochaine action** : A3, relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `9c49d208`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
