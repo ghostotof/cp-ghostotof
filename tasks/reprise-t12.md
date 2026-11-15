@@ -35,9 +35,13 @@
      plus du canal `discoveredClient` ; la propriété devient privée, accesseur unique pour la Task 10 ;
   3. tests : assertion du refus au consentement sur le `client_id` (pas le seul type générique), blancs
      `\t` `\r` `\0` `\x0B` ajoutés aux fournisseurs, test du résumé dans sa propre classe `TestCase`.
-- **Prochaine action** : série de correction n° 2, puis sa relecture `diff 8fe3fb84...HEAD`, puis
+- Série de correction n° 2 **faite** : `3c364bd6` (sonnet/high), preuve contrôlée par le fil principal
+  (PHPUnit `tests/Mcp/Connection` 1386 tests OK, PHPStan vert ; l'agent : Rector, Psalm verts). Garde par
+  l'attribut `mcp.authorization_point` posé dans `validateAuthorizationRequest()` ; échange du code `cimd`
+  au point de jeton couvert par un test neuf (rouge si la garde devient inconditionnelle).
+- **Prochaine action** : relecture `diff 8fe3fb84...HEAD (branche feature/spec-0007-t12-cimd)`, puis
   Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `8fe3fb84`, puis ce commit d'état.
+- `HEAD` au 2026-11-15 : `3c364bd6`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -96,6 +100,10 @@
   l'admission laisse un anonyme déclencher une récupération sans PKCE (vérifier `code_challenge` avant
   l'admission ne coûterait rien — à reproposer à la Task 12) ; révocation (`LeagueRevocationEndpoint`)
   non relue par l'audit.
+- `3c364bd6` : le test de décision du consentement aux blancs ne redevient plus rouge si l'on retire la
+  garde des blancs (la garde du grant refuse alors, même 400 générique : défense en profondeur) ; la
+  preuve de la garde des blancs reste le test GET (400 contre 401). `Application` importe `OAuthClient`
+  d'`Infrastructure/League` (résumé). Le 400 du consentement ne nomme pas sa cause (question posée).
 
 ## Interdits des briefs
 
