@@ -110,6 +110,14 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('csrf-rejected', 'Request rejected by a CSRF guard.');
     }
 
+    public function mcpClientMetadataRefused(string $clientHost, string $cause): void
+    {
+        $this->record('mcp-client-metadata-refused', 'MCP client metadata document refused.', [
+            'clientHost' => $clientHost,
+            'cause' => $cause,
+        ]);
+    }
+
     public function backofficeAccessDenied(): void
     {
         $this->record('backoffice-access-denied', 'Backoffice access denied.');

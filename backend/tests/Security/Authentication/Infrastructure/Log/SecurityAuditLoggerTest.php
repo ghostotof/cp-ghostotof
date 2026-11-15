@@ -253,6 +253,32 @@ final class SecurityAuditLoggerTest extends TestCase
         ], $this->singleRecord()->context);
     }
 
+    /**
+     * Issue #651 : le refus du document de métadonnées d'un client MCP nomme
+     * l'hôte et la cause, rien d'autre — ni l'URL ni le corps reçu. Personne
+     * n'est connecté à ce stade : l'acteur est anonyme.
+     */
+    public function testAClientMetadataRefusalNamesTheHostAndTheCause(): void
+    {
+        $this->pushRequest('/api/oauth/authorize', 'GET');
+
+        $this->auditLogger->mcpClientMetadataRefused('claude.ai', 'address-blocked');
+
+        $record = $this->singleRecord();
+
+        self::assertSame([
+            'event' => 'mcp-client-metadata-refused',
+            'clientHost' => 'claude.ai',
+            'cause' => 'address-blocked',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/authorize',
+        ], $record->context);
+        self::assertArrayNotHasKey('clientId', $record->context);
+        self::assertArrayNotHasKey('url', $record->context);
+        self::assertArrayNotHasKey('userId', $record->context);
+    }
+
     public function testBackofficeAccessDeniedNamesTheBaseTierGuestAsActor(): void
     {
         $this->pushRequest('/api/backoffice/users', 'GET');
@@ -907,9 +933,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
         $this->auditLogger->mcpGrantRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'refresh_token', 'token-refused', 'https://client.example.test/metadata.json');
         $this->auditLogger->sessionRefusedAfterCredentialsChange($invited, 0);
+        $this->auditLogger->mcpClientMetadataRefused('client.example.test', 'address-blocked');
 
         $records = $this->handler->getRecords();
-        self::assertCount(30, $records);
+        self::assertCount(31, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

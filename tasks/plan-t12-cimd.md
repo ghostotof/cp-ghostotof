@@ -340,11 +340,11 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
 **Interfaces:**
 - Produces: `SecurityAuditLoggerInterface::mcpClientMetadataRefused(string $clientHost, string $cause): void` — événement `mcp-client-metadata-refused`, contexte propre `clientHost` et `cause`, plus le contexte commun de tout événement (dont l'adresse du demandeur) ; aucun compte (l'événement est déclenché par un anonyme, comme `csrf-rejected`, au même niveau de journal que lui). Deux chaînes, pas un type de `Mcp` : ce contexte ne dépend pas de `Mcp`.
 
-- [ ] **Step 1 : test rouge** — `testAClientMetadataRefusalNamesTheHostAndTheCause` : `mcpClientMetadataRefused('claude.ai', 'address-blocked')` écrit un enregistrement `mcp-client-metadata-refused` dont le contexte porte `clientHost === 'claude.ai'` et `cause === 'address-blocked'`, et aucune clé `clientId`, `url`, `userId` ; mêmes assertions de forme que le test de `csrfRejected`.
-- [ ] **Step 2 : vérifier l'échec** — `--filter SecurityAuditLoggerTest` : méthode absente.
-- [ ] **Step 3 : implémenter** — lire d'abord `.claude/rules/security-authentication-audit.md` (ce qu'un enregistrement ne porte jamais) ; méthode et docblock sur le modèle de `csrfRejected()` ; le docblock dit que l'hôte vient de `CimdClientId::host()` (alphabet `[a-z0-9.-]`, déjà dans la liste autorisée) et que ni l'URL ni le corps reçu n'entrent au journal.
-- [ ] **Step 4 : vérifier** — test vert ; `make back-test` vert (aucune autre implémentation de l'interface n'existe ; les simulacres PHPUnit suivent) ; `make back-quality` vert.
-- [ ] **Step 5 : commit** — `feat(security): le refus du document d'un client MCP est tracé, hôte et cause (#651)`.
+- [x] **Step 1 : test rouge** — `testAClientMetadataRefusalNamesTheHostAndTheCause` : `mcpClientMetadataRefused('claude.ai', 'address-blocked')` écrit un enregistrement `mcp-client-metadata-refused` dont le contexte porte `clientHost === 'claude.ai'` et `cause === 'address-blocked'`, et aucune clé `clientId`, `url`, `userId` ; mêmes assertions de forme que le test de `csrfRejected`.
+- [x] **Step 2 : vérifier l'échec** — `--filter SecurityAuditLoggerTest` : méthode absente.
+- [x] **Step 3 : implémenter** — lire d'abord `.claude/rules/security-authentication-audit.md` (ce qu'un enregistrement ne porte jamais) ; méthode et docblock sur le modèle de `csrfRejected()` ; le docblock dit que l'hôte vient de `CimdClientId::host()` (alphabet `[a-z0-9.-]`, déjà dans la liste autorisée) et que ni l'URL ni le corps reçu n'entrent au journal.
+- [x] **Step 4 : vérifier** — test vert ; `make back-test` vert (aucune autre implémentation de l'interface n'existe ; les simulacres PHPUnit suivent) ; `make back-quality` vert.
+- [x] **Step 5 : commit** — `feat(security): le refus du document d'un client MCP est tracé, hôte et cause (#651)`.
 
 ### Task 9 : admission au point d'autorisation, coexistence avec les clients pré-enregistrés — **sensible** (identification du client, SSRF, audit)
 

@@ -114,6 +114,17 @@ interface SecurityAuditLoggerInterface
     /** Rejet par l'un des deux gardes CSRF ; le chemin dit lequel. */
     public function csrfRejected(): void;
 
+    /**
+     * Issue #651 : le document de métadonnées d'un client MCP (CIMD) n'a pas été
+     * récupéré ou a été refusé. Aucun compte n'est en cause : l'acteur est
+     * anonyme par défaut. Le contexte porte l'hôte, tel que
+     * `CimdClientId::host()` le rend (alphabet `[a-z0-9.-]`, déjà dans la liste
+     * des valeurs autorisées), et la cause, un slug fixe ; ni l'URL, ni le
+     * `client_id`, ni le corps reçu n'y entrent. Deux chaînes simples : le
+     * contexte Security ne dépend d'aucun type de `Mcp`.
+     */
+    public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
+
     /** 403 sur `/api/backoffice` : un appelant authentifié sans ROLE_SUPER. */
     public function backofficeAccessDenied(): void;
 
