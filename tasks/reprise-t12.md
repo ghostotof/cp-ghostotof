@@ -9,14 +9,14 @@
 - Étape : **05**, Task 9 du plan `tasks/plan-t12-cimd.md`, découpée en trois parties après deux
   agents morts sur « Autocompact is thrashing » (mémoire `feedback_agents_budget_regles_mcp.md`) :
   - **9A** faite : `ea6d6554` — `CimdClientAdmission` et son test unitaire ;
-  - **9B1** à faire : `AuthorizationRequestSummary` (`discoveredClient`, `registration()`,
+  - **9B1** faite : `9cd80e39` — `AuthorizationRequestSummary` (`discoveredClient`, `registration()`,
     `verifiedDomain()`), `AuthorizationRequestValidator` (appel de `admit()`, conversion des refus,
     attribut de requête) et son test, `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()` ;
   - **9B2** à faire : `CimdAuthorizationTest` (fonctionnel), `Retry-After` du 429 dans
     `AuthorizeController::refusal()`, docblock de `OAuthServerMetadata` (l. 30).
 - Puis : relecture de la série Task 9 (étape 07, `/code-review medium` + audit sécurité, la série
   touche l'identification du client), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `ea6d6554`.
+- `HEAD` au 2026-11-15 : `9cd80e39` (9B1) ; 9B2 en cours.
 
 ## Point fixe de relecture
 
@@ -31,7 +31,11 @@
 
 ## Constats écrits non corrigés
 
-- (aucun à ce jour pour la série Task 9)
+- 9B1 : league n'émet pas `CLIENT_AUTHENTICATION_FAILED` pour un refus d'admission ; sans objet, aucun
+  écouteur n'est branché sur l'émetteur de league dans le projet, et le refus a son audit
+  `mcp-client-metadata-refused` (sauf hors liste, voulu, D-G).
+- 9B1 : `CimdClientAdmission` est résolue par alias automatique, privée dans le conteneur de test ;
+  les tests du validateur le construisent à la main.
 
 ## Interdits des briefs
 
