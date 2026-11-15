@@ -56,8 +56,8 @@
 - **M2 faite** : `6f2efc88` (sonnet/high), port `Application/JudgedClientInterface` (implémenté par
   `OAuthClient`), dérivation unique `judgedMcpClient()`, `judgedDiscoveredClient()` compare l'objet servi
   (`===`), libellés accordés, règle d'audit « 32 today » ; preuve contrôlée (2555 tests OK, PHPStan vert).
-- **Prochaine action** : puis relecture `diff a9a7671f...HEAD (branche
-  feature/spec-0007-t12-cimd)`, puis Tasks 10 à 12.
+- **Prochaine action** : relecture `diff a9a7671f...HEAD (branche feature/spec-0007-t12-cimd)`,
+  `/code-review medium` + audit sécurité opus/high (choix de l'utilisateur, 2026-11-15), puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `6f2efc88`, puis ce commit d'état.
 
 ## Point fixe de relecture
