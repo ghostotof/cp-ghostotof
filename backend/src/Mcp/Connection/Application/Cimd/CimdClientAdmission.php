@@ -42,7 +42,8 @@ use Psr\Clock\ClockInterface;
  * tel quel. Deux pannes se distinguent : celle de l'écriture de l'audit de
  * sécurité sort en `critical` sur le canal principal ; celle du journal
  * principal lui-même, qui ne peut plus rien dire, laisse seulement un
- * `error_log()` de dernier recours (constante et classe de la panne).
+ * `error_log()` de dernier recours (constante et classe de la panne du
+ * journal, `$loggerFailure::class`, non celle de l'audit).
  */
 final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
 {

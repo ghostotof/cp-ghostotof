@@ -13,8 +13,10 @@ use Throwable;
  * l'auteur du 2026-10-27, appliquée par #726 au point de jeton et à la
  * purge), **écrit une fois** (#726, S1) : l'issue reste celle que
  * l'appelant rend (le refus de league, les jetons émis, la purge menée à son
- * terme, le refus 400/429/503 d'une admission, le 401 d'un garde, la
- * révocation) — la liste exacte des sites est `grep -rn -- '->attempt(' src`.
+ * terme, le refus d'une admission — 401 `invalid_client` s'il est définitif,
+ * 429 ou 503 `temporarily_unavailable` s'il est passager —, le 401 d'un
+ * garde, la révocation). La liste exacte des sites (sept appels) se relève,
+ * depuis `backend/`, par `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'`.
  *
  * La ligne est tentée ; une panne, quelle qu'elle soit (`Throwable` : une
  * erreur du pilote, du chiffrement, du journal lui-même), sort en `critical`
@@ -27,10 +29,14 @@ use Throwable;
  * l'issue, même quand il ne peut plus dire qu'il a échoué (elle laisse alors
  * un `error_log()` de dernier recours, la classe seule). Ce dernier recours
  * n'est pas une garantie de trace : `error_log` et le gestionnaire `main` de
- * Monolog (`php://stderr`) écrivent tous deux sur le descripteur 2 du
- * conteneur (`php.prod.ini`, `monolog.yaml`). Il couvre donc une panne du
- * processeur, du formateur ou du gestionnaire, non celle de stderr même : si
- * le descripteur 2 est fermé ou plein, ni le `critical` ni la trace n'existent.
+ * Monolog (`php://stderr`) écrivent tous deux sur le descripteur 2 du worker
+ * FPM (`php.prod.ini`, `monolog.yaml`), un tube vers le maître
+ * (`catch_workers_output = yes`, `www.prod.conf`), qui le relaie sur le stderr
+ * du conteneur. Il couvre donc une panne du processeur, du formateur ou du
+ * gestionnaire, non celle de ce descripteur : s'il est fermé, ni le `critical`
+ * ni la trace n'existent ; s'il est bloqué (tube plein), le worker attend, borné
+ * par `request_terminate_timeout = 65s` (`www.prod.conf`), et la trace n'est
+ * pas perdue.
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
@@ -57,9 +63,9 @@ final readonly class FailSafeAudit
             } catch (Throwable $loggerFailure) {
                 // Le journal lui-même en panne : l'issue reste celle que
                 // l'appelant va rendre, jamais un 500 né de l'audit.
-                // Ce chemin vaut pour TOUS les appelants (chaque site de
-                // `->attempt(`, la liste exacte est dans la docblock de la
-                // classe). Dernier recours,
+                // Ce chemin vaut pour TOUS les appelants (les sept sites
+                // d'appel, que la commande `grep` de la docblock de la classe
+                // énumère). Dernier recours,
                 // sans contexte : un message constant et la classe de la panne
                 // du journal (pas son message, qui peut porter des données).
                 // `error_log()` écrit sur le flux d'erreurs de PHP, sans passer
