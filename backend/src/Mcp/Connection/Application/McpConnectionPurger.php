@@ -64,6 +64,9 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
 {
+    /** Le message d'une panne de l'audit d'une expiration, constant : il nomme ce qui n'a pas été audité. */
+    private const string EXPIRED_NOT_AUDITED = 'Expired connection not audited.';
+
     public function __construct(
         private McpConnectionRepositoryInterface $connections,
         private McpAuthorizationCodeRepositoryInterface $authorizationCodes,
@@ -149,7 +152,7 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
                 function () use ($revoked): void {
                     $this->auditLogger->mcpConnectionExpired($revoked);
                 },
-                'Expired connection not audited.',
+                self::EXPIRED_NOT_AUDITED,
             );
         }
     }
