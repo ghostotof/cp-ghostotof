@@ -97,8 +97,12 @@ by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler
 processor of that channel, withholds the MCP session id a key of the sessions pool carries (#731, same rule). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
-`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
-ever receives the engine's own errors. The events are emitted by `SecurityAuditLogger` (see Phase 3 of
+`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, and `error_log` receives the
+engine's own errors plus one plain-text line of our own, the last resort of `Mcp/Connection/Application/FailSafeAudit`
+(the main logger failed while reporting a failed audit write: a constant message and the logger failure's class).
+No Monolog record is ever taken up by `error_log` — that line is written by the `error_log()` function, not by a
+handler — and since it is not JSON, `jq` must skip it: `jq -R 'fromjson? // empty | select(.channel == "security")'`
+(see the comment on `main` in `monolog.yaml`). The events are emitted by `SecurityAuditLogger` (see Phase 3 of
 the remediation plan). The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see `.claude/rules/frontend.md`) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`

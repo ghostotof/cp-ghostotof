@@ -95,17 +95,25 @@ when@prod:
             # Tout le reste de l'application. Une ligne JSON par enregistrement sur
             # la sortie d'erreur : c'est ce que Kubernetes collecte (il ne lit que
             # stdout/stderr des conteneurs), donc `kubectl logs deploy/backend -c
-            # php-fpm | jq 'select(.channel == "security")'` fonctionne sans aucune
-            # infrastructure de collecte. Un fichier dans var/log/ serait au
+            # php-fpm | jq -R 'fromjson? // empty | select(.channel == "security")'`
+            # fonctionne sans aucune infrastructure de collecte. Le `-R` et le
+            # `fromjson?` ne sont pas décoratifs : le descripteur 2 porte aussi
+            # des lignes qui ne sont pas du JSON (erreur du moteur PHP, trace de
+            # dernier recours de FailSafeAudit, voir plus bas), et un `jq` sans
+            # eux s'arrête net à la première. Un fichier dans var/log/ serait au
             # contraire invisible — et perdu au redémarrage du pod, le système de
             # fichiers étant en lecture seule hors de var/.
             #
             # Pas de doublon avec `error_log = /proc/self/fd/2` (docker/php/php.prod.ini) :
             # Monolog écrit lui-même sur le descripteur 2 via son propre handler,
-            # tandis qu'`error_log` ne reçoit que les erreurs émises par le moteur
-            # PHP (erreur fatale à la compilation, avertissement de démarrage) —
-            # celles qui, par définition, ne passent jamais par le conteneur Symfony.
-            # Aucun enregistrement Monolog n'est donc repris par `error_log`.
+            # tandis qu'`error_log` reçoit les erreurs émises par le moteur PHP
+            # (erreur fatale à la compilation, avertissement de démarrage) —
+            # celles qui, par définition, ne passent jamais par le conteneur
+            # Symfony — et, en texte brut, la trace de dernier recours de
+            # `Mcp/Connection/Application/FailSafeAudit` (le journal principal est
+            # lui-même en panne : un message constant et la classe de la panne).
+            # Aucun enregistrement Monolog n'est donc repris par `error_log` :
+            # cette trace vient de la fonction `error_log()`, pas d'un handler.
             main:
                 type: stream
                 path: php://stderr
