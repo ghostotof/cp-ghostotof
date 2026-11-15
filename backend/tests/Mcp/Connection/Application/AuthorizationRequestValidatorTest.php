@@ -295,10 +295,15 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     }
 
     /**
-     * Le témoin positif du garde : la même ligne `cimd` en base, mais
-     * l'admission rend cette fois le client (document admis, même
-     * `client_id`) et la demande est servie. Le refus du test précédent vient
-     * donc bien du garde de getClientEntityOrFail(), non de la redirection.
+     * Le témoin de l'admission, pas celui du garde : la même ligne `cimd` en
+     * base, mais l'admission rend cette fois le client et league le juge
+     * lui, sans lire la ligne — la branche de getClientEntityOrFail() qui porte
+     * le garde n'est donc pas parcourue (mesuré : un garde qui refuserait
+     * toujours laisse ce test vert). Il prouve que le refus du test précédent
+     * tient à l'absence d'admission. Le témoin positif du garde est dans
+     * CimdAuthorizationTest::testACimdClientExchangesItsCodeAtTheTokenEndpointFromItsStoredRow :
+     * le point d'accès des jetons lit la ligne `cimd`, et un garde qui ne
+     * distinguerait pas le point d'autorisation le refuserait.
      */
     public function testTheSameStoredCimdRowIsServedWhenTheAdmissionVouchesForIt(): void
     {
