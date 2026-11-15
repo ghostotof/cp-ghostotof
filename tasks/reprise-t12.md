@@ -39,14 +39,24 @@
   (PHPUnit `tests/Mcp/Connection` 1386 tests OK, PHPStan vert ; l'agent : Rector, Psalm verts). Garde par
   l'attribut `mcp.authorization_point` posé dans `validateAuthorizationRequest()` ; échange du code `cimd`
   au point de jeton couvert par un test neuf (rouge si la garde devient inconditionnelle).
-- **Prochaine action** : relecture `diff 8fe3fb84...HEAD (branche feature/spec-0007-t12-cimd)`, puis
-  Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `3c364bd6`, puis ce commit d'état.
+- Relecture de `3c364bd6` faite (2026-11-15, `/code-review medium` + audit opus/high) : aucun défaut
+  critique/haut/moyen de la série (les deux moyens du `/code-review` sont la Task 10) → boucle close.
+  Micro-série retenue par l'utilisateur (sonnet/high), découpée en deux agents (budget de contexte) :
+  - **M1** (côté grant) : audit du refus du garde (nouvel évènement, sans `client_id` brut, sur le
+    modèle de `mcp-client-metadata-refused`) ; tests du garde (témoin positif : même ligne, admission qui
+    rend le client, acceptée ; variante sans `code_challenge` → `invalid_client` sans redirection) ;
+    commentaire du pont PSR-7 corrigé (il copie tous les attributs) ;
+  - **M2** (côté résumé) : port DDD — une interface d'`Application` expose le `McpClient` jugé, plus
+    d'import d'`Infrastructure` dans le résumé ; `registration()` et domaine dérivés une seule fois ;
+    accord des libellés des fournisseurs (« d'une octet nul »).
+- **Prochaine action** : M1, puis M2, puis relecture `diff a9a7671f...HEAD (branche
+  feature/spec-0007-t12-cimd)`, puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `a9a7671f`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série de correction `dccdb715`, au point `8fe3fb84` (série `68771e24...8fe3fb84`).
-- Prochaine série : `diff 8fe3fb84...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 2 `3c364bd6`, au point `a9a7671f` (série `8fe3fb84...a9a7671f`).
+- Prochaine série : `diff a9a7671f...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -58,6 +68,9 @@
 - Refus transitoire au consentement : traité dans la Task 10 — 503/429 typé avec `Retry-After`, pas
   le 400 générique de `ConsentService::validated()`.
 - Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
+- Domaine retiré de la liste fermée : ne coupe que les nouvelles autorisations ; limite acceptée, à
+  écrire dans la règle CIMD (Task 12) et la PR (2026-11-15).
+- Micro-série M1 + M2 après la relecture de `3c364bd6` : les quatre lots proposés retenus (2026-11-15).
 - Relecture de la série n° 2 (`3c364bd6`) : `/code-review medium` + audit sécurité opus/high ; le 400
   du consentement reste générique, sans indice de cause (2026-11-15).
 - Relecture de la série de correction : `/code-review medium` + audit sécurité opus/high (2026-11-15) ; la
@@ -69,6 +82,9 @@
   aujourd'hui `findOneByClientId`) ; la page n'affiche plus « preregistered » en dur
   (`ConsentController::REGISTRATION`).
 - Refus transitoire au consentement : 503/429 typé, `Retry-After` (décision ci-dessus).
+- `saveDiscovered()` refuse d'écraser une ligne `Preregistered`, et tourne dans la même transaction que
+  `connections->add()` ; une ligne `cimd` périmée est rafraîchie (nom, redirections) par le document
+  admis (audit de `3c364bd6`).
 - `grant()` ne lit le client à persister que par l'accesseur du résumé (client déclaré **jugé**), jamais
   une propriété publique (audit de `dccdb715`).
 
@@ -106,6 +122,12 @@
   garde des blancs (la garde du grant refuse alors, même 400 générique : défense en profondeur) ; la
   preuve de la garde des blancs reste le test GET (400 contre 401). `Application` importe `OAuthClient`
   d'`Infrastructure/League` (résumé). Le 400 du consentement ne nomme pas sa cause (voulu, décision du 2026-11-15).
+
+- Relecture de `3c364bd6`, écrits : aucun test sur `getClient()` non initialisé dans le résumé (Error
+  plutôt que Preregistered) ; repli sur un type inattendu → libellé le plus rassurant (inatteignable,
+  `LogicException` possible) ; un attribut `mcp.authorization_point` posé par erreur au point de jeton
+  ferait refuser tout échange `cimd` (convention non imposée) ; révocation (`LeagueRevocationEndpoint`)
+  sert la ligne périmée, sans danger (révoquer réduit les droits).
 
 ## Interdits des briefs
 
