@@ -24,6 +24,13 @@ final readonly class OAuthClient implements ClientEntityInterface, JudgedClientI
     ) {
     }
 
+    /**
+     * Rend l'instance même reçue à la construction. Ne jamais la copier ni la
+     * reconstruire (clone, `new McpClient(...)`, réhydratation) :
+     * `AuthorizationRequestSummary::judgedDiscoveredClient()` compare par `===`
+     * l'objet servi à celui que l'admission CIMD a déposé dans la requête, et
+     * une copie rendrait cette garde d'identité toujours fausse.
+     */
     public function mcpClient(): McpClient
     {
         return $this->client;
