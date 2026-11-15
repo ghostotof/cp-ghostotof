@@ -56,14 +56,28 @@
 - **M2 faite** : `6f2efc88` (sonnet/high), port `Application/JudgedClientInterface` (implémenté par
   `OAuthClient`), dérivation unique `judgedMcpClient()`, `judgedDiscoveredClient()` compare l'objet servi
   (`===`), libellés accordés, règle d'audit « 32 today » ; preuve contrôlée (2555 tests OK, PHPStan vert).
-- **Prochaine action** : relecture `diff a9a7671f...HEAD (branche feature/spec-0007-t12-cimd)`,
-  `/code-review medium` + audit sécurité opus/high (choix de l'utilisateur, 2026-11-15), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `6f2efc88`, puis ce commit d'état.
+- Relecture de M1 + M2 faite (2026-11-15, `diff a9a7671f...HEAD`, `/code-review medium` + audit opus/high) :
+  audit sans critique/haut/moyen ; `/code-review` rend **deux moyens** (hôte audité toujours `unreadable` ;
+  identité `===` fragile) et des faibles → **série de correction n° 3** (sonnet/high), huit points :
+  1. contrat de `mcpClientRowNotAdmitted()` (interface l. 145-153) et règle `security-authentication-audit.md`
+     l. 81-86 : seul déclencheur réel, une divergence entre le `client_id` jugé par l'admission et celui lu par
+     league (défense en profondeur) ; le retrait de la liste n'est pas audité (D-G) ; acteur `anonymous` au
+     point d'autorisation, `userId` à la revalidation du consentement (F1, F2 de l'audit) ;
+  2. test de la branche `unreadable` ;
+  3. test de bout en bout `validate()` → serveur → grant → résumé, `assertSame($admis, judgedDiscoveredClient())` ;
+  4. commentaire dans `OAuthClient::mcpClient()` interdisant toute copie (I4) ;
+  5. test PKCE (sans `code_challenge`) qui vérifie l'audit et le nombre d'enregistrements ;
+  6. témoin positif qui exerce vraiment la branche gardée ;
+  7. `McpClient::cimdHost()` factorisant la dérivation de l'hôte (grant et résumé) ;
+  8. `FailSafeAudit::attempt()` blinde `logger->critical()` : le refus reste un 400, jamais un 500 (I1).
+- **Prochaine action** : série de correction n° 3 (étape 05, sonnet/high), puis sa relecture
+  `diff 0d90fea3...HEAD` (`/code-review medium`, demander pour l'audit), puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `0d90fea3`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 2 `3c364bd6`, au point `a9a7671f` (série `8fe3fb84...a9a7671f`).
-- Prochaine série : `diff a9a7671f...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : micro-séries M1 + M2, au point `0d90fea3` (série `a9a7671f...0d90fea3`).
+- Prochaine série : `diff 0d90fea3...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
@@ -82,6 +96,10 @@
   du consentement reste générique, sans indice de cause (2026-11-15).
 - Relecture de la série de correction : `/code-review medium` + audit sécurité opus/high (2026-11-15) ; la
   `redirect_uri` rognée reste acceptée, `AuthorizationRequestValidatorTest::paddedRedirects` intact.
+
+- Relecture de M1 + M2 (2026-11-15) : garde gardé, contrat corrigé ; identité prouvée par un test de bout en
+  bout (pas de comparaison par `client_id`) ; faibles retenus : test PKCE complet, témoin positif réel, hôte
+  factorisé, `FailSafeAudit` blindé.
 
 ## À injecter dans le brief de la Task 10
 
@@ -135,6 +153,10 @@
   `LogicException` possible) ; un attribut `mcp.authorization_point` posé par erreur au point de jeton
   ferait refuser tout échange `cimd` (convention non imposée) ; révocation (`LeagueRevocationEndpoint`)
   sert la ligne périmée, sans danger (révoquer réduit les droits).
+
+- Relecture de M1 + M2, écrits : le port `JudgedClientInterface` ne retire qu'une partie de la dépendance
+  à league (le résumé lit encore `AuthorizationRequest`, I3) ; repli `Preregistered` d'un client non jugé
+  (fail-open de libellé, inatteignable) ; altitude du refus (grant plutôt que validateur), rejetée.
 
 ## Interdits des briefs
 
