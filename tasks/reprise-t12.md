@@ -107,9 +107,14 @@
 - **B1 fait** : `3d48c7c8` (F1 deux déclencheurs, F8 `cimdHost()`, `FailSafeAudit` dans les docblocks
   d'audit, F4 `mcp-oauth-audits.md` : sept sites réels de `FailSafeAudit::attempt()` et `error_log()` de
   dernier recours) ; contrôlé (signé Opus 5.5, messages constants conformes, arbre propre).
-- **Prochaine action** : agent B2 de la micro-série n° 4 (sonnet/high), puis relecture
+- **B2 fait** : `740108d2` (F2/F3 docblocks du garde, `FailSafeAudit` dans `CimdClientAdmission`), `043970cd`
+  (F7), `1978d77a` (F2 test + F6 fusion PKCE, mutation `false && …` rouge annulée) ; ses suites complètes
+  rouges venaient de PHPUnit concurrents sur la même base (agent arrêté, conteneur libre) ; relancée seule
+  par le fil principal : 6402 OK, PHPStan vert, signés Opus 5.5, arbre propre. **Leçon pour les briefs** :
+  ne jamais lancer PHPUnit en arrière-plan ni deux PHPUnit à la fois (base de test partagée).
+- **Prochaine action** : relecture de la micro-série n° 4
   `diff 121415fe...HEAD` (demander pour l'audit), puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `1bda12aa`, puis ce commit d'état.
+- `HEAD` au 2026-11-15 : `1978d77a`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
