@@ -144,8 +144,14 @@
   Décisions : ligne hors forme fabriquée par réflexion sur `clientId`, **gardée** (même limite que CR6) ;
   signé « Claude Sonnet 5.5 » (modèle réel), **laissé** (s'ajoute à CR10 ; les briefs demandent désormais
   la signature du modèle réel).
-- **Prochaine action** : A3, relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `9c49d208`, puis ce commit d'état.
+- **A3 fait** : `80392857` (T1 `error_log` + `jq -R 'fromjson? // empty | …'`), `478fcc52` (T2-T6 :
+  dernier recours tempéré, sites renvoyés au grep `->attempt(`, messages exacts dans la règle, déclencheur (b)
+  borné à un identifiant valide `McpClientId`, commentaire `with()` corrigé) ; contrôlé (texte seul dans
+  `src`/`tests`, arbre propre ; l'agent : `tests/Mcp/Connection` 1399 OK, PHPStan, `lint:yaml`,
+  `check-claude-rules.sh`, `CommentedClassNamesExistTest` verts ; signés Sonnet 5.5, modèle réel).
+  Question rendue : phrase du dernier recours un peu longue dans `mcp-oauth-audits.md` (à voir en relecture).
+- **Micro-série n° 5 close.** **Prochaine action** : relecture `diff e0544af7...HEAD`, puis Tasks 10 à 12.
+- `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
