@@ -23,6 +23,7 @@ use Monolog\Level;
 use Monolog\Logger;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 
@@ -54,13 +55,47 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         self::assertStringNotContainsString('secret', $records[0]->message);
     }
 
-    private function grant(SecurityAuditLoggerInterface $audit, Logger $logger): LoopbackAwareAuthCodeGrant
+    /**
+     * Une ligne `cimd` dont le `client_id` n'a plus la forme d'un identifiant
+     * CIMD (écrite à la main, ou avant une règle plus stricte) : l'audit reçoit
+     * exactement `unreadable`, jamais l'identifiant ni une valeur vide.
+     */
+    public function testAStoredCimdRowWhoseClientIdIsUnreadableIsAuditedAsUnreadable(): void
+    {
+        $row = $this->cimdRow();
+        new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, 'pas-un-identifiant-cimd');
+        $audit = $this->createMock(SecurityAuditLoggerInterface::class);
+        // L'hôte reçu est relevé, non comparé dans le mock : FailSafeAudit avalerait
+        // l'échec d'une attente `with()`, levée dans l'écriture de l'audit.
+        $received = [];
+        $audit->expects(self::once())->method('mcpClientRowNotAdmitted')
+            ->willReturnCallback(static function (string $clientHost) use (&$received): void {
+                $received[] = $clientHost;
+            });
+
+        try {
+            $this->grant($audit, new Logger('app', [new TestHandler()]), $row)->validateAuthorizationRequest($this->request());
+            self::fail('La ligne `cimd` non admise aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_client', $exception->getErrorType());
+        }
+
+        self::assertSame(['unreadable'], $received);
+    }
+
+    private function cimdRow(): McpClient
     {
         $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
-        $row = new OAuthClient(McpClient::discovered(
+
+        return McpClient::discovered(
             ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()),
             new MockClock('2026-11-01 10:00:00')->now(),
-        ));
+        );
+    }
+
+    private function grant(SecurityAuditLoggerInterface $audit, Logger $logger, ?McpClient $stored = null): LoopbackAwareAuthCodeGrant
+    {
+        $row = new OAuthClient($stored ?? $this->cimdRow());
         $clients = self::createStub(ClientRepositoryInterface::class);
         $clients->method('getClientEntity')->willReturn($row);
 
