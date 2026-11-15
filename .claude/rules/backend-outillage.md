@@ -101,8 +101,18 @@ would look for a parameter called `warning` and fail at compile time. No duplica
 engine's own errors plus one plain-text line of our own, the last resort of `Mcp/Connection/Application/FailSafeAudit`
 (the main logger failed while reporting a failed audit write: a constant message and the logger failure's class).
 No Monolog record is ever taken up by `error_log` — that line is written by the `error_log()` function, not by a
-handler — and since it is not JSON, `jq` must skip it: `jq -R 'fromjson? // empty | select(.channel == "security")'`
-(see the comment on `main` in `monolog.yaml`). The events are emitted by `SecurityAuditLogger` (see Phase 3 of
+handler. File descriptor 2 also carries the lines of the FPM master itself (`NOTICE: fpm is running`, `ready to
+handle connections`, `exiting, bye-bye!`, and the `WARNING`s it raises — its `[global] error_log` of `www.prod.conf`
+is that same descriptor) and the pool's access-log lines (`access.log` of the upstream image's `php-fpm.d/docker.conf`,
+read in dev; the production image inherits the same file), none of them JSON. `jq` must therefore **show** them, never
+swallow them: `jq -cR '. as $l | (try fromjson catch null) as $r | if ($r | type) == "object" then $r |
+select(.channel == "security") else {unparsed: $l} end'` — `-R` reads raw lines, `try … catch null` turns a
+non-JSON line into `{unparsed: <line>}` instead of dropping it (the former `fromjson? // empty` dropped without a
+word a cut audit record), and `type == "object"` covers a line that is valid JSON but no object (`42`, `"x"`), on
+which `.channel` would raise (see the comment on `main` in `monolog.yaml`). A line longer than php-fpm's `log_limit`
+is cut into pieces that are no longer JSON: `www.prod.conf` and `www.dev.conf` set `log_limit = 8192` in `[global]`
+(php-fpm's own default is 1024; the upstream image's `docker.conf` already sets 8192, repeated so as not to depend on
+it; the dev file only takes effect at the next `make build`, it is copied into the image). The events are emitted by `SecurityAuditLogger` (see Phase 3 of
 the remediation plan). The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see `.claude/rules/frontend.md`) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`

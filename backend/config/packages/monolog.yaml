@@ -95,14 +95,23 @@ when@prod:
             # Tout le reste de l'application. Une ligne JSON par enregistrement sur
             # la sortie d'erreur : c'est ce que Kubernetes collecte (il ne lit que
             # stdout/stderr des conteneurs), donc `kubectl logs deploy/backend -c
-            # php-fpm | jq -R 'fromjson? // empty | select(.channel == "security")'`
-            # fonctionne sans aucune infrastructure de collecte. Le `-R` et le
-            # `fromjson?` ne sont pas décoratifs : le descripteur 2 porte aussi
-            # des lignes qui ne sont pas du JSON (erreur du moteur PHP, trace de
-            # dernier recours de FailSafeAudit, voir plus bas), et un `jq` sans
-            # eux s'arrête net à la première. Un fichier dans var/log/ serait au
-            # contraire invisible — et perdu au redémarrage du pod, le système de
-            # fichiers étant en lecture seule hors de var/.
+            # php-fpm | jq -cR '. as $l | (try fromjson catch null) as $r |
+            # if ($r | type) == "object" then $r | select(.channel == "security")
+            # else {unparsed: $l} end'` fonctionne sans aucune infrastructure de
+            # collecte. Chaque morceau de cette commande a son rôle : `-R` lit des
+            # lignes brutes (le descripteur 2 porte aussi des lignes qui ne sont
+            # pas du JSON : erreur du moteur PHP, trace de dernier recours de
+            # FailSafeAudit voir plus bas, ligne NOTICE ou WARNING du maître FPM
+            # lui-même — son `[global] error_log` est ce même descripteur —, ligne
+            # d'accès du pool, et toute ligne coupée), un `jq` sans `-R` s'arrête
+            # net à la première ; `try … catch null` ne jette pas ces lignes :
+            # `{unparsed: <ligne>}` les garde visibles, alors qu'un `fromjson? //
+            # empty` ferait disparaître sans bruit un enregistrement d'audit
+            # coupé ; le test `type == "object"` couvre une ligne qui est du JSON
+            # sans être un objet (`42`, `"x"`) et sur laquelle `.channel` lèverait.
+            # Un fichier dans var/log/ serait au contraire invisible — et perdu au
+            # redémarrage du pod, le système de fichiers étant en lecture seule
+            # hors de var/.
             #
             # Pas de doublon avec `error_log = /proc/self/fd/2` (docker/php/php.prod.ini) :
             # Monolog écrit lui-même sur le descripteur 2 via son propre handler,
