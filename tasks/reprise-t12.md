@@ -53,9 +53,12 @@
   `FailSafeAudit`), témoin positif et variante sans `code_challenge`, commentaire du pont corrigé ;
   preuve contrôlée par le fil principal (PHPUnit `tests/Mcp/Connection tests/Security` 2554 tests OK,
   PHPStan vert).
-- **Prochaine action** : M2 (+ la phrase « 30 since S4 » périmée de la règle d'audit, réel 32), puis relecture `diff a9a7671f...HEAD (branche
+- **M2 faite** : `6f2efc88` (sonnet/high), port `Application/JudgedClientInterface` (implémenté par
+  `OAuthClient`), dérivation unique `judgedMcpClient()`, `judgedDiscoveredClient()` compare l'objet servi
+  (`===`), libellés accordés, règle d'audit « 32 today » ; preuve contrôlée (2555 tests OK, PHPStan vert).
+- **Prochaine action** : puis relecture `diff a9a7671f...HEAD (branche
   feature/spec-0007-t12-cimd)`, puis Tasks 10 à 12.
-- `HEAD` au 2026-11-15 : `e4e62b47`, puis ce commit d'état.
+- `HEAD` au 2026-11-15 : `6f2efc88`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
