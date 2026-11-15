@@ -70,7 +70,6 @@ final class McpClientTest extends TestCase
         self::assertFalse($client->allowsRedirect('https://evil.test/callback'));
     }
 
-    /** Une redirection répétée à l'identique n'est enregistrée qu'une fois, dans l'ordre reçu. */
     /** Un client dont l'identifiant a la forme CIMD donne l'hôte de cet identifiant. */
     public function testACimdShapedClientIdExposesItsHost(): void
     {
@@ -94,6 +93,7 @@ final class McpClientTest extends TestCase
         self::assertNull($client->cimdHost());
     }
 
+    /** Une redirection répétée à l'identique n'est enregistrée qu'une fois, dans l'ordre reçu. */
     public function testARepeatedRedirectIsKeptOnce(): void
     {
         $client = $this->client(['http://localhost/callback', 'https://app.example/cb', 'http://localhost/callback']);
