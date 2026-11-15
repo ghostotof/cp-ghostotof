@@ -58,6 +58,8 @@
 - Refus transitoire au consentement : traité dans la Task 10 — 503/429 typé avec `Retry-After`, pas
   le 400 générique de `ConsentService::validated()`.
 - Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
+- Relecture de la série n° 2 (`3c364bd6`) : `/code-review medium` + audit sécurité opus/high ; le 400
+  du consentement reste générique, sans indice de cause (2026-11-15).
 - Relecture de la série de correction : `/code-review medium` + audit sécurité opus/high (2026-11-15) ; la
   `redirect_uri` rognée reste acceptée, `AuthorizationRequestValidatorTest::paddedRedirects` intact.
 
@@ -103,7 +105,7 @@
 - `3c364bd6` : le test de décision du consentement aux blancs ne redevient plus rouge si l'on retire la
   garde des blancs (la garde du grant refuse alors, même 400 générique : défense en profondeur) ; la
   preuve de la garde des blancs reste le test GET (400 contre 401). `Application` importe `OAuthClient`
-  d'`Infrastructure/League` (résumé). Le 400 du consentement ne nomme pas sa cause (question posée).
+  d'`Infrastructure/League` (résumé). Le 400 du consentement ne nomme pas sa cause (voulu, décision du 2026-11-15).
 
 ## Interdits des briefs
 
