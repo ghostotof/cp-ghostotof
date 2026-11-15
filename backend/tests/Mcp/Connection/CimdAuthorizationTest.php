@@ -5,15 +5,22 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection;
 
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Infrastructure\Cimd\FetchQuotaKey;
 use App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\Support\FixedHostAddressResolver;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Closure;
 use Generator;
+use LogicException;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -208,6 +215,51 @@ final class CimdAuthorizationTest extends WebTestCase
         self::assertSame(0, $this->outboundRequests);
     }
 
+    /**
+     * league rogne `client_id` avant de le lire : un identifiant entouré de
+     * blancs désignerait la ligne `cimd` d'un client déjà admis, que l'admission
+     * (qui lit la valeur brute, sans la forme d'un `client_id` CIMD) n'a pas
+     * relue. Le domaine a pu quitter la liste, le document changer : la ligne
+     * périmée serait servie sans que rien l'ait jugée. Refusé, jamais corrigé
+     * (comme au point de jeton, #725), sans redirection, avant toute récupération.
+     */
+    public function testAClientIdWithSurroundingBlanksIsRefusedWithoutServingTheStaleRow(): void
+    {
+        $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
+        $this->aDiscoveredRowFromAnEarlierAuthorization();
+
+        foreach ([' '.ClaudeCodeMetadata::CLIENT_ID, ClaudeCodeMetadata::CLIENT_ID.' ', ClaudeCodeMetadata::CLIENT_ID."\n"] as $padded) {
+            $response = $this->authorize($this->cimdParameters(['client_id' => $padded]));
+
+            self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode(), $padded);
+            self::assertNull($response->headers->get('Location'), 'Un refus d\'avant league n\'est jamais une redirection.');
+            self::assertSame('invalid_request', $this->json($response)['error'], $padded);
+        }
+
+        self::assertSame(0, $this->outboundRequests);
+        self::assertSame([], $this->resolver()->resolvedHosts());
+    }
+
+    /**
+     * La décision du consentement revalide la demande par le même chemin
+     * (ConsentService::decide()) : un `client_id` entouré de blancs y est
+     * refusé de même, rien n'est accordé ni écrit, la ligne périmée n'est pas servie.
+     */
+    public function testAConsentDecisionForAClientIdWithSurroundingBlanksIsRejected(): void
+    {
+        $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
+        $this->aDiscoveredRowFromAnEarlierAuthorization();
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, overrides: ['client_id' => ' '.ClaudeCodeMetadata::CLIENT_ID, 'redirect_uri' => self::CIMD_REDIRECT]);
+
+        self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        self::assertSame('/errors/authorization-request-rejected', $this->json($response)['type'] ?? null);
+        self::assertNull($response->headers->get('Location'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->outboundRequests);
+    }
+
     public function testThePreregisteredFlowMakesNoOutboundCall(): void
     {
         $this->serve(static fn (): never => self::fail('Un client pré-enregistré ne déclenche aucune requête sortante.'));
@@ -290,6 +342,19 @@ final class CimdAuthorizationTest extends WebTestCase
         self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
         self::assertNull($response->headers->get('Location'), 'Un client refusé n\'est jamais une redirection.');
         self::assertSame('invalid_client', $this->json($response)['error']);
+    }
+
+    /**
+     * Une ligne `cimd` laissée par une autorisation antérieure de claude.ai
+     * (le domaine a pu sortir de la liste depuis) : ce que league servirait si
+     * rien n'arrêtait un `client_id` rogné.
+     */
+    private function aDiscoveredRowFromAnEarlierAuthorization(): void
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
+        $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new MockClock('2026-11-01 10:00:00')->now());
+
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($row);
     }
 
     private function clearPools(): void

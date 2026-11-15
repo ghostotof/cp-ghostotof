@@ -32,7 +32,7 @@ final readonly class AuthorizationRequestSummary
      * @param string $redirectUri  la redirection **demandée**, telle que league l'a retenue (rognée), celle vers laquelle le code partira
      * @param string $redirectHost son hôte, tel que League\Uri le lit (`[::1]` entre crochets)
      * @param string $scope        les scopes retenus par league, séparés par une espace (RFC 6749 §3.3)
-     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée
+     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée ; il n'est pris en compte que s'il porte le `client_id` du client que league a jugé (registration(), verifiedDomain())
      */
     public function __construct(
         public string $clientId,
@@ -48,11 +48,12 @@ final readonly class AuthorizationRequestSummary
 
     /**
      * D'où le client tient son identité : le document qu'il publie (`Cimd`)
-     * quand l'admission en a rendu un, la ligne enregistrée sinon.
+     * quand league a jugé le client que l'admission lui a rendu, la ligne
+     * enregistrée sinon.
      */
     public function registration(): ClientRegistration
     {
-        return null === $this->discoveredClient ? ClientRegistration::Preregistered : ClientRegistration::Cimd;
+        return null === $this->judgedDiscoveredClient() ? ClientRegistration::Preregistered : ClientRegistration::Cimd;
     }
 
     /**
@@ -62,11 +63,29 @@ final readonly class AuthorizationRequestSummary
      */
     public function verifiedDomain(): ?string
     {
-        if (ClientRegistration::Cimd !== $this->registration()) {
+        $discovered = $this->judgedDiscoveredClient();
+
+        return null === $discovered ? null : CimdClientId::tryFrom($discovered->getClientId())?->host();
+    }
+
+    /**
+     * Le client déclaré, **seulement s'il est celui que league a jugé** : son
+     * `client_id` égal, à l'identique, à celui du client de la demande que
+     * league a rendue — la règle même de
+     * LoopbackAwareAuthCodeGrant::getClientEntityOrFail(), qui ne sert le
+     * client déposé dans la requête que pour son propre `client_id`. Un client
+     * déclaré d'un autre identifiant n'a pas été jugé : il ne colore jamais
+     * le résumé (origine de l'identité, domaine affiché).
+     */
+    private function judgedDiscoveredClient(): ?McpClient
+    {
+        if (null === $this->discoveredClient) {
             return null;
         }
 
-        return CimdClientId::tryFrom($this->clientId)?->host();
+        return $this->discoveredClient->getClientId() === $this->authorizationRequest->getClient()->getIdentifier()
+            ? $this->discoveredClient
+            : null;
     }
 
     /**

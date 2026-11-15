@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\AuthorizationRequestSummary;
 use App\Mcp\Connection\Application\AuthorizationRequestValidator;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
@@ -15,12 +16,14 @@ use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
+use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\RequestTypes\AuthorizationRequest;
 use LogicException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -194,6 +197,14 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
         yield 'redirection blanche' => [['redirect_uri' => " \n"]];
         yield 'client absent' => [['client_id' => null]];
         yield 'client blanc' => [['client_id' => ' ']];
+        // league rogne le paramètre et servirait la ligne en base, sans que
+        // l'admission (qui lit la valeur brute) ait rien jugé : refusé, jamais
+        // corrigé (comme au point de jeton, #725). La redirection, elle, reste
+        // acceptée rognée (paddedRedirects()).
+        yield 'client précédé d\'une espace' => [['client_id' => ' '.self::CLIENT_ID]];
+        yield 'client suivi d\'une espace' => [['client_id' => self::CLIENT_ID.' ']];
+        yield 'client suivi d\'un saut de ligne' => [['client_id' => self::CLIENT_ID."\n"]];
+        yield 'client déclaré précédé d\'une espace' => [['client_id' => ' '.ClaudeCodeMetadata::CLIENT_ID]];
         yield 'client_id en tableau' => [['client_id' => [self::CLIENT_ID]]];
         yield 'state trop long' => [['state' => str_repeat('s', 1025)]];
     }
@@ -253,6 +264,33 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
             self::getContainer()->get(McpClientRepositoryInterface::class)->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID),
             'Le client déclaré n\'est pas persisté par l\'admission.',
         );
+    }
+
+    /**
+     * Le résumé se tire du client que league a jugé, jamais du seul client
+     * déclaré qu'on lui joint : un client déclaré d'un autre `client_id` que
+     * celui de la demande jugée (la règle de
+     * LoopbackAwareAuthCodeGrant::getClientEntityOrFail()) ne colore ni
+     * l'origine de l'identité, ni le domaine que la page affichera.
+     */
+    public function testADiscoveredClientOfAnotherClientIdNeverColoursTheSummary(): void
+    {
+        $judged = new AuthorizationRequest();
+        $judged->setClient(new OAuthClient(RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback'])));
+
+        $summary = new AuthorizationRequestSummary(
+            clientId: self::CLIENT_ID,
+            clientName: 'Client de test',
+            redirectUri: 'http://localhost/callback',
+            redirectHost: 'localhost',
+            scope: 'nominative:read',
+            resource: $this->resource(),
+            authorizationRequest: $judged,
+            discoveredClient: $this->discoveredClient(),
+        );
+
+        self::assertSame(ClientRegistration::Preregistered, $summary->registration());
+        self::assertNull($summary->verifiedDomain());
     }
 
     /**
