@@ -128,13 +128,17 @@ the empty line, a line reduced to a kubectl prefix) and renders everything
 else as `{"unparsed": "<whole line>"}`: a 403 or 5xx access line, a line of blanks only (not empty: not known noise), any other `NOTICE` (`Terminating`, `exiting, bye-bye!`, `child N exited`), a `WARNING`, the last-resort trace of
 `FailSafeAudit`, a fatal error, the pieces of a line cut by `log_limit` (a `fromjson? // empty` would have dropped them
 silently). It strips the prefixes of `kubectl logs --prefix`/`--timestamps` (and the leading blanks of the line) before decoding, wraps the predicate in
-`((\n…\n))` and evaluates it with `any`; exit codes: 2 invalid usage, 3 a predicate that does not compile, 4 at least
+`((\n…\n))` and evaluates it with `any`; exit codes: 0 the stream read to the end, no error; 2 invalid usage; 3 a predicate
+that does not compile (decided by a first run of jq on an empty input, before any data: its stderr quotes only the
+program and is relayed; never decided from a text coming from the logs); 4 the stream read to the end with at least
 one line on which the predicate raised (the line is dropped, stderr carries only its number and a fixed label, never a
 value of the record; the stream goes on, each label comes **as it happens** and stays visible after a Ctrl-C or a `| head`,
-a final total line closes a complete run; 4 wins over 5, never over a signal), 5 any other non-zero exit of jq
-(a fixed label, never jq's text), 128 and more a signal passed through unchanged and silent (141 for `| head`).
-jq's stderr goes through an awk allow-list filter that relays only the fixed labels (and counts them: no temporary file,
-nothing grows during a `-f`), plus the compile error of code 3 (it quotes only the program); the rest is never relayed. Its predicate is a trusted jq filter, never
+a final total line closes a complete run; never for a stream jq abandoned, never over a signal); 5 any other failure,
+a truncated stream included (any other non-zero exit of jq, a `halt_error(3)` of the predicate among them, or a failure of
+the error filter itself; a fixed label, never jq's text; kept even after predicate errors); 128 and more a signal passed
+through unchanged and silent (141 for `| head`).
+jq's stderr of the main pass goes through an awk allow-list filter that relays only the fixed labels (and counts them: no
+temporary file, no buffer, nothing grows during a `-f`); everything else is never relayed. Its predicate is a trusted jq filter, never
 external data, its reasons are in its header (the only copy), and `tools/tests/logs-select.test.sh` covers it. The
 `app:mcp:purge` job (CronJob `messenger-purge-cronjob.yaml`, container `purge`) writes its records through the same
 handlers to its container's stderr, but its stdout carries the three chained console commands' own output (`[OK] …`),
