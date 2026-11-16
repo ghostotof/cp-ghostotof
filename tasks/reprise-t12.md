@@ -431,13 +431,29 @@
   - un code d'awk hors de {0, 3, 4} donne un libellé et un code non nul.
   Les autres faibles de la série 11 (bash 4.4, tests à délais fixes, SIGINT de groupe, awk orphelin,
   `\n` de tête, redondances de `$kept`) vont dans la PR. Un seul agent I (sonnet/high).
-- **Prochaine action** : agent I, puis relecture `/code-review medium diff 7b4d38e0...HEAD`.
-- `HEAD` au 2026-11-16 : `7b4d38e0`, puis ce commit d'état.
+  - **I fait** (2026-11-16) :
+    - `c98b0178` fix(tools) :
+      - jq tourne d'abord sans donnée (`jq -cn … </dev/null`) ; s'il sort en 3, son stderr est relayé, le
+        libellé suit et le script sort en 3 ; tout autre code donne un libellé fixe et 5 (ou ≥ 128) ;
+      - la passe principale ne relaie plus aucune ligne brute : le tampon de 200 lignes a disparu ;
+      - le code 4 n'est rendu que si jq est sorti en 0, un flux tronqué donne 5 ;
+      - `halt_error(3)` donne 5 ;
+      - un échec du filtre awk donne un libellé fixe et 5 (ou ≥ 128), testé avec un faux `awk` dans le
+        `PATH` ;
+      - banc : 0,88 à 0,90 s.
+    - `89a81e81` docs(rules) : table des codes révisée.
+    - Vérifié par le fil principal : test vert, shellcheck et règles conformes ; fuite rejouée (rc 0, aucune
+      valeur sur stderr) ; `halt_error(3)` après erreur (rc 5) ; prédicat invalide (rc 3, relais).
+  - Écrit, non corrigé : un échec de l'exécution à vide autre que 3 ne relaie pas le stderr de jq (choix
+    prudent de l'agent, gardé).
+- **Prochaine action** : relecture `/code-review medium diff b99f6be7...HEAD`.
+- `HEAD` au 2026-11-16 : `89a81e81`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
 - Dernière relecture : série n° 11, au point `a513768b` (série `6ba5f243...a513768b`).
-- Prochaine série : `diff a513768b...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Prochaine série : `diff b99f6be7...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
+  (`b99f6be7` est le dernier commit d'état avant I).
 
 ## Décisions de l'utilisateur
 
