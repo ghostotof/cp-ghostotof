@@ -297,14 +297,22 @@ else
   fail "code 4 : libellés fixes seuls, une valeur écrite par le prédicat n'est pas relayée" "code $code ; stderr : $(cat "$TMP/err")"
 fi
 
-# Un prédicat qui ne compile pas : l'erreur de compilation de jq (elle ne cite que le prédicat)
-# est relayée ; un `halt_error(3)` de prédicat ne l'est pas (il peut porter une valeur).
+# Un `halt_error(3)` de prédicat n'est pas un échec de compilation (jq compile avant de lire) :
+# 5, libellé fixe, jamais la valeur. Avec ou sans erreurs de prédicat avant lui.
 code=0
 "$SCRIPT" '.context.ip | halt_error(3)' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -eq 3 ] && ! grep -q 'secretvalu' "$TMP/err" && [ -s "$TMP/err" ]; then
-  pass "halt_error(3) d'un prédicat : code 3, aucune valeur sur stderr"
+if [ "$code" -eq 5 ] && [ "$(cat "$TMP/err")" = "logs-select.sh : jq a échoué (code 3)" ]; then
+  pass "halt_error(3) d'un prédicat : code 5, libellé fixe, aucune valeur sur stderr"
 else
-  fail "halt_error(3) d'un prédicat : code 3, aucune valeur sur stderr" "code $code ; stderr : $(cat "$TMP/err")"
+  fail "halt_error(3) d'un prédicat : code 5, libellé fixe, aucune valeur sur stderr" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+printf '%s\n' '{"channel":"app","context":[]}' "$SECRET_REC" >"$TMP/h3.log"
+code=0
+"$SCRIPT" 'if (.context | type) == "array" then error("x") else (.context.ip | halt_error(3)) end' <"$TMP/h3.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 5 ] && ! grep -q 'secretvalu' "$TMP/err" && grep -q 'jq a échoué (code 3)' "$TMP/err"; then
+  pass "erreur de prédicat puis halt_error(3) : code 5, aucune valeur sur stderr"
+else
+  fail "erreur de prédicat puis halt_error(3) : code 5, aucune valeur sur stderr" "code $code ; stderr : $(cat "$TMP/err")"
 fi
 
 # Signaux : un code de sortie >= 128 de jq est rendu tel quel, sans message.
@@ -379,19 +387,66 @@ else
   fail "| head -n 1 après des erreurs : 141, messages visibles" "statuts ${pipe_status[*]} ; stderr : $(cat "$TMP/err")"
 fi
 
-# Le code 4 n'est pas masqué par un échec de jq qui devient 5 : une erreur de prédicat à la ligne 1,
-# puis un halt_error(7) du prédicat à la ligne 2.
+jq -nr --arg l "$BAD" 'range(5000) | $l' >"$TMP/many.log"
+
+# Un flux que jq a abandonné n'est pas lu jusqu'au bout : le code 4 promet le contraire, il
+# reste 5 (une erreur de prédicat à la ligne 1, puis un halt_error(7) du prédicat à la ligne 2).
+# Les libellés par ligne restent affichés, et le total (code 4) n'est pas annoncé.
 printf '%s\n' "$BAD" "$AUDIT" >"$TMP/mask.log"
 code=0
 "$SCRIPT" 'if (.context | type) == "array" then error("x") else (1 | halt_error(7)) end' <"$TMP/mask.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -eq 4 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" && grep -q 'jq a échoué (code 7)' "$TMP/err"; then
-  pass "erreur de prédicat puis échec de jq : code 4 conservé"
+if [ "$code" -eq 5 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" && grep -q 'jq a échoué (code 7)' "$TMP/err"; then
+  pass "erreur de prédicat puis flux abandonné par jq : code 5 (flux tronqué), libellés conservés"
 else
-  fail "erreur de prédicat puis échec de jq : code 4 conservé" "code $code ; stderr : $(cat "$TMP/err")"
+  fail "erreur de prédicat puis flux abandonné par jq : code 5 (flux tronqué), libellés conservés" "code $code ; stderr : $(cat "$TMP/err")"
 fi
 
+# Un signal l'emporte toujours, même après des erreurs de prédicat : 130 rendu tel quel.
+code=0
+"$SCRIPT" 'if (.context | type) == "array" then error("x") else (1 | halt_error(130)) end' <"$TMP/mask.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 130 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err"; then
+  pass "erreur de prédicat puis code 130 de jq : 130 rendu tel quel"
+else
+  fail "erreur de prédicat puis code 130 de jq : 130 rendu tel quel" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Fuite : une valeur du journal qui imite la dernière ligne d'une erreur de compilation ne doit
+# jamais être relayée. Le prédicat l'écrit sur le stderr de jq ; la valeur témoin est fictive.
+printf '%s\n' '{"channel":"x","m":"witnessvalue987\njq: 1 compile error"}' >"$TMP/leak.log"
+code=0
+"$SCRIPT" '(.m + "\n" | stderr) | true' <"$TMP/leak.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 0 ] && [ "$(grep -c 'witnessvalue987' "$TMP/err")" -eq 0 ] && [ ! -s "$TMP/err" ]; then
+  pass "valeur imitant « jq: N compile error » : jamais relayée, code 0, stderr vide"
+else
+  fail "valeur imitant « jq: N compile error » : jamais relayée, code 0, stderr vide" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+# Même chose avec des erreurs de prédicat (code 4) : seuls les libellés fixes.
+code=0
+"$SCRIPT" '(.m + "\n" | stderr) | error' <"$TMP/leak.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 4 ] && [ "$(grep -c 'witnessvalue987' "$TMP/err")" -eq 0 ]; then
+  pass "valeur imitant « jq: N compile error » avec erreur de prédicat : jamais relayée, code 4"
+else
+  fail "valeur imitant « jq: N compile error » avec erreur de prédicat : jamais relayée, code 4" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Le filtre des erreurs (awk) échoue : libellé fixe et code non nul, les erreurs de prédicat ne
+# disparaissent pas du code. Simulé par un faux `awk` en tête du PATH.
+mkdir -p "$TMP/fakebin"
+for awkcode in 7 143; do
+  printf '#!/bin/sh\ncat >/dev/null\nexit %s\n' "$awkcode" >"$TMP/fakebin/awk"
+  chmod +x "$TMP/fakebin/awk"
+  want=5; [ "$awkcode" -ge 128 ] && want=$awkcode
+  code=0
+  PATH="$TMP/fakebin:$PATH" "$SCRIPT" '.context.outcome == "x"' <"$TMP/many.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+  if [ "$code" -eq "$want" ] && [ "$(cat "$TMP/err")" = "logs-select.sh : le filtre des erreurs a échoué (code $awkcode)" ]; then
+    pass "filtre des erreurs sorti en $awkcode : libellé fixe, code $want"
+  else
+    fail "filtre des erreurs sorti en $awkcode : libellé fixe, code $want" "code $code ; stderr : $(cat "$TMP/err")"
+  fi
+done
+rm -f "$TMP/fakebin/awk"
+
 # Beaucoup d'erreurs : tout sort, rien n'est stocké (pas de fichier qui grossit) ; code 4.
-jq -nr --arg l "$BAD" 'range(5000) | $l' >"$TMP/many.log"
 code=0
 "$SCRIPT" '.context.outcome == "x"' <"$TMP/many.log" >"$TMP/out" 2>"$TMP/err" || code=$?
 if [ "$code" -eq 4 ] && [ "$(grep -c 'le prédicat a levé une erreur$' "$TMP/err")" -eq 5000 ] \

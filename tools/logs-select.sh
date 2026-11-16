@@ -108,22 +108,21 @@
 # Garder `.context.outcome? == ...` ou borner le canal d'abord évite l'erreur.
 #
 # Sortie :
-#   0  tout s'est passé ;
+#   0  flux lu jusqu'au bout, aucune erreur ;
 #   2  arguments invalides (usage sur stderr) : ce code n'est plus jamais celui de jq ;
-#   3  le prédicat ne compile pas : l'erreur de compilation de jq est relayée telle
-#      quelle, car jq compile avant de lire la moindre ligne et ne cite que le
-#      programme, jamais une donnée (reconnue à son dernier mot, `jq: N compile
-#      error`) ;
-#   4  le prédicat a levé une erreur sur au moins une ligne (le reste du flux est
-#      rendu) ; il l'emporte sur le 5 ci-dessous, jamais sur un signal ;
-#   5  toute autre sortie non nulle de jq (hors signal) : erreur système ou
-#      d'entrée-sortie (code 2 de jq), erreur non rattrapée (code 5), `halt_error`
-#      du prédicat... Le script dit seulement `jq a échoué (code N)` sur stderr, sans
-#      le texte de jq. Un `halt_error(3)` du prédicat n'a pas la forme d'une erreur de
-#      compilation : libellé fixe, code 3 (non relayé) ; un `halt_error(4)` est un 5 ;
-#   128 et plus  un signal a tué jq, code rendu tel quel et sans message : 141 (SIGPIPE,
-#      `| head -n 20` a fermé le tube), 130 (Ctrl-C), 143 (SIGTERM)... Les libellés
-#      d'erreur déjà émis restent visibles.
+#   3  le prédicat ne compile pas : jq est d'abord lancé sans aucune donnée (`jq -n` sur une
+#      entrée vide), son stderr, qui ne cite que le programme, est relayé tel quel. Jamais
+#      décidé d'après un texte venu des journaux ;
+#   4  flux lu jusqu'au bout, avec au moins une ligne en erreur de prédicat (le reste du flux
+#      est rendu) ; jamais pour un flux que jq a abandonné, jamais sur un signal ;
+#   5  tout autre échec, y compris un flux tronqué : erreur système ou d'entrée-sortie (code 2
+#      de jq), erreur non rattrapée (code 5), `halt_error` du prédicat (un `halt_error(3)` en
+#      est un : la compilation est déjà vérifiée), échec du filtre des erreurs. Le script dit
+#      seulement `jq a échoué (code N)` ou `le filtre des erreurs a échoué (code N)` sur
+#      stderr, sans le texte de jq, et garde les libellés par ligne déjà émis ;
+#   128 et plus  signal, code rendu tel quel et sans message : 141 (SIGPIPE, `| head -n 20`
+#      a fermé le tube), 130 (Ctrl-C), 143 (SIGTERM)... Les libellés d'erreur déjà émis
+#      restent visibles.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -186,25 +185,35 @@ def handle($n):
 foreach inputs as $in (0; . + 1; . as $n | $in | handle($n)
     | .o[], (.e | select(. != null) | (. + "\n") | stderr | empty))'
 
-# Filtre du stderr de jq, au fil de l'eau (awk, un `fflush` par libellé) :
-#  - un libellé fixe d'erreur de prédicat est relayé aussitôt et compté ;
-#  - tout autre ligne (valeur écrite par le prédicat, erreur non rattrapée de jq) est
-#    gardée en mémoire bornée (200 lignes) et jamais relayée, sauf si la dernière est
-#    `jq: N compile error(s)` : jq compile avant de lire, ses lignes ne citent que le
-#    programme, elles sont alors relayées. Sortie awk : 3 (compilation), 4 (erreurs de
-#    prédicat comptées, le total est écrit), sinon 0.
+# Vérification préalable : jq compile le programme avant de lire la moindre ligne, et
+# `-n` sur une entrée vide n'exécute jamais le prédicat (aucune donnée, donc rien à
+# citer). Un code 3 est donc, à coup sûr, une erreur de compilation : son stderr ne
+# contient que le prédicat et le message de jq, il est relayé. Un code 3 de la passe
+# principale n'est jamais cela (halt_error(3) du prédicat) : la décision ne repose sur
+# aucun texte venu des journaux.
+check=0
+compile_err="$(jq -cn "$program" 2>&1 >/dev/null </dev/null)" || check=$?
+if [ "$check" -eq 3 ]; then
+  printf '%s\n' "$compile_err" >&2
+  echo "logs-select.sh : le prédicat n'est pas un filtre jq valide : $predicate" >&2
+  exit 3
+elif [ "$check" -ne 0 ]; then
+  echo "logs-select.sh : jq a échoué (code $check)" >&2
+  if [ "$check" -ge 128 ]; then exit "$check"; fi
+  exit 5
+fi
+
+# Filtre du stderr de jq pendant la passe principale, au fil de l'eau (awk, un `fflush` par
+# libellé) : liste blanche sur la forme exacte des libellés fixes, qui sont relayés aussitôt
+# et comptés. Toute autre ligne (valeur écrite par le prédicat, erreur non rattrapée de jq)
+# est ignorée : aucune valeur issue des journaux n'est jamais relayée, rien n'est gardé en
+# mémoire. Sortie awk : 4 si au moins une erreur de prédicat (le total est écrit), sinon 0.
 stderr_filter() {
   awk '
-    /^logs-select\.sh : ligne [0-9]+ : le prédicat a levé une erreur$/ { print; fflush(); n++; next }
-    { total++; last = $0; if (b < 200) buf[++b] = $0 }
+    /^logs-select\.sh : ligne [0-9]+ : le prédicat a levé une erreur$/ { print; fflush(); n++ }
     END {
-      compile = (last ~ /^jq: [0-9]+ compile errors?$/)
-      if (compile) {
-        for (i = 1; i <= b; i++) print buf[i]
-        if (total > b) print last
-      }
       if (n > 0) printf "logs-select.sh : %d ligne(s) en erreur de prédicat (code 4)\n", n
-      exit compile ? 3 : (n > 0 ? 4 : 0)
+      exit n > 0 ? 4 : 0
     }'
 }
 
@@ -215,32 +224,33 @@ filter_pid=$!
 code=0
 jq -cnR "$program" 2>&3 || code=$?
 exec 3>&-
-# Attendre le filtre : son statut dit s'il y a eu des erreurs de prédicat (4) ou une erreur
-# de compilation relayée (3), et ses lignes finales doivent précéder les nôtres.
+# Attendre le filtre : son statut dit s'il y a eu des erreurs de prédicat (4), et ses lignes
+# finales doivent précéder les nôtres.
 filter=0
 wait "$filter_pid" || filter=$?
 
-case "$code" in
-  0) ;;
-  # 3 : jq n'a pas compilé le programme (le filtre a relayé son message, qui ne cite que le
-  # programme) ; un halt_error(3) du prédicat n'a pas cette forme : libellé fixe.
-  3) if [ "$filter" -eq 3 ]; then
-       echo "logs-select.sh : le prédicat n'est pas un filtre jq valide : $predicate" >&2
-     else
-       echo "logs-select.sh : jq a échoué (code 3)" >&2
-     fi ;;
-  # Un signal (130, 141...) : code rendu tel quel, sans message.
-  *)
-    if [ "$code" -lt 128 ]; then
-      # Toute autre sortie non nulle de jq (2 : erreur système ou d'entrée-sortie, 5 :
-      # erreur non rattrapée, 4 : halt_error du prédicat...) devient 5 : le 2 du script veut
-      # dire « usage invalide ». Libellé fixe : jamais le texte de jq.
-      echo "logs-select.sh : jq a échoué (code $code)" >&2
-      code=5
-    fi ;;
-esac
-# Des erreurs de prédicat ont eu lieu : 4, sauf si un signal a tué jq (>= 128, rendu tel quel).
-if [ "$filter" -eq 4 ] && [ "$code" -lt 128 ] && [ "$code" -ne 3 ]; then
-  code=4
+# Un échec du filtre lui-même (signal, awk absent ou en échec) : les erreurs de prédicat
+# risqueraient de disparaître du code ; libellé fixe, code non nul.
+if [ "$filter" -ne 0 ] && [ "$filter" -ne 4 ]; then
+  echo "logs-select.sh : le filtre des erreurs a échoué (code $filter)" >&2
+  if [ "$code" -lt 128 ]; then
+    if [ "$filter" -ge 128 ]; then code="$filter"; else code=5; fi
+  fi
+  exit "$code"
 fi
-exit "$code"
+
+if [ "$code" -ge 128 ]; then
+  # Un signal (130, 141...) : code rendu tel quel, sans message.
+  exit "$code"
+elif [ "$code" -ne 0 ]; then
+  # Toute autre sortie non nulle de jq (2 : erreur système ou d'entrée-sortie, 3 : halt_error
+  # du prédicat, la compilation étant déjà vérifiée, 5 : erreur non rattrapée...) : le flux
+  # n'a pas été lu jusqu'au bout, c'est un 5, même après des erreurs de prédicat (le 4
+  # promet un flux entier). Le 2 du script veut dire « usage invalide ». Libellé fixe : jamais
+  # le texte de jq.
+  echo "logs-select.sh : jq a échoué (code $code)" >&2
+  exit 5
+fi
+# jq a lu tout le flux : 4 s'il y a eu des erreurs de prédicat, sinon 0.
+if [ "$filter" -eq 4 ]; then exit 4; fi
+exit 0
