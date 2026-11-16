@@ -258,14 +258,30 @@
     `check-claude-rules.sh` vert, sections identiques mot pour mot, 5 fichiers PHPUnit touchés verts.
   - Écrit, non corrigé : les 60 s de nginx et de l'ingress sont des valeurs par défaut, pas des directives
     (seul `www.prod.conf:35` les cite). À fixer explicitement ? Question pour la description de la PR.
-- **Prochaine action** : relecture `/code-review medium diff 2e5f8d12...HEAD`, sans audit de sécurité
-  (la série ne touche ni l'authentification, ni la session, ni le CSRF, ni les cookies).
-- `HEAD` au 2026-11-16 : `82925a84`, puis ce commit d'état.
+- **Série n° 8 relue** (`/code-review medium diff 2e5f8d12...HEAD`, tête relue `f7c585a4`, sans audit) :
+  - **moyen**, reproduit : le message d'erreur du prédicat (`logs-select.sh` l.~100, `\(.)`) cite des
+    valeurs de l'enregistrement (`string ("secretvalu...)`, `while parsing '…'`) alors que l'en-tête
+    l.~64 promet « jamais le contenu ». Le test l.~164 ne couvre que `Cannot index`.
+  - faibles :
+    - performance ~20× (`sub`/`test` sur chaque ligne, même JSON ; mesuré : 1,75 s contre 0,085 s pour
+      100 000 lignes) ;
+    - commande du Job dans `monolog.yaml` l.~111 et dans la règle l.~130 : le stdout humain des trois
+      commandes sort en `unparsed`, et `job/<nom>` ne lit qu'un seul pod, pas ceux des reprises
+      (`backoffLimit: 2`) ;
+    - lignes d'accès 5xx écartées comme bruit ;
+    - NOTICE d'arrêt ou de rechargement du maître écartés ;
+    - code 2 de jq (entrée-sortie) confondu avec le code 2 d'usage ;
+    - `backend-tests.md` ne se charge plus sur `.github/workflows/**` ni `docker/php/**`, alors que #420
+      décrit `ini-file` et `php.prod.ini` ;
+    - FailSafeAudit : les 300 s couvrent tout le Job (trois commandes et les redémarrages), pas la seule
+      purge.
+- **Prochaine action** : série n° 9 à faire choisir par l'utilisateur. Point fixe : `f7c585a4`.
+- `HEAD` au 2026-11-16 : `f7c585a4`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 7, au point `2e5f8d12` (série `cd5aa8d0...2e5f8d12`).
-- Prochaine série : `diff 2e5f8d12...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 8, au point `f7c585a4` (série `2e5f8d12...f7c585a4`).
+- Prochaine série : `diff f7c585a4...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
