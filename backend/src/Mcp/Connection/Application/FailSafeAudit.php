@@ -35,17 +35,22 @@ use Throwable;
  * du conteneur `php-fpm` : le dernier recours couvre une panne du processeur,
  * du formateur ou du gestionnaire, non celle de ce descripteur. S'il est
  * fermé, ni le `critical` ni la trace n'existent ; s'il est bloqué (tube
- * plein), le worker attend jusqu'à `request_terminate_timeout = 65s`
- * (`www.prod.conf`), puis le maître le tue encore bloqué dans l'écriture :
- * le `critical` et la trace sont perdus, nginx répond 502, et l'issue n'est
- * plus celle que l'appelant rend.
+ * plein), le client reçoit un 504 à 60 s (le délai de lecture de nginx et de
+ * l'ingress, 60 s par défaut : aucune directive ne le change dans
+ * `docker/nginx` ni `k8s/`, et `www.prod.conf` le compte pour 60 s), puis le
+ * maître tue le worker à `request_terminate_timeout = 65s` (`www.prod.conf`),
+ * encore bloqué dans l'écriture : le `critical` et la trace sont perdus, et
+ * l'issue n'est plus celle que l'appelant rend.
  *
  * Un des sept sites, `McpConnectionPurger`, tourne en ligne de commande
  * (`app:mcp:purge`, CronJob `k8s/base/messenger-purge-cronjob.yaml`), sans
- * maître ni borne de 65 s : la CLI charge le même `php.prod.ini` (copié dans
- * `conf.d`), donc `error_log` et `php://stderr` écrivent directement sur le
- * stderr du conteneur `purge` du Job, dont les journaux sont ceux du pod du Job
- * et non ceux de `deploy/backend -c php-fpm`.
+ * maître ni borne de 65 s. Sa seule borne est `activeDeadlineSeconds: 300` du
+ * Job : passé ce délai, Kubernetes tue le pod encore bloqué dans l'écriture, et
+ * le `critical` comme la trace sont perdus de la même façon. La CLI charge le
+ * même `php.prod.ini` (copié dans `conf.d`), donc `error_log` et
+ * `php://stderr` écrivent directement sur le stderr du conteneur `purge` du
+ * Job, dont les journaux sont ceux du pod du Job et non ceux de
+ * `deploy/backend -c php-fpm`.
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
