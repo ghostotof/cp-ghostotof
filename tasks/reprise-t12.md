@@ -423,9 +423,16 @@
     - le test SIGINT n'envoie pas le signal au groupe (`setsid` + `kill -INT -- -PGID`) ;
     - le `\n` de tête du libellé envoie une ligne vide à awk par erreur (tampon et compteur gonflés) ;
     - redondances dans `$kept` (une regex de trop sur les lignes sans préfixe).
-- **Prochaine action** : la série n° 11 ressort deux moyens. Demander à l'utilisateur : série n° 12 ou
-  report dans la PR.
-- `HEAD` au 2026-11-16 : `a513768b`, puis ce commit d'état.
+- **Série n° 12 (décision de l'utilisateur, 2026-11-16)** : « Série 12 étroite ». Seul le bloc des codes
+  est corrigé :
+  - le relais du stderr de jq n'a lieu qu'en compilation (code 3), décidé hors d'awk ;
+  - un flux tronqué garde le code 5 ;
+  - `halt_error(3)` donne 5 ;
+  - un code d'awk hors de {0, 3, 4} donne un libellé et un code non nul.
+  Les autres faibles de la série 11 (bash 4.4, tests à délais fixes, SIGINT de groupe, awk orphelin,
+  `\n` de tête, redondances de `$kept`) vont dans la PR. Un seul agent I (sonnet/high).
+- **Prochaine action** : agent I, puis relecture `/code-review medium diff 7b4d38e0...HEAD`.
+- `HEAD` au 2026-11-16 : `7b4d38e0`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
