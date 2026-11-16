@@ -45,8 +45,11 @@ use Throwable;
  * Un des sept sites, `McpConnectionPurger`, tourne en ligne de commande
  * (`app:mcp:purge`, CronJob `k8s/base/messenger-purge-cronjob.yaml`), sans
  * maître ni borne de 65 s. Sa seule borne est `activeDeadlineSeconds: 300` du
- * Job : passé ce délai, Kubernetes tue le pod encore bloqué dans l'écriture, et
- * le `critical` comme la trace sont perdus de la même façon. La CLI charge le
+ * Job, qui couvre le Job entier et non la purge : les trois commandes enchaînées
+ * par le conteneur (la purge MCP est la troisième) et les relances `OnFailure`
+ * comptent dans ces 300 s, la purge peut donc être tuée bien avant 300 s de son
+ * propre temps. Passé ce délai, Kubernetes tue le pod encore bloqué dans
+ * l'écriture, et le `critical` comme la trace sont perdus de la même façon. La CLI charge le
  * même `php.prod.ini` (copié dans `conf.d`), donc `error_log` et
  * `php://stderr` écrivent directement sur le stderr du conteneur `purge` du
  * Job, dont les journaux sont ceux du pod du Job et non ceux de
