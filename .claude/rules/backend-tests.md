@@ -2,6 +2,9 @@
 paths:
   - "backend/tests/**"
   - "backend/phpunit.dist.xml"
+  - "backend/symfony.lock"
+  - ".github/workflows/**"
+  - "docker/php/**"
 ---
 
 # Backend — tests
