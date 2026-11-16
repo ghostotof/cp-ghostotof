@@ -250,8 +250,17 @@
     codes 3 et 4.
   - Question ouverte d'E1, écrite et non corrigée : un morceau de ligne coupée qui serait lui-même un objet
     JSON complet passerait pour un enregistrement (cas théorique).
-- **Prochaine action** : E2 (sonnet/high), puis relecture `diff 2e5f8d12...HEAD`.
-- `HEAD` au 2026-11-16 : `a71fcdc2`, puis ce commit d'état.
+  - **E2 fait** (2026-11-16) : `b4459ef8` (FailSafeAudit : 504 à 60 s, worker tué à 65 s, Job borné par
+    `activeDeadlineSeconds: 300`), `7812584c` (`monolog.yaml` avec le pod du Job, `McpCallOutcome.php`
+    gardé par `mcp_usage`), `82925a84` (découpage : `backend-tests.md` reçoit #420, #403, #629 et #743 mot
+    pour mot, `paths:` `backend/tests/**` + `backend/phpunit.dist.xml` ; `backend-outillage.md` à
+    23 496 octets avec un index ; table de `.claude/CLAUDE.md` et 9 renvois corrigés). Vérifié :
+    `check-claude-rules.sh` vert, sections identiques mot pour mot, 5 fichiers PHPUnit touchés verts.
+  - Écrit, non corrigé : les 60 s de nginx et de l'ingress sont des valeurs par défaut, pas des directives
+    (seul `www.prod.conf:35` les cite). À fixer explicitement ? Question pour la description de la PR.
+- **Prochaine action** : relecture `/code-review medium diff 2e5f8d12...HEAD`, sans audit de sécurité
+  (la série ne touche ni l'authentification, ni la session, ni le CSRF, ni les cookies).
+- `HEAD` au 2026-11-16 : `82925a84`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
