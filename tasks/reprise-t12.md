@@ -304,8 +304,20 @@
   - Textes rendus pour F2 :
     - `backend-outillage.md` l.113-127 : accès 2xx/3xx, NOTICE de routine, libellé fixe, code 5 ;
     - `monolog.yaml` l.103-106.
-- **Prochaine action** : F2 (sonnet/high), puis la relecture `diff f7c585a4...HEAD`.
-- `HEAD` au 2026-11-16 : `849d43a4`, puis ce commit d'état.
+  - **F2 fait** (2026-11-16) :
+    - `30114546` : `backend-tests.md` se charge aussi sur `.github/workflows/**`, `docker/php/**` et
+      `backend/symfony.lock` (#743) ;
+    - `8e840654` : textes de logs-select dans la règle et dans `monolog.yaml`. La commande du Job devient
+      `kubectl logs -l job-name=<nom> -c purge --prefix`, avec `--previous` pour un redémarrage
+      `OnFailure` ; elle signale aussi le stdout humain ;
+    - `8ea08362` : FailSafeAudit, les 300 s couvrent le Job entier.
+    - Vérifié : `check-claude-rules.sh`, `lint:yaml`, PHPStan et le test logs-select sont verts.
+  - Écrit, non corrigé :
+    - « `--previous` ne lit que le dernier redémarrage » n'est pas recoupé par une page de doc ;
+    - le label court `job-name` n'est pas testé sur un cluster (Kubernetes pose aussi
+      `batch.kubernetes.io/job-name`).
+- **Prochaine action** : relecture `/code-review medium diff f7c585a4...HEAD`, sans audit.
+- `HEAD` au 2026-11-16 : `8ea08362`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
