@@ -446,14 +446,31 @@
       valeur sur stderr) ; `halt_error(3)` après erreur (rc 5) ; prédicat invalide (rc 3, relais).
   - Écrit, non corrigé : un échec de l'exécution à vide autre que 3 ne relaie pas le stderr de jq (choix
     prudent de l'agent, gardé).
-- **Prochaine action** : relecture `/code-review medium diff b99f6be7...HEAD`.
-- `HEAD` au 2026-11-16 : `89a81e81`, puis ce commit d'état.
+- **Série n° 12 relue** (`diff b99f6be7...HEAD`, tête relue `6cb33233`, sans audit ; sévérités estimées
+  par le fil principal, la relecture n'en donnait pas) :
+  - moyen :
+    - le `END` d'awk écrit « N ligne(s) en erreur de prédicat (code 4) » même quand le script sort en 5 ou
+      ≥ 128. Reproduit par le relecteur. Le test « flux abandonné : code 5 » ne vérifie pas l'absence de
+      cette ligne (script l.~213, test l.~393).
+  - faibles :
+    - le libellé d'échec du filtre sort même quand N ≥ 128 (contrat « sans message »), et le test avec un
+      faux awk à 143 le grave (l.~233) ;
+    - le pré-contrôle écrit « jq a échoué (code N) » pour N ≥ 128 (l.~201) ;
+    - `halt` ou `halt_error(0)` du prédicat arrête jq en 0 : le script rend 0 ou 4 pour un flux tronqué
+      (l.~252) ;
+    - `halt_error(130|141)` du prédicat est pris pour un signal, et le test « code 130 » le grave (l.~240) ;
+    - quand le filtre et jq échouent tous les deux, le libellé de jq est perdu (l.~230) ;
+    - le pré-contrôle tourne en `-cn` et non en `-cnR` (l.~196) ;
+    - la règle ne dit pas que « erreur de prédicat + échec de jq » est passé de 4 à 5, ni ce que devient la
+      ligne de total.
+- **Prochaine action** : demander à l'utilisateur : micro-correctif du moyen, puis arrêt de la boucle ?
+- `HEAD` au 2026-11-16 : `6cb33233`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
 - Dernière relecture : série n° 11, au point `a513768b` (série `6ba5f243...a513768b`).
-- Prochaine série : `diff b99f6be7...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
-  (`b99f6be7` est le dernier commit d'état avant I).
+- Dernière relecture effective : série n° 12, au point `6cb33233` (série `b99f6be7...6cb33233`).
+- Prochaine série : `diff 6cb33233...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
