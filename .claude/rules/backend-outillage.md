@@ -118,16 +118,22 @@ is that same descriptor) and the pool's access-log lines (`access.log` of the up
 read in dev; the production image inherits the same file), none of them JSON. `tools/logs-select.sh` (#651) is the only copy of the command that reads them:
 `kubectl logs deploy/backend -c php-fpm | tools/logs-select.sh '.channel == "security_audit"'` (audit events leave on
 `security_audit`; `security` is the framework's own channel, `.channel | IN("security", "security_audit")` reads both).
-It drops only the known noise (the pool's access line, the master's `NOTICE`s, the empty line) and renders
-everything else as `{"unparsed": "<whole line>"}`: the last-resort trace of `FailSafeAudit`, a fatal error, a
-`WARNING`, the pieces of a line cut by `log_limit` (a `fromjson? // empty` would have dropped them silently). It strips
-the prefixes of `kubectl logs --prefix`/`--timestamps` before decoding, wraps the predicate in `((\n…\n))` and
-evaluates it with `any`; exit codes: 2 invalid usage, 3 a predicate that does not compile, 4 at least one line on
-which the predicate raised (the line is dropped, a short message goes to stderr, the stream goes on). Its predicate
-is a trusted jq filter, never external data, its reasons are in its header (the only copy), and
-`tools/tests/logs-select.test.sh` covers it. The `app:mcp:purge` job (CronJob `messenger-purge-cronjob.yaml`,
-container `purge`) writes through the same handlers to its container's stderr: read its records in the logs of the
-**Job's pod** (`kubectl logs job/<name> -c purge | tools/logs-select.sh …`), not in `deploy/backend -c php-fpm`.
+It drops only the known noise (the pool's access line **in 2xx/3xx**, the master's **routine** `NOTICE`s — start-up and
+`child N started` —, the empty line) and renders everything else as `{"unparsed": "<whole line>"}`: a 4xx/5xx access
+line, any other `NOTICE` (`Terminating`, `exiting, bye-bye!`, `child N exited`), a `WARNING`, the last-resort trace of
+`FailSafeAudit`, a fatal error, the pieces of a line cut by `log_limit` (a `fromjson? // empty` would have dropped them
+silently). It strips the prefixes of `kubectl logs --prefix`/`--timestamps` before decoding, wraps the predicate in
+`((\n…\n))` and evaluates it with `any`; exit codes: 2 invalid usage, 3 a predicate that does not compile, 4 at least
+one line on which the predicate raised (the line is dropped, stderr carries only its number and a fixed label, never a
+value of the record; the stream goes on), 5 any other non-zero exit of jq. Its predicate is a trusted jq filter, never
+external data, its reasons are in its header (the only copy), and `tools/tests/logs-select.test.sh` covers it. The
+`app:mcp:purge` job (CronJob `messenger-purge-cronjob.yaml`, container `purge`) writes its records through the same
+handlers to its container's stderr, but its stdout carries the three chained console commands' own output (`[OK] …`),
+which also comes out as `unparsed`. Read the **Job's pods**, not `deploy/backend -c php-fpm`: `kubectl logs -l
+job-name=<name> -c purge --prefix | tools/logs-select.sh …` (`restartPolicy: OnFailure` re-runs the container **in the
+same pod**, a replaced pod — lost node, eviction — is another pod of the Job: the selector reads them all, up to
+`backoffLimit` + 1). The previous attempt of a restarted container is read with `--previous` added (the last restart
+only; it fails on a pod whose container never restarted).
 A line longer than php-fpm's `log_limit`
 is cut into pieces that are no longer JSON: `www.prod.conf` and `www.dev.conf` set `log_limit = 8192` in `[global]`
 (php-fpm's own default is 1024; the upstream image's `docker.conf` already sets 8192, repeated so as not to depend on
