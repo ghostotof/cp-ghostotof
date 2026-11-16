@@ -188,13 +188,29 @@
   `admit()` ; retiré, 2 tests en erreur (`TestContainer.php:86`). Commentaire juste, gardé. Écrit, non
   corrigé : `cimdRow()` (test du grant) et `aDiscoveredRowFromAnEarlierAuthorization()` reconstruisent
   encore la même ligne valide.
-- **Série n° 6 close.** **Prochaine action** : relecture `diff 9389cac9...HEAD`, puis Tasks 10 à 12.
+- **Série n° 6 close**, relue (2026-11-16, `/code-review medium` seul, au choix de l'utilisateur ;
+  `diff 9389cac9...HEAD`, tête relue `cd5aa8d0`) : **un moyen**, vérifié — le `jq` documenté filtre
+  `.channel == "security"` alors que `SecurityAuditLogger` écrit sur `security_audit` (défaut d'origine
+  `1cbd3f3b`, recopié par la série) : aucun audit rendu. → **série n° 7** (sonnet/high), décisions :
+  1. **D1, script `tools/` testé** : `tools/logs-select.sh '<prédicat jq>'` (logique `-R`/`try fromjson`,
+     non-JSON montré seulement s'il commence par `{` — début d'un enregistrement coupé ; lignes d'accès et
+     NOTICE du maître écartées), test dans `tools/tests/` (`tools-tests`), les trois copies
+     (`monolog.yaml`, `backend-outillage.md`, `McpCallOutcome.php`) y renvoient, canal `security_audit` ;
+  2. **D2, faibles** : FailSafeAudit exact (au-delà de 65 s le maître tue le worker bloqué : trace perdue,
+     502 ; la purge tourne en CLI dans un CronJob : ni tube ni borne, journaux du pod du Job) ;
+     commentaires de tests (`with()` relu par `once()`/`exactly()`/`atLeast*()`, pas par
+     `any()`/`never()`/`atMost()` ; docblock de `ClaudeCodeMetadata` : la réflexion contourne la
+     validation) ; fixture sans doublon (`ClaudeCodeMetadata::storedRow()`, `cimdRow()` bâti dessus).
+- Écrit, non corrigé (relecture série n° 6) : `log_limit = 8192` ne fait que remonter le seuil — un
+  enregistrement plus long reste coupé (correctif profond : Monolog hors du tube du worker, ou plafond
+  par processeur).
+- **Prochaine action** : D1, D2, relecture `diff cd5aa8d0...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : micro-série n° 5, au point `9389cac9` (série `e0544af7...9389cac9`).
-- Prochaine série : `diff 9389cac9...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 6, au point `cd5aa8d0` (série `9389cac9...cd5aa8d0`).
+- Prochaine série : `diff cd5aa8d0...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
