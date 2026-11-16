@@ -816,12 +816,14 @@ secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
    d'un bloc à la fin. Un affichage d'un bloc signale un tampon resté actif
    quelque part (sidecar ou ingress).
 
-4. **Le journal `ai_usage` l'a comptée**, sans aucun contenu :
+4. **Le journal `ai_usage` l'a comptée**, sans aucun contenu (depuis la racine du dépôt ;
+   la projection garde les lignes `{"unparsed": …}` que le script rend pour tout ce qui n'est
+   pas un enregistrement, une trace de dernier recours ou un morceau coupé par exemple) :
 
    ```bash
    kubectl -n preprod logs deploy/backend -c php-fpm --since=10m \
      | tools/logs-select.sh '.channel == "ai_usage"' \
-     | jq -c '.context'
+     | jq -c 'if has("unparsed") then . else .context end'
    # attendu : {"outcome":"done","messageCount":1,"durationMs":…,"promptTokens":…,"completionTokens":…}
    ```
 
@@ -2056,12 +2058,14 @@ passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent s
 `userFingerprint` (HMAC sous une clé dérivée d'`APP_SECRET`, insensible à la casse comme le compteur de
 `login_throttling`), et ne désignent le compte (`userId`) que s'il existe et a été chargé :
 pas de `userId` pour un identifiant inconnu, ni **jamais** pour `login-throttled` (refusé
-avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte :
+avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte
+(depuis la racine du dépôt ; une ligne `unparsed` — trace de dernier recours, morceau coupé — sort
+telle quelle, sur une seule colonne, au lieu d'une rangée vide) :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
   | tools/logs-select.sh '.channel == "security_audit" and .context.userFingerprint == "<empreinte>"' \
-  | jq -r '[.datetime, .context.event, .context.userId // "-", .context.ip] | @tsv'
+  | jq -r 'if has("unparsed") then ["unparsed", .unparsed] else [.datetime, .context.event, .context.userId // "-", .context.ip] end | @tsv'
 ```
 
 Une rotation d'`APP_SECRET` (procédure : § Rotation / mise à jour d'un Secret, cas
@@ -2071,12 +2075,12 @@ peut porter l'empreinte d'une saisie jamais vue : rien ne s'y relie, lire alors 
 même `ip`. L'empreinte est courte exprès (6 caractères hexadécimaux, 24 bits) : deux saisies
 différentes peuvent coïncider, c'est un indice à IP et fenêtre fixées, pas une preuve entre IP.
 
-Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
+Lecture sur un pod (depuis la racine du dépôt), canal d'audit seulement, une ligne lisible par événement :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
   | tools/logs-select.sh '.channel == "security_audit"' \
-  | jq -r '[.datetime, .context.event, .context.userId // .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
+  | jq -r 'if has("unparsed") then ["unparsed", .unparsed] else [.datetime, .context.event, .context.userId // .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] end | @tsv'
 ```
 
 Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné
