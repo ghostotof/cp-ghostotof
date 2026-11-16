@@ -118,18 +118,23 @@ is that same descriptor) and the pool's access-log lines (`access.log` of the up
 read in dev; the production image inherits the same file), none of them JSON. `tools/logs-select.sh` (#651) is the only copy of the command that reads them:
 `kubectl logs deploy/backend -c php-fpm | tools/logs-select.sh '.channel == "security_audit"'` (audit events leave on
 `security_audit`; `security` is the framework's own channel, `.channel | IN("security", "security_audit")` reads both).
-It drops only the known noise (the pool's access line **in 2xx/3xx/4xx — only the 5xx stay visible**: a 401/403 has its own JSON audit
-record and every production 401/404 would drown the events looked for, while a 502/504 or a killed worker has no other
-trace —, the master's **routine** `NOTICE`s — start-up and `child N started` —, the empty line) and renders everything
-else as `{"unparsed": "<whole line>"}`: a 5xx access line, any other `NOTICE` (`Terminating`, `exiting, bye-bye!`, `child N exited`), a `WARNING`, the last-resort trace of
+It drops only the known noise (the pool's access line **in 2xx/3xx/4xx except 403**: every production 401/404 would drown
+the events looked for, and those 401s, 404s and other 4xx are **lost** to this script — read the raw logs to find them;
+the **403 stays visible** as `unparsed`, because only `backofficeAccessDenied`, `csrfRejected` and the MCP refusals have an
+audit record, a base-tier token trying `GET /api/cv` leaves none, and a 403 that is already audited comes out twice, which is
+accepted; a 5xx access line stays too, it carries the status PHP set — a 502/504 is written by nginx, not FPM, and a killed
+worker leaves a master `WARNING`, not an access line —, the master's **routine** `NOTICE`s — start-up and `child N started` —,
+the empty line, a line reduced to a kubectl prefix) and renders everything
+else as `{"unparsed": "<whole line>"}`: a 403 or 5xx access line, a line of blanks only (not empty: not known noise), any other `NOTICE` (`Terminating`, `exiting, bye-bye!`, `child N exited`), a `WARNING`, the last-resort trace of
 `FailSafeAudit`, a fatal error, the pieces of a line cut by `log_limit` (a `fromjson? // empty` would have dropped them
 silently). It strips the prefixes of `kubectl logs --prefix`/`--timestamps` (and the leading blanks of the line) before decoding, wraps the predicate in
 `((\n…\n))` and evaluates it with `any`; exit codes: 2 invalid usage, 3 a predicate that does not compile, 4 at least
 one line on which the predicate raised (the line is dropped, stderr carries only its number and a fixed label, never a
-value of the record; the stream goes on, the labels come at the end of the stream), 5 any other non-zero exit of jq
+value of the record; the stream goes on, each label comes **as it happens** and stays visible after a Ctrl-C or a `| head`,
+a final total line closes a complete run; 4 wins over 5, never over a signal), 5 any other non-zero exit of jq
 (a fixed label, never jq's text), 128 and more a signal passed through unchanged and silent (141 for `| head`).
-jq's stderr is captured in a private temporary file and never relayed, except the compile error of code 3 (it quotes
-only the program) and the fixed labels. Its predicate is a trusted jq filter, never
+jq's stderr goes through an awk allow-list filter that relays only the fixed labels (and counts them: no temporary file,
+nothing grows during a `-f`), plus the compile error of code 3 (it quotes only the program); the rest is never relayed. Its predicate is a trusted jq filter, never
 external data, its reasons are in its header (the only copy), and `tools/tests/logs-select.test.sh` covers it. The
 `app:mcp:purge` job (CronJob `messenger-purge-cronjob.yaml`, container `purge`) writes its records through the same
 handlers to its container's stderr, but its stdout carries the three chained console commands' own output (`[OK] …`),
