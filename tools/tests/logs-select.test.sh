@@ -109,8 +109,37 @@ expect_output "accès FPM, NOTICE du maître, ligne vide : seuls écartés" \
   "" "$TMP/noise.log" 'true'
 
 # Un utilisateur Basic Auth renseigné (%u) et une IPv6 restent une ligne d'accès.
-printf '%s\n' '2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 401' >"$TMP/access2.log"
+printf '%s\n' '2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 204' >"$TMP/access2.log"
 expect_output "accès FPM avec utilisateur et IPv6 : écarté" "" "$TMP/access2.log" 'true'
+
+# Seuls les statuts 2xx et 3xx sont du bruit : un 4xx ou un 5xx de PHP est un signal (échec
+# d'authentification, refus, erreur serveur) et sort en unparsed.
+for status in 200 204 301 304; do
+  printf '%s\n' "203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status" >"$TMP/one.log"
+  expect_output "accès FPM en $status : écarté" "" "$TMP/one.log" 'true'
+done
+for status in 400 401 404 500 503; do
+  line="203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status"
+  printf '%s\n' "$line" >"$TMP/one.log"
+  expect_output "accès FPM en $status : rendu en unparsed" "$(unparsed "$line")" "$TMP/one.log" 'true'
+done
+
+# NOTICE du maître : seules celles de routine (démarrage, enfants lancés) sont écartées.
+for line in '[16-Nov-2026 10:00:00] NOTICE: fpm is running, pid 1' \
+            '[16-Nov-2026 10:00:00] NOTICE: ready to handle connections' \
+            '[16-Nov-2026 10:00:01] NOTICE: [pool www] child 7 started'; do
+  printf '%s\n' "$line" >"$TMP/one.log"
+  expect_output "NOTICE de routine écartée : ${line:23}" "" "$TMP/one.log" 'true'
+done
+# Tout autre NOTICE signale un arrêt, un rechargement ou une sortie d'enfant : rendue.
+for line in '[16-Nov-2026 10:00:09] NOTICE: Terminating ...' \
+            '[16-Nov-2026 10:00:09] NOTICE: exiting, bye-bye!' \
+            '[16-Nov-2026 10:00:09] NOTICE: Finishing ...' \
+            '[16-Nov-2026 10:00:09] NOTICE: Reloading in progress ...' \
+            '[16-Nov-2026 10:00:09] NOTICE: [pool www] child 7 exited with code 0 after 12.3 seconds from start'; do
+  printf '%s\n' "$line" >"$TMP/one.log"
+  expect_output "NOTICE hors routine rendue en unparsed : ${line:23}" "$(unparsed "$line")" "$TMP/one.log" 'true'
+done
 
 # --- Ce qui est rendu : tout le reste -----------------------------------------
 for line in "$TRACE" "$FATAL" "$WARN" "$CUT_TAIL" "$NESTED_TAIL" '42' '"x"' 'null' '[1]'; do
@@ -118,11 +147,18 @@ for line in "$TRACE" "$FATAL" "$WARN" "$CUT_TAIL" "$NESTED_TAIL" '42' '"x"' 'nul
   expect_output "rendue en unparsed : ${line:0:60}" "$(unparsed "$line")" "$TMP/one.log" 'false'
 done
 
+PFX_FAST='[pod/backend-6d9f7c8b5-x2x4q/php-fpm]'
 # Un morceau suivant qui commence par « { » ne casse pas le flux : l'enregistrement
 # qui le suit est traité normalement.
 printf '%s\n' "$CUT_HEAD" "$NESTED_TAIL" "$AUDIT" >"$TMP/nested.log"
 expect_output "coupure avant un objet imbriqué : unparsed, puis le flux continue" \
   "$(unparsed "$CUT_HEAD")${NL}$(unparsed "$NESTED_TAIL")${NL}${AUDIT}" "$TMP/nested.log" '.channel == "security_audit"'
+
+# Chemin rapide (ligne qui commence par « { ») : sans préfixe, avec préfixe kubectl, et coupée.
+# Une ligne coupée préfixée garde sa ligne complète en unparsed.
+printf '%s\n' "$AUDIT" "$PFX_FAST $CUT_HEAD" "$CUT_HEAD" "$PFX_FAST $AUDIT" >"$TMP/fast.log"
+expect_output "chemin rapide : JSON nu et préfixé rendus, ligne coupée (nue ou préfixée) en unparsed" \
+  "${AUDIT}${NL}$(unparsed "$PFX_FAST $CUT_HEAD")${NL}$(unparsed "$CUT_HEAD")${NL}${AUDIT}" "$TMP/fast.log" 'true'
 
 # Un objet suivi de texte n'est pas du JSON : unparsed.
 printf '%s\n' '{"channel":"security_audit"} trailing' >"$TMP/trailing.log"
@@ -156,15 +192,55 @@ expect_output "prédicat à virgule de premier niveau : pas de doublon" \
 
 # Un prédicat qui lève sur une ligne (`context` est une liste, cas réel de Monolog,
 # ou une chaîne) : signalé sur stderr, le reste du flux est rendu, code 4 à la fin.
+# stderr ne porte QUE le numéro de ligne et un libellé fixe : jamais un texte de jq,
+# qui cite des valeurs de l'enregistrement.
 printf '%s\n' "$AUDIT" '{"channel":"app","context":[]}' "$MCP_ERR" '{"channel":"app","context":"texte"}' "$APP" >"$TMP/odd.log"
 code=0
 "$SCRIPT" '.context.outcome == "protocol-error"' <"$TMP/odd.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -eq 4 ] && [ "$(cat "$TMP/out")" = "$MCP_ERR" ] \
-   && [ "$(grep -c 'Cannot index' "$TMP/err")" -eq 2 ] && grep -q 'ligne 2' "$TMP/err" && grep -q 'ligne 4' "$TMP/err" \
-   && ! grep -q 'texte' "$TMP/err"; then
-  pass "erreur à l'exécution : signalée par ligne sur stderr, flux continué, code 4"
+WANT_ERR="logs-select.sh : ligne 2 : le prédicat a levé une erreur
+logs-select.sh : ligne 4 : le prédicat a levé une erreur
+logs-select.sh : 2 ligne(s) en erreur de prédicat (code 4)"
+if [ "$code" -eq 4 ] && [ "$(cat "$TMP/out")" = "$MCP_ERR" ] && [ "$(cat "$TMP/err")" = "$WANT_ERR" ]; then
+  pass "erreur à l'exécution : libellé fixe par ligne sur stderr, flux continué, code 4"
 else
-  fail "erreur à l'exécution : signalée par ligne sur stderr, flux continué, code 4" "code $code ; stderr : $(cat "$TMP/err") ; stdout : $(cat "$TMP/out")"
+  fail "erreur à l'exécution : libellé fixe par ligne sur stderr, flux continué, code 4" "code $code ; stderr : $(cat "$TMP/err") ; stdout : $(cat "$TMP/out")"
+fi
+
+# Aucune valeur de l'enregistrement ne fuit sur stderr, quelle que soit l'erreur de jq
+# (`+ 1` cite la valeur tronquée, `tonumber` la cite en entier).
+SECRET_REC='{"channel":"x","context":{"ip":"secretvalue123"}}'
+for predicate in '.context.ip + 1' '.context.ip | tonumber' '.context.ip | error'; do
+  printf '%s\n' "$SECRET_REC" >"$TMP/secret.log"
+  code=0
+  "$SCRIPT" "$predicate" <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+  if [ "$code" -eq 4 ] && ! grep -q 'secretvalu' "$TMP/err" && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err"; then
+    pass "erreur de prédicat sans fuite de valeur : $predicate"
+  else
+    fail "erreur de prédicat sans fuite de valeur : $predicate" "code $code ; stderr : $(cat "$TMP/err")"
+  fi
+done
+
+# Codes de sortie de jq : 3 (compilation) et 4 (erreurs de prédicat) gardent leur sens ;
+# toute autre sortie non nulle de jq (2 = erreur système ou d'entrée-sortie, ici simulée
+# par halt_error) devient 5, jamais 2 qui est « usage invalide » du script.
+for jqcode in 1 2 9; do
+  code=0
+  "$SCRIPT" "\"x\" | halt_error($jqcode)" <"$TMP/mixed.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+  if [ "$code" -eq 5 ]; then
+    pass "sortie $jqcode de jq : code 5 du script"
+  else
+    fail "sortie $jqcode de jq : code 5 du script" "code $code ; stderr : $(cat "$TMP/err")"
+  fi
+done
+
+# Les lignes de bruit comptent dans la numérotation : l'erreur cite le numéro de ligne d'entrée.
+printf '%s\n' "$ACCESS" "$NOTICE" '' '{"channel":"app","context":[]}' >"$TMP/numbered.log"
+code=0
+"$SCRIPT" '.context.outcome == "x"' <"$TMP/numbered.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 4 ] && grep -q 'ligne 4 : le prédicat a levé une erreur' "$TMP/err"; then
+  pass "numérotation : le bruit écarté compte, l'erreur cite la ligne 4"
+else
+  fail "numérotation : le bruit écarté compte, l'erreur cite la ligne 4" "code $code ; stderr : $(cat "$TMP/err")"
 fi
 
 # --- Entrée vide --------------------------------------------------------------
