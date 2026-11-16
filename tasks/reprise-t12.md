@@ -316,13 +316,28 @@
     - « `--previous` ne lit que le dernier redémarrage » n'est pas recoupé par une page de doc ;
     - le label court `job-name` n'est pas testé sur un cluster (Kubernetes pose aussi
       `batch.kubernetes.io/job-name`).
-- **Prochaine action** : relecture `/code-review medium diff f7c585a4...HEAD`, sans audit.
-- `HEAD` au 2026-11-16 : `8ea08362`, puis ce commit d'état.
+- **Série n° 9 relue** (`diff f7c585a4...HEAD`, tête relue `4765a221`, sans audit) :
+  - moyens :
+    - commande du Job `kubectl logs -l …` : avec un sélecteur, `--tail` vaut 10 par défaut (vérifié dans
+      `kubectl logs --help`), donc la trace est tronquée en silence (règle l.~133, `monolog.yaml` l.~114).
+      Correctif : `--tail=-1`.
+    - les accès en 4xx sortent en `unparsed` sans passer par le prédicat : chaque 401/404 (`/api/me`
+      anonyme, scanners, client MCP sans jeton) noie les événements recherchés.
+  - faibles :
+    - SIGPIPE (141) ou Ctrl-C (130) produisent « jq a échoué » et le code 5 ;
+    - un JSON précédé d'un blanc n'est plus décodé ;
+    - une erreur jq hors du `try` (code 5) peut encore citer une valeur ;
+    - `--previous` avec `-l` échoue en bloc ;
+    - lignes trop longues (FailSafeAudit l.52, en-tête du script l.30) ;
+    - le glob `.github/workflows/**` est trop large (`pipeline.yml` suffit) ;
+    - le test de l'accès 401 IPv6 avec utilisateur a été perdu.
+- **Prochaine action** : série n° 10 à faire choisir par l'utilisateur. Point fixe : `4765a221`.
+- `HEAD` au 2026-11-16 : `4765a221`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 8, au point `f7c585a4` (série `2e5f8d12...f7c585a4`).
-- Prochaine série : `diff f7c585a4...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 9, au point `4765a221` (série `f7c585a4...4765a221`).
+- Prochaine série : `diff 4765a221...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
