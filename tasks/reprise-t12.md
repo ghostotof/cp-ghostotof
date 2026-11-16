@@ -204,7 +204,14 @@
 - Écrit, non corrigé (relecture série n° 6) : `log_limit = 8192` ne fait que remonter le seuil — un
   enregistrement plus long reste coupé (correctif profond : Monolog hors du tube du worker, ou plafond
   par processeur).
-- **Prochaine action** : D1, D2, relecture `diff cd5aa8d0...HEAD`, puis Tasks 10 à 12.
+- **D1 fait** (`49d3ca8d` script + test + `tools-tests`, `71883e1a` renvois, `23cb7283` règle resserrée ;
+  Sonnet 5.5 ; RED 127 puis 9 échecs, GREEN 14 cas, shellcheck et actionlint 1.7.12 propres). Les trois
+  copies et les trois commandes de `k8s/README.md` passent par `tools/logs-select.sh`. Choix gardés :
+  erreur d'exécution du prédicat = code 5 (ne rien perdre sans bruit). Écrits, non corrigés : un début
+  coupé sort une ligne de `null` dans les pipes `@tsv` de `k8s/README.md` ; `audit-prod.test.sh` deux fois
+  dans `tools-tests` (préexistant, l. 431 et 451) ; `backend-outillage.md` à 49 982 octets (18 de marge :
+  le prochain ajout le découpe).
+- **Prochaine action** : D2, relecture `diff cd5aa8d0...HEAD`, puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
