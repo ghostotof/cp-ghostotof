@@ -27,6 +27,18 @@ final class ClaudeCodeMetadata
     }
 
     /**
+     * La ligne `cimd` valide que le domaine construit depuis {@see self::json()}
+     * (celle qu'une autorisation antérieure de claude.ai aurait laissée en base),
+     * enregistrée le 2026-11-01 à 10:00.
+     */
+    public static function storedRow(): McpClient
+    {
+        $clientId = CimdClientId::tryFrom(self::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
+
+        return McpClient::discovered(ClientMetadataDocument::fromJson($clientId, self::json()), new MockClock('2026-11-01 10:00:00')->now());
+    }
+
+    /**
      * Une ligne `cimd` telle qu'une écriture antérieure ou à la main aurait pu
      * la laisser en base, dont le `client_id` est `$storedClientId`.
      *
@@ -35,15 +47,14 @@ final class ClaudeCodeMetadata
      * refuse de construire une ligne `cimd` dont l'identifiant est hors de la
      * forme CIMD (ou corrompu). C'est pourtant l'état que le garde du point
      * d'autorisation doit refuser (`invalid_client`, #651) : on réécrit donc la
-     * propriété privée d'une ligne valide. Le `clientId` rendu ne correspond
-     * plus au `client_id` du document dont la ligne a été construite
-     * ({@see self::json()}) : le nom et les redirections restent ceux de ce
-     * document, seul l'identifiant est remplacé.
+     * propriété privée d'une ligne valide ({@see self::storedRow()}). Le
+     * `clientId` rendu ne correspond plus au `client_id` du document dont la
+     * ligne a été construite ({@see self::json()}) : le nom et les redirections
+     * restent ceux de ce document, seul l'identifiant est remplacé.
      */
     public static function storedRowWhoseClientIdIs(string $storedClientId): McpClient
     {
-        $clientId = CimdClientId::tryFrom(self::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
-        $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, self::json()), new MockClock('2026-11-01 10:00:00')->now());
+        $row = self::storedRow();
         new ReflectionProperty(McpClient::class, 'clientId')->setValue($row, $storedClientId);
 
         return $row;

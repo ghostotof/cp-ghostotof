@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection;
 
 use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
-use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
-use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Infrastructure\Cimd\FetchQuotaKey;
 use App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
@@ -18,10 +15,8 @@ use App\Tests\Mcp\Connection\Support\FixedHostAddressResolver;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Closure;
 use Generator;
-use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -430,10 +425,7 @@ final class CimdAuthorizationTest extends WebTestCase
      */
     private function aDiscoveredRowFromAnEarlierAuthorization(): void
     {
-        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
-        $row = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new MockClock('2026-11-01 10:00:00')->now());
-
-        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered($row);
+        self::getContainer()->get(McpClientRepositoryInterface::class)->saveDiscovered(ClaudeCodeMetadata::storedRow());
     }
 
     /**

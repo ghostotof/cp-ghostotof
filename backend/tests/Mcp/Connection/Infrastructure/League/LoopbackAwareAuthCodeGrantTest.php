@@ -6,8 +6,6 @@ namespace App\Tests\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Domain\Entity\McpClient;
-use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
-use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Infrastructure\League\LoopbackAwareAuthCodeGrant;
 use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
@@ -17,14 +15,12 @@ use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
-use LogicException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
-use Symfony\Component\Clock\MockClock;
 
 /**
  * Le refus d'une ligne `cimd` que l'admission n'a pas reconnue (#651) et son
@@ -91,19 +87,9 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         self::assertSame(['unreadable'], $received);
     }
 
-    private function cimdRow(): McpClient
-    {
-        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID) ?? throw new LogicException('Identifiant de test illisible.');
-
-        return McpClient::discovered(
-            ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()),
-            new MockClock('2026-11-01 10:00:00')->now(),
-        );
-    }
-
     private function grant(SecurityAuditLoggerInterface $audit, Logger $logger, ?McpClient $stored = null): LoopbackAwareAuthCodeGrant
     {
-        $row = new OAuthClient($stored ?? $this->cimdRow());
+        $row = new OAuthClient($stored ?? ClaudeCodeMetadata::storedRow());
         $clients = self::createStub(ClientRepositoryInterface::class);
         $clients->method('getClientEntity')->willReturn($row);
 
