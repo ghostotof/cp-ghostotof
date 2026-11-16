@@ -239,13 +239,24 @@
   - E1 : script, test et README. E2 : textes de FailSafeAudit, découpage de `backend-outillage.md`,
     mention du Job dans `monolog.yaml`.
   - Point fixe de la prochaine relecture : `2e5f8d12`.
-- **Prochaine action** : E1 (sonnet/high), puis E2, puis relecture `diff 2e5f8d12...HEAD`.
-- `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
+  - **E1 fait** (2026-11-16) : `e63e365c` pour le script et son test (liste de bruit : accès du pool, NOTICE
+    du maître, ligne vide ; préfixes kubectl retirés dans les deux ordres ; prédicat `((\n…\n))` + `any` ;
+    erreur de prédicat sur stderr, flux conservé, code 4 ; `unparsed` garde la ligne complète, préfixe
+    compris ; pas de `--raw`), `a71fcdc2` pour le README (projections `if has("unparsed")`, « depuis la
+    racine du dépôt »). Vérifié : test vert, shellcheck propre, `check-claude-rules.sh` vert.
+  - Textes rendus par E1 pour E2 : `backend-outillage.md` l.~109-111 (« any line starting with `{` »,
+    obsolète) ; `monolog.yaml` l.104-107 (même affirmation) ; `McpCallOutcome.php` l.~10-12 (exemple sans
+    `.channel == "mcp_usage"`, parenthèse sur l'enregistrement coupé). Hors du 1, on documente aussi les
+    codes 3 et 4.
+  - Question ouverte d'E1, écrite et non corrigée : un morceau de ligne coupée qui serait lui-même un objet
+    JSON complet passerait pour un enregistrement (cas théorique).
+- **Prochaine action** : E2 (sonnet/high), puis relecture `diff 2e5f8d12...HEAD`.
+- `HEAD` au 2026-11-16 : `a71fcdc2`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 6, au point `cd5aa8d0` (série `9389cac9...cd5aa8d0`).
-- Prochaine série : `diff cd5aa8d0...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 7, au point `2e5f8d12` (série `cd5aa8d0...2e5f8d12`).
+- Prochaine série : `diff 2e5f8d12...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
