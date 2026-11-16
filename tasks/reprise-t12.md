@@ -211,7 +211,16 @@
   coupé sort une ligne de `null` dans les pipes `@tsv` de `k8s/README.md` ; `audit-prod.test.sh` deux fois
   dans `tools-tests` (préexistant, l. 431 et 451) ; `backend-outillage.md` à 49 982 octets (18 de marge :
   le prochain ajout le découpe).
-- **Prochaine action** : D2, relecture `diff cd5aa8d0...HEAD`, puis Tasks 10 à 12.
+- **D2 fait** (`ef87fb76` FailSafeAudit : worker tué à 65 s, trace perdue, 502 ; contexte CLI du Job de
+  purge ; `with()` relu sauf `any()`/`never()`/`atMost()` ; docblock `ClaudeCodeMetadata` ; `ffbe2776`
+  `ClaudeCodeMetadata::storedRow()`, `cimdRow()` supprimée, `aDiscoveredRowFromAnEarlierAuthorization()`
+  bâtie dessus ; Sonnet 5.5 ; `tests/Mcp/Connection` 1399 tests verts avant et après ; mutation du
+  `client_id` : 7 erreurs). Écrits, non corrigés : trois autres copies de la ligne `cimd`
+  (`AuthorizationRequestSummaryTest::declaredClient()`, `AuthorizationRequestValidatorTest::discoveredClient()`,
+  `CimdClientAdmissionTest` en ligne) ; `monolog.yaml` l. 98 et `backend-outillage.md` l. 108 ne citent
+  que `deploy/backend -c php-fpm`, alors que la purge écrit dans les journaux du pod du Job.
+- **Série n° 7 close.** **Prochaine action** : relecture `diff cd5aa8d0...HEAD` (`/code-review medium`,
+  sans audit sécurité : ni authentification, ni session, ni CSRF, ni cookies), puis Tasks 10 à 12.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
