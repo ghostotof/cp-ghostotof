@@ -463,13 +463,21 @@
     - le pré-contrôle tourne en `-cn` et non en `-cnR` (l.~196) ;
     - la règle ne dit pas que « erreur de prédicat + échec de jq » est passé de 4 à 5, ni ce que devient la
       ligne de total.
-- **Prochaine action** : demander à l'utilisateur : micro-correctif du moyen, puis arrêt de la boucle ?
-- `HEAD` au 2026-11-16 : `6cb33233`, puis ce commit d'état.
+- **Micro-correctif, puis arrêt (décision de l'utilisateur, 2026-11-16)** :
+  - `9866529c` (fil principal) : le total ne dit plus « (code 4) » ; le test du flux abandonné vérifie
+    qu'aucun « (code 4) » n'est annoncé (rouge vérifié avant) ; la règle dit que le total ne promet aucun
+    code. Moins de 20 lignes, la relecture est sautée (proportionnalité). Test vert, shellcheck et règles
+    conformes.
+  - **La boucle logs-select est close.** Les faibles de la série 12 vont dans la PR.
+- **Prochaine action** : tâche 10 du plan `tasks/plan-t12-cimd.md` (voir « À injecter dans le brief de la
+  Task 10 »).
+- `HEAD` au 2026-11-16 : `9866529c`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
 - Dernière relecture : série n° 12, au point `6cb33233` (série `b99f6be7...6cb33233`).
-- Prochaine série : `diff 6cb33233...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Prochaine série : `diff 6cb33233...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
+  (`9866529c`, micro-correctif non relu, y entre).
 
 ## Décisions de l'utilisateur
 
