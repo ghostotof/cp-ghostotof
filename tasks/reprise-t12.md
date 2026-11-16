@@ -406,14 +406,31 @@
     - un `halt_error(4)` du prédicat sort désormais en 5 (seul le filtre décide du 4) ;
     - un prédicat de confiance qui imite `jq: N compile error(s)` ferait relayer le tampon (200 lignes au
       plus), non testé.
-- **Prochaine action** : relecture `/code-review medium diff 6ba5f243...HEAD`.
-- `HEAD` au 2026-11-16 : `feab7275`, puis ce commit d'état.
+- **Série n° 11 relue** (`diff 6ba5f243...HEAD`, tête relue `a513768b`, sans audit) :
+  - moyens :
+    - le filtre awk décide seul de relayer son tampon dès que la dernière ligne a la forme
+      `jq: N compile error`, sans la condition « jq est sorti en 3 » de l'ancien script. Reproduit : un
+      prédicat qui fait écho d'une valeur par `stderr` relaie cette valeur, avec un code 0 (l.~199) ;
+    - « 4 l'emporte sur 5 » : un flux que jq a abandonné (erreur d'E/S, `halt_error`) rend 4, alors que le
+      code 4 promet que le reste du flux est rendu, ce qui cache la troncature (l.~243).
+  - faibles :
+    - un `halt_error(3)` après des erreurs rend 3 (« prédicat invalide ») ;
+    - un code du filtre awk hors de {0, 3, 4} (signal, échec) n'est pas traité : les erreurs sont perdues
+      du code, qui peut valoir 0 ;
+    - `$!` après `exec 3> >(…)` exige bash ≥ 4.4 (bash 3.2 de macOS sort en 1) ;
+    - sur une interruption, l'awk orphelin peut écrire son total après le retour du prompt ;
+    - le test « au fil de l'eau » repose sur des délais fixes (fragile sur un runner chargé) ;
+    - le test SIGINT n'envoie pas le signal au groupe (`setsid` + `kill -INT -- -PGID`) ;
+    - le `\n` de tête du libellé envoie une ligne vide à awk par erreur (tampon et compteur gonflés) ;
+    - redondances dans `$kept` (une regex de trop sur les lignes sans préfixe).
+- **Prochaine action** : la série n° 11 ressort deux moyens. Demander à l'utilisateur : série n° 12 ou
+  report dans la PR.
+- `HEAD` au 2026-11-16 : `a513768b`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 10, au point `b2c0798e` (série `4765a221...b2c0798e`).
-- Prochaine série : `diff 6ba5f243...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
-  (`6ba5f243` est le dernier commit d'état avant H : la série n° 11 ne relit que H).
+- Dernière relecture : série n° 11, au point `a513768b` (série `6ba5f243...a513768b`).
+- Prochaine série : `diff a513768b...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
