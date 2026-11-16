@@ -383,13 +383,37 @@
     fichier qui grossit sans limite ; les faibles de la série 10 sont traités, sauf décision contraire
     argumentée de l'agent ;
   - un seul agent H (sonnet/high).
-- **Prochaine action** : agent H, puis relecture `/code-review medium diff b2c0798e...HEAD`.
-- `HEAD` au 2026-11-16 : `5e5f784e`, puis ce commit d'état.
+  - **H fait** (2026-11-16) :
+    - `17cadc90` fix(tools) :
+      - les libellés fixes sont émis par jq avec `stderr` ;
+      - le stderr de jq passe par un filtre awk à liste blanche sur le descripteur 3, avec compteur et
+        `fflush` ;
+      - plus de fichier temporaire ;
+      - 403 et 5xx sortent en `unparsed` ;
+      - une ligne de blancs seuls sort en `unparsed` ;
+      - le code 4 l'emporte sur un 5, jamais sur un code ≥ 128 ;
+      - les tests SIGPIPE sont sautés si SIGPIPE est ignoré ;
+      - banc : de 1,28 s à 0,89 s.
+    - `feab7275` docs(rules) : 403 conservé, 4xx perdus dits, raison des 5xx corrigée, coupures de
+      `monolog.yaml`.
+    - Vérifié par le fil principal :
+      - test vert, shellcheck et règles conformes ;
+      - rejeu avec une valeur sentinelle : rc 4, libellé fixe, aucune fuite ;
+      - 403 sort, 401 écarté.
+  - Écrit, non corrigé (questions de l'agent, jugées acceptables par le fil principal) :
+    - sur un vrai Ctrl-C au terminal, le SIGINT tue aussi le filtre awk : les libellés déjà émis restent,
+      mais le total final est perdu (documenté dans l'en-tête) ;
+    - un `halt_error(4)` du prédicat sort désormais en 5 (seul le filtre décide du 4) ;
+    - un prédicat de confiance qui imite `jq: N compile error(s)` ferait relayer le tampon (200 lignes au
+      plus), non testé.
+- **Prochaine action** : relecture `/code-review medium diff 6ba5f243...HEAD`.
+- `HEAD` au 2026-11-16 : `feab7275`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
 - Dernière relecture : série n° 10, au point `b2c0798e` (série `4765a221...b2c0798e`).
-- Prochaine série : `diff b2c0798e...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Prochaine série : `diff 6ba5f243...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
+  (`6ba5f243` est le dernier commit d'état avant H : la série n° 11 ne relit que H).
 
 ## Décisions de l'utilisateur
 
