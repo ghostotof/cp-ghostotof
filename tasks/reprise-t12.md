@@ -288,8 +288,24 @@
       `test` ne s'appliquent qu'aux autres.
   - F1 traite `tools/logs-select.sh`, son test et l'en-tête. F2 traite `backend-tests.md`, FailSafeAudit,
     `monolog.yaml`, la règle et, si besoin, le README.
-- **Prochaine action** : F1 (sonnet/high), puis F2, puis la relecture `diff f7c585a4...HEAD`.
-- `HEAD` au 2026-11-16 : `8151333a`, puis ce commit d'état.
+  - **F1 fait** (2026-11-16), commit `849d43a4` :
+    - stderr ne porte plus qu'un libellé fixe et le numéro de ligne, le bruit écarté compris dans la
+      numérotation ;
+    - seuls les accès 2xx/3xx sont écartés, ainsi que les NOTICE de routine (`fpm is running`,
+      `ready to handle connections`, `child N started`) ;
+    - codes de sortie 0/2/3/4/5 (5 couvre toute autre sortie de jq) ;
+    - chemin rapide pour les lignes qui commencent par `{`. Banc sur 100 000 lignes : 2,02 s avant,
+      1,25 s après, contre 0,22 s pour `fromjson?` nu ; la regex reste le coût.
+    - Vérifié : test vert, shellcheck propre, aucune valeur sur stderr (`+ 1`, `tonumber`, `test("[")`).
+  - Écrit, non corrigé :
+    - `child N started` n'est pas vérifié dans les sources de php-fpm ;
+    - `exiting, bye-bye!` et `Finishing ...` sortent en `unparsed` à chaque arrêt de pod, comme décidé ;
+    - un prédicat qui fait `halt_error(3|4)` se confond avec les codes du script (prédicat de confiance).
+  - Textes rendus pour F2 :
+    - `backend-outillage.md` l.113-127 : accès 2xx/3xx, NOTICE de routine, libellé fixe, code 5 ;
+    - `monolog.yaml` l.103-106.
+- **Prochaine action** : F2 (sonnet/high), puis la relecture `diff f7c585a4...HEAD`.
+- `HEAD` au 2026-11-16 : `849d43a4`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
