@@ -275,8 +275,21 @@
       décrit `ini-file` et `php.prod.ini` ;
     - FailSafeAudit : les 300 s couvrent tout le Job (trois commandes et les redémarrages), pas la seule
       purge.
-- **Prochaine action** : série n° 9 à faire choisir par l'utilisateur. Point fixe : `f7c585a4`.
-- `HEAD` au 2026-11-16 : `f7c585a4`, puis ce commit d'état.
+- **Série n° 9 (décisions de l'utilisateur, 2026-11-16)** :
+  - le moyen est traité par un message générique : stderr ne porte que le numéro de ligne et un libellé
+    fixe, aucun texte de jq. Tests avec `+ 1` et `tonumber`.
+  - les faibles retenus sont tous les sept :
+    - « bruit plus étroit » : on n'écarte que les lignes d'accès 2xx/3xx et les NOTICE de routine (pas
+      `Terminating`, `exiting`, `Reloading` ni `Finishing`), et le code 2 de jq devient un code distinct ;
+    - « paths et textes exacts » : `backend-tests.md` reçoit en plus `.github/workflows/**` et
+      `docker/php/**`, FailSafeAudit dit que les 300 s couvrent tout le Job, et la commande du Job
+      prévient du stdout humain et lit toutes les tentatives ;
+    - « performance » : les lignes qui commencent par `{` passent directement par `fromjson`, `sub` et
+      `test` ne s'appliquent qu'aux autres.
+  - F1 traite `tools/logs-select.sh`, son test et l'en-tête. F2 traite `backend-tests.md`, FailSafeAudit,
+    `monolog.yaml`, la règle et, si besoin, le README.
+- **Prochaine action** : F1 (sonnet/high), puis F2, puis la relecture `diff f7c585a4...HEAD`.
+- `HEAD` au 2026-11-16 : `8151333a`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
