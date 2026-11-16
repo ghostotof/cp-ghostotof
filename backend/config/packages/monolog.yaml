@@ -95,20 +95,16 @@ when@prod:
             # Tout le reste de l'application. Une ligne JSON par enregistrement sur
             # la sortie d'erreur : c'est ce que Kubernetes collecte (il ne lit que
             # stdout/stderr des conteneurs), donc `kubectl logs deploy/backend -c
-            # php-fpm | jq -cR '. as $l | (try fromjson catch null) as $r |
-            # if ($r | type) == "object" then $r | select(.channel == "security")
-            # else {unparsed: $l} end'` fonctionne sans aucune infrastructure de
-            # collecte. Chaque morceau de cette commande a son rôle : `-R` lit des
-            # lignes brutes (le descripteur 2 porte aussi des lignes qui ne sont
-            # pas du JSON : erreur du moteur PHP, trace de dernier recours de
-            # FailSafeAudit voir plus bas, ligne NOTICE ou WARNING du maître FPM
-            # lui-même — son `[global] error_log` est ce même descripteur —, ligne
-            # d'accès du pool, et toute ligne coupée), un `jq` sans `-R` s'arrête
-            # net à la première ; `try … catch null` ne jette pas ces lignes :
-            # `{unparsed: <ligne>}` les garde visibles, alors qu'un `fromjson? //
-            # empty` ferait disparaître sans bruit un enregistrement d'audit
-            # coupé ; le test `type == "object"` couvre une ligne qui est du JSON
-            # sans être un objet (`42`, `"x"`) et sur laquelle `.channel` lèverait.
+            # php-fpm | tools/logs-select.sh '.channel == "security_audit"'`
+            # fonctionne sans aucune infrastructure de collecte (l'audit part sur
+            # le canal `security_audit`, pas sur `security`, celui du framework).
+            # Le descripteur 2 porte aussi des lignes qui ne sont pas du JSON :
+            # erreur du moteur PHP, trace de dernier recours de FailSafeAudit (voir
+            # plus bas), NOTICE ou WARNING du maître FPM, ligne d'accès du pool,
+            # morceaux d'une ligne coupée par `log_limit`. Le script écarte le
+            # bruit mais rend en `{"unparsed": …}` toute ligne qui commence par `{`,
+            # début d'un enregistrement coupé qu'il ne faut pas laisser disparaître ;
+            # ses raisons et ses prédicats sont dans son en-tête, seule copie.
             # Un fichier dans var/log/ serait au contraire invisible — et perdu au
             # redémarrage du pod, le système de fichiers étant en lecture seule
             # hors de var/.

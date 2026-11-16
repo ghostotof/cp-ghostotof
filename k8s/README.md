@@ -820,7 +820,7 @@ secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
 
    ```bash
    kubectl -n preprod logs deploy/backend -c php-fpm --since=10m \
-     | grep '"channel":"ai_usage"' \
+     | tools/logs-select.sh '.channel == "ai_usage"' \
      | jq -c '.context'
    # attendu : {"outcome":"done","messageCount":1,"durationMs":…,"promptTokens":…,"completionTokens":…}
    ```
@@ -2060,8 +2060,8 @@ avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtr
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
-  | grep '"channel":"security_audit"' \
-  | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.userId // "-", .context.ip] | @tsv'
+  | tools/logs-select.sh '.channel == "security_audit" and .context.userFingerprint == "<empreinte>"' \
+  | jq -r '[.datetime, .context.event, .context.userId // "-", .context.ip] | @tsv'
 ```
 
 Une rotation d'`APP_SECRET` (procédure : § Rotation / mise à jour d'un Secret, cas
@@ -2075,7 +2075,7 @@ Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
-  | grep '"channel":"security_audit"' \
+  | tools/logs-select.sh '.channel == "security_audit"' \
   | jq -r '[.datetime, .context.event, .context.userId // .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
 ```
 

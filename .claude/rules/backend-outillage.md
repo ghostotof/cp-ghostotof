@@ -104,12 +104,13 @@ No Monolog record is ever taken up by `error_log` — that line is written by th
 handler. File descriptor 2 also carries the lines of the FPM master itself (`NOTICE: fpm is running`, `ready to
 handle connections`, `exiting, bye-bye!`, and the `WARNING`s it raises — its `[global] error_log` of `www.prod.conf`
 is that same descriptor) and the pool's access-log lines (`access.log` of the upstream image's `php-fpm.d/docker.conf`,
-read in dev; the production image inherits the same file), none of them JSON. `jq` must therefore **show** them, never
-swallow them: `jq -cR '. as $l | (try fromjson catch null) as $r | if ($r | type) == "object" then $r |
-select(.channel == "security") else {unparsed: $l} end'` — `-R` reads raw lines, `try … catch null` turns a
-non-JSON line into `{unparsed: <line>}` instead of dropping it (the former `fromjson? // empty` dropped without a
-word a cut audit record), and `type == "object"` covers a line that is valid JSON but no object (`42`, `"x"`), on
-which `.channel` would raise (see the comment on `main` in `monolog.yaml`). A line longer than php-fpm's `log_limit`
+read in dev; the production image inherits the same file), none of them JSON. Reading them is the job of `tools/logs-select.sh` (#651), the only copy of the command:
+`kubectl logs deploy/backend -c php-fpm | tools/logs-select.sh '.channel == "security_audit"'` (the audit events
+leave on `security_audit`; `security` is the framework's own channel, and `'.channel | IN("security",
+"security_audit")'` reads both). It drops those non-JSON lines but renders as `{"unparsed": …}` any line starting
+with `{` — the head of a record cut by `log_limit`, which a `fromjson? // empty` would have dropped without a
+word —, and it is tested offline (`tools/tests/logs-select.test.sh`, run by `tools-tests`; the predicate is a trusted
+jq filter, never external data). A line longer than php-fpm's `log_limit`
 is cut into pieces that are no longer JSON: `www.prod.conf` and `www.dev.conf` set `log_limit = 8192` in `[global]`
 (php-fpm's own default is 1024; the upstream image's `docker.conf` already sets 8192, repeated so as not to depend on
 it; the dev file only takes effect at the next `make build`, it is copied into the image). The events are emitted by `SecurityAuditLogger` (see Phase 3 of
