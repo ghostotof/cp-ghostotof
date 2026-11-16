@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
 use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
+use App\Mcp\Connection\Domain\Exception\ConsentTemporarilyUnavailableException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -261,12 +262,19 @@ final readonly class ConsentService implements ConsentServiceInterface
 
     /**
      * @throws AuthorizationRequestRejectedException
+     * @throws ConsentTemporarilyUnavailableException un refus passager (#651) : le document du client n'a pas pu être récupéré
      */
     private function validated(ServerRequestInterface $request): AuthorizationRequestSummary
     {
         try {
             return $this->validator->validate($request);
         } catch (OAuthServerException $refusal) {
+            // Un refus passager (quota, hôte) n'est pas une demande invalide :
+            // même verdict qu'au point d'autorisation, 429 ou 503, jamais le 400.
+            if ('temporarily_unavailable' === $refusal->getErrorType()) {
+                throw ConsentTemporarilyUnavailableException::after($refusal, $refusal->getHttpStatusCode());
+            }
+
             throw AuthorizationRequestRejectedException::onRevalidation($refusal);
         }
     }

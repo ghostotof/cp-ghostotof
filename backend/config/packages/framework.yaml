@@ -108,6 +108,13 @@ framework:
         # Accord d'une connexion MCP sur une authentification de plus de dix
         # minutes (#647, F1) : 401 typé, la page renvoie à la connexion. Une
         # issue ordinaire d'une page restée ouverte, pas une alerte.
+        # Document d'un client CIMD non récupérable au consentement (#651) :
+        # 429 (quota) en `info`, refus attendu ; 503 (hôte, réseau) en `warning`,
+        # un 5xx ne se tait pas. Refus déjà tracé à sa source par `mcp-client-metadata-refused`.
+        App\Mcp\Connection\Domain\Exception\ConsentRevalidationThrottledException:
+            log_level: info
+        App\Mcp\Connection\Domain\Exception\ConsentRevalidationUnavailableException:
+            log_level: warning
         App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException:
             log_level: info
         # Décision de consentement prise sur la page d'un autre compte que celui

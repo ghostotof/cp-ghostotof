@@ -72,12 +72,16 @@ final readonly class RetryAfterListener
     #[AsEventListener(event: KernelEvents::EXCEPTION, priority: 64)]
     public function onKernelException(ExceptionEvent $event): void
     {
-        $exception = $event->getThrowable();
-        if (!$exception instanceof RetryAfterAware) {
-            return;
-        }
+        // L'exception levée ou, à défaut, la première de sa chaîne de `previous` qui est un
+        // quota : une exception qui en enveloppe un (le refus passager du consentement, #651)
+        // annonce l'échéance du limiteur qui a refusé, comme au point d'autorisation.
+        for ($cause = $event->getThrowable(); null !== $cause; $cause = $cause->getPrevious()) {
+            if ($cause instanceof RetryAfterAware) {
+                $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $cause->retryAfter);
 
-        $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $exception->retryAfter);
+                return;
+            }
+        }
     }
 
     #[AsEventListener(event: KernelEvents::RESPONSE)]

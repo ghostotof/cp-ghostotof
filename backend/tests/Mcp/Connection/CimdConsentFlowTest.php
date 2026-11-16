@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Infrastructure\Cimd\FetchQuotaKey;
 use App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\Support\FixedHostAddressResolver;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use Generator;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
@@ -46,6 +49,9 @@ final class CimdConsentFlowTest extends WebTestCase
     /** Le document que le « réseau » sert : un test le change entre deux étapes. */
     private string $served = '';
 
+    /** Vrai : l'hôte du document cale (délai d'inactivité dépassé), un refus passager. */
+    private bool $stalling = false;
+
     /** Le client HTTP n'est remplacé qu'une fois par test : le conteneur refuse de remplacer un service initialisé. */
     private bool $networkInstalled = false;
 
@@ -57,6 +63,7 @@ final class CimdConsentFlowTest extends WebTestCase
         $this->clearPools();
         $this->outboundRequests = 0;
         $this->networkInstalled = false;
+        $this->stalling = false;
         $this->served = ClaudeCodeMetadata::json();
         $this->installTheNetwork();
     }
@@ -193,6 +200,160 @@ final class CimdConsentFlowTest extends WebTestCase
         self::assertLessThanOrEqual(255, \strlen($audit['clientId']));
     }
 
+    /**
+     * Un quota épuisé à l'affichage est un 429 avec le délai du limiteur, comme
+     * au point d'autorisation (décision du 2026-11-16) : la personne peut
+     * réessayer, ce n'est pas une demande invalide.
+     */
+    public function testAnExhaustedQuotaAtDisplayIsATooManyRequestsWithItsRetryAfter(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $received = $this->receivedQuery();
+        $this->clearPools();
+        $this->exhaustTheFetchQuota();
+
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+        $response = $this->client->getResponse();
+
+        $this->assertTransientRefusal($response, Response::HTTP_TOO_MANY_REQUESTS);
+        $retryAfter = $response->headers->get('Retry-After');
+        self::assertNotNull($retryAfter, 'Un 429 annonce quand revenir.');
+        /** @var RateLimiterFactory $factory */
+        $factory = self::getContainer()->get('limiter.mcp_client_metadata');
+        $expected = $factory->create(FetchQuotaKey::forAddress('127.0.0.1'))->consume(0)->getRetryAfter()->getTimestamp() - time();
+        self::assertEqualsWithDelta($expected, (int) $retryAfter, 1.0, 'Retry-After est celui du limiteur.');
+        self::assertGreaterThan(0, (int) $retryAfter);
+    }
+
+    /** Un hôte qui cale à l'affichage est un 503, sans `Retry-After` : rien ne dit quand il répondra. */
+    public function testAStallingHostAtDisplayIsServiceUnavailableWithoutRetryAfter(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $received = $this->receivedQuery();
+        $this->clearPools();
+        $this->stalling = true;
+
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+
+        $this->assertTransientRefusal($this->client->getResponse(), Response::HTTP_SERVICE_UNAVAILABLE);
+        self::assertNull($this->client->getResponse()->headers->get('Retry-After'));
+    }
+
+    /** À l'approbation, le quota épuisé est un 429 et n'écrit rien : ni client, ni connexion, ni audit d'accord. */
+    public function testAnExhaustedQuotaAtApprovalIsATooManyRequestsAndWritesNothing(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->consentSummary($this->cimdParameters());
+        $this->clearPools();
+        $this->exhaustTheFetchQuota();
+
+        $response = $this->decide(approved: true, overrides: $this->cimdOverrides());
+
+        $this->assertTransientRefusal($response, Response::HTTP_TOO_MANY_REQUESTS);
+        self::assertGreaterThan(0, (int) $response->headers->get('Retry-After'));
+        $this->assertNothingWritten();
+    }
+
+    /** À l'approbation, un hôte qui cale est un 503 sans `Retry-After` et n'écrit rien. */
+    public function testAStallingHostAtApprovalIsServiceUnavailableAndWritesNothing(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->consentSummary($this->cimdParameters());
+        $this->clearPools();
+        $this->stalling = true;
+
+        $response = $this->decide(approved: true, overrides: $this->cimdOverrides());
+
+        $this->assertTransientRefusal($response, Response::HTTP_SERVICE_UNAVAILABLE);
+        self::assertNull($response->headers->get('Retry-After'));
+        $this->assertNothingWritten();
+    }
+
+    /** Un refus définitif (document sans la redirection) reste le 400 générique : seul le passager change. */
+    public function testADefinitiveRefusalAtDisplayStaysTheGenericBadRequest(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $received = $this->receivedQuery();
+        $this->clearPools();
+        $this->served = str_replace(self::DECLARED_REDIRECTS, '["https://claude.ai/callback"]', ClaudeCodeMetadata::json());
+
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+        $response = $this->client->getResponse();
+
+        self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+        self::assertSame('/errors/authorization-request-rejected', $this->json($response)['type'] ?? null);
+        self::assertNull($response->headers->get('Retry-After'));
+    }
+
+    /**
+     * La réponse ne dit jamais la cause (décision du 2026-11-15) : le même
+     * message pour le quota et pour l'hôte, aucun mot de la cause.
+     */
+    public function testTheTransientRefusalNeverNamesItsCause(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $received = $this->receivedQuery();
+
+        $this->clearPools();
+        $this->exhaustTheFetchQuota();
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+        $throttled = $this->json($this->client->getResponse());
+
+        $this->clearPools();
+        $this->stalling = true;
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+        $stalled = $this->json($this->client->getResponse());
+
+        self::assertArrayHasKey('type', $throttled);
+        self::assertArrayHasKey('detail', $throttled);
+        self::assertSame('/errors/consent-temporarily-unavailable', $throttled['type']);
+        self::assertSame($throttled['detail'], $stalled['detail'] ?? 'absent', 'Un message constant, le même pour les deux causes.');
+        self::assertSame($throttled['type'], $stalled['type'] ?? 'absent');
+        self::assertIsString($throttled['detail']);
+        self::assertDoesNotMatchRegularExpression('/quota|limit|timeout|stall|host|h\xc3\xb4te|d\xc3\xa9lai|rate/i', $throttled['detail']);
+    }
+
+    /** Une réponse de refus passager : le code, un problème typé qui n'est pas le 400, aucune redirection. */
+    private function assertTransientRefusal(Response $response, int $status): void
+    {
+        self::assertSame($status, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        $body = $this->json($response);
+        self::assertSame('/errors/consent-temporarily-unavailable', $body['type'] ?? null);
+        self::assertNull($response->headers->get('Location'));
+        self::assertIsString($body['detail'] ?? null);
+    }
+
+    private function assertNothingWritten(): void
+    {
+        self::assertSame(0, $this->cimdRows(), 'Aucune ligne mcp_client.');
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'), 'Aucune connexion.');
+        self::assertSame([], self::securityAuditEvents('mcp-connection-granted'), 'Aucun audit d\'accord.');
+    }
+
+    /**
+     * Le point d'autorisation, puis la requête que la page reçoit sur la redirection.
+     *
+     * @return array<string, string>
+     */
+    private function receivedQuery(): array
+    {
+        $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->cimdParameters()));
+        $redirect = $this->client->getResponse();
+        self::assertSame(Response::HTTP_FOUND, $redirect->getStatusCode(), substr((string) $redirect->getContent(), 0, 300));
+        parse_str((string) parse_url((string) $redirect->headers->get('Location'), \PHP_URL_QUERY), $received);
+
+        /** @var array<string, string> $received */
+        return $received;
+    }
+
+    /** Dix récupérations d'autres `client_id` : le quota d'une adresse est épuisé, le onzième fetch est refusé. */
+    private function exhaustTheFetchQuota(): void
+    {
+        for ($i = 1; $i <= 10; ++$i) {
+            $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->cimdParameters(['client_id' => 'https://claude.ai/oauth/client-'.$i])));
+        }
+    }
+
     /** Autorisation, résumé, puis approbation, par le compte connecté. */
     private function approve(): void
     {
@@ -261,6 +422,13 @@ final class CimdConsentFlowTest extends WebTestCase
         $this->networkInstalled = true;
         $answer = function (): ResponseInterface {
             ++$this->outboundRequests;
+
+            if ($this->stalling) {
+                // Une chaîne vide dans le corps d'un MockResponse est un délai d'inactivité dépassé.
+                return new MockResponse((static function (): Generator {
+                    yield '';
+                })(), ['response_headers' => ['Content-Type: application/json']]);
+            }
 
             return new MockResponse($this->served, ['response_headers' => ['Content-Type: application/json']]);
         };
