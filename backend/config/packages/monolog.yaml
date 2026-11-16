@@ -101,10 +101,15 @@ when@prod:
             # Le descripteur 2 porte aussi des lignes qui ne sont pas du JSON :
             # erreur du moteur PHP, trace de dernier recours de FailSafeAudit (voir
             # plus bas), NOTICE ou WARNING du maître FPM, ligne d'accès du pool,
-            # morceaux d'une ligne coupée par `log_limit`. Le script écarte le
-            # bruit mais rend en `{"unparsed": …}` toute ligne qui commence par `{`,
-            # début d'un enregistrement coupé qu'il ne faut pas laisser disparaître ;
-            # ses raisons et ses prédicats sont dans son en-tête, seule copie.
+            # morceaux d'une ligne coupée par `log_limit`. Le script n'écarte que le
+            # bruit connu (accès du pool, NOTICE du maître, ligne vide) et rend tout
+            # le reste en `{"unparsed": …}`, trace de dernier recours comprise ; ses
+            # raisons et ses prédicats sont dans son en-tête, seule copie.
+            # La purge `app:mcp:purge` (CronJob `messenger-purge-cronjob.yaml`,
+            # conteneur `purge`) écrit par les mêmes gestionnaires sur le stderr de
+            # son conteneur : ses enregistrements se lisent dans les journaux du pod
+            # du Job (`kubectl logs job/<nom> -c purge | tools/logs-select.sh …`),
+            # pas dans `deploy/backend -c php-fpm`.
             # Un fichier dans var/log/ serait au contraire invisible — et perdu au
             # redémarrage du pod, le système de fichiers étant en lecture seule
             # hors de var/.
