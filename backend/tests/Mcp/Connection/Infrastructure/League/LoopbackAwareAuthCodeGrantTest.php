@@ -72,8 +72,9 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         // `with()` serait aussi vérifié : FailSafeAudit avale bien l'échec levé
         // dans l'écriture de l'audit, mais PHPUnit 13.4.6 le mémorise
         // (`Parameters::apply()`) et `Matcher::verify()` le relance en fin de test.
-        // Ce n'est vrai que de cette attente : sous `any()`, `never()` ou
-        // `atMost()`, `Matcher::verify()` ne relit pas les paramètres.
+        // Ce n'est pas propre à `once()` : `Matcher::verify()` relit les paramètres
+        // sous toute attente sauf `any()`, `never()` et `atMost()` (`exactly()`,
+        // `atLeast()` et `atLeastOnce()` les relisent aussi).
         $received = [];
         $audit->expects(self::once())->method('mcpClientRowNotAdmitted')
             ->willReturnCallback(static function (string $clientHost) use (&$received): void {

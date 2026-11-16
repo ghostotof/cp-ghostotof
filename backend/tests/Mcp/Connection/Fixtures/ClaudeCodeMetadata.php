@@ -30,13 +30,15 @@ final class ClaudeCodeMetadata
      * Une ligne `cimd` telle qu'une écriture antérieure ou à la main aurait pu
      * la laisser en base, dont le `client_id` est `$storedClientId`.
      *
-     * La réflexion est voulue : `McpClient::discovered()` n'accepte qu'un
-     * CimdClientId, donc le domaine refuse de construire une ligne `cimd` dont
-     * l'identifiant est hors de la forme CIMD (ou corrompu). C'est pourtant
-     * l'état que le garde du point d'autorisation doit refuser (`invalid_client`,
-     * #651) : le seul moyen de le poser sans contourner la validation est de
-     * réécrire la propriété d'une ligne valide. La ligne reste, pour le reste,
-     * celle que construit le domaine (documents de {@see self::json()}).
+     * La réflexion contourne volontairement la validation du domaine :
+     * `McpClient::discovered()` n'accepte qu'un CimdClientId, donc le domaine
+     * refuse de construire une ligne `cimd` dont l'identifiant est hors de la
+     * forme CIMD (ou corrompu). C'est pourtant l'état que le garde du point
+     * d'autorisation doit refuser (`invalid_client`, #651) : on réécrit donc la
+     * propriété privée d'une ligne valide. Le `clientId` rendu ne correspond
+     * plus au `client_id` du document dont la ligne a été construite
+     * ({@see self::json()}) : le nom et les redirections restent ceux de ce
+     * document, seul l'identifiant est remplacé.
      */
     public static function storedRowWhoseClientIdIs(string $storedClientId): McpClient
     {

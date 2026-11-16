@@ -29,14 +29,23 @@ use Throwable;
  * l'issue, même quand il ne peut plus dire qu'il a échoué (elle laisse alors
  * un `error_log()` de dernier recours, la classe seule). Ce dernier recours
  * n'est pas une garantie de trace : `error_log` et le gestionnaire `main` de
- * Monolog (`php://stderr`) écrivent tous deux sur le descripteur 2 du worker
- * FPM (`php.prod.ini`, `monolog.yaml`), un tube vers le maître
+ * Monolog (`php://stderr`) écrivent tous deux sur le descripteur 2 du process
+ * (`php.prod.ini`, `monolog.yaml`). Sous FPM c'est un tube vers le maître
  * (`catch_workers_output = yes`, `www.prod.conf`), qui le relaie sur le stderr
- * du conteneur. Il couvre donc une panne du processeur, du formateur ou du
- * gestionnaire, non celle de ce descripteur : s'il est fermé, ni le `critical`
- * ni la trace n'existent ; s'il est bloqué (tube plein), le worker attend, borné
- * par `request_terminate_timeout = 65s` (`www.prod.conf`), et la trace n'est
- * pas perdue.
+ * du conteneur `php-fpm` : le dernier recours couvre une panne du processeur,
+ * du formateur ou du gestionnaire, non celle de ce descripteur. S'il est
+ * fermé, ni le `critical` ni la trace n'existent ; s'il est bloqué (tube
+ * plein), le worker attend jusqu'à `request_terminate_timeout = 65s`
+ * (`www.prod.conf`), puis le maître le tue encore bloqué dans l'écriture :
+ * le `critical` et la trace sont perdus, nginx répond 502, et l'issue n'est
+ * plus celle que l'appelant rend.
+ *
+ * Un des sept sites, `McpConnectionPurger`, tourne en ligne de commande
+ * (`app:mcp:purge`, CronJob `k8s/base/messenger-purge-cronjob.yaml`), sans
+ * maître ni borne de 65 s : la CLI charge le même `php.prod.ini` (copié dans
+ * `conf.d`), donc `error_log` et `php://stderr` écrivent directement sur le
+ * stderr du conteneur `purge` du Job, dont les journaux sont ceux du pod du Job
+ * et non ceux de `deploy/backend -c php-fpm`.
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
