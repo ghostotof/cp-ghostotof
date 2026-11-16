@@ -133,7 +133,7 @@ that does not compile (decided by a first run of jq on an empty input, before an
 program and is relayed; never decided from a text coming from the logs); 4 the stream read to the end with at least
 one line on which the predicate raised (the line is dropped, stderr carries only its number and a fixed label, never a
 value of the record; the stream goes on, each label comes **as it happens** and stays visible after a Ctrl-C or a `| head`,
-a final total line closes a complete run; never for a stream jq abandoned, never over a signal); 5 any other failure,
+a final total line counts them and promises no code; never for a stream jq abandoned, never over a signal); 5 any other failure,
 a truncated stream included (any other non-zero exit of jq, a `halt_error(3)` of the predicate among them, or a failure of
 the error filter itself; a fixed label, never jq's text; kept even after predicate errors); 128 and more a signal passed
 through unchanged and silent (141 for `| head`).

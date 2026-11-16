@@ -90,8 +90,9 @@
 # prédicat a levé une erreur` (N : numéro de la ligne d'entrée, lignes de bruit
 # comprises). Ces lignes sortent AU FIL DE L'EAU, au moment de l'erreur : elles
 # restent donc visibles après un Ctrl-C ou un `| head`. À la fin de l'entrée une
-# dernière ligne donne le total, `N ligne(s) en erreur de prédicat (code 4)` (perdue
-# si Ctrl-C tue aussi son filtre), et le script se termine par le code 4.
+# dernière ligne donne le total, `N ligne(s) en erreur de prédicat` (perdue si Ctrl-C
+# tue aussi son filtre). Le total ne promet aucun code : le script sort en 4 si jq a
+# lu tout le flux, en 5 ou plus s'il l'a abandonné (voir « Sortie »).
 # Mécanisme : le libellé est construit par le programme jq (`stderr`) et le stderr de
 # jq passe par un filtre awk, liste blanche sur la forme exacte des libellés ; il
 # compte les erreurs et n'écrit aucun fichier (rien ne grossit pendant un `-f`).
@@ -212,7 +213,7 @@ stderr_filter() {
   awk '
     /^logs-select\.sh : ligne [0-9]+ : le prédicat a levé une erreur$/ { print; fflush(); n++ }
     END {
-      if (n > 0) printf "logs-select.sh : %d ligne(s) en erreur de prédicat (code 4)\n", n
+      if (n > 0) printf "logs-select.sh : %d ligne(s) en erreur de prédicat\n", n
       exit n > 0 ? 4 : 0
     }'
 }

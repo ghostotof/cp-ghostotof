@@ -230,7 +230,7 @@ code=0
 "$SCRIPT" '.context.outcome == "protocol-error"' <"$TMP/odd.log" >"$TMP/out" 2>"$TMP/err" || code=$?
 WANT_ERR="logs-select.sh : ligne 2 : le prédicat a levé une erreur
 logs-select.sh : ligne 4 : le prédicat a levé une erreur
-logs-select.sh : 2 ligne(s) en erreur de prédicat (code 4)"
+logs-select.sh : 2 ligne(s) en erreur de prédicat"
 if [ "$code" -eq 4 ] && [ "$(cat "$TMP/out")" = "$MCP_ERR" ] && [ "$(cat "$TMP/err")" = "$WANT_ERR" ]; then
   pass "erreur à l'exécution : libellé fixe par ligne sur stderr, flux continué, code 4"
 else
@@ -290,7 +290,7 @@ fi
 code=0
 "$SCRIPT" '(.context.ip | stderr) | error' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
 WANT_ERR="logs-select.sh : ligne 1 : le prédicat a levé une erreur
-logs-select.sh : 1 ligne(s) en erreur de prédicat (code 4)"
+logs-select.sh : 1 ligne(s) en erreur de prédicat"
 if [ "$code" -eq 4 ] && [ "$(cat "$TMP/err")" = "$WANT_ERR" ]; then
   pass "code 4 : libellés fixes seuls, une valeur écrite par le prédicat n'est pas relayée"
 else
@@ -391,11 +391,12 @@ jq -nr --arg l "$BAD" 'range(5000) | $l' >"$TMP/many.log"
 
 # Un flux que jq a abandonné n'est pas lu jusqu'au bout : le code 4 promet le contraire, il
 # reste 5 (une erreur de prédicat à la ligne 1, puis un halt_error(7) du prédicat à la ligne 2).
-# Les libellés par ligne restent affichés, et le total (code 4) n'est pas annoncé.
+# Les libellés par ligne restent affichés ; le total ne promet aucun code (il ne dit pas « code 4 »).
 printf '%s\n' "$BAD" "$AUDIT" >"$TMP/mask.log"
 code=0
 "$SCRIPT" 'if (.context | type) == "array" then error("x") else (1 | halt_error(7)) end' <"$TMP/mask.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -eq 5 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" && grep -q 'jq a échoué (code 7)' "$TMP/err"; then
+if [ "$code" -eq 5 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" && grep -q 'jq a échoué (code 7)' "$TMP/err" \
+   && ! grep -q '(code 4)' "$TMP/err"; then
   pass "erreur de prédicat puis flux abandonné par jq : code 5 (flux tronqué), libellés conservés"
 else
   fail "erreur de prédicat puis flux abandonné par jq : code 5 (flux tronqué), libellés conservés" "code $code ; stderr : $(cat "$TMP/err")"
@@ -450,7 +451,7 @@ rm -f "$TMP/fakebin/awk"
 code=0
 "$SCRIPT" '.context.outcome == "x"' <"$TMP/many.log" >"$TMP/out" 2>"$TMP/err" || code=$?
 if [ "$code" -eq 4 ] && [ "$(grep -c 'le prédicat a levé une erreur$' "$TMP/err")" -eq 5000 ] \
-   && tail -n 1 "$TMP/err" | grep -qx 'logs-select.sh : 5000 ligne(s) en erreur de prédicat (code 4)'; then
+   && tail -n 1 "$TMP/err" | grep -qx 'logs-select.sh : 5000 ligne(s) en erreur de prédicat'; then
   pass "5000 erreurs de prédicat : 5000 libellés et le total, code 4"
 else
   fail "5000 erreurs de prédicat : 5000 libellés et le total, code 4" "code $code ; $(wc -l <"$TMP/err") lignes de stderr"
