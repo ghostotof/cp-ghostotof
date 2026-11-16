@@ -355,14 +355,34 @@
   - Écrit, non corrigé :
     - `backend-tests.md` a été édité sans `Read` préalable (seul le glob du frontmatter a changé) ;
     - aucune erreur réelle hors du `try` n'a pu être provoquée (elle est simulée par `halt_error`).
-- **Prochaine action** : relecture `/code-review medium diff 4765a221...HEAD`. Si un moyen ressort encore,
-  proposer d'arrêter la boucle sur logs-select et de reporter le reste dans la PR.
-- `HEAD` au 2026-11-16 : `de3fc177`, puis ce commit d'état.
+- **Série n° 10 relue** (`diff 4765a221...HEAD`, tête relue `b2c0798e`, sans audit) :
+  - moyens :
+    - les messages par ligne du code 4 ne sortent qu'en fin de flux : avec `kubectl logs -f` interrompu par
+      Ctrl-C (130), ils ne sortent jamais, et rien ne signale que des lignes ont été écartées (script l.~183) ;
+    - avec un code 141 (`| head`) ou 5 après des erreurs de prédicat, le fichier des erreurs est supprimé
+      sans être lu, et le code 4 est masqué (l.~200) ;
+    - 4xx écartés : la justification « un refus 401/403 a son propre audit JSON » est fausse. Vérifié par le
+      fil principal : `SecurityAuditLoggerInterface` n'audite que `backofficeAccessDenied`, `csrfRejected`
+      et les refus MCP. Un jeton de base qui tente `GET /api/cv` (403) ne laisse plus de trace ; les
+      400/405/409/413/422 non plus (l.~129, règle, `monolog.yaml`).
+  - faibles :
+    - la raison donnée pour garder les 5xx est inexacte : les 502/504 viennent de nginx, un worker tué est
+      un WARNING de FPM, pas une ligne d'accès (l.~53) ;
+    - une ligne faite seulement de blancs devient `""` après `ltrim` et est écartée comme ligne vide, ce que
+      l'en-tête ne dit pas (l.~145) ;
+    - le fichier temporaire des erreurs grossit sans limite pendant un `-f` (l.~179) ;
+    - le test SIGPIPE suppose l'action par défaut de SIGPIPE (sinon jq sort en 2, le script en 5) ;
+    - un échec de `mktemp` sort en 1, code non documenté, et le `umask 077` est redondant ;
+    - `monolog.yaml` l.~106 : ligne de 123 caractères ;
+    - en-tête l.~110 : « 128 et plus  un signal tué jq » (verbe manquant, double espace).
+- **Prochaine action** : la série n° 10 ressort trois moyens. Proposer à l'utilisateur d'arrêter la boucle
+  sur logs-select et de reporter le reste dans la PR, ou une série n° 11.
+- `HEAD` au 2026-11-16 : `b2c0798e`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 9, au point `4765a221` (série `f7c585a4...4765a221`).
-- Prochaine série : `diff 4765a221...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
+- Dernière relecture : série n° 10, au point `b2c0798e` (série `4765a221...b2c0798e`).
+- Prochaine série : `diff b2c0798e...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
