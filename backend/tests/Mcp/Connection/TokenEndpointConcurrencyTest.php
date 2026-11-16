@@ -208,7 +208,7 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
      * parcours par index garderait l'ordre des identifiants. Le test ne
      * discrimine donc que sous le plan actuel, un parcours séquentiel de
      * quelques lignes ; un plan par index le laisserait vert sans
-     * `ORDER BY` (`.claude/rules/backend-outillage.md`, « Concurrency
+     * `ORDER BY` (`.claude/rules/backend-tests.md`, « Concurrency
      * tests »).
      *
      * **La disposition du tas est construite, jamais supposée** (#650, R4) :

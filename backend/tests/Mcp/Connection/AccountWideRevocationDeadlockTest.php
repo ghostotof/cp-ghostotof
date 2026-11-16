@@ -89,7 +89,7 @@ use Symfony\Component\Process\Process;
  * par l'entrée standard du fils, le mot de passe est tiré au hasard dans le fils
  * et n'est jamais écrit.
  *
- * **Mutations mesurées** (voir `.claude/rules/backend-outillage.md`, « Concurrency
+ * **Mutations mesurées** (voir `.claude/rules/backend-tests.md`, « Concurrency
  * tests ») : `SKIP LOCKED` ajouté à la sous-requête de `revokeWhere()` — la
  * révocation et le remplacement sautent la ligne tenue au lieu de l'attendre :
  * les deux tests rouges à l'attente (le fils « s'est arrêté sans attendre un

@@ -46,7 +46,7 @@ use Symfony\Component\Process\Process;
  *    réévalué), constate qu'elle est à la personne, répond 204 (« done ») sans
  *    écrire ni auditer : la cause reste `expired`, l'instant du marquage aussi.
  *
- * **Mutations mesurées** (voir `.claude/rules/backend-outillage.md`, « Concurrency
+ * **Mutations mesurées** (voir `.claude/rules/backend-tests.md`, « Concurrency
  * tests ») : `SKIP LOCKED` dans la sous-requête de `revokeWhere()` rend le
  * premier test rouge (le fils ne bloque plus : il saute la ligne tenue, ne
  * révoque rien et répond « done » sur une connexion restée active) ; les deux

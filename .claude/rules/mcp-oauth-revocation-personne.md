@@ -150,7 +150,7 @@ theirs). The expiry (actor `system`), the supersession (`supersededBy`) and a co
   hold the account.) A revocation crossing a refresh
   waits for its COMMIT then revokes (the refresh's `last_used_at` intact); crossing the purge's marking it answers
   204 and writes and audits nothing, the cause staying `expired`
-  (`OwnMcpConnectionRevocationConcurrencyTest`, real processes, `.claude/rules/backend-outillage.md`).
+  (`OwnMcpConnectionRevocationConcurrencyTest`, real processes, `.claude/rules/backend-tests.md`).
 
 ## The account-wide revocations: a port of `Shared`, called inside the lock
 
