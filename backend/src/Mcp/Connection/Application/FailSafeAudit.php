@@ -49,11 +49,11 @@ use Throwable;
  * par le conteneur (la purge MCP est la troisième) et les relances `OnFailure`
  * comptent dans ces 300 s, la purge peut donc être tuée bien avant 300 s de son
  * propre temps. Passé ce délai, Kubernetes tue le pod encore bloqué dans
- * l'écriture, et le `critical` comme la trace sont perdus de la même façon. La CLI charge le
- * même `php.prod.ini` (copié dans `conf.d`), donc `error_log` et
- * `php://stderr` écrivent directement sur le stderr du conteneur `purge` du
- * Job, dont les journaux sont ceux du pod du Job et non ceux de
- * `deploy/backend -c php-fpm`.
+ * l'écriture, et le `critical` comme la trace sont perdus de la même
+ * façon. La CLI charge le même `php.prod.ini` (copié dans `conf.d`), donc
+ * `error_log` et `php://stderr` écrivent directement sur le stderr du
+ * conteneur `purge` du Job, dont les journaux sont ceux du pod du Job et non
+ * ceux de `deploy/backend -c php-fpm`.
  *
  * Un service plutôt qu'un trait : le journal est injecté une fois (le canal
  * principal, celui de l'autowiring), et chaque site garde sa boucle et son
