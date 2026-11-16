@@ -331,8 +331,16 @@
     - lignes trop longues (FailSafeAudit l.52, en-tête du script l.30) ;
     - le glob `.github/workflows/**` est trop large (`pipeline.yml` suffit) ;
     - le test de l'accès 401 IPv6 avec utilisateur a été perdu.
-- **Prochaine action** : série n° 10 à faire choisir par l'utilisateur. Point fixe : `4765a221`.
-- `HEAD` au 2026-11-16 : `4765a221`, puis ce commit d'état.
+- **Série n° 10 (décisions de l'utilisateur, 2026-11-16)** :
+  - accès 4xx : les 2xx/3xx/4xx sont écartés comme bruit, seuls les 5xx restent visibles (les refus ont leur
+    propre audit JSON) ;
+  - `--tail=-1` ajouté à la commande du Job (dans la règle et dans `monolog.yaml`) ;
+  - robustesse du script : 141 et 130 rendus tels quels, JSON précédé d'un blanc de nouveau décodé, erreur
+    jq hors `try` capturée et remplacée par un libellé, test 4xx IPv6 avec utilisateur restauré ;
+  - doc et glob : `--previous` sur `pod/<pod>`, glob `.github/workflows/pipeline.yml`, lignes recoupées.
+  - un seul agent G (script et test, puis textes), deux commits au moins.
+- **Prochaine action** : G (sonnet/high), puis relecture `diff 4765a221...HEAD`.
+- `HEAD` au 2026-11-16 : `035cdaea`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
