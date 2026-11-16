@@ -32,20 +32,36 @@ SECURITY='{"message":"Authenticator successful!","context":{"user":"0192f1c0-000
 APP='{"message":"Matched route \"home\".","context":{"route":"home"},"level":100,"level_name":"DEBUG","channel":"app","datetime":"2026-11-16T10:00:02+00:00","extra":{}}'
 MCP_ERR='{"message":"mcp call","context":{"outcome":"protocol-error"},"level":200,"level_name":"INFO","channel":"mcp_usage","datetime":"2026-11-16T10:00:03+00:00","extra":{}}'
 MCP_OK='{"message":"mcp call","context":{"outcome":"success"},"level":200,"level_name":"INFO","channel":"mcp_usage","datetime":"2026-11-16T10:00:04+00:00","extra":{}}'
-# Ce que le descripteur 2 porte en plus : ligne d'accès du pool FPM, NOTICE du maître.
+# ai_usage porte aussi un champ `outcome` : un prédicat sur `.context.outcome` seul le sélectionnerait.
+AI_ERR='{"message":"ai call","context":{"outcome":"protocol-error"},"level":200,"level_name":"INFO","channel":"ai_usage","datetime":"2026-11-16T10:00:05+00:00","extra":{}}'
+# Le bruit connu, seul écarté : ligne d'accès du pool FPM (format par défaut
+# `%R - %u %t "%m %r" %s`, `%u` vide) et NOTICE du maître (date sans zone).
 ACCESS='203.0.113.7 -  16/Nov/2026:10:00:05 +0000 "GET /index.php" 200'
 NOTICE='[16-Nov-2026 10:00:00] NOTICE: fpm is running, pid 1'
-# Un enregistrement d'audit coupé par la limite de log_limit : son début, puis sa suite.
+# Tout le reste est rendu en unparsed : un enregistrement d'audit coupé par
+# `log_limit` (son début, puis sa suite), du JSON non objet, la trace de dernier
+# recours de FailSafeAudit (error_log() de PHP : la date porte un nom de zone),
+# un WARNING du maître, un morceau suivant qui commence par « { ».
 CUT_HEAD='{"channel":"security_au'
 CUT_TAIL='lue":1}'
+NESTED_TAIL='{"nested":1},"level":200,"channel":"security_audit"}'
+TRACE='[16-Nov-2026 10:00:06 Europe/Paris] Audit failure could not be logged. Logger failure: X'
+FATAL='[16-Nov-2026 10:00:07 Europe/Paris] PHP Fatal error:  Uncaught Error: boom in /app/src/X.php:1'
+WARN="[16-Nov-2026 10:00:08] WARNING: [pool www] child 7, script '/app/public/index.php' (request: \"GET /index.php\") execution timed out (31.2 sec), terminating"
+
+# Les lignes qui sortent en unparsed, dans l'ordre de l'entrée.
+UNPARSED_LINES=("$CUT_HEAD" "$CUT_TAIL" "$NESTED_TAIL" '42' '"x"' 'null' '[1]' "$TRACE" "$FATAL" "$WARN")
 
 {
-  printf '%s\n' "$AUDIT" "$SECURITY" "$APP" "$MCP_ERR" "$MCP_OK" "$ACCESS" "$NOTICE" \
-    "$CUT_HEAD" "$CUT_TAIL" '42' '"x"' 'null' '[1]' ''
+  printf '%s\n' "$AUDIT" "$SECURITY" "$APP" "$MCP_ERR" "$MCP_OK" "$AI_ERR" "$ACCESS" "$NOTICE" \
+    "${UNPARSED_LINES[@]}" ''
 } >"$TMP/mixed.log"
 
-# unparsed <ligne> : la forme que le script rend pour un début d'enregistrement coupé.
+# unparsed <ligne> : la forme que le script rend pour une ligne qui n'est pas un objet JSON.
 unparsed() { jq -cn --arg l "$1" '{unparsed: $l}'; }
+# all_unparsed : unparsed de chaque ligne de UNPARSED_LINES, séparés par un saut de ligne.
+all_unparsed() { local l; for l in "${UNPARSED_LINES[@]}"; do unparsed "$l"; done; }
+UNP="$(all_unparsed)"
 
 # expect_output <label> <sortie attendue> <entrée> <prédicat>
 expect_output() {
@@ -63,38 +79,93 @@ expect_output() {
 echo "logs-select.sh"
 
 # --- Les prédicats documentés ------------------------------------------------
+# Chaque sortie : les enregistrements retenus, puis toutes les lignes unparsed
+# (placées après les enregistrements dans l'entrée).
 NL=$'\n'
-expect_output "canal security_audit : l'audit seul, plus le début coupé" \
-  "${AUDIT}${NL}$(unparsed "$CUT_HEAD")" "$TMP/mixed.log" '.channel == "security_audit"'
+expect_output "canal security_audit : l'audit seul, plus les lignes unparsed" \
+  "${AUDIT}${NL}${UNP}" "$TMP/mixed.log" '.channel == "security_audit"'
 
-expect_output "canal security du framework : lui seul, plus le début coupé" \
-  "${SECURITY}${NL}$(unparsed "$CUT_HEAD")" "$TMP/mixed.log" '.channel == "security"'
+expect_output "canal security du framework : lui seul, plus les lignes unparsed" \
+  "${SECURITY}${NL}${UNP}" "$TMP/mixed.log" '.channel == "security"'
 
 expect_output "les deux canaux à la fois (IN), dans l'ordre de l'entrée" \
-  "${AUDIT}${NL}${SECURITY}${NL}$(unparsed "$CUT_HEAD")" "$TMP/mixed.log" \
+  "${AUDIT}${NL}${SECURITY}${NL}${UNP}" "$TMP/mixed.log" \
   '.channel | IN("security", "security_audit")'
 
-expect_output "McpCallOutcome : l'issue protocol-error seule, plus le début coupé" \
-  "${MCP_ERR}${NL}$(unparsed "$CUT_HEAD")" "$TMP/mixed.log" '.context.outcome == "protocol-error"'
+# Décision série 8 : l'exemple McpCallOutcome borne le canal, ai_usage a aussi un `outcome`.
+expect_output "McpCallOutcome : mcp_usage + protocol-error seul (pas ai_usage), plus unparsed" \
+  "${MCP_ERR}${NL}${UNP}" "$TMP/mixed.log" '.channel == "mcp_usage" and .context.outcome == "protocol-error"'
 
-expect_output "prédicat toujours faux : seul le début coupé reste visible" \
-  "$(unparsed "$CUT_HEAD")" "$TMP/mixed.log" 'false'
+expect_output "prédicat toujours faux : seules les lignes unparsed restent" \
+  "${UNP}" "$TMP/mixed.log" 'false'
 
-expect_output "prédicat toujours vrai : tous les objets, plus le début coupé" \
-  "${AUDIT}${NL}${SECURITY}${NL}${APP}${NL}${MCP_ERR}${NL}${MCP_OK}${NL}$(unparsed "$CUT_HEAD")" \
+expect_output "prédicat toujours vrai : tous les objets, plus les lignes unparsed" \
+  "${AUDIT}${NL}${SECURITY}${NL}${APP}${NL}${MCP_ERR}${NL}${MCP_OK}${NL}${AI_ERR}${NL}${UNP}" \
   "$TMP/mixed.log" 'true'
 
-# --- Ce qui est écarté --------------------------------------------------------
-# Aucune de ces lignes ne commence par « { » : jamais rendue, même avec un prédicat vrai.
-printf '%s\n' "$ACCESS" "$NOTICE" "$CUT_TAIL" '42' '"x"' 'null' '[1]' '' >"$TMP/noise.log"
-expect_output "accès FPM, NOTICE, suite, 42, \"x\", null, [1], ligne vide : tout écarté" \
+# --- Ce qui est écarté : le bruit connu, rien d'autre ----------------------------
+printf '%s\n' "$ACCESS" "$NOTICE" '' >"$TMP/noise.log"
+expect_output "accès FPM, NOTICE du maître, ligne vide : seuls écartés" \
   "" "$TMP/noise.log" 'true'
 
-# Un JSON non objet commençant par « { » n'existe pas ; mais un objet suivi de bruit
-# est du texte, pas du JSON : début d'enregistrement coupé, donc rendu en unparsed.
+# Un utilisateur Basic Auth renseigné (%u) et une IPv6 restent une ligne d'accès.
+printf '%s\n' '2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 401' >"$TMP/access2.log"
+expect_output "accès FPM avec utilisateur et IPv6 : écarté" "" "$TMP/access2.log" 'true'
+
+# --- Ce qui est rendu : tout le reste -----------------------------------------
+for line in "$TRACE" "$FATAL" "$WARN" "$CUT_TAIL" "$NESTED_TAIL" '42' '"x"' 'null' '[1]'; do
+  printf '%s\n' "$line" >"$TMP/one.log"
+  expect_output "rendue en unparsed : ${line:0:60}" "$(unparsed "$line")" "$TMP/one.log" 'false'
+done
+
+# Un morceau suivant qui commence par « { » ne casse pas le flux : l'enregistrement
+# qui le suit est traité normalement.
+printf '%s\n' "$CUT_HEAD" "$NESTED_TAIL" "$AUDIT" >"$TMP/nested.log"
+expect_output "coupure avant un objet imbriqué : unparsed, puis le flux continue" \
+  "$(unparsed "$CUT_HEAD")${NL}$(unparsed "$NESTED_TAIL")${NL}${AUDIT}" "$TMP/nested.log" '.channel == "security_audit"'
+
+# Un objet suivi de texte n'est pas du JSON : unparsed.
 printf '%s\n' '{"channel":"security_audit"} trailing' >"$TMP/trailing.log"
 expect_output "objet suivi de texte : non décodable, rendu en unparsed" \
   "$(unparsed '{"channel":"security_audit"} trailing')" "$TMP/trailing.log" '.channel == "security_audit"'
+
+# --- Préfixes de kubectl logs (--timestamps, --prefix) ---------------------------
+TS='2026-11-16T10:00:45.123456789Z'
+PFX='[pod/backend-6d9f7c8b5-x2x4q/php-fpm]'
+{
+  printf '%s %s\n' "$TS" "$AUDIT"                  # --timestamps
+  printf '%s %s\n' "$PFX" "$SECURITY"              # --prefix
+  printf '%s %s %s\n' "$PFX" "$TS" "$APP"          # --prefix + --timestamps (ordre de kubectl : préfixe d'abord)
+  printf '%s %s %s\n' "$TS" "$PFX" "$MCP_ERR"      # l'autre ordre, toléré
+  printf '%s %s\n' "$TS" "$ACCESS"                 # bruit horodaté : écarté
+  printf '%s %s %s\n' "$PFX" "$TS" "$NOTICE"       # NOTICE préfixée : écartée
+  printf '%s \n' "$TS"                             # ligne vide horodatée : écartée
+  printf '%s %s %s\n' "$PFX" "$TS" "$WARN"         # WARNING préfixé : rendu, ligne complète
+} >"$TMP/kubectl.log"
+expect_output "préfixes kubectl : retirés avant décodage, unparsed garde la ligne complète" \
+  "${AUDIT}${NL}${SECURITY}${NL}${APP}${NL}${MCP_ERR}${NL}$(unparsed "$PFX $TS $WARN")" "$TMP/kubectl.log" 'true'
+
+# --- Prédicat robuste ---------------------------------------------------------
+# Un `#` (commentaire jq) en fin de prédicat ne mange pas la parenthèse fermante.
+expect_output "prédicat terminé par un commentaire jq" \
+  "${APP}${NL}${UNP}" "$TMP/mixed.log" '.channel == "app" # que les routes'
+
+# Virgule de premier niveau : chaque enregistrement n'est rendu qu'une fois.
+expect_output "prédicat à virgule de premier niveau : pas de doublon" \
+  "${APP}${NL}${UNP}" "$TMP/mixed.log" '.channel == "app", .channel == "app"'
+
+# Un prédicat qui lève sur une ligne (`context` est une liste, cas réel de Monolog,
+# ou une chaîne) : signalé sur stderr, le reste du flux est rendu, code 4 à la fin.
+printf '%s\n' "$AUDIT" '{"channel":"app","context":[]}' "$MCP_ERR" '{"channel":"app","context":"texte"}' "$APP" >"$TMP/odd.log"
+code=0
+"$SCRIPT" '.context.outcome == "protocol-error"' <"$TMP/odd.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 4 ] && [ "$(cat "$TMP/out")" = "$MCP_ERR" ] \
+   && [ "$(grep -c 'Cannot index' "$TMP/err")" -eq 2 ] && grep -q 'ligne 2' "$TMP/err" && grep -q 'ligne 4' "$TMP/err" \
+   && ! grep -q 'texte' "$TMP/err"; then
+  pass "erreur à l'exécution : signalée par ligne sur stderr, flux continué, code 4"
+else
+  fail "erreur à l'exécution : signalée par ligne sur stderr, flux continué, code 4" "code $code ; stderr : $(cat "$TMP/err") ; stdout : $(cat "$TMP/out")"
+fi
 
 # --- Entrée vide --------------------------------------------------------------
 : >"$TMP/empty.log"
@@ -127,22 +198,11 @@ fi
 
 code=0
 "$SCRIPT" '.channel ==' <"$TMP/mixed.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -ne 0 ] && [ "$code" -ne 2 ] && [ ! -s "$TMP/out" ] \
+if [ "$code" -eq 3 ] && [ ! -s "$TMP/out" ] \
    && grep -q 'prédicat' "$TMP/err" && grep -q 'jq: error' "$TMP/err"; then
-  pass "prédicat invalide : code non nul (hors 2), message lisible, rien sur stdout"
+  pass "prédicat invalide : code 3, message lisible, rien sur stdout"
 else
-  fail "prédicat invalide : code non nul (hors 2), message lisible" "code $code ; stderr : $(cat "$TMP/err") ; stdout : $(cat "$TMP/out")"
-fi
-
-# Un prédicat qui lève à l'exécution (`.context` est une chaîne : l'indexer échoue)
-# n'est pas avalé : jq s'arrête, code 5, message sur stderr.
-printf '%s\n' '{"channel":"app","context":"texte"}' >"$TMP/odd.log"
-code=0
-"$SCRIPT" '.context.outcome == "x"' <"$TMP/odd.log" >"$TMP/out" 2>"$TMP/err" || code=$?
-if [ "$code" -eq 5 ] && grep -q 'jq: error' "$TMP/err"; then
-  pass "erreur à l'exécution du prédicat : code 5, message de jq"
-else
-  fail "erreur à l'exécution du prédicat : code 5, message de jq" "code $code ; stderr : $(cat "$TMP/err")"
+  fail "prédicat invalide : code 3, message lisible" "code $code ; stderr : $(cat "$TMP/err") ; stdout : $(cat "$TMP/out")"
 fi
 
 echo
