@@ -108,17 +108,26 @@ printf '%s\n' "$ACCESS" "$NOTICE" '' >"$TMP/noise.log"
 expect_output "accès FPM, NOTICE du maître, ligne vide : seuls écartés" \
   "" "$TMP/noise.log" 'true'
 
-# Un utilisateur Basic Auth renseigné (%u) et une IPv6 restent une ligne d'accès.
+# Un utilisateur Basic Auth renseigné (%u) et une IPv6 restent une ligne d'accès, quelle que
+# soit l'issue : en 2xx et 4xx elle est écartée, en 5xx elle sort en unparsed. Cela garde
+# sous test la partie `\S+ - \S*` de l'expression pour les deux issues.
 printf '%s\n' '2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 204' >"$TMP/access2.log"
-expect_output "accès FPM avec utilisateur et IPv6 : écarté" "" "$TMP/access2.log" 'true'
+expect_output "accès FPM avec utilisateur et IPv6 en 204 : écarté" "" "$TMP/access2.log" 'true'
+printf '%s\n' '2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 401' >"$TMP/access2.log"
+expect_output "accès FPM avec utilisateur et IPv6 en 401 : écarté" "" "$TMP/access2.log" 'true'
+LINE_V6_5XX='2001:db8::1 - alice 16/Nov/2026:10:00:05 +0000 "POST /index.php" 502'
+printf '%s\n' "$LINE_V6_5XX" >"$TMP/access2.log"
+expect_output "accès FPM avec utilisateur et IPv6 en 502 : rendu en unparsed" \
+  "$(unparsed "$LINE_V6_5XX")" "$TMP/access2.log" 'true'
 
-# Seuls les statuts 2xx et 3xx sont du bruit : un 4xx ou un 5xx de PHP est un signal (échec
-# d'authentification, refus, erreur serveur) et sort en unparsed.
-for status in 200 204 301 304; do
+# Les statuts 2xx, 3xx et 4xx sont du bruit (un refus a son propre enregistrement d'audit JSON,
+# et chaque 401/404 de production noierait les événements cherchés) ; seule une 5xx n'a pas
+# d'autre trace (502, 504, worker tué) : elle sort en unparsed.
+for status in 200 204 301 304 400 401 403 404 499; do
   printf '%s\n' "203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status" >"$TMP/one.log"
   expect_output "accès FPM en $status : écarté" "" "$TMP/one.log" 'true'
 done
-for status in 400 401 404 500 503; do
+for status in 500 502 503 504; do
   line="203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status"
   printf '%s\n' "$line" >"$TMP/one.log"
   expect_output "accès FPM en $status : rendu en unparsed" "$(unparsed "$line")" "$TMP/one.log" 'true'
@@ -159,6 +168,17 @@ expect_output "coupure avant un objet imbriqué : unparsed, puis le flux continu
 printf '%s\n' "$AUDIT" "$PFX_FAST $CUT_HEAD" "$CUT_HEAD" "$PFX_FAST $AUDIT" >"$TMP/fast.log"
 expect_output "chemin rapide : JSON nu et préfixé rendus, ligne coupée (nue ou préfixée) en unparsed" \
   "${AUDIT}${NL}$(unparsed "$PFX_FAST $CUT_HEAD")${NL}$(unparsed "$CUT_HEAD")${NL}${AUDIT}" "$TMP/fast.log" 'true'
+
+# Un blanc devant le JSON (espace, tabulation), seul ou après un préfixe kubectl, ne change
+# pas le décodage : l'enregistrement est rendu sans le blanc (avant la série 9, fromjson le
+# décodait).
+printf '%s\n' " $AUDIT" "$(printf '\t')$SECURITY" "$PFX_FAST  $APP" "$PFX_FAST $(printf '\t')$MCP_ERR" >"$TMP/blank.log"
+expect_output "JSON précédé d'un blanc (seul, ou après un préfixe) : décodé" \
+  "${AUDIT}${NL}${SECURITY}${NL}${APP}${NL}${MCP_ERR}" "$TMP/blank.log" 'true'
+# Un blanc devant une ligne qui n'est pas du JSON : toujours unparsed, ligne telle que lue.
+printf '%s\n' " $CUT_HEAD" >"$TMP/blank.log"
+expect_output "blanc devant un enregistrement coupé : unparsed, blanc compris" \
+  "$(unparsed " $CUT_HEAD")" "$TMP/blank.log" 'true'
 
 # Un objet suivi de texte n'est pas du JSON : unparsed.
 printf '%s\n' '{"channel":"security_audit"} trailing' >"$TMP/trailing.log"
@@ -232,6 +252,71 @@ for jqcode in 1 2 9; do
     fail "sortie $jqcode de jq : code 5 du script" "code $code ; stderr : $(cat "$TMP/err")"
   fi
 done
+
+# Aucune valeur sur stderr, même pour une sortie que le `try` du script ne rattrape pas.
+# `halt_error` simule une erreur de jq hors du `try` (code 7 ici) : jq écrit alors la valeur
+# sur son stderr, que le script capture dans un fichier temporaire et ne recopie jamais.
+code=0
+printf '%s\n' "$SECRET_REC" >"$TMP/secret.log"
+"$SCRIPT" '.context.ip | halt_error(7)' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 5 ] && [ "$(cat "$TMP/err")" = "logs-select.sh : jq a échoué (code 7)" ]; then
+  pass "erreur hors du try : libellé fixe, aucune valeur sur stderr, code 5"
+else
+  fail "erreur hors du try : libellé fixe, aucune valeur sur stderr, code 5" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Le stderr de jq lui-même (builtin `stderr`, `debug`) n'est jamais relayé : code 0, stderr vide.
+code=0
+"$SCRIPT" '(.context.ip | stderr) | true' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 0 ] && [ ! -s "$TMP/err" ] && [ "$(cat "$TMP/out")" = "$SECRET_REC" ]; then
+  pass "stderr de jq jamais relayé : code 0, stderr vide"
+else
+  fail "stderr de jq jamais relayé : code 0, stderr vide" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Avec des erreurs de prédicat (code 4), seuls les libellés fixes du script reviennent, même si
+# le prédicat a écrit une valeur juste avant (sans saut de ligne) sur le stderr de jq.
+code=0
+"$SCRIPT" '(.context.ip | stderr) | error' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+WANT_ERR="logs-select.sh : ligne 1 : le prédicat a levé une erreur
+logs-select.sh : 1 ligne(s) en erreur de prédicat (code 4)"
+if [ "$code" -eq 4 ] && [ "$(cat "$TMP/err")" = "$WANT_ERR" ]; then
+  pass "code 4 : libellés fixes seuls, une valeur écrite par le prédicat n'est pas relayée"
+else
+  fail "code 4 : libellés fixes seuls, une valeur écrite par le prédicat n'est pas relayée" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Un prédicat qui ne compile pas : l'erreur de compilation de jq (elle ne cite que le prédicat)
+# est relayée ; un `halt_error(3)` de prédicat ne l'est pas (il peut porter une valeur).
+code=0
+"$SCRIPT" '.context.ip | halt_error(3)' <"$TMP/secret.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 3 ] && ! grep -q 'secretvalu' "$TMP/err" && [ -s "$TMP/err" ]; then
+  pass "halt_error(3) d'un prédicat : code 3, aucune valeur sur stderr"
+else
+  fail "halt_error(3) d'un prédicat : code 3, aucune valeur sur stderr" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Signaux : un code de sortie >= 128 de jq est rendu tel quel, sans message.
+for jqcode in 130 137 141; do
+  code=0
+  "$SCRIPT" "\"x\" | halt_error($jqcode)" <"$TMP/mixed.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+  if [ "$code" -eq "$jqcode" ] && [ ! -s "$TMP/err" ]; then
+    pass "sortie $jqcode de jq : rendue telle quelle, stderr vide"
+  else
+    fail "sortie $jqcode de jq : rendue telle quelle, stderr vide" "code $code ; stderr : $(cat "$TMP/err")"
+  fi
+done
+
+# SIGPIPE réel : `| head -n 1` ferme le tube pendant que jq écrit encore (141, stderr vide).
+set +e
+yes "$AUDIT" | head -n 20000 | "$SCRIPT" 'true' 2>"$TMP/err" | head -n 1 >"$TMP/out"
+pipe_status=("${PIPESTATUS[@]}")
+set -e
+if [ "${pipe_status[2]}" -eq 141 ] && [ ! -s "$TMP/err" ] && [ "$(cat "$TMP/out")" = "$AUDIT" ]; then
+  pass "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide"
+else
+  fail "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide" "statuts ${pipe_status[*]} ; stderr : $(cat "$TMP/err")"
+fi
 
 # Les lignes de bruit comptent dans la numérotation : l'erreur cite le numéro de ligne d'entrée.
 printf '%s\n' "$ACCESS" "$NOTICE" '' '{"channel":"app","context":[]}' >"$TMP/numbered.log"
