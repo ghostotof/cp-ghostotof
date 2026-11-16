@@ -219,8 +219,27 @@
   (`AuthorizationRequestSummaryTest::declaredClient()`, `AuthorizationRequestValidatorTest::discoveredClient()`,
   `CimdClientAdmissionTest` en ligne) ; `monolog.yaml` l. 98 et `backend-outillage.md` l. 108 ne citent
   que `deploy/backend -c php-fpm`, alors que la purge écrit dans les journaux du pod du Job.
-- **Série n° 7 close.** **Prochaine action** : relecture `diff cd5aa8d0...HEAD` (`/code-review medium`,
-  sans audit sécurité : ni authentification, ni session, ni CSRF, ni cookies), puis Tasks 10 à 12.
+- **Série n° 7 close.** Relecture `diff cd5aa8d0...HEAD` faite au point `2e5f8d12` (`/code-review medium`,
+  sans audit sécurité) : 10 constats, 3 moyens, tous sur `tools/logs-select.sh`.
+  - Moyens :
+    - toute ligne qui ne commence pas par `{` est écartée, y compris la trace `[date] Audit failure…`, les
+      fatales de PHP et le WARNING du maître ;
+    - `--timestamps`/`--prefix` ne donne rien, en code 0 ;
+    - les projections `jq` de `k8s/README.md` (l. 823, 2063, 2079) effacent `unparsed`.
+  - Faibles : le prédicat lève sur un contexte en liste (code 5) ; `#` ou une virgule dans le prédicat ;
+    FailSafeAudit dit 502 alors que c'est 504 à 60 s ; Job de purge borné à 300 s (`activeDeadlineSeconds`) ;
+    README sans « depuis la racine du dépôt » ; coupure avant un objet imbriqué (morceau qui commence par `{`) ;
+    `backend-outillage.md` à 18 octets du plafond.
+- **Série n° 8 (décisions de l'utilisateur, 2026-11-16)** :
+  - logs-select : « liste de bruit ». Seuls la ligne d'accès du pool et les NOTICE du maître sont
+    écartés, tout le reste sort en `unparsed`. Le préfixe `--timestamps`/`--prefix` est retiré. Le README
+    ne perd plus les `unparsed`.
+  - faibles joints : prédicat robuste, textes exacts, découpage de la règle (elle portera aussi
+    « journaux du pod du Job »).
+  - E1 : script, test et README. E2 : textes de FailSafeAudit, découpage de `backend-outillage.md`,
+    mention du Job dans `monolog.yaml`.
+  - Point fixe de la prochaine relecture : `2e5f8d12`.
+- **Prochaine action** : E1 (sonnet/high), puis E2, puis relecture `diff 2e5f8d12...HEAD`.
 - `HEAD` au 2026-11-15 : `478fcc52`, puis ce commit d'état.
 
 ## Point fixe de relecture
