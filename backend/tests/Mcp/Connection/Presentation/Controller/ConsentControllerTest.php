@@ -73,7 +73,7 @@ final class ConsentControllerTest extends WebTestCase
         $response = $this->client->getResponse();
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertSame([
-            'client' => ['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME, 'registration' => 'preregistered'],
+            'client' => ['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME, 'registration' => 'preregistered', 'domain' => null],
             'redirectHost' => 'localhost',
             'scope' => 'nominative:read',
             'resource' => $this->resource(),

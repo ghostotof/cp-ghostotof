@@ -216,17 +216,28 @@ final readonly class ConsentService implements ConsentServiceInterface
     {
         $this->requireRecentAuthentication();
 
-        $client = $this->clients->findOneByClientId($summary->clientId)
-            ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
-        $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
+        $discovered = $summary->judgedDiscoveredClient();
+        $connection = null;
 
-        $location = $this->transaction->run(function () use ($summary, $connection): string {
+        $location = $this->transaction->run(function () use ($summary, $account, $discovered, &$connection): string {
+            // Un client déclaré n'a pas de ligne avant l'accord : elle est écrite
+            // ici, dans la transaction et avant la connexion qui la référence
+            // (ordre des verrous : mcp_client avant mcp_connection). Un
+            // identifiant pris entre-temps par une ligne pré-enregistrée refuse
+            // l'accord. Sinon, la ligne pré-enregistrée est relue comme avant.
+            $client = ($discovered !== null
+                ? $this->clients->saveDiscovered($discovered)
+                : $this->clients->findOneByClientId($summary->clientId))
+                ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
+
+            $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
             $this->connections->add($connection);
 
             return $this->completer->approve($summary, $connection);
         });
 
         // Après le COMMIT seulement : une transaction annulée n'a rien accordé.
+        \assert($connection instanceof McpConnection);
         $this->auditLogger->mcpConnectionGranted($connection);
 
         return $location;
