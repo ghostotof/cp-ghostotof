@@ -120,14 +120,15 @@ printf '%s\n' "$LINE_V6_5XX" >"$TMP/access2.log"
 expect_output "accès FPM avec utilisateur et IPv6 en 502 : rendu en unparsed" \
   "$(unparsed "$LINE_V6_5XX")" "$TMP/access2.log" 'true'
 
-# Les statuts 2xx, 3xx et 4xx sont du bruit (un refus a son propre enregistrement d'audit JSON,
-# et chaque 401/404 de production noierait les événements cherchés) ; seule une 5xx n'a pas
-# d'autre trace (502, 504, worker tué) : elle sort en unparsed.
-for status in 200 204 301 304 400 401 403 404 499; do
+# Les statuts 2xx, 3xx et 4xx SAUF 403 sont du bruit (chaque 401/404 de production noierait
+# les événements cherchés ; ils sont perdus, les journaux bruts les gardent) ; le 403 sort en
+# unparsed (un refus d'accès n'a pas toujours d'audit : un jeton de base sur /api/cv), comme
+# les 5xx (un 5xx écrit par PHP n'a pas d'autre trace).
+for status in 200 204 301 304 400 401 402 404 499; do
   printf '%s\n' "203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status" >"$TMP/one.log"
   expect_output "accès FPM en $status : écarté" "" "$TMP/one.log" 'true'
 done
-for status in 500 502 503 504; do
+for status in 403 500 502 503 504; do
   line="203.0.113.7 -  16/Nov/2026:10:00:05 +0000 \"GET /index.php\" $status"
   printf '%s\n' "$line" >"$TMP/one.log"
   expect_output "accès FPM en $status : rendu en unparsed" "$(unparsed "$line")" "$TMP/one.log" 'true'
@@ -149,6 +150,16 @@ for line in '[16-Nov-2026 10:00:09] NOTICE: Terminating ...' \
   printf '%s\n' "$line" >"$TMP/one.log"
   expect_output "NOTICE hors routine rendue en unparsed : ${line:23}" "$(unparsed "$line")" "$TMP/one.log" 'true'
 done
+
+# Une ligne faite seulement d'espaces ou de tabulations n'est pas une ligne vide : unparsed.
+for line in '   ' "$(printf '\t')" "$(printf ' \t ')"; do
+  printf '%s\n' "$line" >"$TMP/one.log"
+  expect_output "ligne de blancs seuls : rendue en unparsed" "$(unparsed "$line")" "$TMP/one.log" 'true'
+done
+# Préfixe kubectl suivi de blancs seuls : unparsed aussi, ligne complète (le préfixe seul reste écarté, voir plus bas).
+printf '%s\n' '2026-11-16T10:00:45Z    ' >"$TMP/one.log"
+expect_output "préfixe horodaté puis blancs seuls : rendu en unparsed" \
+  "$(unparsed '2026-11-16T10:00:45Z    ')" "$TMP/one.log" 'true'
 
 # --- Ce qui est rendu : tout le reste -----------------------------------------
 for line in "$TRACE" "$FATAL" "$WARN" "$CUT_TAIL" "$NESTED_TAIL" '42' '"x"' 'null' '[1]'; do
@@ -243,7 +254,7 @@ done
 # Codes de sortie de jq : 3 (compilation) et 4 (erreurs de prédicat) gardent leur sens ;
 # toute autre sortie non nulle de jq (2 = erreur système ou d'entrée-sortie, ici simulée
 # par halt_error) devient 5, jamais 2 qui est « usage invalide » du script.
-for jqcode in 1 2 9; do
+for jqcode in 1 2 4 9; do
   code=0
   "$SCRIPT" "\"x\" | halt_error($jqcode)" <"$TMP/mixed.log" >"$TMP/out" 2>"$TMP/err" || code=$?
   if [ "$code" -eq 5 ]; then
@@ -308,14 +319,95 @@ for jqcode in 130 137 141; do
 done
 
 # SIGPIPE réel : `| head -n 1` ferme le tube pendant que jq écrit encore (141, stderr vide).
+# Si SIGPIPE est ignoré à l'entrée (SigIgn, bit 13 : un runner ou un parent qui l'ignore), jq reçoit
+# EPIPE au lieu du signal et sort autrement : le cas ne mesure plus le script, il est sauté.
+sigign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/self/status 2>/dev/null || true)"
+if [ -n "$sigign" ] && [ $((16#$sigign & 0x1000)) -ne 0 ]; then
+  printf '  skip SIGPIPE (| head -n 1) : SIGPIPE est ignoré dans cet environnement\n'
+else
+  set +e
+  yes "$AUDIT" | head -n 20000 | "$SCRIPT" 'true' 2>"$TMP/err" | head -n 1 >"$TMP/out"
+  pipe_status=("${PIPESTATUS[@]}")
+  set -e
+  if [ "${pipe_status[2]}" -eq 141 ] && [ ! -s "$TMP/err" ] && [ "$(cat "$TMP/out")" = "$AUDIT" ]; then
+    pass "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide"
+  else
+    fail "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide" "statuts ${pipe_status[*]} ; stderr : $(cat "$TMP/err")"
+  fi
+fi
+
+# Les erreurs de prédicat sortent AU FIL DE L'EAU : le message est sur stderr avant la fin de l'entrée
+# (flux lent simulé : la ligne fautive, puis 3 s de silence). On sonde stderr pendant le silence.
+BAD='{"channel":"app","context":[]}'
+{ printf '%s\n' "$AUDIT" "$BAD"; sleep 3; printf '%s\n' "$APP"; } \
+  | "$SCRIPT" '.context.outcome == "x"' >"$TMP/out" 2>"$TMP/err" &
+stream_pid=$!
+seen=0
+for _ in $(seq 20); do
+  if grep -q 'ligne 2 : le prédicat a levé une erreur' "$TMP/err" 2>/dev/null; then seen=1; break; fi
+  sleep 0.1
+done
+if [ "$seen" -eq 1 ] && kill -0 "$stream_pid" 2>/dev/null; then
+  pass "erreur de prédicat : message sorti avant la fin de l'entrée"
+else
+  fail "erreur de prédicat : message sorti avant la fin de l'entrée" "vu=$seen ; stderr : $(cat "$TMP/err")"
+fi
+wait "$stream_pid" || true
+
+# Après un Ctrl-C (SIGINT sur tout le groupe, ici sur le script seul), le message déjà sorti reste visible.
 set +e
-yes "$AUDIT" | head -n 20000 | "$SCRIPT" 'true' 2>"$TMP/err" | head -n 1 >"$TMP/out"
+{ printf '%s\n' "$BAD"; sleep 3; } | timeout -s INT 1 "$SCRIPT" '.context.outcome == "x"' >"$TMP/out" 2>"$TMP/err"
+sleep 0.3
+set -e
+if grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err"; then
+  pass "erreur de prédicat visible après une interruption (SIGINT)"
+else
+  fail "erreur de prédicat visible après une interruption (SIGINT)" "stderr : $(cat "$TMP/err")"
+fi
+
+# `| head -n 1` après des erreurs de prédicat : 141 rendu tel quel, les messages déjà émis restent visibles.
+set +e
+{ printf '%s\n' "$BAD" "$BAD"; yes "$AUDIT" | head -n 20000; } | "$SCRIPT" '.context.outcome == "x" or (.channel == "security_audit")' 2>"$TMP/err" | head -n 1 >"$TMP/out"
 pipe_status=("${PIPESTATUS[@]}")
 set -e
-if [ "${pipe_status[2]}" -eq 141 ] && [ ! -s "$TMP/err" ] && [ "$(cat "$TMP/out")" = "$AUDIT" ]; then
-  pass "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide"
+if [ -n "$sigign" ] && [ $((16#$sigign & 0x1000)) -ne 0 ]; then
+  printf '  skip | head après erreurs : SIGPIPE est ignoré dans cet environnement\n'
+elif [ "${pipe_status[1]}" -eq 141 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" \
+   && grep -q 'ligne 2 : le prédicat a levé une erreur' "$TMP/err"; then
+  pass "| head -n 1 après des erreurs : 141, messages visibles"
 else
-  fail "SIGPIPE (| head -n 1) : le script sort en 141, stderr vide" "statuts ${pipe_status[*]} ; stderr : $(cat "$TMP/err")"
+  fail "| head -n 1 après des erreurs : 141, messages visibles" "statuts ${pipe_status[*]} ; stderr : $(cat "$TMP/err")"
+fi
+
+# Le code 4 n'est pas masqué par un échec de jq qui devient 5 : une erreur de prédicat à la ligne 1,
+# puis un halt_error(7) du prédicat à la ligne 2.
+printf '%s\n' "$BAD" "$AUDIT" >"$TMP/mask.log"
+code=0
+"$SCRIPT" 'if (.context | type) == "array" then error("x") else (1 | halt_error(7)) end' <"$TMP/mask.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 4 ] && grep -q 'ligne 1 : le prédicat a levé une erreur' "$TMP/err" && grep -q 'jq a échoué (code 7)' "$TMP/err"; then
+  pass "erreur de prédicat puis échec de jq : code 4 conservé"
+else
+  fail "erreur de prédicat puis échec de jq : code 4 conservé" "code $code ; stderr : $(cat "$TMP/err")"
+fi
+
+# Beaucoup d'erreurs : tout sort, rien n'est stocké (pas de fichier qui grossit) ; code 4.
+jq -nr --arg l "$BAD" 'range(5000) | $l' >"$TMP/many.log"
+code=0
+"$SCRIPT" '.context.outcome == "x"' <"$TMP/many.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 4 ] && [ "$(grep -c 'le prédicat a levé une erreur$' "$TMP/err")" -eq 5000 ] \
+   && tail -n 1 "$TMP/err" | grep -qx 'logs-select.sh : 5000 ligne(s) en erreur de prédicat (code 4)'; then
+  pass "5000 erreurs de prédicat : 5000 libellés et le total, code 4"
+else
+  fail "5000 erreurs de prédicat : 5000 libellés et le total, code 4" "code $code ; $(wc -l <"$TMP/err") lignes de stderr"
+fi
+
+# Aucun fichier temporaire : un TMPDIR inutilisable ne gêne pas le script.
+code=0
+TMPDIR=/nonexistent "$SCRIPT" '.channel == "app"' <"$TMP/mixed.log" >"$TMP/out" 2>"$TMP/err" || code=$?
+if [ "$code" -eq 0 ] && [ "$(head -n 1 "$TMP/out")" = "$APP" ]; then
+  pass "TMPDIR inutilisable : sans effet (aucun fichier temporaire)"
+else
+  fail "TMPDIR inutilisable : sans effet (aucun fichier temporaire)" "code $code ; stderr : $(cat "$TMP/err")"
 fi
 
 # Les lignes de bruit comptent dans la numérotation : l'erreur cite le numéro de ligne d'entrée.
