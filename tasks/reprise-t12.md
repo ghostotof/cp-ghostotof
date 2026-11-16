@@ -468,8 +468,7 @@
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 11, au point `a513768b` (série `6ba5f243...a513768b`).
-- Dernière relecture effective : série n° 12, au point `6cb33233` (série `b99f6be7...6cb33233`).
+- Dernière relecture : série n° 12, au point `6cb33233` (série `b99f6be7...6cb33233`).
 - Prochaine série : `diff 6cb33233...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
