@@ -339,8 +339,25 @@
     jq hors `try` capturée et remplacée par un libellé, test 4xx IPv6 avec utilisateur restauré ;
   - doc et glob : `--previous` sur `pod/<pod>`, glob `.github/workflows/pipeline.yml`, lignes recoupées.
   - un seul agent G (script et test, puis textes), deux commits au moins.
-- **Prochaine action** : G (sonnet/high), puis relecture `diff 4765a221...HEAD`.
-- `HEAD` au 2026-11-16 : `035cdaea`, puis ce commit d'état.
+  - **G fait** (2026-11-16) :
+    - `4fbd2e2a` :
+      - accès 4xx écartés (`[234][0-9]{2}$`), seuls les 5xx sortent ;
+      - un code ≥ 128 est rendu tel quel ;
+      - `ltrim` des blancs de tête ;
+      - le stderr de jq va dans un fichier privé et n'est jamais recopié, sauf `jq: N compile error(s)`
+        (code 3) ;
+      - les messages par ligne du code 4 sortent en fin de flux ;
+      - banc : environ 1,3 s.
+    - `5c701fae` : `--tail=-1`, `--previous` sur `pod/<pod>`, glob réduit à `pipeline.yml`, textes sur le
+      bruit et les codes.
+    - `de3fc177` : FailSafeAudit, coupures seules.
+    - Vérifié : test vert, shellcheck, règles conformes ; cas blanc, 401 et 502 rejoués ; aucune fuite.
+  - Écrit, non corrigé :
+    - `backend-tests.md` a été édité sans `Read` préalable (seul le glob du frontmatter a changé) ;
+    - aucune erreur réelle hors du `try` n'a pu être provoquée (elle est simulée par `halt_error`).
+- **Prochaine action** : relecture `/code-review medium diff 4765a221...HEAD`. Si un moyen ressort encore,
+  proposer d'arrêter la boucle sur logs-select et de reporter le reste dans la PR.
+- `HEAD` au 2026-11-16 : `de3fc177`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
