@@ -469,9 +469,22 @@
     code. Moins de 20 lignes, la relecture est sautée (proportionnalité). Test vert, shellcheck et règles
     conformes.
   - **La boucle logs-select est close.** Les faibles de la série 12 vont dans la PR.
-- **Prochaine action** : tâche 10 du plan `tasks/plan-t12-cimd.md` (voir « À injecter dans le brief de la
-  Task 10 »).
-- `HEAD` au 2026-11-16 : `9866529c`, puis ce commit d'état.
+- **Tâche 10 faite** (agent J, sonnet/high) : `255550e4` — `ConsentController` rend `registration` et
+  `domain` ; `grant()` persiste par `saveDiscovered($summary->judgedDiscoveredClient())` dans la
+  transaction, avant `connections->add()` (sinon `findOneByClientId`), audit après le COMMIT.
+  `CimdConsentFlowTest` (7 tests, dont 2 gardes vertes sans l'implémentation : aucune ligne avant
+  l'approbation, redirection perdue), +2 dans `ConsentServiceTest`, `ConsentControllerTest` → `domain: null`.
+  Preuve contrôlée par le fil principal : `make back-test` sur `255550e4` OK (6413 tests, 121879
+  assertions) ; `make back-quality` vert selon l'agent (6 avertissements lsp préexistants sur `ai.yaml`).
+  **Écart** : le 429/503 au consentement n'a pas été fait (l'agent l'a rendu en question).
+- **Série 429/503 au consentement (décision de l'utilisateur, 2026-11-16, « Série dédiée »)** :
+  `ConsentService::validated()` emballe toute `OAuthServerException` de revalidation en 400 ; un refus
+  passager (`temporarily_unavailable`, 429 quota avec `Retry-After`, 503 hôte) doit répondre comme au point
+  d'autorisation (Task 9 : `AuthorizeController`, `RetryAfterListener`), à l'affichage comme à
+  l'approbation. La relecture couvre tâche 10 et cette série ensemble.
+- **Prochaine action** : agent K (sonnet/high) sur la série 429/503 ; puis relecture
+  `/code-review medium diff 6cb33233...HEAD` (+ audit sécurité à demander : consentement OAuth).
+- `HEAD` au 2026-11-16 : `255550e4`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -488,6 +501,8 @@
   CIMD à la Task 12.
 - Refus transitoire au consentement : traité dans la Task 10 — 503/429 typé avec `Retry-After`, pas
   le 400 générique de `ConsentService::validated()`.
+  Non fait par la Task 10 ; reconfirmé le 2026-11-16 comme **série dédiée** après elle. À injecter aussi
+  dans la Task 11 : la page affiche « réessayer » sur 429/503, pas un refus définitif.
 - Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
 - Domaine retiré de la liste fermée : ne coupe que les nouvelles autorisations ; limite acceptée, à
   écrire dans la règle CIMD (Task 12) et la PR (2026-11-15).

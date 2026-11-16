@@ -400,7 +400,7 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
 - Consumes: `AuthorizationRequestSummary::$discoveredClient`, `registration()`, `verifiedDomain()` (Task 9) ; `McpClientRepositoryInterface::saveDiscovered()` (Task 7) ; `AuthorizationRequestRejectedException::clientNoLongerRegistered()`.
 - Produces: réponse de `GET /api/oauth/consent` — `client: { id: string, name: string, registration: 'preregistered'|'cimd', domain: string|null }`, le reste inchangé (D-I).
 
-- [ ] **Step 1 : tests rouges** (`CimdConsentFlowTest`) :
+- [x] **Step 1 : tests rouges** (`CimdConsentFlowTest`) :
   - `testTheSummaryShowsTheVerifiedDomainAndTheDeclaredName` : `client.registration === 'cimd'`, `client.domain === 'claude.ai'`, `client.name === 'Claude Code'`, `client.id` l'URL, `redirectHost === 'localhost'` ;
   - `testAPreregisteredClientHasNoVerifiedDomain` : `registration === 'preregistered'`, `domain === null` (clé présente) ;
   - `testNoClientRowExistsBeforeApproval` : après `GET /authorize` et `GET /consent`, puis après un refus de la personne, aucune ligne `mcp_client` en mode `cimd` ;
@@ -409,10 +409,10 @@ Le document de référence (celui que `https://claude.ai/oauth/claude-code-clien
   - `testADocumentThatDroppedTheRedirectBetweenDisplayAndApprovalGrantsNothing` : `GET /consent` réussi ; pool vidé ; le document ne déclare plus que `https://claude.ai/callback` ; l'approbation est refusée comme un refus de revalidation ; aucune connexion, aucune ligne de client *(Review Focus 5)* ;
   - `testTheGrantAuditCarriesThePublicClientId` : l'enregistrement `mcp-connection-granted` porte `clientId` égal à l'URL, de 255 caractères au plus (D-H) ; capteur d'audit : celui de `GrantRefusalAuditTest`.
   - `ConsentServiceTest` : `testAPreregisteredRowTakenWhileConsentingRefusesTheGrant` (`saveDiscovered()` rend `null` → `clientNoLongerRegistered`, rien n'est écrit).
-- [ ] **Step 2 : vérifier l'échec** — `--filter 'CimdConsentFlowTest|ConsentServiceTest'` : `registration` vaut encore `preregistered`, et l'approbation lève `clientNoLongerRegistered` (aucune ligne).
-- [ ] **Step 3 : implémenter.** `ConsentController` : `'registration' => $summary->registration()->value`, `'domain' => $summary->verifiedDomain()`. `ConsentService::grant()` : quand `$summary->discoveredClient` est présent, le client est `saveDiscovered($summary->discoveredClient) ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered()`, **dans** la transaction et avant `connections->add()` ; sinon le chemin actuel, inchangé. L'audit `mcp-connection-granted` reste après le COMMIT.
-- [ ] **Step 4 : vérifier** — tests verts ; `make back-test` et `make back-quality` verts en entier.
-- [ ] **Step 5 : commit** — `feat(mcp): l'approbation d'un client déclaré l'enregistre, le résumé montre son domaine vérifié (#651)`.
+- [x] **Step 2 : vérifier l'échec** — `--filter 'CimdConsentFlowTest|ConsentServiceTest'` : `registration` vaut encore `preregistered`, et l'approbation lève `clientNoLongerRegistered` (aucune ligne).
+- [x] **Step 3 : implémenter.** `ConsentController` : `'registration' => $summary->registration()->value`, `'domain' => $summary->verifiedDomain()`. `ConsentService::grant()` : quand `$summary->discoveredClient` est présent, le client est `saveDiscovered($summary->discoveredClient) ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered()`, **dans** la transaction et avant `connections->add()` ; sinon le chemin actuel, inchangé. L'audit `mcp-connection-granted` reste après le COMMIT.
+- [x] **Step 4 : vérifier** — tests verts ; `make back-test` et `make back-quality` verts en entier.
+- [x] **Step 5 : commit** — `feat(mcp): l'approbation d'un client déclaré l'enregistre, le résumé montre son domaine vérifié (#651)`.
 
 ### Task 11 : page de consentement — domaine vérifié en évidence, nom marqué comme déclaré — **sensible** (consentement)
 
