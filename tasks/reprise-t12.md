@@ -375,9 +375,16 @@
     - un échec de `mktemp` sort en 1, code non documenté, et le `umask 077` est redondant ;
     - `monolog.yaml` l.~106 : ligne de 123 caractères ;
     - en-tête l.~110 : « 128 et plus  un signal tué jq » (verbe manquant, double espace).
-- **Prochaine action** : la série n° 10 ressort trois moyens. Proposer à l'utilisateur d'arrêter la boucle
-  sur logs-select et de reporter le reste dans la PR, ou une série n° 11.
-- `HEAD` au 2026-11-16 : `b2c0798e`, puis ce commit d'état.
+- **Série n° 11 (décisions de l'utilisateur, 2026-11-16)** : « Série 11 complète » ; pour les 4xx,
+  « 403 visible, autres 4xx écartés » (2xx, 3xx et 4xx sauf 403 écartés ; le 403 sort en `unparsed`, en
+  double s'il est déjà audité ; le texte dit que les 401, 404 et autres 4xx sont perdus).
+  - exigences : les erreurs de prédicat sont émises au fil de l'eau, sans jamais recopier de valeur ;
+    elles restent visibles après Ctrl-C ou `| head` ; le code 4 n'est pas masqué par un 5 ; plus de
+    fichier qui grossit sans limite ; les faibles de la série 10 sont traités, sauf décision contraire
+    argumentée de l'agent ;
+  - un seul agent H (sonnet/high).
+- **Prochaine action** : agent H, puis relecture `/code-review medium diff b2c0798e...HEAD`.
+- `HEAD` au 2026-11-16 : `5e5f784e`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
