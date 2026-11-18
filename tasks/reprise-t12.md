@@ -644,6 +644,11 @@
     merge-base avec `feature/379-mcp-paliers` : `/code-review medium`, `mattpocock-skills:code-review`
     Standards/Spec sonnet/medium, audit sécurité opus/high à demander), puis étape 08 (sonnet/low, PR vers
     `feature/379-mcp-paliers`, push et PR avec accord, #651 fermée à la main).
+  - **Décisions du 2026-11-18** : relecture de la série Task 12 **sautée** (docs seules, couvertes par la
+    relecture complète) ; relecture d'avant la MR **avec** l'audit sécurité opus/high. Branche :
+    136 fichiers, +12572/−453, 182 commits depuis `0c0733fb`. En cours : `/code-review medium diff
+    0c0733fb...HEAD` (fil principal), agent sécurité opus/high et `mattpocock-skills:code-review`
+    Standards/Spec sonnet/medium sur le même point fixe ; tête relue = `HEAD` de ce commit d'état.
 
 ## Point fixe de relecture
 
