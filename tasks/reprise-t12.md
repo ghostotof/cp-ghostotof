@@ -617,6 +617,10 @@
   - **Prochaine action : Task 12** (plan `tasks/plan-t12-cimd.md` à partir de la l. 452 : règles, dont
     `mcp-oauth.md` et une règle front sur le 429/503 du consentement, ADR, registre, notes de release,
     vérifications de fin), agent sonnet/high. Puis relecture complète d'avant la MR, puis étape 08.
+  - **Task 12 découpée en deux agents** (mémoire « budget de contexte », > 4 fichiers) : **P** (sonnet/high) =
+    Steps 1-2, les règles (`mcp-oauth-cimd.md` créée, `mcp-oauth.md`, `mcp.md`, `security-authentication-audit.md`,
+    tableau de `.claude/CLAUDE.md`, la règle front du 429/503 du consentement), un commit ; puis **Q**
+    (sonnet/high) = Steps 3-7 (ADR 0006, `CONTEXT.md`, registre, `tasks/todo.md`, vérifications de fin), un commit.
 
 ## Point fixe de relecture
 
