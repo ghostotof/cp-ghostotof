@@ -73,4 +73,16 @@ final class InvalidClientMetadataDocumentException extends InvalidArgumentExcept
     {
         return new self('The client metadata document has no valid redirect_uris.', $previous);
     }
+
+    /**
+     * Une redirection hors boucle locale qui n'est pas sur l'hôte du `client_id`,
+     * ou qui porte un port : une tentative de détourner le code d'autorisation,
+     * pas une faute de forme. Message distinct de {@see self::invalidRedirectUris()}
+     * pour qu'un journal les sépare ; il nomme le champ et la règle, jamais la
+     * valeur de la redirection.
+     */
+    public static function redirectOutsideClientHost(): self
+    {
+        return new self('The client metadata document has a redirect_uris member outside the client_id host (same host, no port, unless loopback).');
+    }
 }

@@ -188,7 +188,7 @@ final readonly class ClientMetadataDocument
             // le code d'autorisation à un autre service du même hôte.
             if (!$candidate->isLoopback()
                 && ($candidate->host() !== $requested->host() || null !== $candidate->port())) {
-                throw InvalidClientMetadataDocumentException::invalidRedirectUris();
+                throw InvalidClientMetadataDocumentException::redirectOutsideClientHost();
             }
 
             $redirectUris[] = $candidate;

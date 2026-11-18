@@ -323,14 +323,9 @@ final class ClientMetadataDocumentTest extends TestCase
         // Le même hôte que le `client_id`, mais un autre service : `CimdClientId` refuse
         // tout port pour que la cible reste le 443 de l'hôte, les redirections aussi.
         yield 'même hôte, autre port' => [['https://claude.ai:8443/cb']];
-        // Refusé en amont par `RedirectUri` (League\Uri retire `:443`, la chaîne n'est plus
-        // normalisée) : non-régression, ce n'est pas la règle de l'hôte qui le juge.
-        yield 'même hôte, port 443 explicite (non normalisée)' => [['https://claude.ai:443/cb']];
         yield 'un bon membre puis le même hôte sur un autre port' => [['https://claude.ai/cb', 'https://claude.ai:8443/cb']];
         yield 'un bon membre puis un hôte tiers' => [['https://claude.ai/api/mcp/auth_callback', 'https://tiers.example/cb']];
         yield 'une boucle locale puis un hôte tiers' => [['http://localhost/callback', 'https://tiers.example/cb']];
-        // Refusé en amont (`notNormalized`), pas par la comparaison des hôtes : non-régression.
-        yield 'casse de l\'hôte (non normalisée)' => [['https://Claude.AI/cb']];
     }
 
     /**
@@ -340,9 +335,44 @@ final class ClientMetadataDocumentTest extends TestCase
     public function testARedirectOutsideTheClientHostIsRefused(array $redirectUris): void
     {
         $this->assertRefusedAs(
+            InvalidClientMetadataDocumentException::redirectOutsideClientHost(),
+            self::documentWith(['redirect_uris' => $redirectUris]),
+        );
+    }
+
+    /**
+     * Refusées en amont par `RedirectUri` (`notNormalized` : League\Uri retire `:443`,
+     * la casse de l'hôte est abaissée) : ce n'est pas la règle de l'hôte qui les juge,
+     * elles gardent le refus de forme. Non-régression, et preuve que les deux refus
+     * restent distincts.
+     *
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function redirectUrisRefusedUpstream(): iterable
+    {
+        yield 'même hôte, port 443 explicite (non normalisée)' => [['https://claude.ai:443/cb']];
+        yield 'casse de l\'hôte (non normalisée)' => [['https://Claude.AI/cb']];
+    }
+
+    /**
+     * @param list<string> $redirectUris
+     */
+    #[DataProvider('redirectUrisRefusedUpstream')]
+    public function testANonNormalizedRedirectKeepsTheMalformedRefusal(array $redirectUris): void
+    {
+        $this->assertRefusedAs(
             InvalidClientMetadataDocumentException::invalidRedirectUris(),
             self::documentWith(['redirect_uris' => $redirectUris]),
         );
+    }
+
+    public function testTheOutsideHostRefusalIsDistinctAndNeverNamesAValue(): void
+    {
+        $outside = InvalidClientMetadataDocumentException::redirectOutsideClientHost()->getMessage();
+
+        self::assertNotSame(InvalidClientMetadataDocumentException::invalidRedirectUris()->getMessage(), $outside);
+        self::assertStringContainsString('redirect_uris', $outside);
+        self::assertStringContainsString('client_id', $outside);
     }
 
     public function testARedirectOnTheClientHostIsAccepted(): void
@@ -465,12 +495,13 @@ final class ClientMetadataDocumentTest extends TestCase
             'response_types' => InvalidClientMetadataDocumentException::unsupportedResponseTypes()->getMessage(),
             'client_name' => InvalidClientMetadataDocumentException::invalidName()->getMessage(),
             'redirect_uris' => InvalidClientMetadataDocumentException::invalidRedirectUris()->getMessage(),
+            'redirect_uris (hôte)' => InvalidClientMetadataDocumentException::redirectOutsideClientHost()->getMessage(),
         ];
 
         foreach ($messages as $field => $message) {
-            self::assertStringContainsString($field, $message);
+            self::assertStringContainsString(explode(' ', $field)[0], $message);
         }
 
-        self::assertCount(7, array_unique($messages));
+        self::assertCount(8, array_unique($messages));
     }
 }
