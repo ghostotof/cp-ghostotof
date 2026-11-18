@@ -675,7 +675,7 @@
   - **Règle CIMD complétée** par le fil principal (commit suivant) : redirection hors boucle locale sur l'hôte du
     `client_id` ; transport sans logger. `check-claude-rules.sh` conforme.
   - **Prochaine action : relecture de la série de correction** `/code-review medium diff 6d4769f1...HEAD`
-    (+ audit sécurité si retenu : la série touche la validation OAuth des redirections), puis étape 08.
+    + audit sécurité opus/high **retenu par l'utilisateur** (2026-11-18), tête relue `44568908`, puis étape 08.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
