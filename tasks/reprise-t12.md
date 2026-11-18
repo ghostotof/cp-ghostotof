@@ -492,9 +492,18 @@
   Preuve contrôlée : `make back-test` sur `468238c1` OK (6419 tests, 122339 assertions) ; back-quality vert
   selon l'agent. Non fait : `.claude/rules/mcp-oauth.md` dit encore « the consent's refusal of a revalidated
   request is its 400 » → Task 12.
-- **Prochaine action** : relecture `/code-review medium diff 6cb33233...HEAD` + audit sécurité
-  (opus/high, accepté le 2026-11-18), tâche 10 et série 429/503 ensemble.
-- `HEAD` au 2026-11-18 : `468238c1`, puis ce commit d'état.
+- **Relecture faite** (2026-11-18) sur `diff 6cb33233...84159847` : `/code-review medium` (2 moyens, 8 faibles)
+  + audit sécurité opus/high (0 critique/haut/moyen, 9 faibles, 3 infos). **Point fixe suivant : `84159847`.**
+  Moyens : M1 `RetryAfterListener` remonte la chaîne des `previous` sans test, boucle en double avec
+  `AuthorizeController::refusal()` (l.119), `Retry-After` existant écrasé, `backoffice-api.md:334` périmée ;
+  M2 le front refuse `registration: 'cimd'` (`HttpOAuthConsentRepository.ts:184`) → **Task 11**.
+- **Série de correction décidée** (« M1 + faibles réels ») : agent L, sonnet/high — M1 (3 tests de l'écouteur :
+  enveloppe 429, enveloppe non-429 sans en-tête, première cause gagnante ; méthode partagée qui remplace les
+  deux boucles ; un `Retry-After` déjà posé jamais écrasé ; règle `backoffice-api.md` à jour), F5 (409 « autre
+  compte » jugé avant `validated()`), F4 (consentement : `registration === Cimd` et `judgedDiscoveredClient()
+  === null` → 400 générique), CR7 (Yoda `null !== $discovered`). Puis relecture `/code-review medium
+  diff 84159847...HEAD`.
+- `HEAD` au 2026-11-18 : `84159847`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -518,6 +527,17 @@
 - Audit d'un refus passager au consentement : la trace à la source (`mcp-client-metadata-refused`) suffit,
   aucun événement propre au consentement (2026-11-18).
 - Relecture de la tâche 10 + série 429/503 : `/code-review medium` + audit sécurité opus/high (2026-11-18).
+- F6 (un refus passager empêche aussi « Refuser ») : **accepté**, à documenter dans `mcp-oauth.md` en Task 12 —
+  le refus redirige vers `redirect_uri`, qui doit rester revalidée (2026-11-18).
+- Constats écrits, non corrigés, à reprendre dans la PR (relecture du 2026-11-18) :
+  F1 mode d'enregistrement changé entre GET et POST (pré-enregistrement ou suppression admin) → accord sur un
+  client non montré ; F2 nom déclaré changé entre GET et POST, persisté sans être montré (élargissent la limite
+  « POST non lié au GET ») ; F3/CR10 ligne `cimd` partagée réécrite par chaque approbation (libellé changé chez
+  les autres comptes, `redirect_uris` simple instantané jamais comparé — à épingler), lignes `cimd` jamais
+  purgées (voie « client connu » qui s'élargit) ; F7 la `TransportException` chaînée sous le 503 entre
+  peut-être dans le journal principal (non vérifié) ; CR8 `after()` mappe tout non-429 en 503 (un 500 de
+  câblage deviendrait 503/`warning`) ; CR9/F10 `\assert($connection …)` après la transaction ; F11 `client_id`
+  au chemin libre dans l'audit d'accord (info) ; F12 quota consommé deux fois seulement au-delà du TTL (info).
 - Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
 - Domaine retiré de la liste fermée : ne coupe que les nouvelles autorisations ; limite acceptée, à
   écrire dans la règle CIMD (Task 12) et la PR (2026-11-15).
