@@ -676,6 +676,25 @@
     `client_id` ; transport sans logger. `check-claude-rules.sh` conforme.
   - **Prochaine action : relecture de la série de correction** `/code-review medium diff 6d4769f1...HEAD`
     + audit sécurité opus/high **retenu par l'utilisateur** (2026-11-18), tête relue `44568908`, puis étape 08.
+  - **Relecture de la série faite** (2026-11-19, tête relue `63b5863b`, point fixe de la suivante) : code-review
+    medium (8 faibles) + audit opus/high (« critère d'arrêt atteint », 2 faibles, 4 info). Aucun critique/haut/moyen.
+  - **Micro-série retenue par l'utilisateur** (les quatre) : **T** = port explicite refusé hors boucle locale
+    (`RedirectUri::port()`, VO, 2 tests ; vérifié : `https://claude.ai:8443/cb` passe aujourd'hui) ; **U** = fabrique
+    dédiée `redirectOutsideClientHost()` (message distinct, toujours `invalid-document`) ; **V** = `previous` du
+    refus `Unreachable` sans l'URL (`HttpClientMetadataFetcher.php:169`, message curl `… for "<URL>"` journalisé
+    en `warning` au 503) ; **fil principal** = commentaire faux corrigé (`NoPrivateNetworkHttpClient` n'est PAS
+    `LoggerAwareInterface`, vérifié dans vendor) dans `services.yaml` et la règle, + règle : port, https boucle
+    refusée, `previous` sans URL. Puis relecture de série `diff 63b5863b...HEAD` (audit à redemander).
+  - **Constat hors série, vérifié par curl** : `https://chatgpt.com/oauth/client.json` déclare
+    `token_endpoint_auth_method: private_key_jwt` (+ `token_endpoint_auth_methods_supported: [none, private_key_jwt]`,
+    non standard) → refusé `invalid-document`. Décision : **noter dans la PR et dans #653** (T14, essai préprod).
+    Callback ChatGPT `https://chatgpt.com/connector_platform_oauth_redirect` (même hôte, OK) ; Claude Code en
+    boucle locale (OK). Le document du connecteur web claude.ai (callback `claude.com` ?) reste inconnu → #653.
+  - **Pour la PR (faibles de la série non retenus)** : `autoconfigure: false` plutôt que `setLogger(NullLogger)`
+    (fragilité future) ; https vers une boucle locale désormais refusé (non testé) ; tout chemin de l'hôte admis
+    (redirection ouverte chez le tiers) ; boucle locale déclarée par un tiers admise (RFC 8252) ; pas de test du
+    tag `kernel.reset` ; le test de câblage ne voit pas un futur décorateur intercalé.
+  - **Prochaine action : agent T** (sonnet/high), puis U, puis V, puis fil principal, puis relecture.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
