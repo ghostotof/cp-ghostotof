@@ -52,8 +52,10 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * Limite : toute `TransportExceptionInterface` est rangée en
  * {@see ClientMetadataRefusal::Unreachable}, sans lire son message. Le blocage
  * de `NoPrivateNetworkHttpClient` en est une : il est donc dit « injoignable »
- * et transitoire, et non « adresse bloquée ». Le message d'un transport peut
- * porter ce que l'hôte a choisi d'envoyer, il ne décide de rien.
+ * et transitoire, et non « adresse bloquée ». Son message cite l'URL complète
+ * du `client_id`, dont le chemin est choisi par un tiers : il n'est donc pas
+ * chaîné. Le refus ne porte que {@see ClientMetadataTransportFailedException},
+ * au message constant qui nomme la classe de l'erreur d'origine.
  *
  * Hors des cinq couches, les gardes de la lecture (D-E) :
  *
@@ -166,7 +168,7 @@ final readonly class HttpClientMetadataFetcher implements ClientMetadataFetcherI
 
             return new FetchedClientMetadata($this->boundedBody($response), $this->maxAge($headers));
         } catch (TransportExceptionInterface $transport) {
-            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::Unreachable, $transport);
+            throw ClientMetadataRefusedException::because(ClientMetadataRefusal::Unreachable, ClientMetadataTransportFailedException::of($transport));
         }
     }
 

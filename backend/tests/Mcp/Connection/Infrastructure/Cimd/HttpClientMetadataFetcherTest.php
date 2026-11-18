@@ -15,6 +15,7 @@ use App\Tests\Mcp\Connection\Support\LastResponseHttpClient;
 use Generator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -468,13 +469,39 @@ final class HttpClientMetadataFetcherTest extends TestCase
     }
 
     /**
+     * Le message d'une erreur de transport du client HTTP cite l'URL complète
+     * du `client_id`, dont le chemin est choisi par un appelant anonyme : le
+     * refus `Unreachable`, journalisé (503 de la page de consentement,
+     * `warning`) ne doit donc rien en chaîner. Le marqueur, tiré au hasard,
+     * joue le chemin de l'URL : aucun message de la chaîne ne le porte, mais
+     * la classe de l'erreur d'origine reste nommée pour le diagnostic.
+     */
+    public function testATransportFailureNeverChainsTheMessageOfTheHttpClient(): void
+    {
+        $marker = 'CHEMIN-'.bin2hex(random_bytes(8));
+        $response = new MockResponse('', ['error' => 'Could not resolve host for https://claude.ai/'.$marker]);
+
+        try {
+            $this->fetcher($this->publicHost(), $response)->fetch($this->clientId());
+            self::fail('La récupération devait être refusée.');
+        } catch (ClientMetadataRefusedException $refused) {
+            self::assertSame(ClientMetadataRefusal::Unreachable, $refused->refusal);
+
+            $chain = [];
+            for ($previous = $refused->getPrevious(); null !== $previous; $previous = $previous->getPrevious()) {
+                self::assertStringNotContainsString($marker, $previous->getMessage());
+                $chain[] = $previous->getMessage();
+            }
+            self::assertStringContainsString(TransportException::class, implode("\n", $chain), 'la classe d\'origine reste nommée');
+        }
+    }
+
+    /**
      * Ce que le serveur envoie (corps, `Location`, type) n'entre jamais dans
      * le message d'un refus, ni dans celui de son exception précédente : le
-     * message finit dans les journaux.
-     *
-     * Le message d'une erreur de transport, lui, reste chaîné en précédente
-     * (décision de la tâche 3, voir le docblock du récupérateur) : il n'est pas
-     * ce que l'hôte a choisi d'envoyer, mais un texte du client HTTP.
+     * message finit dans les journaux. Celui d'une erreur de transport, qui cite
+     * l'URL du `client_id`, n'est pas chaîné non plus : voir
+     * {@see self::testATransportFailureNeverChainsTheMessageOfTheHttpClient()}.
      */
     public function testARefusalNeverCarriesWhatTheServerSent(): void
     {
