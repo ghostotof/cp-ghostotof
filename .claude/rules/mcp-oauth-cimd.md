@@ -136,12 +136,13 @@ redirect URIs** (`MAX_REDIRECT_URIS`), each a valid `RedirectUri`. One bad redir
 no path prefix; `RedirectUri::host()` against `CimdClientId::host()`), **with no explicit port** (`RedirectUri::port()`:
 `CimdClientId` refuses any port so that the target stays 443, a `:8443` would send the code to another service of
 the host; an explicit `:443` is already refused as not normalised), else
-`InvalidClientMetadataDocumentException::redirectOutsideClientHost()` → `invalid-document`. That factory exists for
-the tests only: its message reaches no log, the audit carrying the host and the cause alone. Loopback is `http` only
-(`isLoopback()`): an `https` redirect to `127.0.0.1` or `localhost` is judged like any other, hence refused (not
-pinned by a test) (#651, security review): the allowed list judges the `client_id`'s host alone, so a path of a
-listed host serving a third party's JSON would otherwise send the code elsewhere under « verified domain ».
-A loopback redirect (Claude Code) stays admitted. Never relax this to a subdomain or a second host without a
+`InvalidClientMetadataDocumentException::redirectOutsideClientHost()` → `invalid-document` (#651, security review):
+the allowed list judges the `client_id`'s host alone, so a path of a listed host serving a third party's JSON would
+otherwise send the code elsewhere under « verified domain ». That factory is production's, but its distinct message
+reaches no log today (`CimdClientResolver` chains it under the refusal, which no log serialises; the audit carries
+the host and the cause alone): only the tests tell it from `invalidRedirectUris()`. A loopback redirect (Claude
+Code) stays admitted; loopback is `http` only (`isLoopback()`), so an `https` redirect to `127.0.0.1` or
+`localhost` is judged like any other, hence refused (not pinned by a test). Never relax this to a subdomain or a second host without a
 real document that needs it.
 
 ## Cache and quota (D-F)

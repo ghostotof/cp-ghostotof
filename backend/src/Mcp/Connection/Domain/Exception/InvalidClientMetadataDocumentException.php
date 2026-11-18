@@ -78,8 +78,9 @@ final class InvalidClientMetadataDocumentException extends InvalidArgumentExcept
      * Une redirection hors boucle locale qui n'est pas sur l'hôte du `client_id`,
      * ou qui porte un port : une tentative de détourner le code d'autorisation,
      * pas une faute de forme. Message distinct de {@see self::invalidRedirectUris()}
-     * pour qu'un journal les sépare ; il nomme le champ et la règle, jamais la
-     * valeur de la redirection.
+     * pour que les tests les séparent (aucun journal ne le lit aujourd'hui :
+     * l'audit porte l'hôte et la cause) ; il nomme le champ et la règle, jamais
+     * la valeur de la redirection.
      */
     public static function redirectOutsideClientHost(): self
     {
