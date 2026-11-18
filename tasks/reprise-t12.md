@@ -576,7 +576,14 @@
     Preuve contrôlée par le fil principal : 127 tests ciblés verts, arbre propre ; l'agent : `make front-test`
     2739 OK, lint et build verts. Gardé : apostrophe typographique `’` dans `domainNotice` (comme tout `en.json`).
     Écrit : les cas « cimd sans domaine » étaient verts dès le rouge (le dépôt refusait tout `cimd`).
-  - **11B lancée** (sonnet/high).
+  - **11B faite** : `e135f715` (`ConsentTemporarilyUnavailableError`, 429/503 typés au GET et au POST, sinon
+    `ConsentFailedError`), `f5f85b41` (composable : GET → `error` + bouton `consent-retry` → `reload()` ; POST →
+    `ready`, demande gardée, Autoriser/Refuser = réessai ; message dans le `role="alert"` existant, minutes via
+    `retryAfterMinutes`, 3 clés i18n). Sonnet 5.5. Preuve contrôlée : 265 tests mcp + page verts, arbre propre ;
+    l'agent : `make front-test` 2773 OK, lint et build verts.
+  - Choix de l'agent rendus en question (2026-11-18) : pas de ré-essai automatique ; « Refuser » actif pendant
+    le refus passager ; boutons non désactivés jusqu'à `Retry-After` ; un seul message 429/503.
+  - **Prochaine action** : réponses de l'utilisateur, puis relecture `/code-review medium diff 3328cef8...HEAD`.
 
 ## Point fixe de relecture
 
