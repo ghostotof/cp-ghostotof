@@ -18,6 +18,7 @@ use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
@@ -266,6 +267,42 @@ final class CimdConsentFlowTest extends WebTestCase
 
         $this->assertTransientRefusal($response, Response::HTTP_SERVICE_UNAVAILABLE);
         self::assertNull($response->headers->get('Retry-After'));
+        $this->assertNothingWritten();
+    }
+
+    /**
+     * Une décision montrée à un autre compte est un 409, même quand la revalidation
+     * aurait été refusée passagèrement (quota épuisé) : le jugement du corps et du
+     * compte précède toute récupération du document (#651, F5).
+     */
+    public function testADecisionShownToAnotherAccountIsConflictEvenWithAnExhaustedQuota(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->consentSummary($this->cimdParameters());
+        $this->clearPools();
+        $this->exhaustTheFetchQuota();
+        $before = $this->outboundRequests;
+
+        $response = $this->decide(approved: true, overrides: $this->cimdOverrides(), shownAccount: Uuid::v7()->toRfc4122());
+
+        self::assertSame(Response::HTTP_CONFLICT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        self::assertSame($before, $this->outboundRequests, 'Aucune récupération du document.');
+        $this->assertNothingWritten();
+    }
+
+    /** Même verdict avec un hôte qui cale : 409, pas 503, et aucune récupération. */
+    public function testADecisionShownToAnotherAccountIsConflictEvenWithAStallingHost(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->consentSummary($this->cimdParameters());
+        $this->clearPools();
+        $this->stalling = true;
+        $before = $this->outboundRequests;
+
+        $response = $this->decide(approved: true, overrides: $this->cimdOverrides(), shownAccount: Uuid::v7()->toRfc4122());
+
+        self::assertSame(Response::HTTP_CONFLICT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        self::assertSame($before, $this->outboundRequests, 'Aucune récupération du document.');
         $this->assertNothingWritten();
     }
 

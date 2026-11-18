@@ -105,6 +105,9 @@ final class ConsentServiceTest extends TestCase
     /** Le client déclaré que le résumé porte et que league a jugé (CIMD, #651) ; null, un client pré-enregistré. */
     private ?McpClient $discovered = null;
 
+    /** Une ligne `cimd` que league a jugée sans que l'admission rende de document (identifiant hors de la forme CIMD). */
+    private ?McpClient $judgedRowWithoutDocument = null;
+
     /** La ligne que le dépôt connaît déjà, quand le test en impose une autre que celle de setUp(). */
     private ?McpClient $storedRow = null;
 
@@ -279,6 +282,29 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
+     * Une ligne `cimd` jugée par league sans document admis (identifiant hors de la
+     * forme CIMD) ne tient son identité de rien : le résumé, le refus et l'accord
+     * répondent le 400 générique, rien n'est écrit (#651, F4, défense en profondeur
+     * du garde de league).
+     */
+    #[DataProvider('consentCalls')]
+    public function testACimdRowJudgedWithoutADocumentIsRefusedWhateverTheCall(string $call): void
+    {
+        $this->judgedRowWithoutDocument = ClaudeCodeMetadata::storedRow();
+
+        try {
+            $this->consentCall($call);
+            self::fail('Une ligne cimd sans document ne doit rien obtenir.');
+        } catch (AuthorizationRequestRejectedException $rejection) {
+            self::assertSame('/errors/authorization-request-rejected', $rejection->getType());
+        }
+
+        self::assertSame([], $this->effects);
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+    }
+
+    /**
      * Entre l'affichage et l'approbation, une ligne pré-enregistrée a pris
      * l'identifiant : `saveDiscovered()` refuse de l'écraser, rien n'est écrit.
      */
@@ -441,8 +467,9 @@ final class ConsentServiceTest extends TestCase
     /**
      * F5 de la relecture de #650 : la décision n'est prise que pour le compte
      * que la page a montré. Accord comme refus, avec un autre UUID ou aucun :
-     * un 409 typé, la demande a été revalidée (le refus ne la contourne pas) et
-     * rien n'a eu d'effet — ni connexion, ni code, ni audit.
+     * un 409 typé, jugé avant la revalidation (#651, F5 : aucune récupération
+     * du document d'un client déclaré pour une décision refusée) et rien n'a eu
+     * d'effet — ni connexion, ni code, ni audit.
      */
     #[DataProvider('decisionsShownToAnotherAccount')]
     public function testADecisionShownToAnotherAccountIsRefusedWithoutEffect(bool $approved, bool $shownToNobody): void
@@ -458,7 +485,7 @@ final class ConsentServiceTest extends TestCase
             self::assertStringNotContainsString($this->account->getId()->toRfc4122(), (string) $refusal->getDetail());
         }
 
-        self::assertNotNull($this->validated, 'La demande n\'a pas été revalidée.');
+        self::assertNull($this->validated, 'La demande ne doit pas être revalidée avant le 409.');
         self::assertSame([], $this->effects, 'Le refus a eu un effet.');
         self::assertNull($this->added);
         self::assertNull($this->audited);
@@ -474,18 +501,18 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * Le compte montré est jugé **après** la revalidation de la demande (une
-     * demande devenue invalide reste son 400, qu'un rechargement ne répare pas) et
-     * **avant** le jugement du compte du cookie (mot de passe changé, âge de
-     * l'authentification) : la décision ne le concerne pas.
+     * Le compte montré est jugé **avant** la revalidation de la demande (#651, F5 :
+     * elle peut récupérer le document d'un client déclaré, et un refus passager ne
+     * doit pas masquer le 409) et **avant** le jugement du compte du cookie (mot de
+     * passe changé, âge de l'authentification) : la décision ne le concerne pas.
      */
-    public function testTheShownAccountIsJudgedAfterTheRequestAndBeforeTheCookieAccount(): void
+    public function testTheShownAccountIsJudgedBeforeTheRequestAndBeforeTheCookieAccount(): void
     {
         $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
         try {
             $this->service()->decide($this->decision(true, Uuid::v7()), $this->account);
-            self::fail('Une demande invalide doit rester son 400.');
-        } catch (AuthorizationRequestRejectedException) {
+            self::fail('Une décision montrée à un autre compte doit rester son 409, même pour une demande invalide.');
+        } catch (ConsentAccountChangedException) {
             $this->addToAssertionCount(1);
         }
 
@@ -753,6 +780,11 @@ final class ConsentServiceTest extends TestCase
 
         if (null !== $this->discovered) {
             $request->setClient(new OAuthClient($this->discovered));
+        } elseif (null !== $this->judgedRowWithoutDocument) {
+            $request->setClient(new OAuthClient($this->judgedRowWithoutDocument));
+        } else {
+            // Le cas ordinaire : une ligne pré-enregistrée, que league a jugée (il y a toujours un client jugé).
+            $request->setClient(new OAuthClient(RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', [self::REDIRECT])));
         }
 
         return $request;

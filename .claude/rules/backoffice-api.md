@@ -332,9 +332,9 @@ paths:
   that already work, and hands an `html` negotiation back to Symfony before `ApiJsonErrorFormatListener`.
 - **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
   `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
-  `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
+  `Shared/Domain/Exception/RetryAfterAware` — the thrown one or, failing that, the first one found walking its `previous` chain (`RetryAfterListener::firstRetryAfterAware()`, the single lookup, also used by the OAuth authorization point that renders its 429 without throwing, #651) (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
   the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
-  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. The value is
+  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500, or a 400 wrapping a quota cause, must not carry it), and never over a `Retry-After` the response already has — with an injected `ClockInterface`. The value is
   the remaining time rounded **up** to whole seconds, computed in integer microseconds (issue #743): never earlier than the real
   deadline. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API

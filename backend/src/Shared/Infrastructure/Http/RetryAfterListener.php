@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Throwable;
 
 /**
  * Pose l'en-tête HTTP standard `Retry-After` sur la réponse produite pour
@@ -75,13 +76,26 @@ final readonly class RetryAfterListener
         // L'exception levée ou, à défaut, la première de sa chaîne de `previous` qui est un
         // quota : une exception qui en enveloppe un (le refus passager du consentement, #651)
         // annonce l'échéance du limiteur qui a refusé, comme au point d'autorisation.
-        for ($cause = $event->getThrowable(); null !== $cause; $cause = $cause->getPrevious()) {
-            if ($cause instanceof RetryAfterAware) {
-                $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $cause->retryAfter);
+        $quota = self::firstRetryAfterAware($event->getThrowable());
+        if (null !== $quota) {
+            $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $quota->retryAfter);
+        }
+    }
 
-                return;
+    /**
+     * Le premier quota de la chaîne, en partant de l'exception elle-même puis en remontant les
+     * `previous`. Unique : l'écouteur et le point d'autorisation OAuth (qui rend son 429 sans le
+     * lever) la partagent, une seconde boucle finirait par diverger de la première.
+     */
+    public static function firstRetryAfterAware(Throwable $throwable): ?RetryAfterAware
+    {
+        for ($cause = $throwable; null !== $cause; $cause = $cause->getPrevious()) {
+            if ($cause instanceof RetryAfterAware) {
+                return $cause;
             }
         }
+
+        return null;
     }
 
     #[AsEventListener(event: KernelEvents::RESPONSE)]
@@ -90,6 +104,11 @@ final readonly class RetryAfterListener
         $retryAfter = $event->getRequest()->attributes->get(self::REQUEST_ATTRIBUTE);
         $response = $event->getResponse();
         if (!$retryAfter instanceof DateTimeImmutable || Response::HTTP_TOO_MANY_REQUESTS !== $response->getStatusCode()) {
+            return;
+        }
+
+        // Jamais écrasé : un en-tête déjà posé (par le noyau, un proxy, un autre écouteur) fait foi.
+        if ($response->headers->has('Retry-After')) {
             return;
         }
 

@@ -285,8 +285,11 @@ omitting the field. `ConsentService::decide()` compares with `Uuid::equals()` (n
 account, RFC 9562 §4) and a difference is `ConsentAccountChangedException`, a **409 `/errors/consent-account-changed`**,
 constant `detail` (no account in the body), `log_level: info`, nothing written or audited. **Approval and denial are
 both bound**, one rule: a denial creates nothing, so binding it protects nothing, but it costs a click and spares an
-exception to explain. **The order of the checks** (`decide()`): the request's revalidation (an invalid request stays
-its 400, which a re-read does not mend); the account shown (409); the session predating the password change (R1, the
+exception to explain. **The order of the checks** (`decide()`): the account shown (409, first since #651 F5: it reads
+only the body and the cookie's account, and the revalidation of a declared client fetches its document, so a decision
+refused anyway costs no fetch and a transient 429/503 never hides the 409; a request both invalid and shown to
+another account answers 409, the re-read it offers gives the 400 back); the request's revalidation (an invalid
+request stays its 400); the session predating the password change (R1, the
 401 `reauthentication-required`); then, for an approval only, the authentication age. `ConsentServiceTest`,
 `ConsentControllerTest` (`testAnApprovalShownToAnotherAccountIsRefusedAndGrantsNothing`, `…ADenialShownToAnotherAccountIsRefusedToo`),
 `ConsentRequestTest`.

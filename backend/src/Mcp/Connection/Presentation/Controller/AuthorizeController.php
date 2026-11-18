@@ -8,7 +8,6 @@ use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Application\IssParameter;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Shared\Infrastructure\Http\RetryAfterListener;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -116,12 +115,9 @@ final readonly class AuthorizeController
      */
     private function refusal(OAuthServerException $refusal, Request $request): Response
     {
-        for ($cause = $refusal; null !== $cause; $cause = $cause->getPrevious()) {
-            if ($cause instanceof RetryAfterAware) {
-                $request->attributes->set(RetryAfterListener::REQUEST_ATTRIBUTE, $cause->retryAfter);
-
-                break;
-            }
+        $quota = RetryAfterListener::firstRetryAfterAware($refusal);
+        if (null !== $quota) {
+            $request->attributes->set(RetryAfterListener::REQUEST_ATTRIBUTE, $quota->retryAfter);
         }
 
         $response = $this->httpFoundationFactory->createResponse(
