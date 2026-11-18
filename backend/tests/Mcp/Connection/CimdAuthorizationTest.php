@@ -276,15 +276,16 @@ final class CimdAuthorizationTest extends WebTestCase
     }
 
     /**
-     * Le consentement revalide par la même validation que le point d'autorisation :
-     * une ligne `cimd` dont l'identifiant a perdu la forme CIMD n'y est pas
-     * accordée sans document (#651, F4). Le résumé (GET) et la décision (POST)
-     * répondent le 400 générique, rien n'est écrit : ni connexion, ni audit d'accord.
+     * Garde de league au consentement (#651) : la revalidation passe par le même
+     * `validateAuthorizationRequest()` que le point d'autorisation, qui refuse une ligne
+     * `cimd` dont l'identifiant a perdu la forme CIMD et l'audite
+     * (`mcp-client-row-not-admitted`). Le résumé (GET) et la décision (POST)
+     * répondent le 400 générique, un audit chacun (lu après chaque requête), rien n'est écrit : ni connexion, ni audit d'accord.
      *
      * @param non-empty-string $storedClientId
      */
     #[DataProvider('clientIdsOutsideTheCimdForm')]
-    public function testAStoredCimdRowOutsideTheCimdFormIsRefusedAtTheConsentToo(string $storedClientId): void
+    public function testLeaguesGuardRefusesAStoredCimdRowOutsideTheFormAtTheConsentToo(string $storedClientId): void
     {
         $this->serve(fn (): MockResponse => self::document(ClaudeCodeMetadata::json()));
         $this->resolver();
@@ -296,6 +297,9 @@ final class CimdAuthorizationTest extends WebTestCase
 
         self::assertSame(Response::HTTP_BAD_REQUEST, $summary->getStatusCode(), substr((string) $summary->getContent(), 0, 300));
         self::assertSame('/errors/authorization-request-rejected', $this->json($summary)['type'] ?? null);
+        // Le noyau du client de test redémarre entre deux requêtes : le journal d'audit ne garde que
+        // celui de la dernière, d'où une lecture après chacune (CR3).
+        self::singleSecurityAuditEvent('mcp-client-row-not-admitted');
 
         $decision = $this->decide(approved: true, overrides: ['client_id' => $storedClientId, 'redirect_uri' => self::CIMD_REDIRECT]);
 
@@ -305,6 +309,7 @@ final class CimdAuthorizationTest extends WebTestCase
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'), 'Aucune connexion.');
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'), 'Aucun code.');
         self::assertSame([], self::securityAuditEvents('mcp-connection-granted'), 'Aucun audit d\'accord.');
+        self::singleSecurityAuditEvent('mcp-client-row-not-admitted');
         self::assertSame(0, $this->outboundRequests);
     }
 

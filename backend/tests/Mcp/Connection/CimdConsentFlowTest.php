@@ -281,12 +281,12 @@ final class CimdConsentFlowTest extends WebTestCase
         $this->consentSummary($this->cimdParameters());
         $this->clearPools();
         $this->exhaustTheFetchQuota();
-        $before = $this->outboundRequests;
 
         $response = $this->decide(approved: true, overrides: $this->cimdOverrides(), shownAccount: Uuid::v7()->toRfc4122());
 
+        // Pas d'assertion sur les récupérations : un quota épuisé les bloque dans les deux ordres,
+        // seul le statut (409, pas 429) distingue le jugement du compte avant la revalidation.
         self::assertSame(Response::HTTP_CONFLICT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
-        self::assertSame($before, $this->outboundRequests, 'Aucune récupération du document.');
         $this->assertNothingWritten();
     }
 

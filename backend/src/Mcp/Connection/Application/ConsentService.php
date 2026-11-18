@@ -11,7 +11,6 @@ use App\Mcp\Connection\Domain\Exception\ConsentTemporarilyUnavailableException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
-use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateInterval;
@@ -284,15 +283,6 @@ final readonly class ConsentService implements ConsentServiceInterface
             }
 
             throw AuthorizationRequestRejectedException::onRevalidation($refusal);
-        }
-
-        // Défense en profondeur (#651, F4) : une ligne `cimd` que league a jugée
-        // sans que l'admission rende de document (identifiant devenu hors de la
-        // forme CIMD) ne tient son identité de rien. Le garde de league la refuse
-        // déjà au point d'autorisation ; sans cette garde, l'accord la lirait en
-        // base et l'accorderait sans document. Même 400 générique, aucun indice.
-        if (ClientRegistration::Cimd === $summary->registration() && null === $summary->judgedDiscoveredClient()) {
-            throw AuthorizationRequestRejectedException::cimdRowWithoutDocument();
         }
 
         return $summary;

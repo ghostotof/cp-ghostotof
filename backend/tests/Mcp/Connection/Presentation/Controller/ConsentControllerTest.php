@@ -145,6 +145,23 @@ final class ConsentControllerTest extends WebTestCase
     }
 
     /**
+     * Garde (#651, F5) : le compte montré est jugé avant la revalidation de la demande. Une
+     * décision à la fois invalide (redirection non enregistrée) et montrée à un autre compte
+     * répond 409, pas 400 : le rechargement que le 409 propose rend le 400 de la demande.
+     */
+    public function testAnInvalidRequestShownToAnotherAccountIsConflictNotBadRequest(): void
+    {
+        $shownAccountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, overrides: ['redirect_uri' => 'https://attacker.example.test/callback'], shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
+    }
+
+    /**
      * Le contrat a deux applications déployées séparément : une page restée
      * ouverte pendant un déploiement (ancien frontend) poste sans l'UUID. Pas
      * de tolérance — une garde facultative se contourne en omettant le champ, et

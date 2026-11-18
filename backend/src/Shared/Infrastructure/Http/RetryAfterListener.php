@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Http;
 
-use App\Shared\Domain\Exception\RetryAfterAware;
+use App\Shared\Domain\Exception\RetryAfterChain;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Throwable;
 
 /**
  * Pose l'en-tête HTTP standard `Retry-After` sur la réponse produite pour
@@ -76,26 +75,10 @@ final readonly class RetryAfterListener
         // L'exception levée ou, à défaut, la première de sa chaîne de `previous` qui est un
         // quota : une exception qui en enveloppe un (le refus passager du consentement, #651)
         // annonce l'échéance du limiteur qui a refusé, comme au point d'autorisation.
-        $quota = self::firstRetryAfterAware($event->getThrowable());
+        $quota = RetryAfterChain::firstIn($event->getThrowable());
         if (null !== $quota) {
             $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $quota->retryAfter);
         }
-    }
-
-    /**
-     * Le premier quota de la chaîne, en partant de l'exception elle-même puis en remontant les
-     * `previous`. Unique : l'écouteur et le point d'autorisation OAuth (qui rend son 429 sans le
-     * lever) la partagent, une seconde boucle finirait par diverger de la première.
-     */
-    public static function firstRetryAfterAware(Throwable $throwable): ?RetryAfterAware
-    {
-        for ($cause = $throwable; null !== $cause; $cause = $cause->getPrevious()) {
-            if ($cause instanceof RetryAfterAware) {
-                return $cause;
-            }
-        }
-
-        return null;
     }
 
     #[AsEventListener(event: KernelEvents::RESPONSE)]
@@ -107,11 +90,8 @@ final readonly class RetryAfterListener
             return;
         }
 
-        // Jamais écrasé : un en-tête déjà posé (par le noyau, un proxy, un autre écouteur) fait foi.
-        if ($response->headers->has('Retry-After')) {
-            return;
-        }
-
+        // L'échéance du quota remplace un `Retry-After` déjà posé (noyau, proxy, autre
+        // écouteur) : sur un 429 elle seule est arrondie au-dessus, « jamais trop tôt » (#743).
         // Jamais négatif : l'échéance peut être dépassée le temps que la
         // réponse soit construite. Arrondi par excès (issue #743), jamais par
         // défaut : annoncer moins que le reste réel renvoie le client avant la

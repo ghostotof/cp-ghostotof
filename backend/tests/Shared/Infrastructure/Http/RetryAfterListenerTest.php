@@ -185,7 +185,11 @@ final class RetryAfterListenerTest extends TestCase
         self::assertSame('10', $this->respondTo($chain)->headers->get('Retry-After'));
     }
 
-    public function testARetryAfterAlreadyOnTheResponseIsNeverOverwritten(): void
+    /**
+     * Contrat #743, « jamais trop tôt » : sur un 429, l'échéance du quota, arrondie au-dessus,
+     * gagne toujours sur une valeur déjà posée (un autre écouteur, un proxy).
+     */
+    public function testTheQuotaDeadlineReplacesARetryAfterAlreadyOnTheResponse(): void
     {
         $listener = new RetryAfterListener($this->clock);
         $request = Request::create('/api/contact', 'POST');
@@ -194,19 +198,11 @@ final class RetryAfterListenerTest extends TestCase
         $listener->onKernelException($this->exceptionEvent($request, $this->quotaExceeded('+42 seconds')));
         $listener->onKernelResponse($this->responseEvent($request, $response));
 
-        self::assertSame('7', $response->headers->get('Retry-After'));
-    }
-
-    public function testTheSharedLookupReturnsTheFirstQuotaOfAChainOrNull(): void
-    {
-        $quota = $this->quotaExceeded('+1 seconds');
-
-        self::assertSame($quota, RetryAfterListener::firstRetryAfterAware(new DomainException('x', 0, $quota)));
-        self::assertNull(RetryAfterListener::firstRetryAfterAware(new DomainException('x', 0, new DomainException('y'))));
+        self::assertSame('42', $response->headers->get('Retry-After'));
     }
 
     /**
-     * Une exception non quota dont la cause est $outer, elle-même enveloppant $inner : deux quotas dans la chaîne.
+     * Un quota extérieur (RetryAfterAware) d'échéance $deadline qui enveloppe $inner, lui-même un quota : deux quotas dans la chaîne.
      */
     private function chain(DateTimeImmutable $deadline, Throwable $inner): Throwable
     {

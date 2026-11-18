@@ -45,16 +45,6 @@ final class AuthorizationRequestRejectedException extends DomainException implem
         return new self('Le client de la demande d\'autorisation n\'est plus enregistré : aucune connexion ne peut lui être accordée.');
     }
 
-    /**
-     * Une ligne `cimd` jugée sans document admis : l'identité d'un client déclaré
-     * vient de son document, jamais de la seule ligne stockée (#651). Le message
-     * ne sert qu'aux journaux ; le corps de la réponse est celui de tout refus.
-     */
-    public static function cimdRowWithoutDocument(): self
-    {
-        return new self('Le client de la demande d\'autorisation est une ligne déclarée sans document admis : aucune connexion ne peut lui être accordée.');
-    }
-
     protected function problemType(): string
     {
         return 'authorization-request-rejected';

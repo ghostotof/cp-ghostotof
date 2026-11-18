@@ -105,9 +105,6 @@ final class ConsentServiceTest extends TestCase
     /** Le client déclaré que le résumé porte et que league a jugé (CIMD, #651) ; null, un client pré-enregistré. */
     private ?McpClient $discovered = null;
 
-    /** Une ligne `cimd` que league a jugée sans que l'admission rende de document (identifiant hors de la forme CIMD). */
-    private ?McpClient $judgedRowWithoutDocument = null;
-
     /** La ligne que le dépôt connaît déjà, quand le test en impose une autre que celle de setUp(). */
     private ?McpClient $storedRow = null;
 
@@ -279,29 +276,6 @@ final class ConsentServiceTest extends TestCase
         self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
         self::assertSame([ClaudeCodeMetadata::CLIENT_ID => $this->discovered], $this->clientsRepository?->discovered);
         self::assertSame($this->discovered, $this->added?->client());
-    }
-
-    /**
-     * Une ligne `cimd` jugée par league sans document admis (identifiant hors de la
-     * forme CIMD) ne tient son identité de rien : le résumé, le refus et l'accord
-     * répondent le 400 générique, rien n'est écrit (#651, F4, défense en profondeur
-     * du garde de league).
-     */
-    #[DataProvider('consentCalls')]
-    public function testACimdRowJudgedWithoutADocumentIsRefusedWhateverTheCall(string $call): void
-    {
-        $this->judgedRowWithoutDocument = ClaudeCodeMetadata::storedRow();
-
-        try {
-            $this->consentCall($call);
-            self::fail('Une ligne cimd sans document ne doit rien obtenir.');
-        } catch (AuthorizationRequestRejectedException $rejection) {
-            self::assertSame('/errors/authorization-request-rejected', $rejection->getType());
-        }
-
-        self::assertSame([], $this->effects);
-        self::assertNull($this->added);
-        self::assertNull($this->audited);
     }
 
     /**
@@ -780,11 +754,6 @@ final class ConsentServiceTest extends TestCase
 
         if (null !== $this->discovered) {
             $request->setClient(new OAuthClient($this->discovered));
-        } elseif (null !== $this->judgedRowWithoutDocument) {
-            $request->setClient(new OAuthClient($this->judgedRowWithoutDocument));
-        } else {
-            // Le cas ordinaire : une ligne pré-enregistrée, que league a jugée (il y a toujours un client jugé).
-            $request->setClient(new OAuthClient(RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', [self::REDIRECT])));
         }
 
         return $request;
