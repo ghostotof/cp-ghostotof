@@ -564,12 +564,18 @@
   d'abord la section Task 11 du plan (`grep -n "Task 11" tasks/plan-t12-cimd.md`, puis `sed -n`), jamais le plan
   entier. Puis Task 12 (règles dont `mcp-oauth.md` 429/503 et F6, ADR, registre, notes de release).
 - `HEAD` au 2026-11-18 : `ed5a82f1`, puis ce commit d'état.
+- **Task 11 lancée** (2026-11-18), découpée en deux agents successifs (budget de contexte) :
+  - **11A** (sonnet/high) : le plan tel qu'écrit (`registration`/`domain` dans `parseSummary()`, domaine
+    vérifié avant le nom déclaré, textes i18n du plan, tests du dépôt et de la page, axe) ;
+  - **11B** (sonnet/high), après 11A : 429/503 `/errors/consent-temporarily-unavailable` → erreur de domaine
+    dédiée, `Retry-After` lu par `infrastructure/http/retryAfterSeconds.ts`, page « réessayer » (pas un refus
+    définitif), à l'affichage comme à l'approbation.
+  - Puis relecture `/code-review medium diff 3328cef8...HEAD` (zone front, pas d'auth/session touchée a priori).
 
 ## Point fixe de relecture
 
-- Dernière relecture : série n° 12, au point `6cb33233` (série `b99f6be7...6cb33233`).
-- Prochaine série : `diff 6cb33233...HEAD (branche feature/spec-0007-t12-cimd)` — jamais un SHA nu
-  (`9866529c`, micro-correctif non relu, y entre).
+- Dernière relecture : micro-série « maximum », tête relue `e6448d17` (puis `3328cef8`, état seul).
+- Prochaine série (Task 11) : `diff 3328cef8...HEAD` — jamais un SHA nu.
 
 ## Décisions de l'utilisateur
 
