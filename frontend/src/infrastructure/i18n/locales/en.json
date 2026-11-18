@@ -850,6 +850,9 @@
       "accountChanged": "The signed-in account has changed since this request was shown (for example in another tab): nothing was sent. Reload the request to see the current account, then decide.",
       "reload": "Reload the request",
       "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
+      "temporarilyUnavailable": "The server cannot process this request right now: nothing was sent. Please try again in a few minutes.",
+      "temporarilyUnavailableIn": "The server cannot process this request right now: nothing was sent. Please try again in {minutes} minute. | The server cannot process this request right now: nothing was sent. Please try again in {minutes} minutes.",
+      "retry": "Try again",
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }

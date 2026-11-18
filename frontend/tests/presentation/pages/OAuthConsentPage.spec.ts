@@ -15,6 +15,7 @@ import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/Ma
 import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
+import { ConsentTemporarilyUnavailableError } from '../../../src/domain/mcp/errors/ConsentTemporarilyUnavailableError'
 import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
@@ -732,6 +733,127 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
     vi.useRealTimers()
 
     await expectNoAccessibilityViolation(wrapper)
+  })
+})
+
+describe('OAuthConsentPage — refus passager du serveur (#651)', () => {
+  /** Le résumé refusé une première fois (quota, hôte du client injoignable), puis rendu à la relecture. */
+  function summaryRefusedOnce(retryAfterSeconds: number | null) {
+    return vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(retryAfterSeconds))
+      .mockResolvedValueOnce(SUMMARY)
+  }
+
+  /** La décision refusée une première fois, puis acceptée. */
+  function decisionRefusedOnce(retryAfterSeconds: number | null) {
+    return vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(retryAfterSeconds))
+      .mockResolvedValueOnce(APPROVED_URL)
+  }
+
+  it.each([
+    ['fr', 120, renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 2 }, 2)],
+    ['en', 120, renderedMessage('en', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 2 }, 2)],
+    // Moins d'une minute : « 1 minute », jamais « 0 ».
+    ['fr', 30, renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 1 }, 1)],
+    ['en', 30, renderedMessage('en', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 1 }, 1)],
+  ] as const)('au résumé, délai connu (%s, %i s) : le message dit la durée en minutes, ni refus définitif ni échec générique', async (locale, seconds, expected) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(seconds) })
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain(expected)
+    expect(alert.text()).not.toContain(('fr' === locale ? fr : en).oauthConsent.errors.unknown)
+    expect(alert.text()).not.toContain(('fr' === locale ? fr : en).oauthConsent.errors.invalid)
+  })
+
+  it.each(SUPPORTED_LOCALES)('au résumé, délai inconnu (%s) : le message sans durée', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(null) })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain(
+      ('fr' === locale ? fr : en).oauthConsent.errors.temporarilyUnavailable,
+    )
+  })
+
+  it.each(SUPPORTED_LOCALES)('au résumé (%s) : aucun bouton de décision, « Réessayer » relit la demande', async (locale) => {
+    const describeRequest = summaryRefusedOnce(60)
+    const { wrapper, decide } = await mountPage({ locale, describeRequest })
+
+    const texts = 'fr' === locale ? fr : en
+    expect(wrapper.find('[data-testid="consent-approve"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-deny"]').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"] [data-testid="consent-retry"]').text()).toBe(texts.oauthConsent.errors.retry)
+
+    await wrapper.find('[data-testid="consent-retry"]').trigger('click')
+    await flushPromises()
+    await passActivationDelay()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(true)
+    expect(decide).not.toHaveBeenCalled()
+  })
+
+  it.each(['approve', 'deny'] as const)(
+    '« %s » refusé passagèrement : la demande reste affichée, le message en minutes, les boutons restent actifs',
+    async (name) => {
+      const decide = decisionRefusedOnce(300)
+      const { wrapper, navigate } = await mountPage({ decide })
+
+      await button(wrapper, name).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[role="alert"]').text()).toContain(
+        renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 5 }, 5),
+      )
+      expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(true)
+      expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+      expect(button(wrapper, 'deny').attributes('disabled')).toBeUndefined()
+      // Aucun réessai automatique : rien ne part tant que la personne ne décide pas de nouveau.
+      expect(decide).toHaveBeenCalledOnce()
+      expect(navigate).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="consent-retry"]').exists()).toBe(false)
+    },
+  )
+
+  it('à la décision : décider de nouveau envoie la décision et suit l\'URL rendue, le message disparaît', async () => {
+    const decide = decisionRefusedOnce(null)
+    const { wrapper, navigate } = await mountPage({ decide })
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.temporarilyUnavailable)
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(decide).toHaveBeenCalledTimes(2)
+    expect(decide).toHaveBeenLastCalledWith(PARAMS, true, ACCOUNT_ID)
+    expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  it('la session n\'est pas marquée finie par un refus passager', async () => {
+    await mountPage({ describeRequest: summaryRefusedOnce(10) })
+
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  describe.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', (locale) => {
+    it('au résumé', async () => {
+      const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(120) })
+      vi.useRealTimers()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
+
+    it('à la décision', async () => {
+      const { wrapper } = await mountPage({ locale, decide: decisionRefusedOnce(120) })
+      await button(wrapper, 'approve').trigger('click')
+      await flushPromises()
+      vi.useRealTimers()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
   })
 })
 

@@ -851,6 +851,9 @@
       "reload": "Relire la demande",
       "unsafeRedirect": "L'adresse de retour reçue n'est pas une adresse web de l'hôte annoncé : la page ne l'a pas suivie.",
       "malformedDecision": "La page n'a pas pu transmettre votre décision. Recommencez depuis votre assistant.",
+      "temporarilyUnavailable": "Le serveur ne peut pas traiter cette demande pour le moment : rien n'a été transmis. Réessayez dans quelques minutes.",
+      "temporarilyUnavailableIn": "Le serveur ne peut pas traiter cette demande pour le moment : rien n'a été transmis. Réessayez dans {minutes} minute. | Le serveur ne peut pas traiter cette demande pour le moment : rien n'a été transmis. Réessayez dans {minutes} minutes.",
+      "retry": "Réessayer",
       "unknown": "Une erreur inattendue est survenue. Réessayez."
     }
   },

@@ -4,6 +4,7 @@ import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuth
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
+import { ConsentTemporarilyUnavailableError } from '../../domain/mcp/errors/ConsentTemporarilyUnavailableError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
@@ -34,7 +35,9 @@ export const CLIENT_REDIRECT: InjectionKey<(url: string) => void> = Symbol('Clie
  * - `error`      : échec terminal, que `failure` précise.
  *
  * Un échec générique de la *décision* ramène à `ready` avec `failure` posé :
- * la demande est toujours valable, la personne peut réessayer.
+ * la demande est toujours valable, la personne peut réessayer. Le refus passager
+ * (`temporarily-unavailable`) fait de même à la décision, et reste à `error` au
+ * résumé, où `reload()` est le moyen de réessayer.
  */
 export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' | 'error'
 
@@ -60,6 +63,12 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  * - `malformed-decision` : 422, le serveur a refusé le corps de la décision —
  *                          un défaut de la page, terminal (réessayer renverrait
  *                          le même corps) ;
+ * - `temporarily-unavailable` : le serveur refuse pour l'instant de revalider la demande (429 ou 503 de
+ *                          type `consent-temporarily-unavailable`, #651) — « réessayez », jamais un refus
+ *                          définitif ni l'échec générique. Au résumé : `error`, `reload()` relit la demande ;
+ *                          à la décision : retour à `ready`, la demande reste affichée et la personne peut
+ *                          décider de nouveau. La durée annoncée, si le serveur en donne une, est
+ *                          `retryAfterSeconds` ; aucun réessai automatique ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
 export type OAuthConsentFailure =
@@ -69,12 +78,15 @@ export type OAuthConsentFailure =
   | 'account-changed'
   | 'unsafe-redirect'
   | 'malformed-decision'
+  | 'temporarily-unavailable'
   | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
   request: DeepReadonly<Ref<ConsentRequest | null>>
   failure: DeepReadonly<Ref<OAuthConsentFailure | null>>
+  /** Délai avant de réessayer, en secondes : renseigné seulement pour `temporarily-unavailable` quand le serveur l'a donné. */
+  retryAfterSeconds: DeepReadonly<Ref<number | null>>
   /** Lit le résumé de la demande ; `null` pour une requête illisible (état `invalid`, sans appel). */
   load: (params: ConsentParams | null) => Promise<void>
   /** Relit la demande reçue (même requête) : le résumé nomme alors le compte connecté d'aujourd'hui. */
@@ -106,6 +118,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   const state = ref<OAuthConsentState>('loading')
   const request = shallowRef<ConsentRequest | null>(null)
   const failure = ref<OAuthConsentFailure | null>(null)
+  const retryAfterSeconds = ref<number | null>(null)
   let params: ConsentParams | null = null
 
   /**
@@ -152,6 +165,13 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       failure.value = 'account-changed'
       return
     }
+    if (caught instanceof ConsentTemporarilyUnavailableError) {
+      // Rien n'a été jugé : la demande affichée (s'il y en a une) reste valable, et la session n'est pas touchée.
+      state.value = onUnknown
+      failure.value = 'temporarily-unavailable'
+      retryAfterSeconds.value = caught.retryAfterSeconds
+      return
+    }
     if (caught instanceof MalformedConsentDecisionError) {
       state.value = 'error'
       failure.value = 'malformed-decision'
@@ -165,6 +185,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     params = received
     request.value = null
     failure.value = null
+    retryAfterSeconds.value = null
 
     if (null === received) {
       state.value = 'invalid'
@@ -191,6 +212,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
 
     state.value = 'submitting'
     failure.value = null
+    retryAfterSeconds.value = null
 
     // L'hôte annoncé à la personne, lu avant l'appel : c'est sur lui qu'elle a consenti.
     const announcedHost = request.value?.redirectHost ?? ''
@@ -228,6 +250,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     state: readonly(state),
     request: readonly(request),
     failure: readonly(failure),
+    retryAfterSeconds: readonly(retryAfterSeconds),
     load,
     reload: () => load(params),
     approve: () => decide(true),

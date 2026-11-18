@@ -8,6 +8,7 @@ import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useDeliberateActivation } from '../ui/useDeliberateActivation'
 import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
+import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 
 /**
  * Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
@@ -44,7 +45,7 @@ import SignInAgainLink from '../ui/SignInAgainLink.vue'
 const { t } = useI18n()
 const currentLocale = useCurrentLocale()
 const route = useRoute()
-const { state, request, failure, load, reload, approve, deny } = useOAuthConsent()
+const { state, request, failure, retryAfterSeconds, load, reload, approve, deny } = useOAuthConsent()
 
 const isSubmitting = computed(() => 'submitting' === state.value)
 /** La demande et les boutons ne se montrent que tant qu'une décision est possible. */
@@ -85,6 +86,15 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.unsafeRedirect')
     case 'malformed-decision':
       return t('oauthConsent.errors.malformedDecision')
+    case 'temporarily-unavailable':
+      // Refus passager du serveur (#651) : « réessayez », avec la durée en minutes quand le serveur l'a donnée.
+      return null === retryAfterSeconds.value
+        ? t('oauthConsent.errors.temporarilyUnavailable')
+        : t(
+            'oauthConsent.errors.temporarilyUnavailableIn',
+            { minutes: retryAfterMinutes(retryAfterSeconds.value) },
+            retryAfterMinutes(retryAfterSeconds.value),
+          )
     case 'unknown':
       return t('oauthConsent.errors.unknown')
     default:
@@ -126,6 +136,13 @@ const offersReload = computed(() => 'account-changed' === failure.value)
  * à l'accueil — et repose des cookies neufs, ce qui répare aussi une signature CSRF périmée.
  */
 const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
+
+/**
+ * Refus passager au résumé (#651) : la demande n'est pas montrée, « Réessayer » la relit. Un refus passager à la
+ * décision ne l'offre pas : la demande reste affichée (état `ready`), les boutons de décision sont le réessai, et
+ * aucun envoi ne repart seul.
+ */
+const offersRetry = computed(() => 'temporarily-unavailable' === failure.value && 'error' === state.value)
 
 const offersSignInAgain = computed(() => 'session-ended' === failure.value)
 
@@ -186,6 +203,15 @@ onMounted(() => {
         @click="reload"
       >
         {{ t('oauthConsent.errors.reload') }}
+      </button>
+      <button
+        v-if="offersRetry"
+        type="button"
+        class="btn btn-link p-0 align-baseline"
+        data-testid="consent-retry"
+        @click="reload"
+      >
+        {{ t('oauthConsent.errors.retry') }}
       </button>
     </p>
 
