@@ -79,10 +79,12 @@ the host stays out.
 `AllowedClientDomains`, the fetcher client, the fetcher and the resolver port are `public: true` in
 `services.yaml` for `CimdWiringTest`; never make them public under `when@test` only
 (`SecurityServicesEnvironmentParityTest`, `.claude/rules/backoffice-api.md`).
-`app.mcp.cimd.transport` and `app.mcp.cimd.http_client` carry **`autoconfigure: false`**: both are
-`LoggerAwareInterface`, and autoconfiguration would call `setLogger(@logger)`, after which `CurlHttpClient` logs
-`Request: "GET <full URL>"` at `info` — the anonymous caller's `client_id`, where only the host may be logged.
-`kernel.reset` is set back by hand; `CimdWiringTest::testTheMetadataTransportHasNoLogger` reads the compiled
+`app.mcp.cimd.transport` and `app.mcp.cimd.http_client` carry **`autoconfigure: false`**. Only the
+transport is `LoggerAwareInterface` (`CurlHttpClient`; `NoPrivateNetworkHttpClient` implements `HttpClientInterface`
+and `ResetInterface` alone, read in vendor): autoconfiguration would call `setLogger(@logger)` on it, after which it
+logs `Request: "GET <full URL>"` at `info` — the anonymous caller's `client_id`, where only the host may be logged.
+On the decorator it is a precaution, should a vendor release make it `LoggerAware`. `kernel.reset` is set back by
+hand on both (the decorator's `reset()` also forwards to the transport, reset twice — harmless); `CimdWiringTest::testTheMetadataTransportHasNoLogger` reads the compiled
 object. A new `LoggerAwareInterface` service on the outbound path needs the same.
 
 ## Five layers against SSRF, and a resolution of our own (D-D)
@@ -119,7 +121,10 @@ its own entry point).
 1.0 s, `MAX_BYTES` **5120, counted on the stream** (`stream()`, `cancel()`; a `Content-Length` above is refused
 at once, the body never read), `User-Agent: cp-ghostotof (+https://github.com/ghostotof/cp-ghostotof)`.
 Statuses: 200 ok, 3xx `redirected`, 429 and 5xx `upstream-error`, anything else `unexpected-status`. **Any
-`TransportExceptionInterface` is `unreachable` and its message is never read** (it can carry the URL).
+`TransportExceptionInterface` is `unreachable`, its message never read nor chained** (it carries the URL): the
+refusal's `previous` is `ClientMetadataTransportFailedException`, a constant message naming the transport
+exception's class alone (`TimeoutException`…), with no `previous` of its own. The curl code is lost, Symfony
+exposing it only in the message.
 `max-age` is read for the cache (an integer of 1 to 9 digits; `s-maxage` is not read).
 
 `ClientMetadataDocument::fromJson()` (depth 8; other fields ignored) requires: `client_id` equal **to the
@@ -128,8 +133,13 @@ character** to the URL fetched; **neither `client_secret` nor `client_secret_exp
 declared, containing `authorization_code` / `code`; an admissible name (`McpClientName`); **1 to 10
 redirect URIs** (`MAX_REDIRECT_URIS`), each a valid `RedirectUri`. One bad redirect refuses the whole document.
 **Outside loopback, a redirect URI's host is the `client_id`'s host, by exact equality** (no implicit subdomain,
-no path prefix; `RedirectUri::host()` against `CimdClientId::host()`), else `invalidRedirectUris()` →
-`invalid-document` (#651, security review): the allowed list judges the `client_id`'s host alone, so a path of a
+no path prefix; `RedirectUri::host()` against `CimdClientId::host()`), **with no explicit port** (`RedirectUri::port()`:
+`CimdClientId` refuses any port so that the target stays 443, a `:8443` would send the code to another service of
+the host; an explicit `:443` is already refused as not normalised), else
+`InvalidClientMetadataDocumentException::redirectOutsideClientHost()` → `invalid-document`. That factory exists for
+the tests only: its message reaches no log, the audit carrying the host and the cause alone. Loopback is `http` only
+(`isLoopback()`): an `https` redirect to `127.0.0.1` or `localhost` is judged like any other, hence refused (not
+pinned by a test) (#651, security review): the allowed list judges the `client_id`'s host alone, so a path of a
 listed host serving a third party's JSON would otherwise send the code elsewhere under « verified domain ».
 A loopback redirect (Claude Code) stays admitted. Never relax this to a subdomain or a second host without a
 real document that needs it.
@@ -221,7 +231,7 @@ reasoning, not as curl's behaviour. **`NativeHostAddressResolver` has no test**:
 - A definitive refusal answers `invalid_client` (401), an unreachable or failing host 503 (I2): the caller learns
   whether the server reached the host. Accepted: the host is in the closed list, and merging both would hide a
   transient outage behind a definitive refusal.
-- The transport exception is chained as `previous` under the refusal (I4), and its message may carry the document's
-  URL (the `client_id`, public, confined to the allowed list). The kernel logs the consent's 503
-  (`ConsentRevalidationUnavailableException`) at `warning` with its chain; at the authorization point league's
-  response is rendered, not thrown. Accepted: the audit record itself never carries it (`clientHost` only).
+- The transport exception is never chained under the refusal (I4, closed by #651's security review): its message
+  carries the document's URL, which an anonymous caller chose, and the kernel logs the consent's 503
+  (`ConsentRevalidationUnavailableException`) at `warning` with its whole chain. `ClientMetadataTransportFailedException`
+  (constant message, the class only) stands in for it; the audit record never carried it (`clientHost` only).

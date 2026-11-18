@@ -244,8 +244,9 @@ services:
     # option par défaut : chaque requête porte les siennes. CimdWiringTest en
     # vérifie la classe.
     #
-    # Sans autoconfiguration (ici et sur le décorateur) : CurlHttpClient est un
-    # LoggerAwareInterface, et l'autoconfiguration lui poserait `setLogger()`
+    # Sans autoconfiguration (ici, et par précaution sur le décorateur, qui n'en
+    # est pas un) : CurlHttpClient est un LoggerAwareInterface, et
+    # l'autoconfiguration lui poserait `setLogger()`
     # avec le logger du framework. Il journalise alors `Request: "GET <URL>"`
     # en `info` : l'URL complète du document, choisie par un appelant anonyme
     # (le `client_id`), sortirait dans les journaux (préprod en `debug`), alors
