@@ -542,7 +542,14 @@
   s'il est numérique, échéance **la plus tardive** de la chaîne) — CR1 + CR2 (`firstIn()` → la plus tardive) ;
   CR7 commentaire « proxy » faux. Puis relecture `/code-review medium diff 9db0b692...HEAD` ; **la boucle se
   clôt ensuite sur ce point** (le reste écrit), puis Task 11.
-- `HEAD` au 2026-11-18 : `9db0b692`, puis ce commit d'état.
+- **Micro-série « maximum » faite** (agent N) : `ed5a82f1` — `RetryAfterChain::latestIn()` (échéance la plus
+  tardive, le premier trouvé à égalité), en-tête = max(calculé arrondi au-dessus, en-tête déjà posé s'il passe
+  `ctype_digit`), sinon remplacé (pas de parsing de date HTTP) ; commentaire « proxy » corrigé ; règle
+  `backoffice-api.md` à jour. Rouges : 3 (dont `'99'` vs `'10'`, `'120'` vs `'42'`). Preuve contrôlée :
+  `make back-test` sur `ed5a82f1` OK (6441 tests, 122586 assertions), `check-claude-rules.sh` conforme.
+- **Prochaine action** : relecture `/code-review medium diff 9db0b692...HEAD` ; boucle close sur Retry-After
+  ensuite ; puis Task 11.
+- `HEAD` au 2026-11-18 : `ed5a82f1`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
