@@ -296,14 +296,74 @@ final class ClientMetadataDocumentTest extends TestCase
     public function testTenRedirectUrisAreAccepted(): void
     {
         $uris = array_map(
-            static fn (int $i): string => 'https://app.example.test/cb'.$i,
+            static fn (int $i): string => 'https://claude.ai/cb'.$i,
             range(1, ClientMetadataDocument::MAX_REDIRECT_URIS),
         );
 
         $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith(['redirect_uris' => $uris]));
 
         self::assertCount(ClientMetadataDocument::MAX_REDIRECT_URIS, $document->redirectUris);
-        self::assertTrue($document->redirectUris[9]->matches('https://app.example.test/cb10'));
+        self::assertTrue($document->redirectUris[9]->matches('https://claude.ai/cb10'));
+    }
+
+    /**
+     * Une redirection hors boucle locale reste sur l'hôte du `client_id` : la
+     * liste des domaines admis ne compare que cet hôte, et un chemin d'un hôte
+     * listé peut servir un JSON choisi par un tiers. Égalité stricte, sans
+     * sous-domaine implicite (comme la liste), sans préfixe de chemin.
+     *
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function redirectUrisOutsideTheClientHost(): iterable
+    {
+        yield 'hôte tiers' => [['https://tiers.example/cb']];
+        yield 'sous-domaine du client' => [['https://evil.claude.ai/cb']];
+        yield 'domaine parent du client' => [['https://ai/cb']];
+        yield 'hôte qui contient celui du client' => [['https://claude.ai.tiers.example/cb']];
+        yield 'port différent sur un hôte tiers' => [['https://tiers.example:8443/cb']];
+        yield 'un bon membre puis un hôte tiers' => [['https://claude.ai/api/mcp/auth_callback', 'https://tiers.example/cb']];
+        yield 'une boucle locale puis un hôte tiers' => [['http://localhost/callback', 'https://tiers.example/cb']];
+        yield 'casse de l\'hôte (non normalisée)' => [['https://Claude.AI/cb']];
+    }
+
+    /**
+     * @param list<string> $redirectUris
+     */
+    #[DataProvider('redirectUrisOutsideTheClientHost')]
+    public function testARedirectOutsideTheClientHostIsRefused(array $redirectUris): void
+    {
+        $this->assertRefusedAs(
+            InvalidClientMetadataDocumentException::invalidRedirectUris(),
+            self::documentWith(['redirect_uris' => $redirectUris]),
+        );
+    }
+
+    public function testARedirectOnTheClientHostIsAccepted(): void
+    {
+        $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith([
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback', 'https://claude.ai:8443/cb'],
+        ]));
+
+        self::assertCount(2, $document->redirectUris);
+        self::assertTrue($document->redirectUris[0]->matches('https://claude.ai/api/mcp/auth_callback'));
+    }
+
+    public function testALoopbackRedirectIsAcceptedWhateverTheClientHost(): void
+    {
+        $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith([
+            'redirect_uris' => ['http://localhost/callback', 'http://127.0.0.1/callback', 'http://[::1]/callback'],
+        ]));
+
+        self::assertCount(3, $document->redirectUris);
+    }
+
+    public function testAHostMatchedClientAndALoopbackCanBeMixed(): void
+    {
+        $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith([
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback', 'http://localhost/callback'],
+        ]));
+
+        self::assertCount(2, $document->redirectUris);
     }
 
     public function testUnknownFieldsAreIgnored(): void

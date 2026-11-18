@@ -161,6 +161,14 @@ final class RedirectUriTest extends TestCase
         self::assertSame('http://localhost:1/cb', (string) RedirectUri::fromString('http://localhost:1/cb'));
     }
 
+    public function testTheHostIsTheLowercaseOneOfTheRegisteredValue(): void
+    {
+        self::assertSame('claude.ai', RedirectUri::fromString('https://claude.ai/api/mcp/auth_callback')->host());
+        self::assertSame('claude.ai', RedirectUri::fromString('https://claude.ai:8443/cb')->host());
+        self::assertSame('localhost', RedirectUri::fromString('http://localhost:49152/callback')->host());
+        self::assertSame('[::1]', RedirectUri::fromString('http://[::1]/callback')->host());
+    }
+
     public function testOnlyAPlainHttpRedirectIsALoopback(): void
     {
         self::assertTrue(RedirectUri::fromString('http://localhost/callback')->isLoopback());

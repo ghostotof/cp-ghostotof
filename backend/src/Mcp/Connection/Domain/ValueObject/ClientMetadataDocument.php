@@ -27,7 +27,10 @@ use JsonException;
  *    déclarés, sont des listes de chaînes qui contiennent `authorization_code`
  *    et `code` (absents, la valeur par défaut de la RFC 7591 est celle-là) ;
  *  - un nom admissible ({@see McpClientName}) et de 1 à 10 redirections, chacune
- *    admissible ({@see RedirectUri} : https, ou http en boucle locale).
+ *    admissible ({@see RedirectUri} : https, ou http en boucle locale) ; hors
+ *    boucle locale, l'hôte d'une redirection est celui du `client_id`, à
+ *    l'égalité stricte (sans quoi l'hôte « vérifié » d'une liste de domaines
+ *    enverrait le code à un tiers).
  *
  * Tout autre champ (`logo_uri`, `scope`, `jwks_uri`…) est ignoré : rien de ce
  * que le client écrit là n'élargit ce que le serveur lui accorde.
@@ -99,7 +102,7 @@ final readonly class ClientMetadataDocument
         return new self(
             $requested,
             self::name($document),
-            self::redirectUris($document),
+            self::redirectUris($requested, $document),
         );
     }
 
@@ -142,11 +145,19 @@ final readonly class ClientMetadataDocument
     }
 
     /**
+     * Hors boucle locale, une redirection reste sur l'hôte du `client_id`
+     * (égalité stricte, sans sous-domaine implicite ni préfixe de chemin) : la
+     * liste des domaines admis ne compare que l'hôte du `client_id`, et un
+     * chemin d'un hôte listé peut servir un JSON choisi par un tiers, dont le
+     * code d'autorisation irait à ce tiers sous la mention « domaine vérifié ».
+     * Une boucle locale (Claude Code) reste admise : elle n'ouvre que le poste
+     * de l'utilisateur.
+     *
      * @param array<array-key, mixed> $document
      *
      * @return list<RedirectUri>
      */
-    private static function redirectUris(array $document): array
+    private static function redirectUris(CimdClientId $requested, array $document): array
     {
         $declared = $document['redirect_uris'] ?? null;
 
@@ -163,10 +174,16 @@ final readonly class ClientMetadataDocument
             }
 
             try {
-                $redirectUris[] = RedirectUri::fromString($redirectUri);
+                $candidate = RedirectUri::fromString($redirectUri);
             } catch (InvalidRedirectUriException $refusal) {
                 throw InvalidClientMetadataDocumentException::invalidRedirectUris($refusal);
             }
+
+            if (!$candidate->isLoopback() && $candidate->host() !== $requested->host()) {
+                throw InvalidClientMetadataDocumentException::invalidRedirectUris();
+            }
+
+            $redirectUris[] = $candidate;
         }
 
         return $redirectUris;

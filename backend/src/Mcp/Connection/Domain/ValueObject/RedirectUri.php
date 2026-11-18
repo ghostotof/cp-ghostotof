@@ -166,6 +166,17 @@ final readonly class RedirectUri implements Stringable
         return null === $port || ($port >= 1 && $port <= self::MAX_PORT);
     }
 
+    /**
+     * L'hôte tel que League\Uri le rend : en minuscules (une valeur écrite
+     * autrement n'a pas passé la normalisation de `fromString()`), sans port,
+     * entre crochets pour une adresse IPv6. `fromString()` a refusé un hôte
+     * absent ou vide : il y en a toujours un.
+     */
+    public function host(): string
+    {
+        return (string) $this->uri->getHost();
+    }
+
     /** Une redirection `http` : la boucle locale, seule admise sans TLS. */
     public function isLoopback(): bool
     {
