@@ -52,6 +52,9 @@ const REAUTHENTICATION_REQUIRED = { type: '/errors/reauthentication-required', t
 /** Le refus passager du serveur (#651) : 429 avec `Retry-After`, ou 503 ; le `detail` est constant, le `type` décide. */
 const TEMPORARILY_UNAVAILABLE_TYPE = '/errors/consent-temporarily-unavailable'
 
+/** Le 429 de nginx (zone `oauth`, `docker/nginx/default.conf`) : un problem+json du type `rate-limited`, jamais de `Retry-After`. */
+const RATE_LIMITED_TYPE = '/errors/rate-limited'
+
 function temporaryRefusal(status: 429 | 503, headers: Record<string, string> = {}, type = TEMPORARILY_UNAVAILABLE_TYPE): Response {
   return new Response(JSON.stringify({ type, title: 'Service Unavailable', status }), {
     status,
@@ -239,8 +242,41 @@ describe('HttpOAuthConsentRepository', () => {
         expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
       })
 
-      it.each([429, 503] as const)("%i d'un autre type : échec générique, pas un « réessayez »", async (status) => {
-        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/rate-limited'))
+      it('503 typé avec Retry-After : la même erreur, mais jamais de durée (le backend ne le pose que sur le 429)', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503, { 'Retry-After': '3600' }))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('429 de nginx (type rate-limited) avec Retry-After : « réessayez », durée lue', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '45' }, RATE_LIMITED_TYPE))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBe(45)
+      })
+
+      it('429 de nginx (type rate-limited) sans Retry-After : « réessayez », sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, {}, RATE_LIMITED_TYPE))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('503 de type rate-limited : échec générique (nginx ne rend que des 429)', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503, {}, RATE_LIMITED_TYPE))
+
+        await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
+
+      it.each([429, 503] as const)("%i d'un type inconnu : échec générique, pas un « réessayez »", async (status) => {
+        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/something-else'))
 
         await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
       })
@@ -439,8 +475,41 @@ describe('HttpOAuthConsentRepository', () => {
         expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
       })
 
-      it.each([429, 503] as const)("%i d'un autre type : échec générique, pas un « réessayez »", async (status) => {
-        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/rate-limited'))
+      it('503 typé avec Retry-After : la même erreur, mais jamais de durée (le backend ne le pose que sur le 429)', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503, { 'Retry-After': '3600' }))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('429 de nginx (type rate-limited) avec Retry-After : « réessayez », durée lue', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '45' }, RATE_LIMITED_TYPE))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBe(45)
+      })
+
+      it('429 de nginx (type rate-limited) sans Retry-After : « réessayez », sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, {}, RATE_LIMITED_TYPE))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('503 de type rate-limited : échec générique (nginx ne rend que des 429)', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503, {}, RATE_LIMITED_TYPE))
+
+        await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
+
+      it.each([429, 503] as const)("%i d'un type inconnu : échec générique, pas un « réessayez »", async (status) => {
+        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/something-else'))
 
         await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentFailedError)
       })

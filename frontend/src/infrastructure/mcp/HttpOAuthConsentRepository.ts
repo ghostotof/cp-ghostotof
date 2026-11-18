@@ -77,6 +77,13 @@ export const CONSENT_ACCOUNT_CHANGED = 'consent-account-changed'
  */
 export const CONSENT_TEMPORARILY_UNAVAILABLE = 'consent-temporarily-unavailable'
 
+/**
+ * Le slug du 429 que nginx rend quand la zone de limitation du consentement est atteinte
+ * (`docker/nginx/default.conf`, `"type":"/errors/rate-limited"`) : le backend n'a pas jugé la
+ * demande, c'est le même « réessayez ». Reconnu au 429 seulement, au `GET` comme au `POST`.
+ */
+export const RATE_LIMITED = 'rate-limited'
+
 /** Ce que veut dire un 422 : sur la décision, un corps que la page a mal formé. */
 type UnprocessableMeaning = 'malformed-decision' | 'generic'
 
@@ -193,14 +200,32 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
         return new AccessForbiddenError()
       case 429:
       case 503:
-        // Refus passager : « réessayez », la demande n'a pas été jugée. Le délai n'existe que si le
-        // serveur l'a donné (le 429) ; un autre 429 ou 503 est un échec générique.
-        return (await this.hasType(response, CONSENT_TEMPORARILY_UNAVAILABLE))
-          ? new ConsentTemporarilyUnavailableError(retryAfterSeconds(response))
-          : new ConsentFailedError(`The consent request failed with status ${status}`)
+        return this.temporaryRefusal(response)
       default:
         return new ConsentFailedError(`The consent request failed with status ${status}`)
     }
+  }
+
+  /**
+   * Un 429 ou un 503 : « réessayez » (la demande n'a pas été jugée) ou échec générique.
+   *
+   * Le corps ne se lit qu'une fois, d'où une lecture unique pour les deux slugs :
+   * - `consent-temporarily-unavailable`, rendu par le backend au 429 comme au 503 ;
+   * - `rate-limited`, rendu par nginx au seul 429 (le `Retry-After` de la zone de limitation).
+   * Le délai n'est lu que sur un 429 : le backend ne pose `Retry-After` que là, et un 503 qui en
+   * porterait un (proxy, répartiteur) n'engage pas la durée d'une indisponibilité de l'hôte du client.
+   * Tout autre type, ou un corps illisible, reste un échec générique.
+   */
+  private async temporaryRefusal(response: Response): Promise<Error> {
+    const status = response.status
+    const body = (await response.json().catch(() => null)) as ApiProblemBody | null
+    const temporary =
+      null !== body &&
+      (hasProblemType(body, CONSENT_TEMPORARILY_UNAVAILABLE) || (429 === status && hasProblemType(body, RATE_LIMITED)))
+
+    return temporary
+      ? new ConsentTemporarilyUnavailableError(429 === status ? retryAfterSeconds(response) : null)
+      : new ConsentFailedError(`The consent request failed with status ${status}`)
   }
 
   /** Le problem+json porte-t-il ce `type` ? Un corps illisible n'en porte aucun. */
