@@ -26,6 +26,7 @@ paths:
 | `mcp-oauth-audits.md` | the refusal audits (#649, #725, split out of `mcp-oauth-cycle-de-vie.md` by #726): `mcp-access-token-refused` (a known access token refused, `BearerRefusal`) and `mcp-grant-refused` (an authentic grant refused at the token endpoint, `GrantRefusal`, `replay-unproven`) |
 | `mcp-oauth-purge.md` | the daily purge `app:mcp:purge` (#649, split out of `mcp-oauth-cycle-de-vie.md` by #726): the marking then the deletions in two transactions, their lock order, retention |
 | `mcp-oauth-revocation-personne.md` | the person's revocation (`GET`/`DELETE /api/me/mcp-connections`, « Mes connexions MCP ») and the account-wide revocations at a password change or the loss of the trusted tier (#650), the abandoned grant's one-hour expiry (#730), the consent bound to the account it names, the accepted limits |
+| `mcp-oauth-cimd.md` | CIMD, the client identified by the URL of its metadata document (#651): the allowed list, who judges what (the authorization point the document, the token endpoint the row), the five SSRF layers and our own resolution, bounded reading, cache and quota, refusals and audit, the request attribute, `saveDiscovered()`, accepted limits |
 
 - **What it is.** `symfony/mcp-bundle` serves one server, `portfolio`, on `/api/mcp` (Streamable HTTP),
   configured in `config/packages/mcp.yaml`. **The path is written once**, `Infrastructure/Http/McpEndpoint::PATH`

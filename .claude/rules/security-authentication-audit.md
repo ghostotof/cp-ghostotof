@@ -77,8 +77,15 @@ paths:
   ADR 0005-compliant) would cost an SQL read and write per refused request, on the very path a replay would hammer, to
   remove one line among several already written; the rate is bounded upstream by the nginx zones, and that replay is
   what the person reading the log wants to see).
-  `mcp-client-metadata-refused` (#651, `CimdClientAdmission`: `clientHost`, `cause`; only a host of the allowed
-  list, never the URL, the `client_id` nor the body; written through `FailSafeAudit`, so an audit failure never replaces the refusal) and `mcp-client-row-not-admitted` (#651,
+  `mcp-client-metadata-refused` (#651, `CimdClientAdmission`, `SecurityAuditLogger::mcpClientMetadataRefused()`:
+  `clientHost`, `cause`; **only a host of the allowed list** (the contract of the caller, the method checks
+  nothing), never the URL, the `client_id` nor the body; the `cause` is a `ClientMetadataRefusal` value:
+  `throttled`, `unresolvable`, `address-blocked`, `unreachable`, `redirected`, `unexpected-status`,
+  `upstream-error`, `unexpected-content-type`, `too-large`, `invalid-document` — **never `domain-not-allowed`**
+  (an unlisted host is chosen by an anonymous caller: it is refused without a trace); the usual `ip` is the
+  **requester's** (`getMainRequest()->getClientIp()`) and `actor` is anonymous at the authorization point, the
+  `userId` when the consent revalidates; written through `FailSafeAudit`, so an audit failure never replaces the
+  refusal; the whole is in `.claude/rules/mcp-oauth-cimd.md`) and `mcp-client-row-not-admitted` (#651,
   `LoopbackAwareAuthCodeGrant`, `mcpClientRowNotAdmitted()`: league read the stored row of a `cimd` client
   that no admission vouched for — two real triggers: (a) a divergence between the `client_id` the admission judged and
   the one league reads (defence in depth); (b) a `cimd` row whose identifier no longer has the CIMD shape (hand-written,
