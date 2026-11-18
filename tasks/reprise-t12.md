@@ -627,7 +627,23 @@
     POST, Approuver/Refuser sont le réessai) ; les trous d'`EmbeddedIpv4` ne valent que pour la clé du quota
     (`PublicAddressPolicy` refuse NAT64 local et Teredo). Question ouverte : les constats Task 9 « PR ou règle
     CIMD » (double lecture SQL, `Retry-After` dupliqué, F7 oracle de latence, I1, I2, I4) non repris dans la règle.
-  - **Prochaine action : agent Q** (Steps 3-7).
+  - ~~Prochaine action : agent Q~~ (fait, ci-dessous).
+  - **Agent Q fait** : `43f200a0` (ADR 0006 D3 amendé au 2026-11-13, `CONTEXT.md`, registre §2/§3.4/§6,
+    `tasks/todo.md` Tâche 12 cochée, notes de release). Preuve contrôlée : `make back-quality` rc=0,
+    `make back-test` OK (6441 tests, 122586 assertions), `make front-test` 2786 tests, front-lint et front-build
+    verts, `check-claude-rules.sh` conforme.
+  - **Fil principal** (décision de l'utilisateur : « Limites dans la règle ») : `2e31d814` — F7, I1, I2, I4
+    ajoutées aux « Accepted limits (#651) » de `mcp-oauth-cimd.md` (I4 : `warning` au 503 du consentement,
+    vérifié dans `framework.yaml`) ; `mcp-client-row-not-admitted` ajouté au §6 du registre ; Steps 1-7 de la
+    Task 12 cochés. `check-claude-rules.sh` conforme.
+  - **Dette pour la description de la PR** : double lecture SQL d'un client pré-enregistré de forme CIMD ;
+    `Retry-After` dupliqué entre `AuthorizeController::refusal()` et `RetryAfterListener` ; plus les constats
+    faibles n° 3-9, T3, T5, T7 et F1-F3 notés plus bas. Politique de confidentialité : reportée sous T14.
+  - **Prochaine action : relecture de la série Task 12** (`/code-review medium diff cbf79a15...HEAD`, docs
+    seules : proposer de la sauter), puis **relecture complète d'avant la MR** (`diff 0c0733fb...HEAD`,
+    merge-base avec `feature/379-mcp-paliers` : `/code-review medium`, `mattpocock-skills:code-review`
+    Standards/Spec sonnet/medium, audit sécurité opus/high à demander), puis étape 08 (sonnet/low, PR vers
+    `feature/379-mcp-paliers`, push et PR avec accord, #651 fermée à la main).
 
 ## Point fixe de relecture
 
