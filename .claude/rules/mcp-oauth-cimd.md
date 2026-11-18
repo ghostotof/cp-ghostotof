@@ -79,6 +79,11 @@ the host stays out.
 `AllowedClientDomains`, the fetcher client, the fetcher and the resolver port are `public: true` in
 `services.yaml` for `CimdWiringTest`; never make them public under `when@test` only
 (`SecurityServicesEnvironmentParityTest`, `.claude/rules/backoffice-api.md`).
+`app.mcp.cimd.transport` and `app.mcp.cimd.http_client` carry **`autoconfigure: false`**: both are
+`LoggerAwareInterface`, and autoconfiguration would call `setLogger(@logger)`, after which `CurlHttpClient` logs
+`Request: "GET <full URL>"` at `info` — the anonymous caller's `client_id`, where only the host may be logged.
+`kernel.reset` is set back by hand; `CimdWiringTest::testTheMetadataTransportHasNoLogger` reads the compiled
+object. A new `LoggerAwareInterface` service on the outbound path needs the same.
 
 ## Five layers against SSRF, and a resolution of our own (D-D)
 
@@ -122,6 +127,12 @@ character** to the URL fetched; **neither `client_secret` nor `client_secret_exp
 `token_endpoint_auth_method` **declared and equal to `none`**; `grant_types` and `response_types`, if
 declared, containing `authorization_code` / `code`; an admissible name (`McpClientName`); **1 to 10
 redirect URIs** (`MAX_REDIRECT_URIS`), each a valid `RedirectUri`. One bad redirect refuses the whole document.
+**Outside loopback, a redirect URI's host is the `client_id`'s host, by exact equality** (no implicit subdomain,
+no path prefix; `RedirectUri::host()` against `CimdClientId::host()`), else `invalidRedirectUris()` →
+`invalid-document` (#651, security review): the allowed list judges the `client_id`'s host alone, so a path of a
+listed host serving a third party's JSON would otherwise send the code elsewhere under « verified domain ».
+A loopback redirect (Claude Code) stays admitted. Never relax this to a subdomain or a second host without a
+real document that needs it.
 
 ## Cache and quota (D-F)
 
