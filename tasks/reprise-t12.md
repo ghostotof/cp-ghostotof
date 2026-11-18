@@ -571,6 +571,12 @@
     dédiée, `Retry-After` lu par `infrastructure/http/retryAfterSeconds.ts`, page « réessayer » (pas un refus
     définitif), à l'affichage comme à l'approbation.
   - Puis relecture `/code-review medium diff 3328cef8...HEAD` (zone front, pas d'auth/session touchée a priori).
+  - **11A faite** : `7bf76a4d` (Sonnet 5.5) — `parseRegistration()` (cimd ⇔ domaine chaîne non vide,
+    preregistered ⇔ `null`), page : domaine vérifié puis nom déclaré puis `registration.cimd`, 5 clés i18n.
+    Preuve contrôlée par le fil principal : 127 tests ciblés verts, arbre propre ; l'agent : `make front-test`
+    2739 OK, lint et build verts. Gardé : apostrophe typographique `’` dans `domainNotice` (comme tout `en.json`).
+    Écrit : les cas « cimd sans domaine » étaient verts dès le rouge (le dépôt refusait tout `cimd`).
+  - **11B lancée** (sonnet/high).
 
 ## Point fixe de relecture
 
