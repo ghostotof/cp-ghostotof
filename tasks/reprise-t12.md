@@ -596,6 +596,11 @@
     (cross-origin), lisible en prod (même origine), préexistant (Login, Assistant) ; T8 `registration.cimd`
     sans point final ; T9 `retryAfterMinutes()` appelé deux fois ; T10 bouton `consent-retry` doublon de
     `consent-reload`. **Boucle close** (aucun critique/haut/moyen). Point fixe suivant : `260b53af`.
+  - **Micro-série Task 11 décidée** (2026-11-18, l'utilisateur retient T2, T4, T6, T8-T10) : agent O
+    (sonnet/high). T2 : l'adresse complète du document (`client.id`) affichée en `<code>` sous le domaine (le
+    texte du plan reste vrai) ; T4 : un 429 `rate-limited` de nginx → « réessayez » ; T6 : `Retry-After` lu sur
+    le 429 seul ; T8 point final ; T9 un seul appel ; T10 un seul bouton de relecture. Puis relecture
+    `/code-review medium diff d6771388...HEAD`, puis Task 12.
 
 ## Point fixe de relecture
 
