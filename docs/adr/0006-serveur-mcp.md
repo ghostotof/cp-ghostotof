@@ -10,7 +10,8 @@
   autorisation différée, #646), le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647) et le
   2026-11-06 (D7 : `ignore` Dependabot et garde commun des épinglages, #731) et le 2026-11-10 (D7 :
   montée en `symfony/mcp-bundle` 0.15.0 et `mcp/sdk` 0.9.0, #731 ; D4 confirmée et D6 précisée par la
-  même montée)
+  même montée) et le 2026-11-13 (D3 : CIMD livré, un appel sortant synchrone depuis le point
+  d'autorisation, #651 ; écart assumé aux ADR 0002 et 0004)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -210,6 +211,108 @@ du SDK (`SecuritySchemesRegistry`), qui recopie chaque outil de la page avec le 
 délègue tout le reste — l'appel d'un outil compris. Un test rougit si une montée du SDK ajoute au type `Tool` un champ que la recopie perdrait ;
 une montée qui connaîtrait `securitySchemes` rendrait le décorateur inutile. Ces valeurs ne décident
 d'aucun accès (D4) : elles disent à ChatGPT quand proposer la liaison du compte.
+
+*Amendé le 2026-11-13 (#651, tâche 12 de la spec 0007).* Le CIMD (*Client ID Metadata Documents*,
+`draft-ietf-oauth-client-id-metadata-document-03`) est livré : un client **déclaré** n'a aucune ligne
+`mcp_client` avant sa première approbation ; son `client_id` est l'adresse https d'un document JSON
+public qui donne son nom et ses redirections. Le détail et les tests sont dans
+`.claude/rules/mcp-oauth-cimd.md`.
+
+- **L'autorisation juge le document, les points de jeton jugent la ligne.** Le point d'autorisation
+  récupère le document (cache, quota et bornes ci-dessous) et juge la demande sur lui. **Le client est
+  écrit à l'approbation** (`registration = 'cimd'`, dans la transaction qui ajoute la connexion) ;
+  `/api/oauth/token`, le rafraîchissement et `/api/oauth/revoke` ne lisent que cette ligne et **ne font
+  jamais d'appel sortant** : un point de jeton qui irait chercher une adresse pour quiconque y poste
+  serait un SSRF et un oracle de latence. Le client **pré-enregistré** gagne toujours : si une ligne
+  de ce mode existe, rien n'est récupéré et league la juge comme avant.
+- **Une liste de domaines, versionnée** (`app.mcp.cimd.allowed_domains` : `claude.ai`, `chatgpt.com`),
+  jamais lue d'une variable d'environnement et la même partout ; une égalité exacte, jamais un sous-domaine
+  implicite ; vide, elle éteint le CIMD. Le domaine « vérifié » de la page de consentement est l'hôte
+  seul, ce qui n'est vrai que parce que la liste ne nomme que des hôtes dont **tous** les documents
+  appartiennent à un seul éditeur : **jamais un hôte partagé entre plusieurs comptes** (contenu
+  d'utilisateur, hébergeur de code ou de fichiers). La page dit aussi l'adresse du document et le nom
+  **déclaré** (« non vérifié ») ; le tout est du texte, jamais du HTML.
+- **Écart assumé aux ADR 0002 et 0004.** `GET /api/oauth/authorize` est une route que **tout anonyme
+  peut appeler** et elle part, de façon **synchrone**, chercher un document chez un tiers : c'est ce que
+  la décision n°2 de l'ADR 0002 (l'API ne sert que du local, aucun tiers dans le chemin d'une requête
+  publique) et la D2 de l'ADR 0004 (aucun appel à un fournisseur dans un chemin de rendu public, règle
+  étendue de l'ADR 0002) écartaient. Le `client_id` est choisi par l'appelant : l'ensemble des documents
+  n'est pas connu d'avance, aucun CronJob ne peut les précharger, et c'est la demande d'autorisation qui
+  porte l'adresse. L'écart est **borné** : la liste de domaines (deux hôtes, vérifiée avant toute
+  récupération et sans coût pour tout autre) ; un quota par adresse (10 récupérations par 10 minutes,
+  une IPv6 comptée par son /64), un plafond commun (100 par 10 minutes) et un compteur par client déjà
+  connu (10 par 10 minutes), consommés au **cache manqué** seulement ; un cache (pool `cache.mcp_client_metadata`,
+  300 à 3 600 s, le corps brut relu et revalidé à chaque lecture) ; 5 120 octets au plus, comptés sur le flux ;
+  2 s de délai, 3 s au total, aucune redirection, aucun proxy ; une résolution DNS qui est la nôtre, des
+  adresses toutes publiques, la connexion épinglée sur l'adresse vérifiée, et un filet sur un transport
+  propre. La requête ne transmet rien de la personne : ni son adresse, ni son compte, seulement l'adresse du
+  serveur et son `User-Agent`.
+  Ce qui reste vrai de l'ADR 0004 : aucun appel à un modèle, et le document n'ouvre aucun accès (le
+  corpus nominatif exige toujours une personne du palier de confiance qui approuve sur la page de consentement).
+- **Les refus.** Un document faux est un refus définitif (`invalid_client`, 401, comme un client
+  inconnu) ; un quota atteint (429), un hôte ou un réseau indisponible (503) sont transitoires
+  (`temporarily_unavailable`, sans redirection) ; **la cause n'est jamais rendue au client**. Chaque
+  refus de document ou de récupération est inscrit au journal d'audit (`mcp-client-metadata-refused` : l'hôte,
+  la cause et l'adresse du demandeur comme tout événement du journal ; jamais l'adresse du document,
+  l'identifiant ni le corps) ; un hôte hors liste n'écrit rien
+  (il est choisi librement par un anonyme). Sur la page de consentement, le refus de la **lecture**
+  offre un bouton pour recommencer (`consent-reload`) ; celui de la **décision** n'en a pas, les boutons
+  Autoriser et Refuser servant de nouvel essai.
+
+**Limites acceptées** (chacune est testée ou écrite en regard dans la règle) :
+
+- **Un document retiré ou modifié n'arrête pas une connexion déjà accordée** : elle vit jusqu'à son
+  échéance ou sa révocation. De même, retirer un domaine de la liste arrête les nouvelles autorisations,
+  pas les connexions existantes.
+- **Le quota est par adresse** (une IPv6 par son /64) : une attaque distribuée fait partir autant de
+  récupérations qu'elle a d'adresses ou de /64, chacune vers un domaine de la liste, chacune d'au plus
+  3 secondes et 5 120 octets. Les autres limiteurs du site comptent encore une IPv6 par adresse entière
+  (suivi : #775).
+- **Le plafond commun** (`mcp_client_metadata_global`, 100 par 10 minutes) **s'épuise à dix sources**
+  (dix IPv4, ou dix /64 d'un même /48) ; il refuse alors le **premier** enregistrement d'un client jamais
+  vu. Un client déjà enregistré passe par la voie des clients connus, bornée par le quota de son appelant :
+  son compteur (`mcp_client_metadata_known_client`, 10 par 10 minutes) ne borne rien, **il décide qui
+  paie** — ses dix premières récupérations de la fenêtre passent hors du plafond, les suivantes le paient.
+  Les connexions accordées et les documents en cache ne sont pas touchés.
+- **Le compteur d'un client connu est épuisable par quiconque le nomme** (son `client_id` est public ; une
+  seule adresse suffit). **Il ne bloque jamais le client à lui seul** : plein, il renvoie la voie sur le
+  plafond commun. Fermer la porte à un client connu demande de saturer le plafond **et** son compteur ; un
+  client connu n'est jamais plus refusé qu'un inconnu. Le total reste borné : plafond commun plus dix par
+  client approuvé, par fenêtre. *Écarté* : un verrou par client (une récupération à la fois), au prix d'une
+  concurrence entre processus.
+- **Deux courses** entre le coup d'œil à un compteur (`consume(0)`) et sa consommation : l'unité déjà prise
+  au quota de l'appelant peut être perdue si le plafond se remplit entre-temps (sous saturation, chaque
+  essai peut y perdre une unité), et le plafond peut prendre l'appel sans reprendre d'unité au quota quand le
+  compteur d'un client connu se remplit. Accepté : ces cas ne se produisent que plafond plein ; fermer la
+  fenêtre demanderait un verrou commun aux limiteurs, hors de proportion.
+- **La clé constante `global` est un point chaud** : un verrou advisory et une ligne de `cache_items`
+  communs à tous les pods, pris deux fois sur chaque cache manqué d'un client inconnu (≈ 3 ms par
+  récupération). **Un appelant refusé par son propre quota touche quand même cette clé** (le coup d'œil
+  précède le quota) : la zone nginx `oauth` borne déjà le débit par adresse, et un attaquant gagne plus à
+  prendre un /64 neuf qu'à insister sur un /64 épuisé.
+- **Pas de cache négatif** : un document invalide ou un refus n'est jamais gardé (draft §6.2), donc chaque
+  essai coûte une récupération et une unité de quota. **Pas de requête unique sur un cache manqué** :
+  N requêtes simultanées pour un même `client_id` lancent N récupérations. **`no-store`, `no-cache` et
+  `max-age=0` sont lus comme absents** : le document est quand même gardé 300 s.
+- **La liste est vérifiée à trois endroits** (l'admission, le résolveur, le récupérateur) : défense en
+  profondeur ; toute évolution de sa sémantique se fait aux trois.
+- **Les trous de `EmbeddedIpv4` ne valent que pour la clé du quota** : elle ne reconnaît ni le préfixe NAT64
+  à usage local `64:ff9b:1::/48` (RFC 8215), ni les préfixes NAT64 propres à un réseau (la place de l'IPv4
+  y dépend de la longueur choisie par l'opérateur), ni Teredo (`2001::/32`, quasi éteint) ; des clients
+  derrière un tel traducteur ou un même serveur Teredo partagent un /64 au quota. La **politique d'adresses**
+  (`PublicAddressPolicy`) refuse toutes ces plages : aucune n'ouvre une sortie vers un réseau privé.
+- **Le blocage du filet de transport se lit `unreachable`** au journal d'audit, pas `address-blocked` : son
+  exception n'a pas de type propre et son message n'est pas lu.
+- **Le résolveur natif n'a pas de test** dans la suite (son essai est celui de la préprod, tâche 14) **et
+  n'a aucun délai propre** : `dns_get_record()` suit `resolv.conf`, hors des 3 s. Un DNS lent d'un domaine
+  autorisé retient un worker FPM ; la liste réduit le scénario à une panne du DNS de `claude.ai` ou de
+  `chatgpt.com`. À mesurer en préprod, qui décidera d'un `dnsConfig` du pod.
+- **Un document qui omet `token_endpoint_auth_method` est refusé** (RFC 7591 §2), **un hôte IPv6 seul**
+  aussi, ainsi qu'un `client_id` portant un port ; **un document dont une seule redirection est irrecevable
+  est refusé en entier**. Si ChatGPT en déclare une que le serveur refuse, à rediscuter à l'essai de la
+  tâche 14.
+- **Le nom affiché dans « Mes connexions MCP » est celui du dernier accord** donné à ce client, par
+  quiconque : la ligne `cimd` est partagée entre les comptes qui l'approuvent.
 
 ### D4 — L'identité vient du firewall Symfony, vérifiée en base à chaque requête
 
@@ -415,6 +518,10 @@ effet à l'exception du nom du serveur.
 - **Un test d'exposition de plus** (D1), et un test qui compte les requêtes SQL (D4).
 - **Un pool de cache de plus**, pour les sessions MCP, sur DBAL ; une ligne par `initialize`, avec
   une durée de vie d'une heure.
+- **Le CIMD** (D3, amendement du 2026-11-13) : une migration additive (`mcp_client.registration`), un
+  pool de cache (`cache.mcp_client_metadata`) et trois limiteurs de plus dans la table `cache_items`
+  existante, **une sortie réseau** (les pods du backend doivent résoudre et joindre `claude.ai:443` et
+  `chatgpt.com:443`) et un événement d'audit de plus (`mcp-client-metadata-refused`).
 - **Deux zones nginx de plus**, dans les deux configurations miroirs.
 - **Un serveur d'autorisation OAuth** dans le backend (phase 2) : tables de clients, de codes et de
   jetons, deux pages frontend (consentement, « Mes connexions MCP »), une vue backoffice de toutes

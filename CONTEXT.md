@@ -209,6 +209,15 @@ contenus des paliers anonyme et de base ; au palier de confiance, le corpus nomi
 Logiciel d'une personne (Claude, un IDE…) qui se branche sur le serveur MCP pour son compte.
 _À éviter_ : application, connecteur (le connecteur est le nom que lui donne un client particulier)
 
+**Client pré-enregistré** :
+Client MCP qu'une personne a saisi à la main (commande `app:mcp:client:register`, futur backoffice) : sa
+ligne existe avant toute demande, et elle l'emporte toujours sur un document de métadonnées.
+
+**Client déclaré** :
+Client MCP dont l'identifiant est l'adresse d'un document de métadonnées public (CIMD, *Client ID Metadata
+Document*) qu'il publie sur un domaine de la liste autorisée : le serveur lit son nom et ses redirections dans
+ce document, et n'écrit sa ligne qu'à la première approbation d'une personne.
+
 **Connexion MCP** :
 Autorisation qu'une personne du palier de confiance accorde à un client MCP de lire le corpus nominatif en
 son nom. Elle se révoque, par cette personne, par un changement de mot de passe du compte ou par la perte du

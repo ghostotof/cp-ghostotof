@@ -188,14 +188,35 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       une colonne future de ce genre : expand/contract en deux versions, ou `UPDATE` idempotent relancé après le
       rollout (un rattrapage au rafraîchissement ne marche pas : il arrive après l'échéance d'une heure). Écrit dans
       `.claude/rules/mcp-oauth-revocation-personne.md`.
-- [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
-      tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
-      Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit
-      `nominative-corpus-read` (ou y écrire l'UUID interne du client)
+- [x] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 —
+      **faite le 2026-11-18** sur `feature/spec-0007-t12-cimd` (plan `tasks/plan-t12-cimd.md`), PR vers la
+      mère `feature/379-mcp-paliers` à ouvrir, l'issue #651 se ferme à la main après la fusion ; règle
+      `.claude/rules/mcp-oauth-cimd.md`, ADR 0006 D3 amendée le 2026-11-13, registre RGPD §2, §3.4, §6 et §8.
+      Le point d'autorisation juge le document d'un client déclaré (liste de domaines `claude.ai` et
+      `chatgpt.com`, cinq garde-fous contre le SSRF, résolution DNS propre, lecture bornée, cache, quota par
+      adresse, plafond commun et compteur par client connu) ; les points de jeton jugent la ligne écrite à
+      l'approbation (`registration = 'cimd'`), sans aucun appel sortant. Reports traités : ~~`client_id_metadata_document_supported: true`
+      déjà annoncé~~ (désormais vrai) ; ~~domaine du client sur la page~~ (le domaine vérifié, l'adresse du
+      document et le nom déclaré) ; ~~borner la longueur du `client_id` CIMD écrit dans l'audit
+      `nominative-corpus-read`~~ (D-H : l'URL reste écrite, bornée à 255 caractères d'un alphabet sans espace
+      ni caractère de contrôle par `McpClientId`). **Notes de la release** : une migration additive
+      (`Version20261113120000`, colonne `mcp_client.registration` à défaut `preregistered` et contrainte
+      `CHECK`, aucune contrainte d'ordre avec le déploiement) ; **aucune variable d'environnement nouvelle**
+      (la liste de domaines est le paramètre versionné `app.mcp.cimd.allowed_domains`) ; un pool de cache
+      (`cache.mcp_client_metadata`) et trois limiteurs de plus (`mcp_client_metadata`,
+      `mcp_client_metadata_global`, `mcp_client_metadata_known_client`), dans la table `cache_items`
+      existante (aucune migration, purgés par le CronJob `cache:pool:prune` existant) ; **sortie réseau** :
+      les pods du backend doivent résoudre et joindre `claude.ai:443` et `chatgpt.com:443`. **Limites
+      acceptées** écrites dans la règle et dans l'ADR (dont le plafond épuisable par dix sources et le
+      résolveur natif sans délai propre). **Reports inscrits** : sous la tâche 13 (#652) et sous la tâche 14
+      (#653), ci-dessous.
 - [ ] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647 — reports de la tâche 8 : audit de
       l'enregistrement d'un client ; bornes de `register()` et des redirections (longueur, `parse_str`) ;
       borne du `client_id` (255 à la commande, 512 en base) ; second `findOneByClientId()` du
-      consentement et course de suppression (FK en 500) ; regex de l'index violé dupliquée
+      consentement et course de suppression (FK en 500) ; regex de l'index violé dupliquée.
+      **Reports de la tâche 12** : lister, supprimer et révoquer un client **déclaré** (CIMD) ; retirer un
+      domaine de la liste (les connexions déjà accordées survivent au retrait : limite acceptée de l'ADR 0006) ;
+      audit de l'enregistrement d'un client
 - [ ] Tâche 14 — Livrer la phase 2 : préprod, page, registre (#653) — bloquée par : #648, #646 —
       reports de la tâche 8 : **Job k8s pour `app:mcp:client:register`** (jamais `kubectl exec`, sans
       lui rien n'est testable en préprod) ; Basic Auth préprod encore sur `/api/oauth` et `/api/mcp` ;
@@ -213,7 +234,14 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       l'outil nominatif, sans quota par connexion — ~~et le corpus rendu en entier avant d'être refusé
       pour sa taille (le refus coûte une lecture)~~ (sans objet depuis #731 : la réponse ne passe plus par
       la session, le refus de taille est retiré) —, à traiter avec ce quota ; contrôler au smoke
-      préprod le `WWW-Authenticate` réel par la recherche de mentions D8
+      préprod le `WWW-Authenticate` réel par la recherche de mentions D8.
+      **Reports de la tâche 12** : essai en préprod **avec les vrais domaines** (c'est le seul essai du
+      résolveur natif, `NativeHostAddressResolver`, sans test dans la suite) ; vérification de la sortie réseau
+      (`claude.ai:443` et `chatgpt.com:443`) et d'une éventuelle `NetworkPolicy` ; lecture du document de
+      ChatGPT (`https://chatgpt.com/oauth/client.json`) contre les règles de validation du
+      document (tâche 5 du plan T12 : `token_endpoint_auth_method` déclaré, redirections toutes recevables) ; mesurer les délais de résolution
+      du pod (`resolv.conf`) et décider d'un `dnsConfig` (limite acceptée : le résolveur natif n'a aucun délai
+      propre)
 
 ### Montées épinglées (#731) — préalable à l'ouverture publique de la phase 2
 
