@@ -583,7 +583,10 @@
     l'agent : `make front-test` 2773 OK, lint et build verts.
   - Choix de l'agent rendus en question (2026-11-18) : pas de ré-essai automatique ; « Refuser » actif pendant
     le refus passager ; boutons non désactivés jusqu'à `Retry-After` ; un seul message 429/503.
-  - **Prochaine action** : réponses de l'utilisateur, puis relecture `/code-review medium diff 3328cef8...HEAD`.
+  - **Décisions de l'utilisateur (2026-11-18)** : boutons actifs pendant le délai `Retry-After` ; « Refuser »
+    actif (cohérent avec F6) ; un seul message pour 429 et 503. Pas de ré-essai automatique (implicite).
+  - **Prochaine action** : relecture `/code-review medium diff 3328cef8...HEAD` (sans audit sécurité : la série
+    ne touche ni session, ni CSRF, ni cookies, seulement la traduction d'un statut).
 
 ## Point fixe de relecture
 
