@@ -15,9 +15,10 @@ import SignInAgainLink from '../ui/SignInAgainLink.vue'
  * La page en montre le résumé revalidé par le serveur, puis transmet la
  * décision et suit l'URL de retour vers le client.
  *
- * Ce que la personne doit pouvoir juger avant de cliquer : le nom du client
- * — celui sous lequel l'administrateur du site l'a enregistré (un client CIMD,
- * #651, déclarera le sien, que la page dira tel) —, l'hôte vers lequel elle
+ * Ce que la personne doit pouvoir juger avant de cliquer : le client — pour un
+ * client pré-enregistré, le nom sous lequel l'administrateur du site l'a
+ * enregistré ; pour un client CIMD (#651), le domaine que le site a vérifié, en
+ * évidence, puis le nom que le client se donne, dit « déclaré » —, l'hôte vers lequel elle
  * repartira, ce que la connexion ouvre (le corpus nominatif, en lecture) et
  * qu'il partira vers le fournisseur d'IA du client. Aucun texte ne nomme
  * l'auteur du site.
@@ -225,14 +226,38 @@ onMounted(() => {
           {{ t('oauthConsent.client.heading') }}
         </h2>
         <dl class="mb-0">
-          <dt>{{ t('oauthConsent.client.nameLabel') }}</dt>
-          <dd data-testid="consent-client-name">
-            <!-- Texte interpolé, jamais v-html : le nom vient d'une saisie, demain du client (CIMD). -->
-            <span class="fw-semibold">{{ request.client.name }}</span>
-            <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.nameNotice') }}</span>
-          </dd>
-          <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
-          <dd>{{ t('oauthConsent.client.registration.preregistered') }}</dd>
+          <!--
+            Client CIMD (#651) : le domaine, que le site a vérifié, d'abord et en évidence ; le nom, que le client se
+            donne lui-même, ensuite, dit « déclaré ». Ce sont les libellés qui portent le sens, jamais une couleur
+            ni une icône seule. Tout est interpolé en texte, jamais v-html : le nom vient du client.
+          -->
+          <template v-if="'cimd' === request.client.registration">
+            <dt>{{ t('oauthConsent.client.domainLabel') }}</dt>
+            <dd>
+              <code
+                class="text-break"
+                data-testid="consent-client-domain"
+              >{{ request.client.domain }}</code>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.domainNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.declaredNameLabel') }}</dt>
+            <dd data-testid="consent-client-name">
+              <span class="fw-semibold">{{ request.client.name }}</span>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.declaredNameNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
+            <dd>{{ t('oauthConsent.client.registration.cimd') }}</dd>
+          </template>
+          <template v-else>
+            <dt>{{ t('oauthConsent.client.nameLabel') }}</dt>
+            <dd data-testid="consent-client-name">
+              <!-- Texte interpolé, jamais v-html : le nom vient d'une saisie de l'administrateur. -->
+              <span class="fw-semibold">{{ request.client.name }}</span>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.nameNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
+            <dd>{{ t('oauthConsent.client.registration.preregistered') }}</dd>
+          </template>
           <dt>{{ t('oauthConsent.client.redirectLabel') }}</dt>
           <dd class="mb-0">
             <code data-testid="consent-redirect-host">{{ request.redirectHost }}</code>

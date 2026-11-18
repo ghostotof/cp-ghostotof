@@ -31,7 +31,7 @@ const PARAMS: ConsentParams = {
 const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
 
 const SUMMARY: ConsentRequest = {
-  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered' },
+  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered', domain: null },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',

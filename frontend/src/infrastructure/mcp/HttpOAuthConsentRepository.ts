@@ -1,4 +1,9 @@
-import { NOMINATIVE_READ_SCOPE, type ConsentParams, type ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
+import {
+  NOMINATIVE_READ_SCOPE,
+  type ConsentClient,
+  type ConsentParams,
+  type ConsentRequest,
+} from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { consentQuery } from '../../domain/mcp/services/consentParams'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
@@ -12,6 +17,29 @@ import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
 import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/oauth/consent'
+
+/**
+ * Le mode d'enregistrement du client et son domaine vérifié, lus ensemble : le
+ * domaine est une chaîne non vide si et seulement si le client est `cimd`
+ * (#651, contrat de la Task 10). Tout autre couple — un `cimd` sans domaine, un
+ * `preregistered` qui en porte un, un mode inconnu — est refusé : la page ne
+ * montre jamais « vérifié » à côté d'une information que le serveur n'a pas
+ * donnée pour telle, ni ne cache un domaine qu'elle devrait montrer.
+ */
+function parseRegistration(
+  registration: unknown,
+  domain: unknown,
+): Pick<ConsentClient, 'registration' | 'domain'> | null {
+  if ('cimd' === registration && 'string' === typeof domain && '' !== domain) {
+    return { registration, domain }
+  }
+
+  if ('preregistered' === registration && null === domain) {
+    return { registration, domain }
+  }
+
+  return null
+}
 
 /**
  * Le slug du 400 que le serveur rend quand il refuse la demande à la
@@ -177,11 +205,12 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     const summary = body as Partial<Record<keyof ConsentRequest, unknown>> | null
     const client = summary?.client as Partial<Record<string, unknown>> | null | undefined
     const account = summary?.account as Partial<Record<string, unknown>> | null | undefined
+    const registration = parseRegistration(client?.registration, client?.domain)
 
     if (
       'string' !== typeof client?.id ||
       'string' !== typeof client.name ||
-      'preregistered' !== client.registration ||
+      null === registration ||
       'string' !== typeof summary?.redirectHost ||
       NOMINATIVE_READ_SCOPE !== summary.scope ||
       'string' !== typeof summary.resource ||
@@ -192,7 +221,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     }
 
     return {
-      client: { id: client.id, name: client.name, registration: client.registration },
+      client: { id: client.id, name: client.name, ...registration },
       redirectHost: summary.redirectHost,
       scope: NOMINATIVE_READ_SCOPE,
       resource: summary.resource,

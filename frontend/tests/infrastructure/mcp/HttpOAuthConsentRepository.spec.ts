@@ -23,8 +23,16 @@ const PARAMS: ConsentParams = {
 /** L'UUID du compte que le résumé a nommé : ce que la décision renvoie (#650, F5). */
 const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
 
+/** Un client CIMD (#651) : le domaine est celui que le site a vérifié, le nom celui que le client se donne. */
+const CIMD_CLIENT = {
+  id: 'https://claude.ai/oauth/claude-code-client-metadata',
+  name: 'Claude Code',
+  registration: 'cimd',
+  domain: 'claude.ai',
+}
+
 const SUMMARY = {
-  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered' },
+  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered', domain: null },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
@@ -141,6 +149,22 @@ describe('HttpOAuthConsentRepository', () => {
       await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
     })
 
+    it('un résumé CIMD, avec son domaine vérifié, est accepté tel quel', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ...SUMMARY, client: CIMD_CLIENT }))
+
+      const summary = await repository.describe(PARAMS)
+
+      expect(summary.client).toEqual(CIMD_CLIENT)
+    })
+
+    it('un résumé pré-enregistré, sans domaine (null), est accepté et le garde à null', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(SUMMARY))
+
+      const summary = await repository.describe(PARAMS)
+
+      expect(summary.client).toEqual({ id: 'claude-code', name: 'Claude Code', registration: 'preregistered', domain: null })
+    })
+
     it('réseau coupé : échec générique', async () => {
       fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
 
@@ -149,8 +173,15 @@ describe('HttpOAuthConsentRepository', () => {
 
     it.each([
       ['corps non JSON', new Response('<html>', { status: 200 })],
-      ['nom absent', jsonResponse({ ...SUMMARY, client: { id: 'x', registration: 'preregistered' } })],
+      ['nom absent', jsonResponse({ ...SUMMARY, client: { id: 'x', registration: 'preregistered', domain: null } })],
       ["mode d'enregistrement inconnu", jsonResponse({ ...SUMMARY, client: { ...SUMMARY.client, registration: 'dynamic' } })],
+      // Un client CIMD n'a de sens que par son domaine vérifié (#651) : sans lui, rien ne distingue ce qui est vérifié de ce qui est déclaré.
+      ['CIMD sans domaine (null)', jsonResponse({ ...SUMMARY, client: { ...CIMD_CLIENT, domain: null } })],
+      ['CIMD sans domaine (absent)', jsonResponse({ ...SUMMARY, client: { id: CIMD_CLIENT.id, name: CIMD_CLIENT.name, registration: 'cimd' } })],
+      ['CIMD au domaine vide', jsonResponse({ ...SUMMARY, client: { ...CIMD_CLIENT, domain: '' } })],
+      ['CIMD au domaine non textuel', jsonResponse({ ...SUMMARY, client: { ...CIMD_CLIENT, domain: 42 } })],
+      // Un client pré-enregistré n'a aucun domaine vérifié : en afficher un le ferait passer pour tel.
+      ['pré-enregistré avec un domaine', jsonResponse({ ...SUMMARY, client: { ...SUMMARY.client, domain: 'claude.ai' } })],
       ['hôte de retour absent', jsonResponse({ ...SUMMARY, redirectHost: undefined })],
       // Le texte de la page décrit ce seul scope : un autre ouvrirait autre chose que ce qu'elle annonce.
       ['autre scope', jsonResponse({ ...SUMMARY, scope: 'nominative:write' })],

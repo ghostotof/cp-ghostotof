@@ -61,7 +61,7 @@ const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
 
 /** Nom choisi pour être reconnaissable dans le texte, et distinct de l'identifiant ; l'hôte, celui des URL rendues. */
 const SUMMARY: ConsentRequest = {
-  client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered' },
+  client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered', domain: null },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
@@ -857,6 +857,95 @@ describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
     await flushPromises()
 
     expect(decide).toHaveBeenCalledWith(PARAMS, false, ACCOUNT_ID)
+  })
+})
+
+/**
+ * Un client CIMD (#651) : le site a lu sa déclaration à cette adresse, sur ce domaine ; le nom est celui que le
+ * client se donne. La page met le domaine en évidence et dit du nom qu'il est déclaré, par le libellé seul.
+ */
+const CIMD_SUMMARY: ConsentRequest = {
+  ...SUMMARY,
+  client: {
+    id: 'https://claude.ai/oauth/claude-code-client-metadata',
+    name: 'Assistant Déclaré',
+    registration: 'cimd',
+    domain: 'claude.ai',
+  },
+}
+
+describe('OAuthConsentPage — client CIMD : domaine vérifié, nom déclaré', () => {
+  const catalogues = { fr, en } as const
+
+  it.each(SUPPORTED_LOCALES)('le domaine est affiché sous son libellé « vérifié » et sa notice (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+
+    expect(wrapper.find('[data-testid="consent-client-domain"]').text()).toBe('claude.ai')
+    expect(wrapper.find('[data-testid="consent-client-domain"]').element.tagName).toBe('CODE')
+    // Le libellé est le `<dt>` qui précède immédiatement l'`<dd>` du domaine.
+    const label = wrapper.find('[data-testid="consent-client-domain"]').element.closest('dd')?.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.domainLabel)
+    expect(wrapper.text()).toContain(texts.domainNotice)
+  })
+
+  it.each(SUPPORTED_LOCALES)('le domaine précède le nom dans l’ordre du document (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+
+    const domain = wrapper.find('[data-testid="consent-client-domain"]').element
+    const name = wrapper.find('[data-testid="consent-client-name"]').element
+    expect(domain.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it.each(SUPPORTED_LOCALES)('le nom porte « déclaré » et sa mise en garde, jamais la notice de l’enregistrement par l’administrateur (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+    const name = wrapper.find('[data-testid="consent-client-name"]')
+
+    expect(name.text()).toContain('Assistant Déclaré')
+    expect(name.text()).toContain(texts.declaredNameNotice)
+    const label = name.element.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.declaredNameLabel)
+    // Ni le libellé ni la notice d'un client pré-enregistré : l'administrateur du site n'a rien saisi ici.
+    expect(wrapper.text()).not.toContain(texts.nameLabel)
+    expect(wrapper.text()).not.toContain(texts.nameNotice)
+    expect(wrapper.text()).not.toContain(texts.registration.preregistered)
+  })
+
+  it.each(SUPPORTED_LOCALES)('le mode affiché est « déclaré par le client » (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+
+    expect(wrapper.text()).toContain(catalogues[locale].oauthConsent.client.registration.cimd)
+  })
+
+  it('un nom contenant du HTML s’affiche en texte : aucun élément b dans la page', async () => {
+    const describeRequest = vi.fn(async () => ({ ...CIMD_SUMMARY, client: { ...CIMD_SUMMARY.client, name: '<b>x</b>' } }))
+    const { wrapper } = await mountPage({ describeRequest })
+
+    expect(wrapper.find('b').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('<b>x</b>')
+  })
+
+  it('un client pré-enregistré : aucun domaine, libellés et mise en garde inchangés', async () => {
+    const { wrapper } = await mountPage()
+    const text = wrapper.text()
+
+    expect(wrapper.find('[data-testid="consent-client-domain"]').exists()).toBe(false)
+    expect(text).not.toContain(fr.oauthConsent.client.domainLabel)
+    expect(text).not.toContain(fr.oauthConsent.client.declaredNameLabel)
+    expect(text).toContain(fr.oauthConsent.client.nameLabel)
+    expect(text).toContain(fr.oauthConsent.client.nameNotice)
+    expect(text).toContain(fr.oauthConsent.client.registration.preregistered)
+  })
+
+  it.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    // axe programme ses propres minuteries : elles doivent tourner.
+    vi.useRealTimers()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })
 
