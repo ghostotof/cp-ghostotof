@@ -503,7 +503,16 @@
   compte » jugé avant `validated()`), F4 (consentement : `registration === Cimd` et `judgedDiscoveredClient()
   === null` → 400 générique), CR7 (Yoda `null !== $discovered`). Puis relecture `/code-review medium
   diff 84159847...HEAD`.
-- `HEAD` au 2026-11-18 : `84159847`, puis ce commit d'état.
+- **Série de correction faite** (agent L) : `de52d01c` — M1 `RetryAfterListener::firstRetryAfterAware()` seule
+  boucle (écouteur + `AuthorizeController::refusal()`), en-tête jamais écrasé, règle `backoffice-api.md` à jour ;
+  F5 409 jugé avant `validated()` (règle `mcp-oauth-revocation-personne.md` à jour) ; F4 garde
+  `AuthorizationRequestRejectedException::cimdRowWithoutDocument()` (400 générique) — **défense en profondeur
+  seulement** : le test HTTP est vert d'emblée, la revalidation passe par `validateAuthorizationRequest()` qui
+  pose déjà `AUTHORIZATION_POINT_ATTRIBUTE` (le F4 de l'audit était donc infondé au niveau HTTP), audit
+  `mcpClientRowNotAdmitted` non doublé ; CR7 fait. Preuve contrôlée : `make back-test` sur `de52d01c` OK
+  (6432 tests, 122460 assertions) ; `check-claude-rules.sh` conforme ; back-quality vert selon l'agent.
+- **Prochaine action** : relecture `/code-review medium diff 84159847...HEAD`, puis Task 11.
+- `HEAD` au 2026-11-18 : `de52d01c`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
