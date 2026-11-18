@@ -8,6 +8,7 @@ import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailed
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
+import { ConsentTemporarilyUnavailableError } from '../../../src/domain/mcp/errors/ConsentTemporarilyUnavailableError'
 
 const PARAMS: ConsentParams = {
   responseType: 'code',
@@ -47,6 +48,16 @@ const ACCOUNT_CHANGED = { type: '/errors/consent-account-changed', title: 'conse
 
 /** Le corps du 401 que le serveur rend quand l'authentification est trop ancienne pour accorder. */
 const REAUTHENTICATION_REQUIRED = { type: '/errors/reauthentication-required', title: 'reauthentication-required', status: 401 }
+
+/** Le refus passager du serveur (#651) : 429 avec `Retry-After`, ou 503 ; le `detail` est constant, le `type` décide. */
+const TEMPORARILY_UNAVAILABLE_TYPE = '/errors/consent-temporarily-unavailable'
+
+function temporaryRefusal(status: 429 | 503, headers: Record<string, string> = {}, type = TEMPORARILY_UNAVAILABLE_TYPE): Response {
+  return new Response(JSON.stringify({ type, title: 'Service Unavailable', status }), {
+    status,
+    headers: { 'Content-Type': 'application/problem+json', ...headers },
+  })
+}
 
 function jsonResponse(body: unknown, status = 200, contentType = 'application/json'): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': contentType } })
@@ -198,6 +209,47 @@ describe('HttpOAuthConsentRepository', () => {
       fetchMock.mockResolvedValue(response)
 
       await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
+    })
+
+    describe('refus passager (consent-temporarily-unavailable)', () => {
+      it('429 avec Retry-After : ConsentTemporarilyUnavailableError portant les secondes', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '120' }))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBe(120)
+      })
+
+      it('429 sans Retry-After : la même erreur, sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('503 sans Retry-After : la même erreur, sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503))
+
+        const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it.each([429, 503] as const)("%i d'un autre type : échec générique, pas un « réessayez »", async (status) => {
+        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/rate-limited'))
+
+        await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
+
+      it.each([429, 503] as const)('%i au corps illisible : échec générique', async (status) => {
+        fetchMock.mockResolvedValue(new Response('<html>', { status, headers: { 'Retry-After': '120' } }))
+
+        await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
     })
   })
 
@@ -357,6 +409,47 @@ describe('HttpOAuthConsentRepository', () => {
       fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
 
       await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentFailedError)
+    })
+
+    describe('refus passager (consent-temporarily-unavailable)', () => {
+      it('429 avec Retry-After : ConsentTemporarilyUnavailableError portant les secondes', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '120' }))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBe(120)
+      })
+
+      it('429 sans Retry-After : la même erreur, sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(429))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it('503 sans Retry-After : la même erreur, sans durée', async () => {
+        fetchMock.mockResolvedValue(temporaryRefusal(503))
+
+        const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)
+
+        expect(error).toBeInstanceOf(ConsentTemporarilyUnavailableError)
+        expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
+      })
+
+      it.each([429, 503] as const)("%i d'un autre type : échec générique, pas un « réessayez »", async (status) => {
+        fetchMock.mockResolvedValue(temporaryRefusal(status, { 'Retry-After': '120' }, '/errors/rate-limited'))
+
+        await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
+
+      it.each([429, 503] as const)('%i au corps illisible : échec générique', async (status) => {
+        fetchMock.mockResolvedValue(new Response('<html>', { status, headers: { 'Retry-After': '120' } }))
+
+        await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentFailedError)
+      })
     })
   })
 })

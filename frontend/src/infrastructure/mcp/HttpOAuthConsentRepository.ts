@@ -10,10 +10,12 @@ import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenEr
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
+import { ConsentTemporarilyUnavailableError } from '../../domain/mcp/errors/ConsentTemporarilyUnavailableError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { retryAfterSeconds } from '../http/retryAfterSeconds'
 import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/oauth/consent'
@@ -66,6 +68,14 @@ export const REAUTHENTICATION_REQUIRED = 'reauthentication-required'
  * localisé : tout autre 409 reste un échec générique.
  */
 export const CONSENT_ACCOUNT_CHANGED = 'consent-account-changed'
+
+/**
+ * Le slug du refus passager (`ConsentTemporarilyUnavailableException`, #651) : un 429 (quota de
+ * revalidation atteint, `Retry-After` en secondes) ou un 503 (hôte du client injoignable, sans délai
+ * garanti), au `GET` comme au `POST`. Le `detail` est constant : seul le `type` décide, et un 429 ou un
+ * 503 d'un autre type reste un échec générique.
+ */
+export const CONSENT_TEMPORARILY_UNAVAILABLE = 'consent-temporarily-unavailable'
 
 /** Ce que veut dire un 422 : sur la décision, un corps que la page a mal formé. */
 type UnprocessableMeaning = 'malformed-decision' | 'generic'
@@ -181,6 +191,13 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           : new ConsentFailedError('The consent request failed with an unrecognised 409')
       case 403:
         return new AccessForbiddenError()
+      case 429:
+      case 503:
+        // Refus passager : « réessayez », la demande n'a pas été jugée. Le délai n'existe que si le
+        // serveur l'a donné (le 429) ; un autre 429 ou 503 est un échec générique.
+        return (await this.hasType(response, CONSENT_TEMPORARILY_UNAVAILABLE))
+          ? new ConsentTemporarilyUnavailableError(retryAfterSeconds(response))
+          : new ConsentFailedError(`The consent request failed with status ${status}`)
       default:
         return new ConsentFailedError(`The consent request failed with status ${status}`)
     }
