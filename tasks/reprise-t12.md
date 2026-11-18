@@ -547,8 +547,22 @@
   `ctype_digit`), sinon remplacé (pas de parsing de date HTTP) ; commentaire « proxy » corrigé ; règle
   `backoffice-api.md` à jour. Rouges : 3 (dont `'99'` vs `'10'`, `'120'` vs `'42'`). Preuve contrôlée :
   `make back-test` sur `ed5a82f1` OK (6441 tests, 122586 assertions), `check-claude-rules.sh` conforme.
-- **Prochaine action** : relecture `/code-review medium diff 9db0b692...HEAD` ; boucle close sur Retry-After
-  ensuite ; puis Task 11.
+- **Relecture de la micro-série faite** (2026-11-18, `/code-review medium diff 9db0b692...e6448d17`) : aucun
+  critique/haut/moyen → **boucle close** (tâche 10 + 429/503 + corrections). **Point fixe suivant : `e6448d17`.**
+  Faibles écrits, à reprendre dans la PR : RA1 `latestIn()` laisse une cause profonde d'un autre limiteur
+  allonger l'annonce (trop tard plutôt que trop tôt ; aucune chaîne de prod n'a deux quotas) ; RA2 `ctype_digit`
+  + `(int)` sature à `PHP_INT_MAX` sur un en-tête énorme ; RA3 un en-tête ` 120` (espaces) échoue `ctype_digit`
+  et est raccourci (`trim()` manquant) ; RA4 la branche « garder un en-tête plus long » est morte en prod
+  (aucun producteur de `Retry-After` sur un 429 dans `src/`, `RateLimiterLockFailureListener` répond 503) —
+  question de proportion à trancher en relecture finale : simplifier ou garder ; RA5 une date HTTP plus longue
+  est raccourcie (exception non mise en avant dans la règle) ; RA6 `backoffice-api.md:335` se lit « l'exception
+  levée gagne » ; RA7 (= CR8) le contrôleur combine encore `latestIn()` + `REQUEST_ATTRIBUTE` à la main ; RA8 pas
+  de test chaîne multi-quota au niveau écouteur (extérieur plus tardif, égalité) ni par `AuthorizeController`.
+- **Prochaine action** : **Task 11** (page de consentement front : `registration`/`domain` dans
+  `HttpOAuthConsentRepository.ts:184` qui refuse aujourd'hui `'cimd'`, affichage du domaine vérifié, « réessayer »
+  sur 429/503 via `/errors/consent-temporarily-unavailable`, `Retry-After` exploité). Agent sonnet/high ; lire
+  d'abord la section Task 11 du plan (`grep -n "Task 11" tasks/plan-t12-cimd.md`, puis `sed -n`), jamais le plan
+  entier. Puis Task 12 (règles dont `mcp-oauth.md` 429/503 et F6, ADR, registre, notes de release).
 - `HEAD` au 2026-11-18 : `ed5a82f1`, puis ce commit d'état.
 
 ## Point fixe de relecture
