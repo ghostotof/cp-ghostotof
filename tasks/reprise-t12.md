@@ -601,6 +601,12 @@
     texte du plan reste vrai) ; T4 : un 429 `rate-limited` de nginx → « réessayez » ; T6 : `Retry-After` lu sur
     le 429 seul ; T8 point final ; T9 un seul appel ; T10 un seul bouton de relecture. Puis relecture
     `/code-review medium diff d6771388...HEAD`, puis Task 12.
+  - **Micro-série faite** (agent O, Sonnet 5.5) : `39749763` (T4 429 `rate-limited` → réessayez, 503
+    `rate-limited` générique ; T6 délai lu sur le 429 seul), `56e48902` (T2 `consent-client-document`,
+    clé `documentLabel` ; T8), `dc535aab` (T9 ; T10 bouton unique `consent-reload`, libellé selon l'échec).
+    Preuve contrôlée : 278 tests mcp + page verts, `make front-lint` code 0, arbre propre ; l'agent : 2786
+    tests, build vert. Choix gardés par le fil principal : testid unique, `rate-limited` au 429 seul. À la
+    Task 12 : documenter le 429/503 du consentement côté front (aucune règle front n'en parle).
 
 ## Point fixe de relecture
 
