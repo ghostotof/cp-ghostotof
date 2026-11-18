@@ -530,8 +530,19 @@
   `ConsentControllerTest::testAnInvalidRequestShownToAnotherAccountIsConflictNotBadRequest`. Preuve contrôlée :
   `make back-test` sur `a6dd3236` OK (6433 tests, 122578 assertions), `check-claude-rules.sh` conforme,
   back-quality vert selon l'agent.
-- **Prochaine action** : relecture `/code-review medium diff 0ec72dfe...HEAD`, puis Task 11.
-- `HEAD` au 2026-11-18 : `a6dd3236`, puis ce commit d'état.
+- **Relecture de la série n°2 faite** (2026-11-18, `/code-review medium diff 0ec72dfe...9db0b692`) :
+  **point fixe suivant `9db0b692`**. Moyens : CR1 l'écouteur écrase sans comparer (un Retry-After plus long
+  serait raccourci) ; CR3 garde F4 retirée → **décision de l'utilisateur, non retenue** (league couvre, test HTTP
+  + audit). Faibles écrits, à reprendre dans la PR : CR4 doublure `judgedRequest()` sans client (propriété
+  league non initialisée si un test lit `registration()`) ; CR5 plus de test unitaire « ligne cimd » au niveau
+  service ; CR6 « aucune récupération » plus observée qu'avec l'hôte qui cale (variante quota disponible
+  possible) ; CR8 le contrôleur combine encore `RetryAfterChain` + `REQUEST_ATTRIBUTE` à la main ; CR9 le 400
+  d'une ligne cimd au consentement ne se distingue que par l'audit (FailSafe).
+- **Micro-série « maximum » décidée** (agent N, sonnet/high) : sur un 429, l'en-tête = max(en-tête déjà posé
+  s'il est numérique, échéance **la plus tardive** de la chaîne) — CR1 + CR2 (`firstIn()` → la plus tardive) ;
+  CR7 commentaire « proxy » faux. Puis relecture `/code-review medium diff 9db0b692...HEAD` ; **la boucle se
+  clôt ensuite sur ce point** (le reste écrit), puis Task 11.
+- `HEAD` au 2026-11-18 : `9db0b692`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
