@@ -211,7 +211,8 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
    *
    * Le corps ne se lit qu'une fois, d'où une lecture unique pour les deux slugs :
    * - `consent-temporarily-unavailable`, rendu par le backend au 429 comme au 503 ;
-   * - `rate-limited`, rendu par nginx au seul 429 (le `Retry-After` de la zone de limitation).
+   * - `rate-limited`, rendu par nginx au seul 429 (`location @rate_limited`), sans `Retry-After` : la page
+   *   dit alors « réessayez » sans délai ; un `Retry-After` qu'un intermédiaire y ajouterait serait lu.
    * Le délai n'est lu que sur un 429 : le backend ne pose `Retry-After` que là, et un 503 qui en
    * porterait un (proxy, répartiteur) n'engage pas la durée d'une indisponibilité de l'hôte du client.
    * Tout autre type, ou un corps illisible, reste un échec générique.

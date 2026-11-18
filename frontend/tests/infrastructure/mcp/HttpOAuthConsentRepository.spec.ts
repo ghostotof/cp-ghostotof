@@ -52,7 +52,7 @@ const REAUTHENTICATION_REQUIRED = { type: '/errors/reauthentication-required', t
 /** Le refus passager du serveur (#651) : 429 avec `Retry-After`, ou 503 ; le `detail` est constant, le `type` décide. */
 const TEMPORARILY_UNAVAILABLE_TYPE = '/errors/consent-temporarily-unavailable'
 
-/** Le 429 de nginx (zone `oauth`, `docker/nginx/default.conf`) : un problem+json du type `rate-limited`, jamais de `Retry-After`. */
+/** Le 429 de nginx (zone `oauth`, `location @rate_limited`) : un problem+json du type `rate-limited`, sans `Retry-After` (le cas « avec » couvre un intermédiaire qui en ajouterait un). */
 const RATE_LIMITED_TYPE = '/errors/rate-limited'
 
 function temporaryRefusal(status: 429 | 503, headers: Record<string, string> = {}, type = TEMPORARILY_UNAVAILABLE_TYPE): Response {
@@ -251,7 +251,7 @@ describe('HttpOAuthConsentRepository', () => {
         expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
       })
 
-      it('429 de nginx (type rate-limited) avec Retry-After : « réessayez », durée lue', async () => {
+      it('429 rate-limited avec un Retry-After (ajouté par un intermédiaire, nginx n’en pose pas) : « réessayez », durée lue', async () => {
         fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '45' }, RATE_LIMITED_TYPE))
 
         const error = await repository.describe(PARAMS).catch((caught: unknown) => caught)
@@ -484,7 +484,7 @@ describe('HttpOAuthConsentRepository', () => {
         expect((error as ConsentTemporarilyUnavailableError).retryAfterSeconds).toBeNull()
       })
 
-      it('429 de nginx (type rate-limited) avec Retry-After : « réessayez », durée lue', async () => {
+      it('429 rate-limited avec un Retry-After (ajouté par un intermédiaire, nginx n’en pose pas) : « réessayez », durée lue', async () => {
         fetchMock.mockResolvedValue(temporaryRefusal(429, { 'Retry-After': '45' }, RATE_LIMITED_TYPE))
 
         const error = await repository.decide(PARAMS, true, ACCOUNT_ID).catch((caught: unknown) => caught)

@@ -86,14 +86,16 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.unsafeRedirect')
     case 'malformed-decision':
       return t('oauthConsent.errors.malformedDecision')
-    case 'temporarily-unavailable':
+    case 'temporarily-unavailable': {
       // Refus passager du serveur (#651) : « réessayez », avec la durée en minutes quand le serveur l'a donnée.
       if (null === retryAfterSeconds.value) {
         return t('oauthConsent.errors.temporarilyUnavailable')
       }
       // Calculé une fois : le nombre sert à la fois de variable nommée et de choix du singulier.
+      // Bloc propre au `case` : la constante ne déborde pas sur les autres branches du `switch`.
       const minutes = retryAfterMinutes(retryAfterSeconds.value)
       return t('oauthConsent.errors.temporarilyUnavailableIn', { minutes }, minutes)
+    }
     case 'unknown':
       return t('oauthConsent.errors.unknown')
     default:
