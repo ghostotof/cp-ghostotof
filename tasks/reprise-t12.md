@@ -482,9 +482,19 @@
   passager (`temporarily_unavailable`, 429 quota avec `Retry-After`, 503 hôte) doit répondre comme au point
   d'autorisation (Task 9 : `AuthorizeController`, `RetryAfterListener`), à l'affichage comme à
   l'approbation. La relecture couvre tâche 10 et cette série ensemble.
-- **Prochaine action** : agent K (sonnet/high) sur la série 429/503 ; puis relecture
-  `/code-review medium diff 6cb33233...HEAD` (+ audit sécurité à demander : consentement OAuth).
-- `HEAD` au 2026-11-16 : `255550e4`, puis ce commit d'état.
+- **Série 429/503 faite** (agent K, sonnet/high) : `468238c1` — `ConsentService::validated()` lève
+  `ConsentTemporarilyUnavailableException` (abstraite, problème+json `/errors/consent-temporarily-unavailable`,
+  detail constant) via deux finales, `ConsentRevalidationThrottledException` (429, log `info`) et
+  `ConsentRevalidationUnavailableException` (503, log `warning`) : le statut ne dépend que de la classe, les
+  garde-fous instancient sans constructeur. `RetryAfterListener` (**partagé**, `Shared/Infrastructure/Http`)
+  parcourt désormais la chaîne des `previous` — à vérifier en relecture : aucune autre exception (400, 500)
+  qui enveloppe un quota ne doit recevoir `Retry-After`. +6 tests dans `CimdConsentFlowTest`.
+  Preuve contrôlée : `make back-test` sur `468238c1` OK (6419 tests, 122339 assertions) ; back-quality vert
+  selon l'agent. Non fait : `.claude/rules/mcp-oauth.md` dit encore « the consent's refusal of a revalidated
+  request is its 400 » → Task 12.
+- **Prochaine action** : relecture `/code-review medium diff 6cb33233...HEAD` + audit sécurité
+  (opus/high, accepté le 2026-11-18), tâche 10 et série 429/503 ensemble.
+- `HEAD` au 2026-11-18 : `468238c1`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
@@ -503,6 +513,11 @@
   le 400 générique de `ConsentService::validated()`.
   Non fait par la Task 10 ; reconfirmé le 2026-11-16 comme **série dédiée** après elle. À injecter aussi
   dans la Task 11 : la page affiche « réessayer » sur 429/503, pas un refus définitif.
+- Corps du 429/503 au consentement : type dédié `/errors/consent-temporarily-unavailable` gardé (2026-11-18) ;
+  la Task 11 le traduit et affiche « réessayer ».
+- Audit d'un refus passager au consentement : la trace à la source (`mcp-client-metadata-refused`) suffit,
+  aucun événement propre au consentement (2026-11-18).
+- Relecture de la tâche 10 + série 429/503 : `/code-review medium` + audit sécurité opus/high (2026-11-18).
 - Refus des blancs : `client_id` seul (livré en `dccdb715`, confirmé par l'utilisateur le 2026-11-15) ;
 - Domaine retiré de la liste fermée : ne coupe que les nouvelles autorisations ; limite acceptée, à
   écrire dans la règle CIMD (Task 12) et la PR (2026-11-15).
