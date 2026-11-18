@@ -88,13 +88,12 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.malformedDecision')
     case 'temporarily-unavailable':
       // Refus passager du serveur (#651) : « réessayez », avec la durée en minutes quand le serveur l'a donnée.
-      return null === retryAfterSeconds.value
-        ? t('oauthConsent.errors.temporarilyUnavailable')
-        : t(
-            'oauthConsent.errors.temporarilyUnavailableIn',
-            { minutes: retryAfterMinutes(retryAfterSeconds.value) },
-            retryAfterMinutes(retryAfterSeconds.value),
-          )
+      if (null === retryAfterSeconds.value) {
+        return t('oauthConsent.errors.temporarilyUnavailable')
+      }
+      // Calculé une fois : le nombre sert à la fois de variable nommée et de choix du singulier.
+      const minutes = retryAfterMinutes(retryAfterSeconds.value)
+      return t('oauthConsent.errors.temporarilyUnavailableIn', { minutes }, minutes)
     case 'unknown':
       return t('oauthConsent.errors.unknown')
     default:
@@ -127,7 +126,7 @@ const switchAccountTarget = computed(() => switchAccountLocation(route, currentL
  * la session vaut toujours, aucune reconnexion — et le résumé nomme alors le
  * compte d'aujourd'hui.
  */
-const offersReload = computed(() => 'account-changed' === failure.value)
+const accountChanged = computed(() => 'account-changed' === failure.value)
 
 /**
  * Un refus du serveur (403 qui n'est pas une session finie) : la personne est connectée,
@@ -143,6 +142,13 @@ const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
  * aucun envoi ne repart seul.
  */
 const offersRetry = computed(() => 'temporarily-unavailable' === failure.value && 'error' === state.value)
+
+/**
+ * Un seul bouton relit la demande (`reload`), dans les deux échecs qui l'offrent : son libellé dit pourquoi
+ * (« Relire la demande » quand le compte a changé, « Réessayer » après un refus passager au résumé).
+ */
+const offersReread = computed(() => accountChanged.value || offersRetry.value)
+const rereadLabel = computed(() => t(accountChanged.value ? 'oauthConsent.errors.reload' : 'oauthConsent.errors.retry'))
 
 const offersSignInAgain = computed(() => 'session-ended' === failure.value)
 
@@ -196,22 +202,13 @@ onMounted(() => {
       </RouterLink>
       <!-- Comme le lien de reconnexion : dans l'alerte, avec le message qu'il prolonge. -->
       <button
-        v-if="offersReload"
+        v-if="offersReread"
         type="button"
         class="btn btn-link p-0 align-baseline"
         data-testid="consent-reload"
         @click="reload"
       >
-        {{ t('oauthConsent.errors.reload') }}
-      </button>
-      <button
-        v-if="offersRetry"
-        type="button"
-        class="btn btn-link p-0 align-baseline"
-        data-testid="consent-retry"
-        @click="reload"
-      >
-        {{ t('oauthConsent.errors.retry') }}
+        {{ rereadLabel }}
       </button>
     </p>
 

@@ -783,9 +783,9 @@ describe('OAuthConsentPage — refus passager du serveur (#651)', () => {
     const texts = 'fr' === locale ? fr : en
     expect(wrapper.find('[data-testid="consent-approve"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="consent-deny"]').exists()).toBe(false)
-    expect(wrapper.find('[role="alert"] [data-testid="consent-retry"]').text()).toBe(texts.oauthConsent.errors.retry)
+    expect(wrapper.find('[role="alert"] [data-testid="consent-reload"]').text()).toBe(texts.oauthConsent.errors.retry)
 
-    await wrapper.find('[data-testid="consent-retry"]').trigger('click')
+    await wrapper.find('[data-testid="consent-reload"]').trigger('click')
     await flushPromises()
     await passActivationDelay()
 
@@ -813,7 +813,7 @@ describe('OAuthConsentPage — refus passager du serveur (#651)', () => {
       // Aucun réessai automatique : rien ne part tant que la personne ne décide pas de nouveau.
       expect(decide).toHaveBeenCalledOnce()
       expect(navigate).not.toHaveBeenCalled()
-      expect(wrapper.find('[data-testid="consent-retry"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="consent-reload"]').exists()).toBe(false)
     },
   )
 
