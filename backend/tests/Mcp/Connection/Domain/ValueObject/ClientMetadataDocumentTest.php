@@ -320,9 +320,16 @@ final class ClientMetadataDocumentTest extends TestCase
         yield 'sous-domaine du client' => [['https://evil.claude.ai/cb']];
         yield 'domaine parent du client' => [['https://ai/cb']];
         yield 'hôte qui contient celui du client' => [['https://claude.ai.tiers.example/cb']];
-        yield 'port différent sur un hôte tiers' => [['https://tiers.example:8443/cb']];
+        // Le même hôte que le `client_id`, mais un autre service : `CimdClientId` refuse
+        // tout port pour que la cible reste le 443 de l'hôte, les redirections aussi.
+        yield 'même hôte, autre port' => [['https://claude.ai:8443/cb']];
+        // Refusé en amont par `RedirectUri` (League\Uri retire `:443`, la chaîne n'est plus
+        // normalisée) : non-régression, ce n'est pas la règle de l'hôte qui le juge.
+        yield 'même hôte, port 443 explicite (non normalisée)' => [['https://claude.ai:443/cb']];
+        yield 'un bon membre puis le même hôte sur un autre port' => [['https://claude.ai/cb', 'https://claude.ai:8443/cb']];
         yield 'un bon membre puis un hôte tiers' => [['https://claude.ai/api/mcp/auth_callback', 'https://tiers.example/cb']];
         yield 'une boucle locale puis un hôte tiers' => [['http://localhost/callback', 'https://tiers.example/cb']];
+        // Refusé en amont (`notNormalized`), pas par la comparaison des hôtes : non-régression.
         yield 'casse de l\'hôte (non normalisée)' => [['https://Claude.AI/cb']];
     }
 
@@ -341,11 +348,12 @@ final class ClientMetadataDocumentTest extends TestCase
     public function testARedirectOnTheClientHostIsAccepted(): void
     {
         $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith([
-            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback', 'https://claude.ai:8443/cb'],
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback', 'https://claude.ai/cb'],
         ]));
 
         self::assertCount(2, $document->redirectUris);
         self::assertTrue($document->redirectUris[0]->matches('https://claude.ai/api/mcp/auth_callback'));
+        self::assertTrue($document->redirectUris[1]->matches('https://claude.ai/cb'));
     }
 
     public function testALoopbackRedirectIsAcceptedWhateverTheClientHost(): void
@@ -355,6 +363,20 @@ final class ClientMetadataDocumentTest extends TestCase
         ]));
 
         self::assertCount(3, $document->redirectUris);
+    }
+
+    /**
+     * La boucle locale garde son port (RFC 8252 §7.3) : un client natif ouvre un
+     * port éphémère, Claude Code en tête.
+     */
+    public function testALoopbackRedirectKeepsItsPort(): void
+    {
+        $document = ClientMetadataDocument::fromJson($this->expected(), self::documentWith([
+            'redirect_uris' => ['http://127.0.0.1:53682/callback', 'http://localhost:49152/callback', 'http://[::1]:8765/callback'],
+        ]));
+
+        self::assertCount(3, $document->redirectUris);
+        self::assertTrue($document->redirectUris[0]->matches('http://127.0.0.1:60000/callback'));
     }
 
     public function testAHostMatchedClientAndALoopbackCanBeMixed(): void

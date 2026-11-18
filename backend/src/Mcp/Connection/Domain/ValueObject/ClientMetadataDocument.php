@@ -146,12 +146,16 @@ final readonly class ClientMetadataDocument
 
     /**
      * Hors boucle locale, une redirection reste sur l'hôte du `client_id`
-     * (égalité stricte, sans sous-domaine implicite ni préfixe de chemin) : la
-     * liste des domaines admis ne compare que l'hôte du `client_id`, et un
-     * chemin d'un hôte listé peut servir un JSON choisi par un tiers, dont le
-     * code d'autorisation irait à ce tiers sous la mention « domaine vérifié ».
-     * Une boucle locale (Claude Code) reste admise : elle n'ouvre que le poste
-     * de l'utilisateur.
+     * (égalité stricte, sans sous-domaine implicite ni préfixe de chemin) **et
+     * sans port** : la liste des domaines admis ne compare que l'hôte du
+     * `client_id`, et un chemin d'un hôte listé peut servir un JSON choisi par un
+     * tiers, dont le code d'autorisation irait à ce tiers sous la mention
+     * « domaine vérifié ». Un port, `:8443`, désignerait un autre service du même
+     * hôte : `CimdClientId` n'en admet aucun, pour que la cible reste le 443, et
+     * les redirections non plus (`:443` écrit est déjà refusé par `RedirectUri`,
+     * qui n'admet que la forme normalisée). Une boucle locale (Claude Code)
+     * reste admise, port libre (RFC 8252 §7.3) : elle n'ouvre que le poste de
+     * l'utilisateur.
      *
      * @param array<array-key, mixed> $document
      *
@@ -179,7 +183,11 @@ final readonly class ClientMetadataDocument
                 throw InvalidClientMetadataDocumentException::invalidRedirectUris($refusal);
             }
 
-            if (!$candidate->isLoopback() && $candidate->host() !== $requested->host()) {
+            // Hors boucle locale : le même hôte, et aucun port. `CimdClientId` refuse tout
+            // port pour que la cible reste le 443 ; une redirection sur `:8443` enverrait
+            // le code d'autorisation à un autre service du même hôte.
+            if (!$candidate->isLoopback()
+                && ($candidate->host() !== $requested->host() || null !== $candidate->port())) {
                 throw InvalidClientMetadataDocumentException::invalidRedirectUris();
             }
 

@@ -169,6 +169,23 @@ final class RedirectUriTest extends TestCase
         self::assertSame('[::1]', RedirectUri::fromString('http://[::1]/callback')->host());
     }
 
+    public function testThePortIsTheExplicitOneOrNull(): void
+    {
+        self::assertSame(8443, RedirectUri::fromString('https://claude.ai:8443/cb')->port());
+        self::assertSame(49152, RedirectUri::fromString('http://localhost:49152/callback')->port());
+        self::assertSame(8765, RedirectUri::fromString('http://[::1]:8765/callback')->port());
+        self::assertNull(RedirectUri::fromString('https://claude.ai/cb')->port());
+        self::assertNull(RedirectUri::fromString('http://127.0.0.1/callback')->port());
+    }
+
+    public function testAnExplicitDefaultPortIsNotANormalForm(): void
+    {
+        // League\Uri retire `:443` : la chaîne écrite n'est plus sa forme, refusée à l'enregistrement.
+        $this->expectException(InvalidRedirectUriException::class);
+
+        RedirectUri::fromString('https://claude.ai:443/cb');
+    }
+
     public function testOnlyAPlainHttpRedirectIsALoopback(): void
     {
         self::assertTrue(RedirectUri::fromString('http://localhost/callback')->isLoopback());
