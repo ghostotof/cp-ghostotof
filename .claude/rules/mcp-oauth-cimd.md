@@ -201,3 +201,16 @@ reasoning, not as curl's behaviour. **`NativeHostAddressResolver` has no test**:
   are refused; the name shown in « Mes connexions MCP » is the one of the last approval.
 - An anonymous caller triggers a fetch without sending a PKCE challenge: checking `code_challenge` before the
   admission would be free (to propose again).
+- A timing oracle (F7): a cached client answers at once, a cache miss costs a fetch of up to 3 s, so an anonymous
+  caller can measure whether a `client_id` was seen recently. Accepted: the identifier is public and confined to the
+  allowed list, and the cache is what bounds the outbound calls.
+- The `Retry-After` of a 429 (I1) is the one of the limiter that refused: it may tell the shared ceiling
+  (`mcp_client_metadata_global`) is saturated rather than the caller's own quota. Accepted: it reveals a load, never a
+  person, and a precise delay is what makes the 429 retryable.
+- A definitive refusal answers `invalid_client` (401), an unreachable or failing host 503 (I2): the caller learns
+  whether the server reached the host. Accepted: the host is in the closed list, and merging both would hide a
+  transient outage behind a definitive refusal.
+- The transport exception is chained as `previous` under the refusal (I4), and its message may carry the document's
+  URL (the `client_id`, public, confined to the allowed list). The kernel logs the consent's 503
+  (`ConsentRevalidationUnavailableException`) at `warning` with its chain; at the authorization point league's
+  response is rendered, not thrown. Accepted: the audit record itself never carries it (`clientHost` only).
