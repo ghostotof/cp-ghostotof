@@ -662,6 +662,12 @@
   - **Série de correction** (étape 05, sonnet/high), deux agents (budget de contexte) : **R** = liaison
     redirect/hôte (VO + tests) ; **S** = logger (services.yaml + CimdWiringTest) ; puis règle CIMD par le fil
     principal ; puis relecture de série `/code-review medium diff 6d4769f1...HEAD`.
+  - **Agent R fait** : `d22035ef` (`RedirectUri::host()`, liaison dans `ClientMetadataDocument::redirectUris()`,
+    refus `invalidRedirectUris` → `invalid-document`, fixture `testTenRedirectUrisAreAccepted` passée sur
+    `claude.ai`). Preuve contrôlée : 164 tests ciblés verts relancés ; l'agent : rouge 1 erreur + 7 échecs pour la
+    bonne cause, `make back-test` OK (6453 tests, 122624 assertions), `make back-quality` rc=0. Ouvert : un
+    callback légitime sur un autre hôte (`api.claude.ai`) serait refusé — à confirmer sur les vrais documents.
+  - **Prochaine action : agent S** (logger, sonnet/high), puis règle CIMD (fil principal), puis relecture de série.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
