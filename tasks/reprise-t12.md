@@ -649,6 +649,24 @@
     136 fichiers, +12572/−453, 182 commits depuis `0c0733fb`. En cours : `/code-review medium diff
     0c0733fb...HEAD` (fil principal), agent sécurité opus/high et `mattpocock-skills:code-review`
     Standards/Spec sonnet/medium sur le même point fixe ; tête relue = `HEAD` de ce commit d'état.
+  - **Relecture d'avant la MR faite** (tête relue `6d4769f1`, point fixe `0c0733fb`) :
+    - Spec : rien de manquant ; « dérive » = `logs-select.sh`/`log_limit` (constats C1/D1 de série, décidés),
+      série 429/503 et quotas (décisions 11-14/15/16), `EmbeddedIpv4`/`TruncatedIp` : à expliquer dans la PR.
+    - Standards : aucune violation dure ; `public: true` ramené à faible (#698 l'impose) ; 8 faibles.
+    - `/code-review` : 10 constats, n° 1 = MOYEN ci-dessous, le reste faible/documenté.
+    - Sécurité (opus/high) : **1 MOYEN** (même que code-review n° 1), 2 faibles, 4 infos.
+  - **Décisions (2026-11-18)** : (1) MOYEN — **lier toute `redirect_uri` hors boucle locale à l'hôte exact
+    du `client_id`** (refus définitif `invalid-document` dans `ClientMetadataDocument`), sans préfixe de chemin ;
+    (2) FAIBLE logger — `autoconfigure: false` sur `app.mcp.cimd.transport` et `app.mcp.cimd.http_client`
+    (sinon `setLogger(@logger)` → `CurlHttpClient` journalise l'URL complète en `info`), test de câblage.
+  - **Série de correction** (étape 05, sonnet/high), deux agents (budget de contexte) : **R** = liaison
+    redirect/hôte (VO + tests) ; **S** = logger (services.yaml + CimdWiringTest) ; puis règle CIMD par le fil
+    principal ; puis relecture de série `/code-review medium diff 6d4769f1...HEAD`.
+  - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
+    registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
+    des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
+    jour ; `tryGetById` avec une chaîne ; `trusted_proxies: private_ranges` ; pas de test du chemin d'erreur PKCE
+    d'un client découvert ; Standards n° 1-4, 6-9.
 
 ## Point fixe de relecture
 
