@@ -1012,6 +1012,34 @@ describe('OAuthConsentPage — client CIMD : domaine vérifié, nom déclaré', 
     expect(wrapper.text()).toContain(texts.domainNotice)
   })
 
+  it.each(SUPPORTED_LOCALES)('l’adresse complète du document est affichée en texte, sous le domaine et sous son libellé (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+    const document = wrapper.find('[data-testid="consent-client-document"]')
+
+    expect(document.text()).toBe(CIMD_SUMMARY.client.id)
+    expect(document.element.tagName).toBe('CODE')
+    expect(document.classes()).toContain('text-break')
+    // Le libellé est le `<dt>` qui précède immédiatement l'`<dd>` de l'adresse.
+    const label = document.element.closest('dd')?.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.documentLabel)
+    // Juste sous le domaine, avant le nom : domaine, adresse, nom.
+    const domain = wrapper.find('[data-testid="consent-client-domain"]').element
+    const name = wrapper.find('[data-testid="consent-client-name"]').element
+    expect(domain.compareDocumentPosition(document.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.element.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('une adresse contenant du HTML s’affiche en texte : aucun élément i dans la page', async () => {
+    const id = 'https://claude.ai/<i>x</i>'
+    const describeRequest = vi.fn(async () => ({ ...CIMD_SUMMARY, client: { ...CIMD_SUMMARY.client, id } }))
+    const { wrapper } = await mountPage({ describeRequest })
+
+    expect(wrapper.find('i').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-document"]').text()).toBe(id)
+  })
+
   it.each(SUPPORTED_LOCALES)('le domaine précède le nom dans l’ordre du document (%s)', async (locale) => {
     const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
 
@@ -1042,6 +1070,13 @@ describe('OAuthConsentPage — client CIMD : domaine vérifié, nom déclaré', 
     expect(wrapper.text()).toContain(catalogues[locale].oauthConsent.client.registration.cimd)
   })
 
+  it.each(SUPPORTED_LOCALES)('le mode « déclaré » finit par un point, comme « enregistré à l’avance » (%s)', (locale) => {
+    const { cimd, preregistered } = catalogues[locale].oauthConsent.client.registration
+
+    expect(preregistered.endsWith('.')).toBe(true)
+    expect(cimd.endsWith('.')).toBe(true)
+  })
+
   it('un nom contenant du HTML s’affiche en texte : aucun élément b dans la page', async () => {
     const describeRequest = vi.fn(async () => ({ ...CIMD_SUMMARY, client: { ...CIMD_SUMMARY.client, name: '<b>x</b>' } }))
     const { wrapper } = await mountPage({ describeRequest })
@@ -1055,6 +1090,8 @@ describe('OAuthConsentPage — client CIMD : domaine vérifié, nom déclaré', 
     const text = wrapper.text()
 
     expect(wrapper.find('[data-testid="consent-client-domain"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-document"]').exists()).toBe(false)
+    expect(text).not.toContain(fr.oauthConsent.client.documentLabel)
     expect(text).not.toContain(fr.oauthConsent.client.domainLabel)
     expect(text).not.toContain(fr.oauthConsent.client.declaredNameLabel)
     expect(text).toContain(fr.oauthConsent.client.nameLabel)

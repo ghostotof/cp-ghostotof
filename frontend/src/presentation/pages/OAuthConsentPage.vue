@@ -266,6 +266,14 @@ onMounted(() => {
               >{{ request.client.domain }}</code>
               <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.domainNotice') }}</span>
             </dd>
+            <dt>{{ t('oauthConsent.client.documentLabel') }}</dt>
+            <dd>
+              <!-- Texte interpolé, jamais v-html : l'adresse est celle que le client a fournie. -->
+              <code
+                class="text-break"
+                data-testid="consent-client-document"
+              >{{ request.client.id }}</code>
+            </dd>
             <dt>{{ t('oauthConsent.client.declaredNameLabel') }}</dt>
             <dd data-testid="consent-client-name">
               <span class="fw-semibold">{{ request.client.name }}</span>

@@ -822,6 +822,7 @@
       "heading": "The client",
       "domainLabel": "Verified domain",
       "domainNotice": "This site read this client’s declaration at this address, on this domain: it is the only verified information.",
+      "documentLabel": "Declaration address",
       "declaredNameLabel": "Declared name",
       "declaredNameNotice": "The name this client gives itself. This site has not verified it: rely on the domain.",
       "nameLabel": "Client name",
@@ -829,7 +830,7 @@
       "registrationLabel": "Registration",
       "registration": {
         "preregistered": "Client registered in advance by the site’s administrator.",
-        "cimd": "Declared by the client, in a document published on its domain"
+        "cimd": "Declared by the client, in a document published on its domain."
       },
       "redirectLabel": "Return after your decision",
       "redirectNotice": "The page will send you back to this host, whether you authorize the connection or not."
