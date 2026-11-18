@@ -511,8 +511,19 @@
   pose déjà `AUTHORIZATION_POINT_ATTRIBUTE` (le F4 de l'audit était donc infondé au niveau HTTP), audit
   `mcpClientRowNotAdmitted` non doublé ; CR7 fait. Preuve contrôlée : `make back-test` sur `de52d01c` OK
   (6432 tests, 122460 assertions) ; `check-claude-rules.sh` conforme ; back-quality vert selon l'agent.
-- **Prochaine action** : relecture `/code-review medium diff 84159847...HEAD`, puis Task 11.
-- `HEAD` au 2026-11-18 : `de52d01c`, puis ce commit d'état.
+- **Relecture de la série de correction faite** (2026-11-18, `/code-review medium diff 84159847...0ec72dfe`) :
+  2 moyens (CR1 commentaire de la garde F4 faux, CR2 test HTTP F4 vert sans la garde), 8 faibles.
+  **Point fixe suivant : `0ec72dfe`.**
+- **Série de correction n°2 décidée** (agent M, sonnet/high) : **retirer la garde F4** (`cimdRowWithoutDocument()`
+  et son test unitaire ; la règle vit dans la seule garde de league, qui audite) ; le test HTTP
+  `testAStoredCimdRowOutsideTheCimdFormIsRefusedAtTheConsentToo` renommé en épingle de la garde de league au
+  consentement + assertion de l'audit `mcp-client-row-not-admitted` au GET et au POST (CR3) ; CR6 revenir à
+  l'écrasement (#743 : l'échéance arrondie au-dessus gagne toujours) ; CR7 recherche de la première échéance
+  déplacée dans `Shared/Domain/Exception` ; CR8 docblock de `chain()` ; CR10 phrase à deux parenthèses de
+  `backoffice-api.md` ; CR9 assertion « aucune récupération » du cas quota épuisé (retirée ou commentaire
+  corrigé) ; CR5 test HTTP du cas combiné (demande invalide montrée à un autre compte → 409). Puis relecture
+  `/code-review medium diff 0ec72dfe...HEAD`, puis Task 11.
+- `HEAD` au 2026-11-18 : `0ec72dfe`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
