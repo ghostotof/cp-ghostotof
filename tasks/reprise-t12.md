@@ -585,8 +585,17 @@
     le refus passager ; boutons non désactivés jusqu'à `Retry-After` ; un seul message 429/503.
   - **Décisions de l'utilisateur (2026-11-18)** : boutons actifs pendant le délai `Retry-After` ; « Refuser »
     actif (cohérent avec F6) ; un seul message pour 429 et 503. Pas de ré-essai automatique (implicite).
-  - **Prochaine action** : relecture `/code-review medium diff 3328cef8...HEAD` (sans audit sécurité : la série
-    ne touche ni session, ni CSRF, ni cookies, seulement la traduction d'un statut).
+  - **Relecture Task 11 faite** (2026-11-18, `/code-review medium diff 3328cef8...HEAD`, tête relue `260b53af`,
+    sans audit) : 10 constats. Un seul moyen annoncé, **infondé après vérification** : le domaine affiché est
+    l'hôte seul, mais `app.mcp.cimd.allowed_domains` = `['claude.ai', 'chatgpt.com']` (aucun hôte partagé
+    entre comptes) → faible résiduel, à écrire dans la règle CIMD (Task 12) : n'ajouter à la liste aucun hôte
+    partagé entre plusieurs comptes. Faibles : T2 `domainNotice` dit « à cette adresse » sans montrer l'adresse ; T3 boutons
+    actifs pendant `Retry-After` (**décidé**, non retenu) ; T4 429 nginx `rate-limited` / 503 non typé →
+    erreur générique ; T5 délai figé, sans décompte ; T6 `Retry-After` lu sur le 503 (le backend ne le pose
+    que sur le 429) ; T7 `Retry-After` non exposé par CORS (`expose_headers: ['Link']`) : invisible en dev
+    (cross-origin), lisible en prod (même origine), préexistant (Login, Assistant) ; T8 `registration.cimd`
+    sans point final ; T9 `retryAfterMinutes()` appelé deux fois ; T10 bouton `consent-retry` doublon de
+    `consent-reload`. **Boucle close** (aucun critique/haut/moyen). Point fixe suivant : `260b53af`.
 
 ## Point fixe de relecture
 
