@@ -72,10 +72,10 @@ final readonly class RetryAfterListener
     #[AsEventListener(event: KernelEvents::EXCEPTION, priority: 64)]
     public function onKernelException(ExceptionEvent $event): void
     {
-        // L'exception levée ou, à défaut, la première de sa chaîne de `previous` qui est un
-        // quota : une exception qui en enveloppe un (le refus passager du consentement, #651)
-        // annonce l'échéance du limiteur qui a refusé, comme au point d'autorisation.
-        $quota = RetryAfterChain::firstIn($event->getThrowable());
+        // Le quota d'échéance la plus tardive de la chaîne (l'exception levée, puis ses `previous`) :
+        // une exception qui en enveloppe un (le refus passager du consentement, #651) annonce
+        // l'échéance du limiteur qui a refusé, comme au point d'autorisation, jamais une plus courte.
+        $quota = RetryAfterChain::latestIn($event->getThrowable());
         if (null !== $quota) {
             $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $quota->retryAfter);
         }
@@ -90,14 +90,23 @@ final readonly class RetryAfterListener
             return;
         }
 
-        // L'échéance du quota remplace un `Retry-After` déjà posé (noyau, proxy, autre
-        // écouteur) : sur un 429 elle seule est arrondie au-dessus, « jamais trop tôt » (#743).
         // Jamais négatif : l'échéance peut être dépassée le temps que la
         // réponse soit construite. Arrondi par excès (issue #743), jamais par
         // défaut : annoncer moins que le reste réel renvoie le client avant la
         // fin du blocage.
         $remaining = $this->microseconds($retryAfter) - $this->microseconds($this->clock->now());
         $seconds = max(0, intdiv($remaining + self::MICROSECONDS_PER_SECOND - 1, self::MICROSECONDS_PER_SECOND));
+
+        // Le maximum, jamais raccourci (#651) : un `Retry-After` déjà posé sur la réponse (seuls un
+        // autre écouteur ou un contrôleur ont pu le poser : un reverse proxy écrit après
+        // l'application, `kernel.response` ne le voit jamais) reste s'il est plus long. Seul un
+        // entier de secondes se compare ; une date HTTP n'est pas lue (parser une date ajouterait un
+        // second arrondi à garantir pour un cas que personne ne produit), la valeur calculée la remplace.
+        $already = $response->headers->get('Retry-After');
+        if (null !== $already && ctype_digit($already)) {
+            $seconds = max($seconds, (int) $already);
+        }
+
         $response->headers->set('Retry-After', (string) $seconds);
     }
 

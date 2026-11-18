@@ -116,7 +116,7 @@ final readonly class AuthorizeController
      */
     private function refusal(OAuthServerException $refusal, Request $request): Response
     {
-        $quota = RetryAfterChain::firstIn($refusal);
+        $quota = RetryAfterChain::latestIn($refusal);
         if (null !== $quota) {
             $request->attributes->set(RetryAfterListener::REQUEST_ATTRIBUTE, $quota->retryAfter);
         }

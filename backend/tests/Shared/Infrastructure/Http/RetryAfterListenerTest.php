@@ -176,29 +176,68 @@ final class RetryAfterListenerTest extends TestCase
         self::assertFalse($this->respondTo($wrapper, $status)->headers->has('Retry-After'));
     }
 
-    public function testTheFirstQuotaCauseFromTheThrownExceptionWins(): void
+    public function testTheLatestDeadlineOfTheChainWins(): void
     {
         $outerDeadline = $this->deadline('+10 seconds');
         $inner = $this->quotaExceeded('+99 seconds');
         $chain = new DomainException('haut', 0, new DomainException('milieu', 0, $this->chain($outerDeadline, $inner)));
 
-        self::assertSame('10', $this->respondTo($chain)->headers->get('Retry-After'));
+        // L'échéance intérieure (99 s) est la plus tardive : elle gagne sur l'extérieure (10 s).
+        self::assertSame('99', $this->respondTo($chain)->headers->get('Retry-After'));
     }
 
     /**
-     * Contrat #743, « jamais trop tôt » : sur un 429, l'échéance du quota, arrondie au-dessus,
-     * gagne toujours sur une valeur déjà posée (un autre écouteur, un proxy).
+     * Contrat #743, « jamais trop tôt » : l'en-tête vaut le maximum de la valeur calculée et d'un
+     * `Retry-After` entier déjà posé. Un plus court est remplacé (garde).
      */
-    public function testTheQuotaDeadlineReplacesARetryAfterAlreadyOnTheResponse(): void
+    public function testAShorterRetryAfterAlreadyOnTheResponseIsReplacedByTheQuotaDeadline(): void
+    {
+        self::assertSame('42', $this->respondWithHeader('7', '+42 seconds'));
+    }
+
+    /**
+     * Ne jamais raccourcir : un `Retry-After` posé plus long (autre écouteur, contrôleur) est gardé.
+     */
+    public function testALongerRetryAfterAlreadyOnTheResponseIsKept(): void
+    {
+        self::assertSame('120', $this->respondWithHeader('120', '+42 seconds'));
+    }
+
+    public function testAnEqualRetryAfterAlreadyOnTheResponseStaysTheSame(): void
+    {
+        self::assertSame('42', $this->respondWithHeader('42', '+42 seconds'));
+    }
+
+    /**
+     * Un en-tête qui n'est pas un entier de secondes (date HTTP, valeur illisible) est remplacé par
+     * la valeur calculée.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideNonNumericRetryAfterValues(): iterable
+    {
+        yield 'date HTTP' => ['Fri, 02 Oct 2026 13:00:00 GMT'];
+        yield 'illisible' => ['bientôt'];
+        yield 'négatif' => ['-5'];
+        yield 'décimal' => ['120.5'];
+    }
+
+    #[DataProvider('provideNonNumericRetryAfterValues')]
+    public function testARetryAfterThatIsNotAWholeNumberOfSecondsIsReplaced(string $alreadySet): void
+    {
+        self::assertSame('42', $this->respondWithHeader($alreadySet, '+42 seconds'));
+    }
+
+    private function respondWithHeader(string $alreadySet, string $offset): ?string
     {
         $listener = new RetryAfterListener($this->clock);
         $request = Request::create('/api/contact', 'POST');
-        $response = new Response('', 429, ['Retry-After' => '7']);
+        $response = new Response('', 429, ['Retry-After' => $alreadySet]);
 
-        $listener->onKernelException($this->exceptionEvent($request, $this->quotaExceeded('+42 seconds')));
+        $listener->onKernelException($this->exceptionEvent($request, $this->quotaExceeded($offset)));
         $listener->onKernelResponse($this->responseEvent($request, $response));
 
-        self::assertSame('42', $response->headers->get('Retry-After'));
+        return $response->headers->get('Retry-After');
     }
 
     /**

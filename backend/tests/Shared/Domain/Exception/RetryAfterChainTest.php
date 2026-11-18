@@ -12,39 +12,59 @@ use PHPUnit\Framework\TestCase;
 use Throwable;
 
 /**
- * La recherche unique de la première échéance d'une chaîne d'exceptions (#651) :
+ * La recherche unique de l'échéance la plus tardive d'une chaîne d'exceptions (#651) :
  * partagée par l'écouteur `Retry-After` et par le point d'autorisation OAuth.
  */
 final class RetryAfterChainTest extends TestCase
 {
-    public function testTheThrownExceptionIsItsOwnFirstQuota(): void
+    public function testTheThrownExceptionIsItsOwnLatestQuota(): void
     {
         $quota = $this->quota('2026-10-02 12:00:10');
 
-        self::assertSame($quota, RetryAfterChain::firstIn($quota));
+        self::assertSame($quota, RetryAfterChain::latestIn($quota));
     }
 
     public function testAQuotaCauseIsFoundWalkingThePreviousChain(): void
     {
         $quota = $this->quota('2026-10-02 12:00:10');
 
-        self::assertSame($quota, RetryAfterChain::firstIn(new DomainException('haut', 0, new DomainException('milieu', 0, $quota))));
+        self::assertSame($quota, RetryAfterChain::latestIn(new DomainException('haut', 0, new DomainException('milieu', 0, $quota))));
     }
 
     public function testAChainWithoutQuotaGivesNull(): void
     {
-        self::assertNull(RetryAfterChain::firstIn(new DomainException('x', 0, new DomainException('y'))));
+        self::assertNull(RetryAfterChain::latestIn(new DomainException('x', 0, new DomainException('y'))));
     }
 
     /**
-     * Deux quotas dans la chaîne : le plus proche de l'exception levée gagne.
+     * Deux quotas dans la chaîne : l'échéance la plus tardive gagne, jamais la plus proche de
+     * l'exception levée (#651, « le maximum, jamais raccourci »).
      */
-    public function testTheQuotaNearestTheThrownExceptionWinsOverAnInnerOne(): void
+    public function testTheLatestDeadlineWinsOverANearerButEarlierOne(): void
     {
         $inner = $this->quota('2026-10-02 12:01:39');
         $outer = $this->quotaWrapping('2026-10-02 12:00:10', $inner);
 
-        self::assertSame($outer, RetryAfterChain::firstIn(new DomainException('haut', 0, $outer)));
+        self::assertSame($inner, RetryAfterChain::latestIn(new DomainException('haut', 0, $outer)));
+    }
+
+    public function testTheOuterQuotaWinsWhenItsDeadlineIsTheLatest(): void
+    {
+        $inner = $this->quota('2026-10-02 12:00:10');
+        $outer = $this->quotaWrapping('2026-10-02 12:01:39', $inner);
+
+        self::assertSame($outer, RetryAfterChain::latestIn(new DomainException('haut', 0, $outer)));
+    }
+
+    /**
+     * À égalité d'échéance, le premier trouvé (le plus proche de l'exception levée) l'emporte.
+     */
+    public function testTheFirstFoundWinsOnEqualDeadlines(): void
+    {
+        $inner = $this->quota('2026-10-02 12:00:10');
+        $outer = $this->quotaWrapping('2026-10-02 12:00:10', $inner);
+
+        self::assertSame($outer, RetryAfterChain::latestIn(new DomainException('haut', 0, $outer)));
     }
 
     private function quota(string $deadline): Throwable
