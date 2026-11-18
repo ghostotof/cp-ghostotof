@@ -523,7 +523,15 @@
   `backoffice-api.md` ; CR9 assertion « aucune récupération » du cas quota épuisé (retirée ou commentaire
   corrigé) ; CR5 test HTTP du cas combiné (demande invalide montrée à un autre compte → 409). Puis relecture
   `/code-review medium diff 0ec72dfe...HEAD`, puis Task 11.
-- `HEAD` au 2026-11-18 : `0ec72dfe`, puis ce commit d'état.
+- **Série de correction n°2 faite** (agent M) : `a6dd3236` — garde F4 retirée (fabrique et test unitaire
+  compris), test HTTP renommé `testLeaguesGuardRefusesAStoredCimdRowOutsideTheFormAtTheConsentToo` + audit
+  `mcp-client-row-not-admitted` au GET et au POST ; CR6 écrasement rétabli (#743) ; CR7
+  `Shared/Domain/Exception/RetryAfterChain::firstIn()` (+ `RetryAfterChainTest`) ; CR8, CR9, CR10 ; CR5
+  `ConsentControllerTest::testAnInvalidRequestShownToAnotherAccountIsConflictNotBadRequest`. Preuve contrôlée :
+  `make back-test` sur `a6dd3236` OK (6433 tests, 122578 assertions), `check-claude-rules.sh` conforme,
+  back-quality vert selon l'agent.
+- **Prochaine action** : relecture `/code-review medium diff 0ec72dfe...HEAD`, puis Task 11.
+- `HEAD` au 2026-11-18 : `a6dd3236`, puis ce commit d'état.
 
 ## Point fixe de relecture
 
