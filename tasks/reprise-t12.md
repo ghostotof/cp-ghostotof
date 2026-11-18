@@ -709,7 +709,16 @@
   - **Fil principal fait** : `7077f5b4` (règle : logger du transport seul, port, boucle locale http seule, fabrique
     dédiée muette, I4 levée ; commentaire `services.yaml` ; docblock `ClientMetadataRefusedException`).
     `check-claude-rules` OK, `CommentedClassNamesExistTest` + `CimdWiringTest` verts.
-  - **Prochaine action : relecture de la micro-série** `/code-review medium diff 63b5863b...HEAD`, puis étape 08.
+  - **Relecture de la micro-série faite** (`/code-review medium diff 63b5863b...HEAD`, tête relue `89bcfad8`) :
+    7 constats, tous faibles, critère d'arrêt atteint. Deux corrigés en `9189c703` (doc seule, non relu : la
+    fabrique dédiée sert en production mais son message ne sort dans aucun journal ; justification de l'égalité
+    d'hôte remise à sa place dans la règle).
+  - **Pour la PR (micro-série, écrit, non corrigé)** : https vers la boucle locale refusé avec un message
+    « hors de l'hôte » trompeur, sans test ; code curl perdu (TLS, DNS, blocage SSRF indiscernables) ; docblock
+    du Domain (`ClientMetadataRefusedException`) qui cite une classe d'Infrastructure ; port et hôte refusés
+    par la même fabrique ; test de non-chaînage limité à l'erreur de `MockResponse` (ni blocage
+    `NoPrivateNetworkHttpClient`, ni erreur en cours de flux dans `boundedBody()`).
+  - **Prochaine action : étape 08** (sonnet/low), après accord sur l'audit sécurité et sur push + PR.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
