@@ -221,6 +221,11 @@ services:
     app.mcp.cimd.http_client:
         class: Symfony\Component\HttpClient\NoPrivateNetworkHttpClient
         public: true
+        autoconfigure: false
+        # Le seul effet de l'autoconfiguration à conserver : `ResetInterface`
+        # ne pose plus son tag, on le repose (reset entre deux requêtes d'un
+        # processus long).
+        tags: [{ name: kernel.reset, method: reset }]
         arguments:
             - '@app.mcp.cimd.transport'
             # La liste de la couche 3 (PublicAddressPolicy, source unique), non
@@ -238,8 +243,17 @@ services:
     # (`LogicException` du constructeur de CurlHttpClient) : échec fermé. Aucune
     # option par défaut : chaque requête porte les siennes. CimdWiringTest en
     # vérifie la classe.
+    #
+    # Sans autoconfiguration (ici et sur le décorateur) : CurlHttpClient est un
+    # LoggerAwareInterface, et l'autoconfiguration lui poserait `setLogger()`
+    # avec le logger du framework. Il journalise alors `Request: "GET <URL>"`
+    # en `info` : l'URL complète du document, choisie par un appelant anonyme
+    # (le `client_id`), sortirait dans les journaux (préprod en `debug`), alors
+    # que seul l'hôte se journalise. CimdWiringTest vérifie l'absence de logger.
     app.mcp.cimd.transport:
         class: Symfony\Component\HttpClient\CurlHttpClient
+        autoconfigure: false
+        tags: [{ name: kernel.reset, method: reset }]
 
     # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
     # Les tests le remplacent par une doublure, jamais par un DNS réel.

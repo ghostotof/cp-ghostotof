@@ -121,6 +121,40 @@ final class CimdWiringTest extends KernelTestCase
         self::assertInstanceOf(CurlHttpClient::class, $inner);
     }
 
+    /**
+     * Le transport n'a aucun logger (#651) : `CurlHttpClient` journalise
+     * `Request: "GET <URL complète>"` en `info` dès qu'il en porte un, et
+     * l'URL du document est choisie par un appelant anonyme (le `client_id`) —
+     * seul l'hôte se journalise, jamais l'URL entière. Un logger arrive par
+     * l'autoconfiguration (`LoggerAwareInterface`, appel `setLogger`) : les
+     * deux définitions la désactivent.
+     *
+     * Ce que l'assertion prouve : la propriété privée `logger` du transport
+     * et celle de son état interne `multi` (que `setLogger()` renseigne aussi,
+     * et qui sert aux réponses poussées) valent `null`, par réflexion sur le
+     * conteneur compilé. Ce qu'elle ne prouve pas : qu'aucun autre canal ne
+     * journalise l'URL (le fetcher, lui, ne journalise que l'hôte, voir ses
+     * propres tests).
+     */
+    public function testTheMetadataTransportHasNoLogger(): void
+    {
+        $transport = new ReflectionProperty(NoPrivateNetworkHttpClient::class, 'client')
+            ->getValue($this->service('app.mcp.cimd.http_client'));
+        self::assertInstanceOf(CurlHttpClient::class, $transport);
+
+        self::assertNull(
+            new ReflectionProperty(CurlHttpClient::class, 'logger')->getValue($transport),
+            'le transport du document ne porte aucun logger : il journaliserait l\'URL complète du client_id',
+        );
+
+        $state = new ReflectionProperty(CurlHttpClient::class, 'multi')->getValue($transport);
+        self::assertIsObject($state);
+        self::assertNull(
+            new ReflectionProperty($state, 'logger')->getValue($state),
+            'l\'état interne du transport ne garde pas non plus de logger',
+        );
+    }
+
     public function testTheFetcherIsTheHttpImplementation(): void
     {
         self::assertInstanceOf(HttpClientMetadataFetcher::class, $this->service(ClientMetadataFetcherInterface::class));
