@@ -702,7 +702,14 @@
     `make back-test` OK (6460 tests), `make back-quality` rc=0. **Le message ne sort nulle part** (audit = hôte +
     cause, 401 sans `previous`) : décision de l'utilisateur, **garder tel quel, le noter dans la PR** (pas de
     nouvelle cause d'audit en fin de T12).
-  - **Prochaine action : agent V** (sonnet/high), puis fil principal, puis relecture.
+  - **Agent V fait** : `fc5c1e21` (`ClientMetadataTransportFailedException`, message constant = classe d'origine,
+    sans `previous` ; code curl perdu, non exposé hors message). Preuve contrôlée : 68 tests du récupérateur verts
+    relancés ; l'agent : rouge sur le marqueur présent dans la chaîne, `make back-test` OK (6461 tests),
+    `make back-quality` rc=0. Trailer du commit « Claude Sonnet 5.5 » (auteur réel), laissé tel quel.
+  - **Fil principal fait** : `7077f5b4` (règle : logger du transport seul, port, boucle locale http seule, fabrique
+    dédiée muette, I4 levée ; commentaire `services.yaml` ; docblock `ClientMetadataRefusedException`).
+    `check-claude-rules` OK, `CommentedClassNamesExistTest` + `CimdWiringTest` verts.
+  - **Prochaine action : relecture de la micro-série** `/code-review medium diff 63b5863b...HEAD`, puis étape 08.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
