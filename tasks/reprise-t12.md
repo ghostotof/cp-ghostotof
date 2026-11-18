@@ -607,11 +607,23 @@
     Preuve contrôlée : 278 tests mcp + page verts, `make front-lint` code 0, arbre propre ; l'agent : 2786
     tests, build vert. Choix gardés par le fil principal : testid unique, `rate-limited` au 429 seul. À la
     Task 12 : documenter le 429/503 du consentement côté front (aucune règle front n'en parle).
+  - **Relecture de la micro-série faite** (`/code-review medium diff d6771388...HEAD`, tête relue
+    `aabb050b`) : 9 constats, **aucun critique/haut/moyen** après vérification (le « moyen » de l'adresse du
+    document est tempéré par la liste fermée claude.ai/chatgpt.com) → **boucle close**.
+  - **Micro-correctif fait** dans le fil principal (décision de l'utilisateur, relecture sautée par
+    proportionnalité) : `dca006d8` (docblock exact : nginx ne pose pas de `Retry-After` ; `case
+    'temporarily-unavailable'` entre accolades ; titres des deux tests « rate-limited avec Retry-After » =
+    un intermédiaire). Preuve : 217 tests (3 fichiers consentement) verts, `make front-lint` code 0.
+  - **Prochaine action : Task 12** (plan `tasks/plan-t12-cimd.md` à partir de la l. 452 : règles, dont
+    `mcp-oauth.md` et une règle front sur le 429/503 du consentement, ADR, registre, notes de release,
+    vérifications de fin), agent sonnet/high. Puis relecture complète d'avant la MR, puis étape 08.
 
 ## Point fixe de relecture
 
-- Dernière relecture : micro-série « maximum », tête relue `e6448d17` (puis `3328cef8`, état seul).
-- Prochaine série (Task 11) : `diff 3328cef8...HEAD` — jamais un SHA nu.
+- Dernière relecture : micro-série de la Task 11, tête relue `aabb050b` ; micro-correctif `dca006d8` non relu
+  (décidé), puis ce commit d'état.
+- Prochaine série (Task 12, docs) : `diff <SHA de ce commit d'état>...HEAD` — jamais un SHA nu ; la relecture
+  complète d'avant la MR part de la merge-base avec la branche mère.
 
 ## Décisions de l'utilisateur
 
@@ -727,6 +739,14 @@
   `non-empty-string` dans `CimdAuthorizationTest` (PHPStan vert, sans objet) ; commentaire PHPUnit lié à
   une version précise (13.4.6, à revoir à une montée) ; fd 2 du worker = tube vers le maître FPM, non
   stderr du conteneur (mise en tampon, coupure à `log_limit`).
+
+- Relecture de la micro-série de la Task 11 (`aabb050b`), faibles écrits pour la PR : n° 3 l'adresse du
+  document affichée sans mise en garde (hameçonnage par le chemin, tempéré par la liste fermée) ; n° 4
+  `domainNotice` « à cette adresse » placé avant la ligne d'adresse ; n° 5 `temporaryRefusal` duplique la
+  lecture du corps de `hasType()` ; n° 6 tout 429 `rate-limited` traité comme réessayable ; n° 7
+  `rereadLabel` couplé implicitement à `offersRetry` ; n° 8 test du point final (formulation) sans
+  l'exception dite au commit ; n° 9 pas de test de page pour le 429 nginx au GET. Plus T3 (boutons actifs
+  pendant `Retry-After`, décidé), T5 (délai figé), T7 (`Retry-After` non exposé par CORS en dev, préexistant).
 
 ## Interdits des briefs
 
