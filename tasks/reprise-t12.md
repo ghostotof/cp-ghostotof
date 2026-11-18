@@ -697,7 +697,12 @@
   - **Agent T fait** : `1d705c4e` (`RedirectUri::port()`, refus d'un port explicite hors boucle locale ; `:443` déjà
     refusé par `notNormalized`). Preuve contrôlée : 169 tests ciblés verts relancés ; l'agent : rouge 1 erreur +
     2 échecs pour la bonne cause, `make back-test` OK (6459 tests), `make back-quality` rc=0.
-  - **Prochaine action : agent U** (sonnet/high), puis V, puis fil principal, puis relecture.
+  - **Agent U fait** : `d428297b` (fabrique `redirectOutsideClientHost()`, cas non normalisés gardant
+    `invalidRedirectUris()`). Preuve contrôlée : 100 tests verts relancés ; l'agent : rouge 8 échecs sur le message,
+    `make back-test` OK (6460 tests), `make back-quality` rc=0. **Le message ne sort nulle part** (audit = hôte +
+    cause, 401 sans `previous`) : décision de l'utilisateur, **garder tel quel, le noter dans la PR** (pas de
+    nouvelle cause d'audit en fin de T12).
+  - **Prochaine action : agent V** (sonnet/high), puis fil principal, puis relecture.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
