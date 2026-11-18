@@ -621,6 +621,13 @@
     Steps 1-2, les règles (`mcp-oauth-cimd.md` créée, `mcp-oauth.md`, `mcp.md`, `security-authentication-audit.md`,
     tableau de `.claude/CLAUDE.md`, la règle front du 429/503 du consentement), un commit ; puis **Q**
     (sonnet/high) = Steps 3-7 (ADR 0006, `CONTEXT.md`, registre, `tasks/todo.md`, vérifications de fin), un commit.
+  - **Agent P fait** : `20d7fd6f` (`mcp-oauth-cimd.md` créée, 15,9 Ko ; `mcp-oauth.md` 43,7 Ko ; index `mcp.md` ;
+    événement d'audit ; tableau de `CLAUDE.md`). Preuve contrôlée : `check-claude-rules.sh` rc=0, plus de
+    « until CIMD » / « will declare its own ». Nuances de P : `consent-reload` n'existe qu'au refus du GET (au
+    POST, Approuver/Refuser sont le réessai) ; les trous d'`EmbeddedIpv4` ne valent que pour la clé du quota
+    (`PublicAddressPolicy` refuse NAT64 local et Teredo). Question ouverte : les constats Task 9 « PR ou règle
+    CIMD » (double lecture SQL, `Retry-After` dupliqué, F7 oracle de latence, I1, I2, I4) non repris dans la règle.
+  - **Prochaine action : agent Q** (Steps 3-7).
 
 ## Point fixe de relecture
 
