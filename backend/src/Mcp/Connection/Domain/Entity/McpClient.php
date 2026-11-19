@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
@@ -157,6 +158,34 @@ class McpClient
     public static function discovered(ClientMetadataDocument $document, DateTimeImmutable $at): self
     {
         return new self((string) $document->clientId->toMcpClientId(), (string) $document->name, self::distinctBounded($document->redirectUris), $at, ClientRegistration::Cimd);
+    }
+
+    /**
+     * Révise un client pré-enregistré : son nom et ses redirections sont
+     * remplacés, son identifiant public (immuable : des connexions et des
+     * jetons le citent) et sa date d'enregistrement ne changent pas. Les
+     * redirections suivent l'invariant de {@see self::register()} (de une à
+     * {@see self::MAX_REDIRECT_URIS} distinctes, dédupliquées dans l'ordre reçu).
+     *
+     * Un client déclaré par son document ({@see ClientRegistration::Cimd}) est
+     * refusé : le document fait foi. Le refus et la validation précèdent toute
+     * écriture, une révision refusée ne change rien.
+     *
+     * @param list<RedirectUri> $redirectUris
+     *
+     * @throws McpClientDeclaredByDocumentException le client est déclaré par son document
+     * @throws InvalidMcpClientRedirectsException   aucune redirection, ou plus que la borne, une fois dédupliquées
+     */
+    public function revise(McpClientName $name, array $redirectUris): void
+    {
+        if (ClientRegistration::Preregistered !== $this->registration) {
+            throw McpClientDeclaredByDocumentException::cannotBeRevised();
+        }
+
+        $distinct = self::distinctBounded($redirectUris);
+
+        $this->name = (string) $name;
+        $this->redirectUris = $distinct;
     }
 
     public function getId(): Uuid

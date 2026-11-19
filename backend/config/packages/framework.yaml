@@ -127,6 +127,10 @@ framework:
         # restée ouverte sur une connexion que la purge a supprimée).
         App\Mcp\Connection\Domain\Exception\McpConnectionNotFoundException:
             log_level: info
+        # Révision d'un client MCP déclaré par son document CIMD (#652) : un 409
+        # typé, une erreur du client (le document fait foi), pas une alerte.
+        App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

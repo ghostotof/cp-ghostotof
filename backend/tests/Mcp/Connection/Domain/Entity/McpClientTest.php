@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
+use App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
@@ -195,6 +196,107 @@ final class McpClientTest extends TestCase
         self::assertFalse($client->allowsRedirect('http://app.example/cb'));
         self::assertFalse($client->allowsRedirect('javascript:alert(1)'));
         self::assertTrue($client->allowsRedirect('https://app.example/ok'));
+    }
+
+    /**
+     * Réviser un client pré-enregistré (#652) remplace son nom et ses
+     * redirections ; une redirection répétée n'est gardée qu'une fois, dans
+     * l'ordre reçu, comme à l'enregistrement.
+     */
+    public function testRevisingReplacesNameAndRedirects(): void
+    {
+        $client = $this->client(['https://app.example/cb']);
+
+        $client->revise(
+            McpClientName::fromString(" Nouveau nom\u{00A0}"),
+            [
+                RedirectUri::fromString('https://app.example/new'),
+                RedirectUri::fromString('https://app.example/other'),
+                RedirectUri::fromString('https://app.example/new'),
+            ],
+        );
+
+        self::assertSame('Nouveau nom', $client->getName());
+        self::assertSame(['https://app.example/new', 'https://app.example/other'], $client->redirectUris());
+        self::assertFalse($client->allowsRedirect('https://app.example/cb'));
+    }
+
+    /** L'identifiant public est immuable, et la révision n'est pas un nouvel enregistrement. */
+    public function testRevisingKeepsTheClientIdAndTheRegistrationDate(): void
+    {
+        $at = new DateTimeImmutable('2026-10-24T10:00:00+02:00');
+        $client = McpClient::register(
+            McpClientId::fromString('https://app.example/client.json'),
+            McpClientName::fromString('Client de test'),
+            [RedirectUri::fromString('https://app.example/cb')],
+            $at,
+        );
+        $id = $client->getId();
+
+        $client->revise(McpClientName::fromString('Autre nom'), [RedirectUri::fromString('https://app.example/new')]);
+
+        self::assertSame('https://app.example/client.json', $client->getClientId());
+        self::assertSame($at, $client->registeredAt());
+        self::assertSame($id, $client->getId());
+        self::assertSame(ClientRegistration::Preregistered, $client->registration());
+    }
+
+    public function testRevisingToNoRedirectIsRefused(): void
+    {
+        $client = $this->client(['https://app.example/cb']);
+
+        try {
+            $client->revise(McpClientName::fromString('Autre nom'), []);
+            self::fail('Une révision sans redirection devait être refusée.');
+        } catch (InvalidMcpClientRedirectsException $exception) {
+            self::assertSame(InvalidMcpClientRedirectsException::none()->getMessage(), $exception->getMessage());
+        }
+
+        // Refus atomique : ni le nom ni les redirections n'ont bougé.
+        self::assertSame('Client de test', $client->getName());
+        self::assertSame(['https://app.example/cb'], $client->redirectUris());
+    }
+
+    public function testRevisingToElevenDistinctRedirectsIsRefused(): void
+    {
+        $client = $this->client(['https://app.example/cb']);
+
+        try {
+            $client->revise(
+                McpClientName::fromString('Autre nom'),
+                array_map(RedirectUri::fromString(...), $this->distinctRedirects(McpClient::MAX_REDIRECT_URIS + 1)),
+            );
+            self::fail('Une révision au-delà de la borne devait être refusée.');
+        } catch (InvalidMcpClientRedirectsException $exception) {
+            self::assertSame(InvalidMcpClientRedirectsException::tooMany()->getMessage(), $exception->getMessage());
+        }
+
+        self::assertSame('Client de test', $client->getName());
+        self::assertSame(['https://app.example/cb'], $client->redirectUris());
+    }
+
+    /**
+     * Le document d'un client CIMD fait foi (#651) : le réviser à la main
+     * serait écrasé au prochain rafraîchissement, et ferait mentir la page de
+     * consentement. Refus, sans rien changer.
+     */
+    public function testRevisingACimdClientIsRefused(): void
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($clientId);
+        $client = McpClient::discovered(ClientMetadataDocument::fromJson($clientId, ClaudeCodeMetadata::json()), new DateTimeImmutable());
+        $redirects = $client->redirectUris();
+
+        try {
+            $client->revise(McpClientName::fromString('Autre nom'), [RedirectUri::fromString('https://app.example/new')]);
+            self::fail('Réviser un client CIMD devait être refusé.');
+        } catch (McpClientDeclaredByDocumentException $exception) {
+            self::assertSame('/errors/client-declared-by-document', $exception->getType());
+            self::assertSame(409, $exception->getStatus());
+        }
+
+        self::assertSame('Claude Code', $client->getName());
+        self::assertSame($redirects, $client->redirectUris());
     }
 
     /**
