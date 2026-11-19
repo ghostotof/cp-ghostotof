@@ -365,4 +365,29 @@ interface SecurityAuditLoggerInterface
      * @param int|null $presentedVersion la version de la revendication du jeton ; `null` si illisible
      */
     public function sessionRefusedAfterCredentialsChange(CpgUser $account, ?int $presentedVersion): void;
+
+    /**
+     * Client MCP enregistré à la main (#652), depuis le backoffice ou en ligne
+     * de commande : le client par son identifiant public (`clientId`, aucun
+     * secret) et son mode d'enregistrement (`registration`, le mot de
+     * `ClientRegistration`, écrit ici sans dépendre de `Mcp`). L'acteur est
+     * `console` pour {@see AuditOrigin::Console}, le jeton de la requête sinon.
+     * Jamais les URI de redirection ni le nom d'affichage du client.
+     */
+    public function mcpClientRegistered(string $clientId, string $registration, AuditOrigin $origin): void;
+
+    /**
+     * Client MCP révisé depuis le backoffice (#652) : seul le nombre de ses URI
+     * de redirection sort (`redirectUriCount`), jamais les URI ni le nom.
+     * L'acteur est lu dans le jeton de la requête.
+     */
+    public function mcpClientRevised(string $clientId, int $redirectUriCount): void;
+
+    /**
+     * Client MCP supprimé depuis le backoffice (#652) : son identifiant, son mode
+     * d'enregistrement et le nombre de connexions que la suppression a coupées
+     * (`cutConnections`). Jamais d'URI ni de nom. L'acteur est lu dans le jeton
+     * de la requête.
+     */
+    public function mcpClientRemoved(string $clientId, string $registration, int $cutConnections): void;
 }

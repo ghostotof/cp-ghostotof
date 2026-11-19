@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Log;
 
+use App\Security\Authentication\Application\AuditOrigin;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\AccountReference;
@@ -273,6 +274,36 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
             ...$this->account($account),
             'presentedVersion' => $presentedVersion,
             'currentVersion' => $account->getCredentialsVersion(),
+        ]);
+    }
+
+    public function mcpClientRegistered(string $clientId, string $registration, AuditOrigin $origin): void
+    {
+        // Acteur forcé à `console` pour une commande lancée à la main, comme
+        // userCreated() : hors requête, le jeton n'existe pas. Pour une
+        // requête, `null` laisse record() lire le jeton.
+        $this->record(
+            'mcp-client-registered',
+            'MCP client registered.',
+            ['clientId' => $clientId, 'registration' => $registration],
+            AuditOrigin::Console === $origin ? self::CONSOLE : null,
+        );
+    }
+
+    public function mcpClientRevised(string $clientId, int $redirectUriCount): void
+    {
+        $this->record('mcp-client-revised', 'MCP client revised.', [
+            'clientId' => $clientId,
+            'redirectUriCount' => $redirectUriCount,
+        ]);
+    }
+
+    public function mcpClientRemoved(string $clientId, string $registration, int $cutConnections): void
+    {
+        $this->record('mcp-client-removed', 'MCP client removed.', [
+            'clientId' => $clientId,
+            'registration' => $registration,
+            'cutConnections' => $cutConnections,
         ]);
     }
 

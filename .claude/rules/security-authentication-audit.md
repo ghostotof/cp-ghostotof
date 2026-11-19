@@ -197,9 +197,14 @@ paths:
   grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
   failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
   `Assert\Email` whose value ends up in an e-mail.
+  **The three events of the MCP clients** (#652): `mcp-client-registered` (`mcpClientRegistered($clientId, $registration, AuditOrigin)`),
+  `mcp-client-revised` (`redirectUriCount`) and `mcp-client-removed` (`registration`, `cutConnections`), each carrying the
+  `clientId` (the public identifier, no secret) and never a redirect URI nor the client's name. `AuditOrigin`
+  (`Application/`, `Request` or `Console`) is the one argument that changes the actor: `Console` records `console` like
+  `userCreated()`, `Request` reads the token; the two others have no console path and read the token.
   `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
   sentinel values run through every method (login identifiers of the actor and the subject included; it counts the
-  records, 32 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+  records, 36 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
   every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
   activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
   per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,

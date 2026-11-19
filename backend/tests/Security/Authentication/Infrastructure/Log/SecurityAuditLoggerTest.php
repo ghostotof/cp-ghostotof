@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Security\Authentication\Application\AuditOrigin;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -808,6 +809,109 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Un client MCP enregistré (#652) depuis le backoffice : le client par son
+     * identifiant public et son mode d'enregistrement, l'acteur lu dans le
+     * jeton — le compte qui administre, désigné par son UUID. Jamais ses URI
+     * de redirection ni son nom d'affichage.
+     */
+    public function testMcpClientRegisteredFromARequestNamesTheClientAndTheRegistrationWithTheTokenAsActor(): void
+    {
+        $this->pushRequest('/api/backoffice/mcp-clients', 'POST');
+        $super = $this->authenticatedSuper();
+
+        $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Request);
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP client registered.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-client-registered',
+            'clientId' => 'client-public-id',
+            'registration' => 'manual',
+            'actor' => $super->accountId(),
+            'ip' => self::IP,
+            'path' => '/api/backoffice/mcp-clients',
+        ], $record->context);
+        self::assertArrayNotHasKey('redirectUris', $record->context);
+        self::assertArrayNotHasKey('name', $record->context);
+    }
+
+    /**
+     * Enregistré en ligne de commande : hors requête, le jeton n'existe pas et
+     * `anonymous` suggérerait un appelant HTTP. L'acteur est `console`, comme
+     * pour `user-created`, même si un jeton traînait dans le stockage.
+     */
+    public function testMcpClientRegisteredFromTheConsoleHasConsoleAsActorWhateverTheToken(): void
+    {
+        $this->authenticatedSuper();
+
+        $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Console);
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP client registered.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-client-registered',
+            'clientId' => 'client-public-id',
+            'registration' => 'manual',
+            'actor' => 'console',
+            'ip' => null,
+            'path' => null,
+        ], $record->context);
+        self::assertArrayNotHasKey('redirectUris', $record->context);
+        self::assertArrayNotHasKey('name', $record->context);
+    }
+
+    /**
+     * Un client révisé (#652) : seul le nombre d'URI de redirection sort,
+     * jamais les URI elles-mêmes ni le nom du client.
+     */
+    public function testMcpClientRevisedCarriesTheNumberOfRedirectUrisNeverTheUrisNorTheName(): void
+    {
+        $this->pushRequest('/api/backoffice/mcp-clients/client-public-id', 'PUT');
+        $super = $this->authenticatedSuper();
+
+        $this->auditLogger->mcpClientRevised('client-public-id', 3);
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP client revised.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-client-revised',
+            'clientId' => 'client-public-id',
+            'redirectUriCount' => 3,
+            'actor' => $super->accountId(),
+            'ip' => self::IP,
+            'path' => '/api/backoffice/mcp-clients/client-public-id',
+        ], $record->context);
+        self::assertArrayNotHasKey('redirectUris', $record->context);
+        self::assertArrayNotHasKey('name', $record->context);
+    }
+
+    /**
+     * Un client supprimé (#652) : son identifiant, son mode d'enregistrement
+     * et le nombre de connexions que la suppression a coupées.
+     */
+    public function testMcpClientRemovedCarriesTheRegistrationAndTheNumberOfCutConnections(): void
+    {
+        $this->pushRequest('/api/backoffice/mcp-clients/client-public-id', 'DELETE');
+        $super = $this->authenticatedSuper();
+
+        $this->auditLogger->mcpClientRemoved('client-public-id', 'manual', 2);
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP client removed.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-client-removed',
+            'clientId' => 'client-public-id',
+            'registration' => 'manual',
+            'cutConnections' => 2,
+            'actor' => $super->accountId(),
+            'ip' => self::IP,
+            'path' => '/api/backoffice/mcp-clients/client-public-id',
+        ], $record->context);
+        self::assertArrayNotHasKey('redirectUris', $record->context);
+        self::assertArrayNotHasKey('name', $record->context);
+    }
+
+    /**
      * F-C : le compte par son UUID, la version présentée et la courante, l'auteur
      * `anonymous` (le refus précède l'authentification) — ni jeton ni identifiant de
      * connexion. Une revendication illisible : `presentedVersion` est `null`.
@@ -954,9 +1058,13 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->sessionRefusedAfterCredentialsChange($invited, 0);
         $this->auditLogger->mcpClientMetadataRefused('client.example.test', 'address-blocked');
         $this->auditLogger->mcpClientRowNotAdmitted('client.example.test');
+        $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Request);
+        $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Console);
+        $this->auditLogger->mcpClientRevised('client-public-id', 2);
+        $this->auditLogger->mcpClientRemoved('client-public-id', 'manual', 1);
 
         $records = $this->handler->getRecords();
-        self::assertCount(32, $records);
+        self::assertCount(36, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);
