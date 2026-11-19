@@ -131,6 +131,10 @@ framework:
         # typé, une erreur du client (le document fait foi), pas une alerte.
         App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException:
             log_level: info
+        # Révision ou suppression d'un client MCP inconnu (#652) : un 404 typé, une
+        # erreur du client (une liste restée ouverte sur un client déjà supprimé).
+        App\Mcp\Connection\Domain\Exception\McpClientNotFoundException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform
