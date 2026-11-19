@@ -88,7 +88,7 @@ final class WholeClockFreezeTest extends TestCase
         $deadline = $refusal->getRetryAfter()->getTimestamp();
         self::assertGreaterThan($at->getTimestamp(), $deadline, 'L\'échéance n\'est pas postérieure à l\'instant figé.');
         // Valeur exacte, dérivée ici et nulle part ailleurs (AnswerControllerTest
-        // et backend-outillage.md y renvoient). La fenêtre glissante se ferme
+        // et backend-tests.md y renvoient). La fenêtre glissante se ferme
         // 3600 s après l'instant figé (12:00:00.999 -> 13:00:00.999) et
         // symfony/rate-limiter >= 8.1.10 arrondit l'échéance à la seconde
         // supérieure, 13:00:01. RetryAfterListener arrondit par excès l'écart

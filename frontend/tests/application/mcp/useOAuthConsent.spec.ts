@@ -15,6 +15,7 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
+import { ConsentTemporarilyUnavailableError } from '../../../src/domain/mcp/errors/ConsentTemporarilyUnavailableError'
 
 const PARAMS: ConsentParams = {
   responseType: 'code',
@@ -31,7 +32,7 @@ const PARAMS: ConsentParams = {
 const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
 
 const SUMMARY: ConsentRequest = {
-  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered' },
+  client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered', domain: null },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
@@ -330,6 +331,83 @@ describe('useOAuthConsent', () => {
 
     expect(describeRequest).not.toHaveBeenCalled()
     expect(consent.state.value).toBe('invalid')
+  })
+
+  it('refus passager au résumé : réessayez, la demande n\'est pas montrée, reload() la relit', async () => {
+    const describeRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(120))
+      .mockResolvedValueOnce(SUMMARY)
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    await consent.load(PARAMS)
+
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('temporarily-unavailable')
+    expect(consent.retryAfterSeconds.value).toBe(120)
+    expect(consent.request.value).toBeNull()
+
+    await consent.reload()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(consent.state.value).toBe('ready')
+    expect(consent.failure.value).toBeNull()
+    expect(consent.retryAfterSeconds.value).toBeNull()
+  })
+
+  it('refus passager au résumé sans délai : la durée reste null', async () => {
+    const { consent } = mountComposable(
+      vi.fn(async () => APPROVED_URL),
+      vi.fn().mockRejectedValue(new ConsentTemporarilyUnavailableError()),
+    )
+
+    await consent.load(PARAMS)
+
+    expect(consent.failure.value).toBe('temporarily-unavailable')
+    expect(consent.retryAfterSeconds.value).toBeNull()
+  })
+
+  it('refus passager à la décision : retour à ready, la demande reste affichée, la session non marquée, on peut redécider', async () => {
+    const decide = vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(300))
+      .mockResolvedValueOnce(APPROVED_URL)
+    const { consent, navigate } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent.approve()
+
+    expect(consent.state.value).toBe('ready')
+    expect(consent.failure.value).toBe('temporarily-unavailable')
+    expect(consent.retryAfterSeconds.value).toBe(300)
+    expect(consent.request.value).toEqual(SUMMARY)
+    expect(navigate).not.toHaveBeenCalled()
+    expect(authState.sessionEnded).toBe(false)
+
+    await consent.approve()
+
+    expect(decide).toHaveBeenCalledTimes(2)
+    expect(consent.failure.value).toBeNull()
+    expect(consent.retryAfterSeconds.value).toBeNull()
+    expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  it('refus passager au refus (deny) : même retour à ready, la personne peut refuser de nouveau', async () => {
+    const decide = vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError())
+      .mockResolvedValueOnce('http://127.0.0.1:33418/callback?error=access_denied')
+    const { consent, navigate } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent.deny()
+    expect(consent.state.value).toBe('ready')
+    expect(consent.failure.value).toBe('temporarily-unavailable')
+
+    await consent.deny()
+
+    expect(decide).toHaveBeenLastCalledWith(PARAMS, false, ACCOUNT_ID)
+    expect(navigate).toHaveBeenCalledOnce()
   })
 
   it('échec générique à la décision : retour à ready, un nouvel essai part', async () => {

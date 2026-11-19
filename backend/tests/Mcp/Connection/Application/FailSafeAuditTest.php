@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\FailSafeAudit;
+use Closure;
 use Error;
+use LogicException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 /**
@@ -90,6 +93,82 @@ final class FailSafeAuditTest extends TestCase
 
         self::assertSame(['seconde'], $written);
         self::assertCount(1, $this->handler->getRecords());
+    }
+
+    /**
+     * La panne du journal lui-même (canal saturé, handler qui lève) ne
+     * remonte pas non plus : le refus OAuth reste 400/401, jamais un 500.
+     */
+    public function testAFailureOfTheLoggerItselfIsSwallowed(): void
+    {
+        // Un mock, non un stub : l'appel à critical() est ce qui est exercé, et
+        // le test doit rougir s'il disparaît.
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('critical')
+            ->willThrowException(new RuntimeException('journal indisponible'));
+
+        $ran = false;
+        $this->captureErrorLog(static function () use ($logger, &$ran): void {
+            (new FailSafeAudit($logger))->attempt(static function () use (&$ran): never {
+                $ran = true;
+
+                throw new RuntimeException('panne de l\'audit');
+            }, self::FAILURE_MESSAGE);
+        });
+
+        self::assertTrue($ran, 'L\'écriture a été tentée, et rien n\'a remonté.');
+    }
+
+    /**
+     * Dernier recours : le journal en panne ne laisse pas l'audit manqué sans
+     * aucune trace. Un `error_log()` sans contexte : un message constant et la
+     * classe de la panne du journal, jamais son message (il peut porter des
+     * données).
+     */
+    public function testAFailureOfTheLoggerLeavesALastResortTraceWithTheClassOnly(): void
+    {
+        // Deux classes distinctes : la trace doit porter celle du JOURNAL, jamais
+        // celle de l'audit (rougit si `$failure::class` remplace `$loggerFailure::class`).
+        $logger = self::createStub(LoggerInterface::class);
+        $logger->method('critical')->willThrowException(new LogicException('secret du journal'));
+
+        $trace = $this->captureErrorLog(static function () use ($logger): void {
+            (new FailSafeAudit($logger))->attempt(static function (): never {
+                throw new RuntimeException('panne de l\'audit');
+            }, self::FAILURE_MESSAGE);
+        });
+
+        self::assertStringContainsString('Audit failure could not be logged.', $trace);
+        self::assertStringContainsString(LogicException::class, $trace);
+        self::assertStringNotContainsString(RuntimeException::class, $trace);
+        self::assertStringNotContainsString('secret du journal', $trace);
+        self::assertStringNotContainsString('panne de l\'audit', $trace);
+        self::assertStringNotContainsString(self::FAILURE_MESSAGE, $trace);
+    }
+
+    /**
+     * Exécute `$run` avec `error_log` redirigé vers un fichier temporaire (le
+     * `error_log()` de dernier recours pollue sinon la sortie de PHPUnit) et
+     * rend ce qui y a été écrit. Réglage limité aux deux tests qui font tomber
+     * le journal ; l'ini et le fichier sont restaurés quoi qu'il arrive.
+     *
+     * @param Closure(): void $run
+     */
+    private function captureErrorLog(Closure $run): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'failsafe');
+        self::assertNotFalse($file);
+        $previous = (string) \ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+
+            return (string) file_get_contents($file);
+        } finally {
+            ini_set('error_log', $previous);
+            unlink($file);
+        }
     }
 
     private function audit(): FailSafeAudit

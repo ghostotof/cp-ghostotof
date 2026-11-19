@@ -20,23 +20,31 @@ export interface ConsentParams {
 }
 
 /**
- * Comment le client est connu du serveur : enregistré à l'avance par
- * l'administrateur du site (`app:mcp:client:register`), le seul mode qui existe
- * — aucun enregistrement dynamique. Un autre mode aurait son propre texte.
+ * Comment le client est connu du serveur :
+ * - `preregistered` : enregistré à l'avance par l'administrateur du site
+ *   (`app:mcp:client:register`) ;
+ * - `cimd` : un document de métadonnées que le client publie à son adresse
+ *   (Client ID Metadata Document, #651), lu par le site. Seul le domaine de cette
+ *   adresse est vérifié ; le nom est celui que le client se donne.
  */
-export type ConsentClientRegistration = 'preregistered'
+export type ConsentClientRegistration = 'preregistered' | 'cimd'
 
 export interface ConsentClient {
   id: string
   /**
-   * Le nom sous lequel le client est connu du site. Pour un client
-   * `preregistered`, celui que l'administrateur du site a saisi à
-   * l'enregistrement — la page le dit ainsi, sans le donner pour « déclaré par
-   * le client ». Un futur mode CIMD (#651) portera un nom déclaré par le client
-   * lui-même, et son propre texte.
+   * Le nom du client. Pour un client `preregistered`, celui que l'administrateur
+   * du site a saisi à l'enregistrement. Pour un client `cimd`, celui que le client
+   * se donne lui-même : le site ne l'a pas vérifié, la page le dit « déclaré » et
+   * met le `domain` en évidence.
    */
   name: string
   registration: ConsentClientRegistration
+  /**
+   * Le domaine où le site a lu la déclaration du client : la seule information
+   * vérifiée d'un client `cimd`. Chaîne non vide si et seulement si `cimd`, `null`
+   * pour un client `preregistered` (le contrat de la Task 10).
+   */
+  domain: string | null
 }
 
 /**

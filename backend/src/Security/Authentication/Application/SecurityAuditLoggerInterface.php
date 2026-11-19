@@ -114,6 +114,65 @@ interface SecurityAuditLoggerInterface
     /** Rejet par l'un des deux gardes CSRF ; le chemin dit lequel. */
     public function csrfRejected(): void;
 
+    /**
+     * Issue #651 : le document de métadonnées d'un client MCP (CIMD) n'a pas été
+     * récupéré ou a été refusé. Aucun compte n'est en cause : l'acteur est
+     * anonyme par défaut. Le contexte porte l'hôte, tel que
+     * `CimdClientId::host()` le rend (alphabet `[a-z0-9.-]`), et la cause, un
+     * slug fixe ; ni l'URL, ni le `client_id`, ni le corps reçu n'y entrent.
+     * Deux chaînes simples : le contexte Security ne dépend d'aucun type de
+     * `Mcp`.
+     *
+     * Contrat de l'appelant : seul un hôte déjà admis par la liste des domaines
+     * autorisés de `Mcp/Connection` (`AllowedClientDomains`) est tracé. Un
+     * domaine hors liste ne l'est jamais, même refusé en défense en profondeur
+     * par le résolveur ou le récupérateur (plan T12, D-G) : il se confond avec
+     * un client inconnu, que rien ne trace, et son hôte serait une valeur
+     * choisie librement par un anonyme, écrite telle quelle dans le journal.
+     * Le volume n'est pas la raison : un hôte de la liste refusé au-delà du
+     * quota écrit lui aussi une ligne par requête (cause `throttled`), bornée
+     * par nginx seul, comme tout quota anonyme du site (`contactThrottled()`,
+     * `baseAccessThrottled()`) ; mais sa valeur ne sort jamais de la liste.
+     * Cette méthode ne vérifie rien : la garde est chez l'appelant.
+     *
+     * L'appelant (`CimdClientAdmission`) l'invoque au travers de
+     * `FailSafeAudit` : la panne de l'audit ne remplace jamais le refus
+     * `ClientMetadataRefusedException`, seul attrapé en amont.
+     */
+    public function mcpClientMetadataRefused(string $clientHost, string $cause): void;
+
+    /**
+     * Événement `mcp-client-row-not-admitted` (#651) : league a lu la ligne
+     * `cimd` d'un client que l'admission n'a pas rendu au point
+     * d'autorisation, refusé `invalid_client` par
+     * `LoopbackAwareAuthCodeGrant`. Deux déclencheurs : (a) une
+     * divergence entre le `client_id` jugé par l'admission et celui que lit
+     * league (défense en profondeur : un état que la conception dit
+     * impossible) ; (b) une ligne `cimd` dont l'identifiant n'a plus la forme
+     * CIMD (écrite à la main, ou avant une règle plus stricte) : `admit()`
+     * rend alors `null`, league lit la ligne, le garde refuse et l'hôte écrit
+     * est `unreadable`. (b) ne vaut que pour un identifiant encore valide selon
+     * `McpClientId::fromString()` mais hors forme CIMD : un identifiant que
+     * `McpClientId` refuse n'est jamais cherché par le dépôt league (client
+     * inconnu, `invalid_client`, sans cet audit) ; le test de bout en bout est
+     * `CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`.
+     * L'écriture passe par `FailSafeAudit` : sa panne ne
+     * remplace jamais le refus. Le retrait d'un domaine de la liste autorisée n'en est
+     * pas un : il lève `DomainNotAllowed` avant le garde et n'est pas audité
+     * (décision D-G).
+     *
+     * Acteur : celui de la requête courante (`currentActor()`) — `anonymous`
+     * au point d'autorisation (firewall `oauth`, sans authentificateur), le
+     * `userId` de la personne à la revalidation du consentement (firewall
+     * `api`). Le contexte ne porte que l'hôte de la ligne
+     * (`McpClient::cimdHost()`), ou `unreadable` si son identifiant n'a pas la
+     * forme CIMD ; jamais le `client_id` brut, qui vient d'un anonyme.
+     *
+     * Contrat de l'appelant : l'hôte est lu sur la ligne en base, pas sur la
+     * valeur demandée. Cette méthode ne vérifie rien.
+     */
+    public function mcpClientRowNotAdmitted(string $clientHost): void;
+
     /** 403 sur `/api/backoffice` : un appelant authentifié sans ROLE_SUPER. */
     public function backofficeAccessDenied(): void;
 

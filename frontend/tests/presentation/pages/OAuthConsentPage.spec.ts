@@ -15,6 +15,7 @@ import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/Ma
 import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
+import { ConsentTemporarilyUnavailableError } from '../../../src/domain/mcp/errors/ConsentTemporarilyUnavailableError'
 import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
@@ -61,7 +62,7 @@ const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
 
 /** Nom choisi pour être reconnaissable dans le texte, et distinct de l'identifiant ; l'hôte, celui des URL rendues. */
 const SUMMARY: ConsentRequest = {
-  client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered' },
+  client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered', domain: null },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
@@ -735,6 +736,127 @@ describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => 
   })
 })
 
+describe('OAuthConsentPage — refus passager du serveur (#651)', () => {
+  /** Le résumé refusé une première fois (quota, hôte du client injoignable), puis rendu à la relecture. */
+  function summaryRefusedOnce(retryAfterSeconds: number | null) {
+    return vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(retryAfterSeconds))
+      .mockResolvedValueOnce(SUMMARY)
+  }
+
+  /** La décision refusée une première fois, puis acceptée. */
+  function decisionRefusedOnce(retryAfterSeconds: number | null) {
+    return vi
+      .fn()
+      .mockRejectedValueOnce(new ConsentTemporarilyUnavailableError(retryAfterSeconds))
+      .mockResolvedValueOnce(APPROVED_URL)
+  }
+
+  it.each([
+    ['fr', 120, renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 2 }, 2)],
+    ['en', 120, renderedMessage('en', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 2 }, 2)],
+    // Moins d'une minute : « 1 minute », jamais « 0 ».
+    ['fr', 30, renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 1 }, 1)],
+    ['en', 30, renderedMessage('en', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 1 }, 1)],
+  ] as const)('au résumé, délai connu (%s, %i s) : le message dit la durée en minutes, ni refus définitif ni échec générique', async (locale, seconds, expected) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(seconds) })
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain(expected)
+    expect(alert.text()).not.toContain(('fr' === locale ? fr : en).oauthConsent.errors.unknown)
+    expect(alert.text()).not.toContain(('fr' === locale ? fr : en).oauthConsent.errors.invalid)
+  })
+
+  it.each(SUPPORTED_LOCALES)('au résumé, délai inconnu (%s) : le message sans durée', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(null) })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain(
+      ('fr' === locale ? fr : en).oauthConsent.errors.temporarilyUnavailable,
+    )
+  })
+
+  it.each(SUPPORTED_LOCALES)('au résumé (%s) : aucun bouton de décision, « Réessayer » relit la demande', async (locale) => {
+    const describeRequest = summaryRefusedOnce(60)
+    const { wrapper, decide } = await mountPage({ locale, describeRequest })
+
+    const texts = 'fr' === locale ? fr : en
+    expect(wrapper.find('[data-testid="consent-approve"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-deny"]').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"] [data-testid="consent-reload"]').text()).toBe(texts.oauthConsent.errors.retry)
+
+    await wrapper.find('[data-testid="consent-reload"]').trigger('click')
+    await flushPromises()
+    await passActivationDelay()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(true)
+    expect(decide).not.toHaveBeenCalled()
+  })
+
+  it.each(['approve', 'deny'] as const)(
+    '« %s » refusé passagèrement : la demande reste affichée, le message en minutes, les boutons restent actifs',
+    async (name) => {
+      const decide = decisionRefusedOnce(300)
+      const { wrapper, navigate } = await mountPage({ decide })
+
+      await button(wrapper, name).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[role="alert"]').text()).toContain(
+        renderedMessage('fr', 'oauthConsent.errors.temporarilyUnavailableIn', { minutes: 5 }, 5),
+      )
+      expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(true)
+      expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+      expect(button(wrapper, 'deny').attributes('disabled')).toBeUndefined()
+      // Aucun réessai automatique : rien ne part tant que la personne ne décide pas de nouveau.
+      expect(decide).toHaveBeenCalledOnce()
+      expect(navigate).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="consent-reload"]').exists()).toBe(false)
+    },
+  )
+
+  it('à la décision : décider de nouveau envoie la décision et suit l\'URL rendue, le message disparaît', async () => {
+    const decide = decisionRefusedOnce(null)
+    const { wrapper, navigate } = await mountPage({ decide })
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toContain(fr.oauthConsent.errors.temporarilyUnavailable)
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(decide).toHaveBeenCalledTimes(2)
+    expect(decide).toHaveBeenLastCalledWith(PARAMS, true, ACCOUNT_ID)
+    expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  it('la session n\'est pas marquée finie par un refus passager', async () => {
+    await mountPage({ describeRequest: summaryRefusedOnce(10) })
+
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  describe.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', (locale) => {
+    it('au résumé', async () => {
+      const { wrapper } = await mountPage({ locale, describeRequest: summaryRefusedOnce(120) })
+      vi.useRealTimers()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
+
+    it('à la décision', async () => {
+      const { wrapper } = await mountPage({ locale, decide: decisionRefusedOnce(120) })
+      await button(wrapper, 'approve').trigger('click')
+      await flushPromises()
+      vi.useRealTimers()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
+  })
+})
+
 describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
   it('résumé reçu après le délai : les boutons apparaissent inactifs, le délai court à leur apparition', async () => {
     // Le résumé arrive 700 ms après le montage, fenêtre déjà active : un délai
@@ -857,6 +979,132 @@ describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
     await flushPromises()
 
     expect(decide).toHaveBeenCalledWith(PARAMS, false, ACCOUNT_ID)
+  })
+})
+
+/**
+ * Un client CIMD (#651) : le site a lu sa déclaration à cette adresse, sur ce domaine ; le nom est celui que le
+ * client se donne. La page met le domaine en évidence et dit du nom qu'il est déclaré, par le libellé seul.
+ */
+const CIMD_SUMMARY: ConsentRequest = {
+  ...SUMMARY,
+  client: {
+    id: 'https://claude.ai/oauth/claude-code-client-metadata',
+    name: 'Assistant Déclaré',
+    registration: 'cimd',
+    domain: 'claude.ai',
+  },
+}
+
+describe('OAuthConsentPage — client CIMD : domaine vérifié, nom déclaré', () => {
+  const catalogues = { fr, en } as const
+
+  it.each(SUPPORTED_LOCALES)('le domaine est affiché sous son libellé « vérifié » et sa notice (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+
+    expect(wrapper.find('[data-testid="consent-client-domain"]').text()).toBe('claude.ai')
+    expect(wrapper.find('[data-testid="consent-client-domain"]').element.tagName).toBe('CODE')
+    // Le libellé est le `<dt>` qui précède immédiatement l'`<dd>` du domaine.
+    const label = wrapper.find('[data-testid="consent-client-domain"]').element.closest('dd')?.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.domainLabel)
+    expect(wrapper.text()).toContain(texts.domainNotice)
+  })
+
+  it.each(SUPPORTED_LOCALES)('l’adresse complète du document est affichée en texte, sous le domaine et sous son libellé (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+    const document = wrapper.find('[data-testid="consent-client-document"]')
+
+    expect(document.text()).toBe(CIMD_SUMMARY.client.id)
+    expect(document.element.tagName).toBe('CODE')
+    expect(document.classes()).toContain('text-break')
+    // Le libellé est le `<dt>` qui précède immédiatement l'`<dd>` de l'adresse.
+    const label = document.element.closest('dd')?.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.documentLabel)
+    // Juste sous le domaine, avant le nom : domaine, adresse, nom.
+    const domain = wrapper.find('[data-testid="consent-client-domain"]').element
+    const name = wrapper.find('[data-testid="consent-client-name"]').element
+    expect(domain.compareDocumentPosition(document.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.element.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('une adresse contenant du HTML s’affiche en texte : aucun élément i dans la page', async () => {
+    const id = 'https://claude.ai/<i>x</i>'
+    const describeRequest = vi.fn(async () => ({ ...CIMD_SUMMARY, client: { ...CIMD_SUMMARY.client, id } }))
+    const { wrapper } = await mountPage({ describeRequest })
+
+    expect(wrapper.find('i').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-document"]').text()).toBe(id)
+  })
+
+  it.each(SUPPORTED_LOCALES)('le domaine précède le nom dans l’ordre du document (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+
+    const domain = wrapper.find('[data-testid="consent-client-domain"]').element
+    const name = wrapper.find('[data-testid="consent-client-name"]').element
+    expect(domain.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it.each(SUPPORTED_LOCALES)('le nom porte « déclaré » et sa mise en garde, jamais la notice de l’enregistrement par l’administrateur (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    const texts = catalogues[locale].oauthConsent.client
+    const name = wrapper.find('[data-testid="consent-client-name"]')
+
+    expect(name.text()).toContain('Assistant Déclaré')
+    expect(name.text()).toContain(texts.declaredNameNotice)
+    const label = name.element.previousElementSibling
+    expect(label?.tagName).toBe('DT')
+    expect(label?.textContent?.trim()).toBe(texts.declaredNameLabel)
+    // Ni le libellé ni la notice d'un client pré-enregistré : l'administrateur du site n'a rien saisi ici.
+    expect(wrapper.text()).not.toContain(texts.nameLabel)
+    expect(wrapper.text()).not.toContain(texts.nameNotice)
+    expect(wrapper.text()).not.toContain(texts.registration.preregistered)
+  })
+
+  it.each(SUPPORTED_LOCALES)('le mode affiché est « déclaré par le client » (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+
+    expect(wrapper.text()).toContain(catalogues[locale].oauthConsent.client.registration.cimd)
+  })
+
+  it.each(SUPPORTED_LOCALES)('le mode « déclaré » finit par un point, comme « enregistré à l’avance » (%s)', (locale) => {
+    const { cimd, preregistered } = catalogues[locale].oauthConsent.client.registration
+
+    expect(preregistered.endsWith('.')).toBe(true)
+    expect(cimd.endsWith('.')).toBe(true)
+  })
+
+  it('un nom contenant du HTML s’affiche en texte : aucun élément b dans la page', async () => {
+    const describeRequest = vi.fn(async () => ({ ...CIMD_SUMMARY, client: { ...CIMD_SUMMARY.client, name: '<b>x</b>' } }))
+    const { wrapper } = await mountPage({ describeRequest })
+
+    expect(wrapper.find('b').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('<b>x</b>')
+  })
+
+  it('un client pré-enregistré : aucun domaine, libellés et mise en garde inchangés', async () => {
+    const { wrapper } = await mountPage()
+    const text = wrapper.text()
+
+    expect(wrapper.find('[data-testid="consent-client-domain"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-client-document"]').exists()).toBe(false)
+    expect(text).not.toContain(fr.oauthConsent.client.documentLabel)
+    expect(text).not.toContain(fr.oauthConsent.client.domainLabel)
+    expect(text).not.toContain(fr.oauthConsent.client.declaredNameLabel)
+    expect(text).toContain(fr.oauthConsent.client.nameLabel)
+    expect(text).toContain(fr.oauthConsent.client.nameNotice)
+    expect(text).toContain(fr.oauthConsent.client.registration.preregistered)
+  })
+
+  it.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', async (locale) => {
+    const { wrapper } = await mountPage({ locale, describeRequest: vi.fn(async () => CIMD_SUMMARY) })
+    // axe programme ses propres minuteries : elles doivent tourner.
+    vi.useRealTimers()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })
 

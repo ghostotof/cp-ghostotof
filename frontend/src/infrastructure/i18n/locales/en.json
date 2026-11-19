@@ -820,11 +820,17 @@
     },
     "client": {
       "heading": "The client",
+      "domainLabel": "Verified domain",
+      "domainNotice": "This site read this client’s declaration at this address, on this domain: it is the only verified information.",
+      "documentLabel": "Declaration address",
+      "declaredNameLabel": "Declared name",
+      "declaredNameNotice": "The name this client gives itself. This site has not verified it: rely on the domain.",
       "nameLabel": "Client name",
       "nameNotice": "The name under which the site’s administrator registered this client.",
       "registrationLabel": "Registration",
       "registration": {
-        "preregistered": "Client registered in advance by the site’s administrator."
+        "preregistered": "Client registered in advance by the site’s administrator.",
+        "cimd": "Declared by the client, in a document published on its domain."
       },
       "redirectLabel": "Return after your decision",
       "redirectNotice": "The page will send you back to this host, whether you authorize the connection or not."
@@ -845,6 +851,9 @@
       "accountChanged": "The signed-in account has changed since this request was shown (for example in another tab): nothing was sent. Reload the request to see the current account, then decide.",
       "reload": "Reload the request",
       "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
+      "temporarilyUnavailable": "The server cannot process this request right now: nothing was sent. Please try again in a few minutes.",
+      "temporarilyUnavailableIn": "The server cannot process this request right now: nothing was sent. Please try again in {minutes} minute. | The server cannot process this request right now: nothing was sent. Please try again in {minutes} minutes.",
+      "retry": "Try again",
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }

@@ -8,6 +8,8 @@ use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Application\IssParameter;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Domain\Exception\RetryAfterChain;
+use App\Shared\Infrastructure\Http\RetryAfterListener;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
@@ -68,7 +70,7 @@ final readonly class AuthorizeController
             $summary = $this->validator->validate($this->psrHttpFactory->createRequest($request));
             $response = new RedirectResponse($this->consentPage($request).'?'.http_build_query($summary->consentQuery()));
         } catch (OAuthServerException $refusal) {
-            $response = $this->refusal($refusal);
+            $response = $this->refusal($refusal, $request);
         }
 
         // Ni la redirection (elle porte `state` et le défi PKCE) ni un refus
@@ -98,6 +100,12 @@ final readonly class AuthorizeController
      * Le refus rendu par league ; une redirection vers le client y reçoit
      * `iss`.
      *
+     * Un refus transitoire du quota de récupération d'un document (CIMD, #651)
+     * est un 429 : son échéance, lue dans la chaîne des `previous`, est notée
+     * sur la requête pour que `RetryAfterListener` pose `Retry-After` comme
+     * sur tout autre 429 (même calcul, même arrondi, même horloge). Le refus
+     * est rendu ici sans être levé : `kernel.exception` ne le voit pas.
+     *
      * Sans `WWW-Authenticate` : league le pose sur un `invalid_client` quand la
      * requête porte un en-tête `Authorization` (RFC 6749 §5.2, écrit pour le
      * point de jeton, où le client s'authentifie). Ici l'appelant est le
@@ -106,8 +114,13 @@ final readonly class AuthorizeController
      * lui ferait ouvrir une demande d'identifiants sur le point
      * d'autorisation. Aucun client ne s'authentifie à ce point.
      */
-    private function refusal(OAuthServerException $refusal): Response
+    private function refusal(OAuthServerException $refusal, Request $request): Response
     {
+        $quota = RetryAfterChain::latestIn($refusal);
+        if (null !== $quota) {
+            $request->attributes->set(RetryAfterListener::REQUEST_ATTRIBUTE, $quota->retryAfter);
+        }
+
         $response = $this->httpFoundationFactory->createResponse(
             $refusal->generateHttpResponse($this->responseFactory->createResponse()),
         );

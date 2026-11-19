@@ -17,7 +17,7 @@ use Symfony\Component\ErrorHandler\Exception\FlattenException;
  * Sous PHPUnit, les traces d'exception ne portent pas les arguments des appels
  * (issue #420) : `#[SensitiveParameter]` (#411, #414) ne couvre que `src/`, le
  * vendor garde les siens. Le pourquoi, ce que le réglage couvre et ce qu'il ne
- * couvre pas : `.claude/rules/backend-outillage.md`.
+ * couvre pas : `.claude/rules/backend-tests.md`.
  *
  * Deux preuves, parce qu'une seule serait creuse en CI, où `setup-php` charge
  * `php.ini-production`, qui pose déjà la directive : la lecture de

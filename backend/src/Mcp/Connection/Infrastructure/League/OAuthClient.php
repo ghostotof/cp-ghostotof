@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\JudgedClientInterface;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
@@ -16,13 +17,20 @@ use League\OAuth2\Server\Entities\ClientEntityInterface;
  * redirection demandée par McpClient::allowsRedirect() — la seule règle de
  * comparaison du dépôt — au lieu du validateur de league.
  */
-final readonly class OAuthClient implements ClientEntityInterface
+final readonly class OAuthClient implements ClientEntityInterface, JudgedClientInterface
 {
     public function __construct(
         private McpClient $client,
     ) {
     }
 
+    /**
+     * Rend l'instance même reçue à la construction. Ne jamais la copier ni la
+     * reconstruire (clone, `new McpClient(...)`, réhydratation) :
+     * `AuthorizationRequestSummary::judgedDiscoveredClient()` compare par `===`
+     * l'objet servi à celui que l'admission CIMD a déposé dans la requête, et
+     * une copie rendrait cette garde d'identité toujours fausse.
+     */
     public function mcpClient(): McpClient
     {
         return $this->client;

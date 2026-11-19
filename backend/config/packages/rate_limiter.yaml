@@ -53,3 +53,78 @@ framework:
             policy: 'sliding_window'
             limit: 30
             interval: '1 hour'
+
+        # Quota de récupération des documents de métadonnées des clients CIMD
+        # (#651, D-F), consommé par le résolveur seulement sur un cache manqué :
+        # une récupération sort du serveur vers un hôte choisi par un tiers. Clé :
+        # l'IP de l'appelant, jamais le `client_id` (un attaquant en changerait à
+        # chaque essai) ; **une IPv6 y est comptée par son /64**, une IPv4 entière,
+        # une IPv4 portée par une IPv6 (mappée, NAT64, 6to4, compatible) comme cette
+        # IPv4 (FetchQuotaKey : qui tient un /64 changerait d'adresse à volonté).
+        # Pour ce limiteur seulement. Stocké dans `cache.rate_limiter`, qui repose
+        # sur `cache.app`, donc en base, sous le verrou partagé entre pods (ADR 0005).
+        mcp_client_metadata:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '10 minutes'
+
+        # Plafond commun à tous les appelants de la récupération des documents
+        # CIMD (#651, D-F). Il est regardé sans être consommé avant le quota
+        # ci-dessus (plein, l'appelant est refusé et ne perd rien), puis
+        # consommé après lui : un appelant refusé par son quota ne lui coûte
+        # rien (ordre et course acceptée : SymfonyClientMetadataFetchQuota).
+        # Il existe parce qu'aucun préfixe ne borne un attaquant qui
+        # tient un bloc plus grand qu'un /64 : un /48, que reçoit couramment un
+        # VPS, contient 65 536 /64, donc 65 536 quotas par appelant. Clé constante :
+        # c'est le total des récupérations sortantes du service, quelle qu'en soit
+        # l'origine. Même stockage et même verrou que les autres limiteurs.
+        #
+        # Dix sources suffisent à le remplir : un client déjà déclaré (ligne `cimd`
+        # dans `mcp_client`) passe donc par une voie qui l'ignore tant que son
+        # compteur a de la place (`consumeForKnownClient()` : le quota de
+        # l'appelant et le compteur de ce client, ci-dessous), pour que cette
+        # saturation ne ferme pas la porte aux clients que des personnes de
+        # confiance ont déjà approuvés. Un attaquant peut nommer un client approuvé
+        # et emprunter cette voie : les dix premières récupérations de ce client
+        # dans la fenêtre passent hors du plafond, les suivantes le paient. Le
+        # total des sorties vers les domaines autorisés est donc borné par ce
+        # plafond (100) plus dix par client approuvé, par fenêtre de dix minutes.
+        # Compteur plein, la voie se replie sur ce plafond : le compteur ne refuse
+        # jamais seul.
+        mcp_client_metadata_global:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '10 minutes'
+
+        # Compteur par client déjà déclaré (#651, D-F), sur la voie qui ignore le
+        # plafond commun tant qu'il a de la place. **Il décide qui paie, il ne
+        # borne pas le total** : les dix premières récupérations du document d'un
+        # même client connu dans la fenêtre, quels que soient les appelants (dix
+        # sources qui nomment le même client approuvé partagent ce compteur),
+        # passent hors du plafond commun ; les suivantes le paient. Regardé sans
+        # être consommé avant le quota de l'appelant, puis consommé après lui.
+        # **Plein, il ne refuse pas** : la voie se replie sur le plafond commun
+        # (SymfonyClientMetadataFetchQuota), si bien qu'un attaquant qui l'épuise
+        # (dix demandes simultanées à l'expiration du cache) ne ferme la porte à
+        # personne : il faudrait saturer aussi le plafond commun (dix sources),
+        # plus ce compteur (une source de plus). Clé : l'empreinte SHA-256 du
+        # `client_id` (ClientIdFingerprint), de longueur et d'alphabet fixes, sans
+        # l'URL en clair dans `cache_items`. Ce n'est pas un secret : le
+        # `client_id` d'un client approuvé est une URL publique, recalculable par
+        # quiconque en connaît la candidate ; aucune donnée personnelle n'est
+        # stockée. L'ensemble des clés est borné : seuls les clients approuvés
+        # (ligne `cimd`) passent par cette voie, un `client_id` inconnu reste sur
+        # le plafond commun. Même stockage et même verrou que les autres
+        # limiteurs.
+        #
+        # Pourquoi dix : c'est le quota d'un appelant (`mcp_client_metadata`), la
+        # taille d'une rafale légitime (un client dont le document expire, relu
+        # par une poignée de personnes de confiance), sans rien d'un calcul plus
+        # fin. Monter la valeur élargit la voie qui contourne le plafond, donc le
+        # total des sorties (100 plus cette valeur par client approuvé) ; la
+        # baisser rapproche un client approuvé d'un client inconnu, dont le
+        # plafond commun peut être saturé par dix sources.
+        mcp_client_metadata_known_client:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '10 minutes'

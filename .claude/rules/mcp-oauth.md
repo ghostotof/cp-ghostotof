@@ -186,7 +186,8 @@ paths:
   carry no `state`, challenge nor code (a constant message, or the names of the refused fields). The PSR-7 bridge is the MCP
   bundle's (`mcp.psr_http_factory`, `mcp.http_foundation_factory`, `mcp.psr17_factory`, by interface).
   The consent's refusal of a revalidated request is its 400 (`AuthorizationRequestRejectedException`,
-  `log_level: info`). **The authorize endpoint's refusals carry no `WWW-Authenticate`**: league sets
+  `log_level: info`) — **except a transient refusal of a CIMD document** (the quota or the document's host,
+  `mcp-oauth-cimd.md`), which is a typed 429 or 503, see « The consent page ». **The authorize endpoint's refusals carry no `WWW-Authenticate`**: league sets
   `Basic realm="OAuth"` on an `invalid_client` whenever the request has an `Authorization` header (RFC 6749
   §5.2, meant for the token endpoint), and a browser behind preprod's Basic Auth sends one on every request —
   it would open a credentials prompt on the authorize endpoint
@@ -254,7 +255,8 @@ paths:
   before the `ROLE_USER` rules; `ROLE_SUPER` through the hierarchy), under the `api` firewall (the person's
   cookie) and the CSRF guard for the POST, JSON only (`MapRequestPayload(acceptFormat: 'json')`). **One
   judge**: `ConsentService` revalidates the request through the same validator on both calls, keeping
-  nothing in between; a refusal there is a 400 problem+json, never a redirect. The approval writes the
+  nothing in between; a refusal there is a 400 problem+json (**a transient refusal of a CIMD document is a 429 or
+  a 503, below**), never a redirect. The approval writes the
   connection and, through league, its code in one transaction (`TransactionInterface`), then the audit
   line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); **the active grant of the same account
   and client is superseded at the first exchange of the new code**, never at the approval (#726, D2): in the token
@@ -307,10 +309,9 @@ paths:
   the grant types and the PKCE method read from `Application/OAuthProfile` (#726), the one source the grant
   (`LoopbackAwareAuthCodeGrant`), the client (`OAuthClient`, `ClientRepository`) and the payload reader apply, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
-  **One announcement ahead of the code, accepted** (phase 2 only ships whole):
-  `client_id_metadata_document_supported: true` until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is
-  true since #648's authenticator. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405,
-  the `BEARER` changing nothing, no `openid-configuration`.
+  `client_id_metadata_document_supported: true` is true since CIMD (#651, `.claude/rules/mcp-oauth-cimd.md`);
+  `bearer_methods_supported: ["header"]` since #648's authenticator. `OAuthMetadataTest` pins both documents
+  exactly, their routed paths, a POST 405, the `BEARER` changing nothing, no `openid-configuration`.
 - **A dedicated Ingress carries the two documents**, `k8s/base/ingress-oauth-metadata.yaml`: two `Exact`
   paths to `backend:80` (an `Exact` beats the main Ingress's `/` prefix), **no annotation, no `tls`** —
   ingress-nginx applies `auth-*` annotations to every path of one object, and preprod's Basic Auth sits on
@@ -326,7 +327,7 @@ paths:
 - **Rate**: the nginx `oauth` zone on `^~ /api/oauth/` (`.claude/rules/deploiement-nginx.md`), one counter
   per IP and per pod for authorize, consent, token and revoke together; the documents stay under `publicapi`.
 - **Clients are registered by `app:mcp:client:register` only** (`McpClientRegistrar` behind its
-  interface; no dynamic registration, no `registration_endpoint`; CIMD is #651, the backoffice #652):
+  interface; no dynamic registration, no `registration_endpoint`; a CIMD client is not registered but discovered, `mcp-oauth-cimd.md`; the backoffice is #652):
   public clients, no secret, a concurrent duplicate named (`McpClientAlreadyRegisteredException`). **The
   client's invariants live in the Domain**, shared by the command and the future backoffice (#652):
   `McpClientId` (1–255 characters of `[A-Za-z0-9._:/-]`, `InvalidMcpClientIdException`), `McpClientName` (1–100
@@ -337,7 +338,9 @@ paths:
   objects' `MAX_LENGTH`); `ClientRepository` and the token endpoint search no identifier outside
   `McpClientId`'s shape. Tests build clients through `tests/Mcp/Connection/RegisteredMcpClient`. A
   pre-registered client's name is the one the site's administrator typed, and the consent page says so — never
-  « declared by the client, not verified »; a CIMD client (#651) will declare its own, with its own wording.
+  « declared by the client, not verified ». **A `cimd` client's page** says the opposite, on purpose: the verified
+  **domain** (the host of the allowed list), the **address of the document** and the name **declared** by the
+  client, not verified (`mcp-oauth-cimd.md`, « The consent page, for a `cimd` client »).
 - **The consent page** (`/<locale>/oauth/consent`, `requiresAuth`, `ROLE_TRUSTED`/`ROLE_SUPER`, `noindex`;
   an anonymous visitor goes through login, whose `redirect` keeps the query). **It names the account that grants**
   (#650): `GET /api/oauth/consent` returns `account{id, username}`, read from `#[CurrentUser]` — the cookie of this very
@@ -391,6 +394,29 @@ paths:
   The page spec runs it under fake timers (`setTimeout` only, `flushPromises` keeps `setImmediate`; axe needs
   the real ones back). `OAuthConsentPage.spec.ts`, `useOAuthConsent.spec.ts`,
   `HttpOAuthConsentRepository.spec.ts`, `consentParams.spec.ts`.
+- **A transient refusal of the revalidation: 429 or 503** (#651). Both calls revalidate the request, and for a CIMD
+  client that may fetch its document (`mcp-oauth-cimd.md`). `ConsentService::validated()` turns an
+  `OAuthServerException` of type `temporarily_unavailable` into `ConsentTemporarilyUnavailableException`
+  (abstract; problem type `/errors/consent-temporarily-unavailable`, constant detail, never the cause):
+  `ConsentRevalidationThrottledException` (**429**, log `info`) for the quota, `ConsentRevalidationUnavailableException`
+  (**503**, log `warning`) for the host or the network. **`Retry-After` is on the 429 only**
+  (`RetryAfterListener`, shared, reads the `previous` chain through `RetryAfterChain::latestIn`); the 503 has
+  none. Every other refusal stays the generic 400, which names no cause; there is **no audit of the consent's own**
+  here (the trace is at the source, `mcp-client-metadata-refused`). Tests: `CimdConsentFlowTest`.
+  **Frontend**: `HttpOAuthConsentRepository.temporaryRefusal()` reads the body once and raises
+  `ConsentTemporarilyUnavailableError(retryAfterSeconds | null)` for the type `consent-temporarily-unavailable`
+  (429 or 503) **and** for `rate-limited` **on a 429 only** (nginx's `oauth` zone, `location @rate_limited`, which
+  sends no `Retry-After`); the delay is read on the 429 only (`null` on a 503); a 503 `rate-limited`, any other
+  type or an unreadable body is the generic `ConsentFailedError`. `useOAuthConsent` sets
+  `failure = 'temporarily-unavailable'` and `retryAfterSeconds`, with **no automatic retry**: the state goes back
+  to `ready` at a decision (the request stays displayed), to `error` at the summary. `OAuthConsentPage` says
+  `oauthConsent.errors.temporarilyUnavailable` or `…temporarilyUnavailableIn` (minutes, plural), one message for
+  the 429 and the 503. **A failed summary** offers one reload button (`consent-reload`, « Try again »); **a failed
+  decision** offers none: **Authorize and Deny stay enabled during the delay** (decision of 2026-11-18; the
+  delay is advice, the server decides) and are the retry. **Accepted (F6)**: a transient refusal also stops
+  **Deny**, since a denial redirects to `redirect_uri`, which must be revalidated like an approval (a
+  redirection the document no longer declares must never receive one); the person tries again, or closes the
+  page, the code never issued.
 - **The whole flow** is driven end to end by `tests/Mcp/Connection/OAuthFlowTest` (trait
   `DrivesTheOAuthFlow`: a registered client, authorize, consent as a trusted account, exchange, refresh,
   revoke, every table read for a token in clear). `testAnAwkwardStateAndARegisteredQueryReachTheClientIntact`

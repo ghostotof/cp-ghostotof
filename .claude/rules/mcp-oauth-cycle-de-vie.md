@@ -165,7 +165,7 @@ paths:
   processes present one refresh token, the second released at the first's first flush — the last use, written
   under the lock — and blocked on the `FOR UPDATE` until the COMMIT; it must then be refused « Token has been
   revoked », the connection revoked `refresh-token-reuse`, one new pair in rows; under the mutation it is served a
-  second pair, red, see `.claude/rules/backend-outillage.md`, « Concurrency tests »)); the connection revoked →
+  second pair, red, see `.claude/rules/backend-tests.md`, « Concurrency tests »)); the connection revoked →
   dead, no second revocation, no audit; **the token
   revoked on an active connection → `RotatedRefreshTokenReusedException`** (a `CompromisedMcpConnectionException`,
   `Domain/Exception`: `connectionId()`, `revocationCause()`, a constant message, never the token), judged

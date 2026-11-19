@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 
 /**
@@ -45,6 +47,8 @@ final readonly class AuthorizationServerFactory
         private RefreshTokenRepository $refreshTokens,
         private OAuthEncryptionKey $encryptionKey,
         private ConnectionLifetimes $lifetimes,
+        private SecurityAuditLoggerInterface $audit,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -60,7 +64,7 @@ final readonly class AuthorizationServerFactory
         $server->setDefaultScope(NominativeReadScope::IDENTIFIER);
         $server->revokeRefreshTokens(true);
 
-        $authCodeGrant = new LoopbackAwareAuthCodeGrant($this->authCodes, $this->refreshTokens, $this->lifetimes->authorizationCode());
+        $authCodeGrant = new LoopbackAwareAuthCodeGrant($this->authCodes, $this->refreshTokens, $this->lifetimes->authorizationCode(), $this->audit, $this->failSafeAudit);
         $authCodeGrant->setRefreshTokenTTL($this->lifetimes->refreshToken());
         $server->enableGrantType($authCodeGrant, $this->lifetimes->accessToken());
 

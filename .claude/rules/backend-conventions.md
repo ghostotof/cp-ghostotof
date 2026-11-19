@@ -163,7 +163,7 @@ another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (
 envelope body go through them under generic names, and `hash_equals()`, which also receives them, hides
 its own. No exclusion list until a first false positive needs one. Why it matters although
 production and PHPUnit (#420) strip arguments (`zend.exception_ignore_args`, see
-`.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
+`.claude/rules/backend-tests.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
 does. The attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
 receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclusion are shared with the

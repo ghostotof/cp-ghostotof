@@ -73,7 +73,7 @@ final class ConsentControllerTest extends WebTestCase
         $response = $this->client->getResponse();
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertSame([
-            'client' => ['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME, 'registration' => 'preregistered'],
+            'client' => ['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME, 'registration' => 'preregistered', 'domain' => null],
             'redirectHost' => 'localhost',
             'scope' => 'nominative:read',
             'resource' => $this->resource(),
@@ -142,6 +142,23 @@ final class ConsentControllerTest extends WebTestCase
 
         $this->assertAccountChanged($response);
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+    }
+
+    /**
+     * Garde (#651, F5) : le compte montré est jugé avant la revalidation de la demande. Une
+     * décision à la fois invalide (redirection non enregistrée) et montrée à un autre compte
+     * répond 409, pas 400 : le rechargement que le 409 propose rend le 400 de la demande.
+     */
+    public function testAnInvalidRequestShownToAnotherAccountIsConflictNotBadRequest(): void
+    {
+        $shownAccountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, overrides: ['redirect_uri' => 'https://attacker.example.test/callback'], shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
     }
 
     /**

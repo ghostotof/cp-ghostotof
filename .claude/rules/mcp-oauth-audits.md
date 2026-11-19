@@ -87,13 +87,22 @@ paths:
   read it from HTTP Basic, where the audit did not see who presented the grant. A body those two refuse is not audited:
   its parameters do not read unambiguously. **An audit failure never changes the answer** (decided):
   `TokenEndpoint::audit()` (and its unproven-replay twin) goes through `Application/FailSafeAudit::attempt($write,
-  $message)` — written once (#726, S1) for its four sites: `TokenEndpoint::audit()` and
-  `TokenEndpoint::auditUnprovenReplay()` (both `Grant refusal not audited.`), `CodeExchangeSupersession::auditSuperseded()`
-  (`Superseded connection not audited.`, after the exchange's COMMIT) and the purge's `McpConnectionPurger::auditExpired()`
-  (`Expired connection not audited.`): it catches any `Throwable` of the write and logs the caller's constant message,
-  here `Grant refusal not audited.`, at `critical` on the main
+  $message)` — written once (#726, S1), then reused by #651: it has several call sites in `Mcp/Connection` (the list is
+  `grep -rn --exclude='.env*' -- '->attempt(' backend/src`; the constant messages, `grep -rn --exclude='.env*' "not audited\." backend/src`),
+  each with its own constant message: `TokenEndpoint::audit()` and `TokenEndpoint::auditUnprovenReplay()` (both `Grant refusal not audited.`),
+  `CodeExchangeSupersession::auditSuperseded()` (`Superseded connection not audited.`, after the exchange's COMMIT),
+  the purge's `McpConnectionPurger::auditExpired()` (`Expired connection not audited.`), `RevokedConnectionAudit::record()`
+  (`Revoked connection not audited.`: the person's revocation, the password change, the loss of the trusted tier),
+  `CimdClientAdmission::admit()` (`Refused CIMD client metadata not audited.`, so that its failure never replaces
+  the metadata refusal) and `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()` (`Refused stored CIMD client row not audited.`):
+  it catches any `Throwable` of the write and logs the caller's
+  constant message, here `Grant refusal not audited.`, at `critical` on the main
   channel (`['exceptionClass' => …]`, the class only, never a message that could quote the grant;
-  `FailSafeAuditTest`); league's refusal is then thrown unchanged —
+  `FailSafeAuditTest`). **If the logger itself throws, that failure is swallowed too**: the last resort is a bare
+  `error_log('Audit failure could not be logged. Logger failure: <class>')` (constant message plus the logger failure's
+  class, no context, no message), so the refusal the caller returns is never replaced by a 500 — the outcome stays
+  whatever the caller returns, per site; that line is not a guarantee of a trace: `error_log` and the `main` handler
+  (`php://stderr`) share the container's descriptor 2, so it covers a failing processor, formatter or handler, never a failing stderr itself; league's refusal is then thrown unchanged —
   `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured);
   its twin `testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged` replaces `GrantRefusalAuditInterface` (league
   reads the connection under its lock before the replay is recognised, so the table cannot be hidden): « Authorization

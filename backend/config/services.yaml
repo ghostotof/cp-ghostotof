@@ -59,6 +59,14 @@ parameters:
     app.mcp.lifetime.connection_idle: 'P30D'
     app.mcp.lifetime.connection_maximum: 'P90D'
     app.mcp.lifetime.connection_unexchanged: 'PT1H'
+    # Domaines dont un client MCP peut s'identifier par l'URL de son document
+    # de métadonnées (CIMD, #651), lus par AllowedClientDomains
+    # (Mcp/Connection/Domain/ValueObject) : l'hôte du `client_id` doit être
+    # l'une de ces entrées, tel quel — aucun sous-domaine implicite. Des noms
+    # d'hôte en minuscules, sans schéma, port ni chemin ; une liste vide éteint
+    # CIMD. Une seule valeur pour tous les environnements, jamais de `%env()%`,
+    # comme les durées ci-dessus.
+    app.mcp.cimd.allowed_domains: ['claude.ai', 'chatgpt.com']
     # Rétention des connexions MCP révoquées ou expirées (#649) : la purge
     # quotidienne (`app:mcp:purge`, défaut de `--older-than`) supprime celles
     # révoquées avant ce délai. Une expression relative PHP, lue par
@@ -174,6 +182,96 @@ services:
             $idleLifetime: '%app.mcp.lifetime.connection_idle%'
             $maximumLifetime: '%app.mcp.lifetime.connection_maximum%'
             $unexchangedLifetime: '%app.mcp.lifetime.connection_unexchanged%'
+
+    # Les domaines dont un client CIMD est admis (#651), construits depuis le
+    # paramètre `app.mcp.cimd.allowed_domains` ci-dessus. Un objet valeur à
+    # constructeur privé, d'où la fabrique, qui refuse une entrée mal formée.
+    #
+    # Public, et dans tous les environnements, pour une seule raison :
+    # CimdWiringTest lit dans le conteneur le service que cette définition
+    # construit (un service privé utilisé une fois est inliné, donc introuvable
+    # par le test). Le rendre public sous `when@test` seulement est refusé par
+    # SecurityServicesEnvironmentParityTest (#698 : une définition `App\` est la
+    # même partout). Un objet valeur sans secret : la liste est versionnée
+    # ci-dessus. Il est déjà reçu par injection (HttpClientMetadataFetcher et
+    # CimdClientResolver) : ce n'est donc plus un service sans consommateur. Il ne deviendra privé que le
+    # jour où ce test cesse de le lire ; le plan de la tâche 12 ne fixe pas ce
+    # moment, et la Task 9 (admission) n'y change rien.
+    App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains:
+        public: true
+        factory: ['App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains', 'fromList']
+        arguments:
+            $domains: '%app.mcp.cimd.allowed_domains%'
+
+    # Le client HTTP de la récupération d'un document CIMD (#651, D-D couche 5) :
+    # un transport à lui, entouré de NoPrivateNetworkHttpClient, qui refuse toute
+    # requête vers une adresse privée ou réservée, celle qu'on lui épingle comme
+    # celle où la connexion aboutit réellement.
+    #
+    # Le transport n'est PAS le `http_client` du framework : avec curl, l'option
+    # `resolve` s'écrit dans le cache DNS du multi-handle (`$multi->dnsCache->hostnames`)
+    # et les connexions sont réutilisées, or ce multi-handle est celui de tous les
+    # appels sortants qui partagent le service. L'adresse épinglée pour le nom d'un
+    # tiers y survivrait à la requête, au profit (ou au détriment) des autres.
+    # Un transport propre garde l'effet de `resolve` pour ce seul service.
+    #
+    # Public pour la même raison que AllowedClientDomains : CimdWiringTest le
+    # lit dans le conteneur, et ce service ne peut pas devenir public sous
+    # `when@test` seulement (SecurityServicesEnvironmentParityTest, #698).
+    app.mcp.cimd.http_client:
+        class: Symfony\Component\HttpClient\NoPrivateNetworkHttpClient
+        public: true
+        autoconfigure: false
+        # Le seul effet de l'autoconfiguration à conserver : `ResetInterface`
+        # ne pose plus son tag, on le repose (reset entre deux requêtes d'un
+        # processus long).
+        tags: [{ name: kernel.reset, method: reset }]
+        arguments:
+            - '@app.mcp.cimd.transport'
+            # La liste de la couche 3 (PublicAddressPolicy, source unique), non
+            # celle par défaut de Symfony, qui omet le multicast et les blocs
+            # d'affectations de protocoles. CimdWiringTest le vérifie.
+            - !php/const App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy::SUBNETS
+
+    # Le transport du client ci-dessus : toujours curl, jamais le transport natif
+    # de PHP. L'épinglage (`CURLOPT_RESOLVE`), `max_connect_duration`
+    # (`CURLOPT_CONNECTTIMEOUT_MS`) et les bornes de HttpClientMetadataFetcher
+    # ont été vérifiés pour curl seul ; le transport natif plafonne par exemple
+    # toute lecture de socket à `max_connect_duration` (1 s au lieu des 2 s de
+    # `timeout`). Une fabrique `HttpClient::create()` y retomberait en silence
+    # sans l'extension ; ici, sans elle, le service échoue à sa construction
+    # (`LogicException` du constructeur de CurlHttpClient) : échec fermé. Aucune
+    # option par défaut : chaque requête porte les siennes. CimdWiringTest en
+    # vérifie la classe.
+    #
+    # Sans autoconfiguration (ici, et par précaution sur le décorateur, qui n'en
+    # est pas un) : CurlHttpClient est un LoggerAwareInterface, et
+    # l'autoconfiguration lui poserait `setLogger()`
+    # avec le logger du framework. Il journalise alors `Request: "GET <URL>"`
+    # en `info` : l'URL complète du document, choisie par un appelant anonyme
+    # (le `client_id`), sortirait dans les journaux (préprod en `debug`), alors
+    # que seul l'hôte se journalise. CimdWiringTest vérifie l'absence de logger.
+    app.mcp.cimd.transport:
+        class: Symfony\Component\HttpClient\CurlHttpClient
+        autoconfigure: false
+        tags: [{ name: kernel.reset, method: reset }]
+
+    # Le port de résolution : le système, vérifié puis épinglé par le fetcher.
+    # Les tests le remplacent par une doublure, jamais par un DNS réel.
+    App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface:
+        alias: App\Mcp\Connection\Infrastructure\Cimd\NativeHostAddressResolver
+        public: true
+
+    # Le port de récupération du document d'un client CIMD, adossé au client
+    # HTTP ci-dessus. Public pour CimdWiringTest, qui le lit dans le conteneur,
+    # pour la même raison qu'AllowedClientDomains (voir plus haut).
+    App\Mcp\Connection\Application\Cimd\ClientMetadataFetcherInterface:
+        alias: App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher
+        public: true
+
+    App\Mcp\Connection\Infrastructure\Cimd\HttpClientMetadataFetcher:
+        arguments:
+            $client: '@app.mcp.cimd.http_client'
 
 when@test:
     services:

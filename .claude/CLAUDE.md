@@ -21,7 +21,8 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 
 | Rule (`.claude/rules/`) | Area | Read it before… |
 |---|---|---|
-| `backend-outillage.md` | backend quality tooling, Monolog, API Platform's version and its deprecation guard | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging, the `api-platform/*` version, `.github/dependabot.yml` |
+| `backend-outillage.md` | backend quality tooling, Monolog and `tools/logs-select.sh`, target PHP version, API Platform's version and its deprecation guard — and the index of the tests part | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging, the `api-platform/*` version, `.github/dependabot.yml` |
+| `backend-tests.md` | backend tests: PHPUnit exception traces, child-process concurrency harness, repository files read from a test, frozen clock for a `Retry-After` | writing or changing a backend test, `phpunit.dist.xml` |
 | `backend-architecture.md` | backend DDD layout, UUID v7 keys, timestamps — and the index of the two below | adding an entity, a bounded context, a migration |
 | `backend-integrite.md` | authenticated envelopes and cache values, derived keys, `KeyedMac` | touching Messenger serialization, a cache pool, an HMAC, `APP_SECRET` |
 | `backend-conventions.md` | exceptions, `#[SensitiveParameter]`, regexes, imports, `sprintf` | writing any backend class |
@@ -36,7 +37,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
-| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the eight below | touching a tool, `mcp.yaml`, the `mcp` firewall |
+| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the nine below | touching a tool, `mcp.yaml`, the `mcp` firewall |
 | `mcp-sessions.md` | MCP sessions: the DBAL pool `cache.mcp_sessions`, the bound (`BoundedSessionStore`), an oversized session's id that does not exist, an unreadable session, a store whose check throws (503; a PostgreSQL outage stays a 404, #770), the binding to the first MCP connection | touching `Mcp/Infrastructure/Session`, `session` in `mcp.yaml`, the pool in `cache.yaml`, the GET's session check, `cache-prune-cronjob.yaml` |
 | `mcp-prompt-d8.md` | the prompt `present_for_role`, the D8 guard (the author never named) | touching the prompt, a published description, `AuthorNeverNamedTest` |
 | `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage`, the `cache` channel's session-key redaction | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
@@ -45,6 +46,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `mcp-oauth-audits.md` | the refusal audits (#649, #725, #726): a known access token refused at `/api/mcp`, every refusal of an authentic grant at the token endpoint | touching `McpBearerAuthenticator`'s audit, `GrantRefusalAuditInterface`, `LeagueGrantRefusals`, a `GrantRefusal` or `BearerRefusal` cause |
 | `mcp-oauth-purge.md` | the daily purge `app:mcp:purge` (#649, #726): expiry marked, then old revoked connections, then dead tokens, deleted, in two transactions | touching `McpConnectionPurger`, `app:mcp:purge`, its lock order, `messenger-purge-cronjob.yaml` |
 | `mcp-oauth-revocation-personne.md` | the person's revocation and « Mes connexions MCP » (#650), the account-wide revocations at a password change or the loss of the trusted tier, the abandoned grant's one-hour expiry (#730), the consent bound to the account it names (409), the accepted limits and the one accepted deadlock | touching `/api/me/mcp-connections`, `OwnMcpConnections`, `AccountMcpConnectionsRevokerInterface`, `changePassword()`, `setSuperAdmin()`, an invitation link that replaces a password, `code_exchanged_at`, `AccountMenu.vue`, `McpConnectionsPage.vue` |
+| `mcp-oauth-cimd.md` | CIMD (#651): the client identified by the URL of its metadata document, the closed `app.mcp.cimd.allowed_domains` list (never a host shared between accounts), the five SSRF layers and our own DNS resolution, bounded fetch, cache and quota, definitive vs transient refusals, the request attribute and `saveDiscovered()` | touching `Mcp/Connection/**/Cimd`, `CimdClientId`, `AllowedClientDomains`, `ClientMetadataDocument`, `app.mcp.cimd.*`, the `mcp_client_metadata*` limiters or pool, the `registration` column |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |

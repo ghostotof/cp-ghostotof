@@ -74,6 +74,7 @@ final class CacheItemsAreAuthenticatedTest extends KernelTestCase
         self::assertContains('cache.app', $databasePools);
         self::assertContains('cache.rate_limiter', $databasePools);
         self::assertContains('cache.messenger.restart_workers_signal', $databasePools);
+        self::assertContains('cache.mcp_client_metadata', $databasePools);
     }
 
     /**

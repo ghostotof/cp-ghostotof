@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Http;
 
-use App\Shared\Domain\Exception\RetryAfterAware;
+use App\Shared\Domain\Exception\RetryAfterChain;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -54,8 +54,14 @@ use Symfony\Component\HttpKernel\KernelEvents;
  */
 final readonly class RetryAfterListener
 {
-    /** Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter. */
-    private const string REQUEST_ATTRIBUTE = '_app_retry_after';
+    /**
+     * Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter.
+     *
+     * Public pour un contrôleur qui rend lui-même son 429 sans lever
+     * l'exception (le point d'autorisation OAuth) : `kernel.exception` ne passe
+     * pas, il note donc l'échéance ici et `kernel.response` pose l'en-tête.
+     */
+    public const string REQUEST_ATTRIBUTE = '_app_retry_after';
 
     private const int MICROSECONDS_PER_SECOND = 1_000_000;
 
@@ -66,12 +72,13 @@ final readonly class RetryAfterListener
     #[AsEventListener(event: KernelEvents::EXCEPTION, priority: 64)]
     public function onKernelException(ExceptionEvent $event): void
     {
-        $exception = $event->getThrowable();
-        if (!$exception instanceof RetryAfterAware) {
-            return;
+        // Le quota d'échéance la plus tardive de la chaîne (l'exception levée, puis ses `previous`) :
+        // une exception qui en enveloppe un (le refus passager du consentement, #651) annonce
+        // l'échéance du limiteur qui a refusé, comme au point d'autorisation, jamais une plus courte.
+        $quota = RetryAfterChain::latestIn($event->getThrowable());
+        if (null !== $quota) {
+            $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $quota->retryAfter);
         }
-
-        $event->getRequest()->attributes->set(self::REQUEST_ATTRIBUTE, $exception->retryAfter);
     }
 
     #[AsEventListener(event: KernelEvents::RESPONSE)]
@@ -89,6 +96,17 @@ final readonly class RetryAfterListener
         // fin du blocage.
         $remaining = $this->microseconds($retryAfter) - $this->microseconds($this->clock->now());
         $seconds = max(0, intdiv($remaining + self::MICROSECONDS_PER_SECOND - 1, self::MICROSECONDS_PER_SECOND));
+
+        // Le maximum, jamais raccourci (#651) : un `Retry-After` déjà posé sur la réponse (seuls un
+        // autre écouteur ou un contrôleur ont pu le poser : un reverse proxy écrit après
+        // l'application, `kernel.response` ne le voit jamais) reste s'il est plus long. Seul un
+        // entier de secondes se compare ; une date HTTP n'est pas lue (parser une date ajouterait un
+        // second arrondi à garantir pour un cas que personne ne produit), la valeur calculée la remplace.
+        $already = $response->headers->get('Retry-After');
+        if (null !== $already && ctype_digit($already)) {
+            $seconds = max($seconds, (int) $already);
+        }
+
         $response->headers->set('Retry-After', (string) $seconds);
     }
 

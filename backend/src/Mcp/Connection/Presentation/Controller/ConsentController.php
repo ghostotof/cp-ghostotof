@@ -43,14 +43,6 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  */
 final readonly class ConsentController
 {
-    /**
-     * Comment le client est connu du serveur : enregistré à l'avance par la
-     * commande `app:mcp:client:register`, le seul mode qui existe (aucun
-     * enregistrement dynamique, aucun `registration_endpoint`). La page le dit
-     * à la personne ; un autre mode aurait sa propre valeur.
-     */
-    private const string REGISTRATION = 'preregistered';
-
     public function __construct(
         private ConsentServiceInterface $consent,
         #[Autowire(service: 'mcp.psr_http_factory')]
@@ -79,7 +71,8 @@ final readonly class ConsentController
             'client' => [
                 'id' => $summary->clientId,
                 'name' => $summary->clientName,
-                'registration' => self::REGISTRATION,
+                'registration' => $summary->registration()->value,
+                'domain' => $summary->verifiedDomain(),
             ],
             'redirectHost' => $summary->redirectHost,
             'scope' => $summary->scope,

@@ -10,6 +10,7 @@ use DateTimeImmutable;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\DatePoint;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -147,6 +148,111 @@ final class RetryAfterListenerTest extends TestCase
         self::assertFalse($response->headers->has('Retry-After'));
     }
 
+    /**
+     * Garde (#651) : une exception qui n'est pas RetryAfterAware mais en enveloppe une
+     * annonce l'échéance de la cause.
+     */
+    public function testAWrappedQuotaCauseGivesTheHeaderOnA429(): void
+    {
+        $wrapper = new DomainException('enveloppe', 0, $this->quotaExceeded('+42 seconds'));
+
+        self::assertSame('42', $this->respondTo($wrapper)->headers->get('Retry-After'));
+    }
+
+    /**
+     * @return iterable<string, array{0: int}>
+     */
+    public static function provideStatusesThatAreNot429(): iterable
+    {
+        yield '400' => [400];
+        yield '500' => [500];
+    }
+
+    #[DataProvider('provideStatusesThatAreNot429')]
+    public function testAWrappedQuotaCauseGivesNoHeaderOnAnotherStatus(int $status): void
+    {
+        $wrapper = new DomainException('enveloppe', 0, $this->quotaExceeded('+42 seconds'));
+
+        self::assertFalse($this->respondTo($wrapper, $status)->headers->has('Retry-After'));
+    }
+
+    public function testTheLatestDeadlineOfTheChainWins(): void
+    {
+        $outerDeadline = $this->deadline('+10 seconds');
+        $inner = $this->quotaExceeded('+99 seconds');
+        $chain = new DomainException('haut', 0, new DomainException('milieu', 0, $this->chain($outerDeadline, $inner)));
+
+        // L'échéance intérieure (99 s) est la plus tardive : elle gagne sur l'extérieure (10 s).
+        self::assertSame('99', $this->respondTo($chain)->headers->get('Retry-After'));
+    }
+
+    /**
+     * Contrat #743, « jamais trop tôt » : l'en-tête vaut le maximum de la valeur calculée et d'un
+     * `Retry-After` entier déjà posé. Un plus court est remplacé (garde).
+     */
+    public function testAShorterRetryAfterAlreadyOnTheResponseIsReplacedByTheQuotaDeadline(): void
+    {
+        self::assertSame('42', $this->respondWithHeader('7', '+42 seconds'));
+    }
+
+    /**
+     * Ne jamais raccourcir : un `Retry-After` posé plus long (autre écouteur, contrôleur) est gardé.
+     */
+    public function testALongerRetryAfterAlreadyOnTheResponseIsKept(): void
+    {
+        self::assertSame('120', $this->respondWithHeader('120', '+42 seconds'));
+    }
+
+    public function testAnEqualRetryAfterAlreadyOnTheResponseStaysTheSame(): void
+    {
+        self::assertSame('42', $this->respondWithHeader('42', '+42 seconds'));
+    }
+
+    /**
+     * Un en-tête qui n'est pas un entier de secondes (date HTTP, valeur illisible) est remplacé par
+     * la valeur calculée.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideNonNumericRetryAfterValues(): iterable
+    {
+        yield 'date HTTP' => ['Fri, 02 Oct 2026 13:00:00 GMT'];
+        yield 'illisible' => ['bientôt'];
+        yield 'négatif' => ['-5'];
+        yield 'décimal' => ['120.5'];
+    }
+
+    #[DataProvider('provideNonNumericRetryAfterValues')]
+    public function testARetryAfterThatIsNotAWholeNumberOfSecondsIsReplaced(string $alreadySet): void
+    {
+        self::assertSame('42', $this->respondWithHeader($alreadySet, '+42 seconds'));
+    }
+
+    private function respondWithHeader(string $alreadySet, string $offset): ?string
+    {
+        $listener = new RetryAfterListener($this->clock);
+        $request = Request::create('/api/contact', 'POST');
+        $response = new Response('', 429, ['Retry-After' => $alreadySet]);
+
+        $listener->onKernelException($this->exceptionEvent($request, $this->quotaExceeded($offset)));
+        $listener->onKernelResponse($this->responseEvent($request, $response));
+
+        return $response->headers->get('Retry-After');
+    }
+
+    /**
+     * Un quota extérieur (RetryAfterAware) d'échéance $deadline qui enveloppe $inner, lui-même un quota : deux quotas dans la chaîne.
+     */
+    private function chain(DateTimeImmutable $deadline, Throwable $inner): Throwable
+    {
+        return new class($deadline, $inner) extends DomainException implements RetryAfterAware {
+            public function __construct(public readonly DateTimeImmutable $retryAfter, Throwable $previous)
+            {
+                parent::__construct('quota externe', 0, $previous);
+            }
+        };
+    }
+
     private function respondTo(Throwable $exception, int $status = 429): Response
     {
         $listener = new RetryAfterListener($this->clock);
@@ -177,6 +283,11 @@ final class RetryAfterListenerTest extends TestCase
             HttpKernelInterface::MAIN_REQUEST,
             $response,
         );
+    }
+
+    private function deadline(string $offset): DatePoint
+    {
+        return $this->clock->now()->modify($offset);
     }
 
     private function quotaExceeded(string $offset): Throwable

@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\ClientMetadataRefusedException;
+use App\Mcp\Connection\Domain\ValueObject\ClientMetadataRefusal;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
@@ -11,7 +15,8 @@ use League\Uri\Uri;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * La demande d'autorisation de la connexion MCP (#647), jugée en trois temps,
+ * La demande d'autorisation de la connexion MCP (#647), jugée en trois temps
+ * (et, entre le premier et le deuxième, l'admission d'un client déclaré),
  * dans un ordre qui décide de la forme du refus :
  *
  * 1. **Avant league, sans redirection** — rien n'est encore validé, un refus
@@ -32,6 +37,28 @@ use Psr\Http\Message\ServerRequestInterface;
  *      sans le port qu'un client natif a ouvert (RFC 8252 §7.3) ;
  *    - `state` au-delà de STATE_MAX_LENGTH : il serait recopié dans chaque
  *      redirection et dans l'URL de la page de consentement ; jamais renvoyé.
+ *    - `client_id` entouré de blancs (`trim()` en change la valeur) : league le
+ *      rognerait et servirait la ligne en base, alors que l'admission, qui lit la
+ *      valeur brute, n'en a rien jugé (une ligne `cimd` périmée serait servie
+ *      sans que le domaine ni le document soient relus). Refusé, jamais corrigé,
+ *      comme au point de jeton (#725) — à la différence de `redirect_uri`, que
+ *      league valide sous sa forme rognée et que le résumé porte rognée.
+ *    **Entre les deux, l'admission** (#651) : quand le `client_id` est l'URL d'un
+ *    document de métadonnées que le client publie (CIMD), l'admission décide si
+ *    league le juge par ce document (un client non persisté, déposé dans la
+ *    requête) ou par les lignes en base. Le refus d'un document, définitif
+ *    (`invalid_client`) ou passager (`temporarily_unavailable`, 429 ou 503),
+ *    ne redirige jamais : aucune URI n'est validée, le document est le
+ *    seul à en déclarer. **Seuls les contrôles de forme ci-dessus
+ *    (wellFormedParameters()) la précèdent** : une demande mal formée ne
+ *    déclenche aucune récupération. Tout le reste — le client et sa
+ *    redirection, PKCE, le scope — est jugé par league **après** elle : une
+ *    demande qui n'en passerait aucun (une redirection que le document ne
+ *    déclare pas, un `code_challenge` absent) déclenche donc la récupération
+ *    du document avant d'être refusée. Limite acceptée : la récupération est
+ *    bornée par la liste des domaines, le quota et le cache, et la juger
+ *    après league obligerait à lui donner le client avant de savoir qu'il
+ *    existe.
  * 2. **league** : client connu, redirection enregistrée (sinon
  *    `invalid_client`, sans redirection), PKCE `S256` (le grant, seul à en
  *    décider), scope (`invalid_scope`, redirigé).
@@ -61,12 +88,22 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     public function __construct(
         private AuthorizationServer $server,
         private OAuthEndpoints $endpoints,
+        private CimdClientAdmissionInterface $admission,
     ) {
     }
 
     public function validate(ServerRequestInterface $request): AuthorizationRequestSummary
     {
         $parameters = $this->wellFormedParameters($request);
+        $discovered = $this->admitted($parameters['client_id'], $request);
+
+        // League juge le client déclaré par celui que l'admission dépose ici
+        // (LoopbackAwareAuthCodeGrant::getClientEntityOrFail()) ; sans client
+        // déclaré, la requête reste intacte et league lit les lignes.
+        if (null !== $discovered) {
+            $request = $request->withAttribute(CimdClientAdmissionInterface::REQUEST_ATTRIBUTE, $discovered);
+        }
+
         $authorization = $this->server->validateAuthorizationRequest($request);
         // La redirection que league a validée et retenue (rognée) ; jamais
         // nulle ici, la demande en portait une non blanche.
@@ -85,12 +122,49 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
             scope: $this->scopeOf($authorization),
             resource: $resource,
             authorizationRequest: $authorization,
+            discoveredClient: $discovered,
+        );
+    }
+
+    /**
+     * Le client déclaré que l'admission rend, `null` quand league juge par les
+     * lignes. Un refus du document devient une erreur OAuth sans redirection :
+     * passager, `temporarily_unavailable` (429 pour le quota, 503 pour l'hôte
+     * ou le réseau) que le client peut réessayer ; définitif, `invalid_client`,
+     * comme un client inconnu. L'exception d'origine reste chaînée (`previous`) :
+     * le contrôleur en tire `Retry-After`, le diagnostic la lit ; sa cause
+     * n'est jamais rendue au client (le message de l'erreur est constant).
+     *
+     * @throws OAuthServerException sans redirection
+     */
+    private function admitted(string $clientId, ServerRequestInterface $request): ?McpClient
+    {
+        try {
+            return $this->admission->admit($clientId);
+        } catch (ClientMetadataRefusedException $refused) {
+            throw $this->unavailableOrUnknown($refused, $request);
+        }
+    }
+
+    private function unavailableOrUnknown(ClientMetadataRefusedException $refused, ServerRequestInterface $request): OAuthServerException
+    {
+        if (!$refused->refusal->isTransient()) {
+            return OAuthServerException::invalidClient($request);
+        }
+
+        return new OAuthServerException(
+            'The client metadata document is temporarily unavailable.',
+            0,
+            'temporarily_unavailable',
+            ClientMetadataRefusal::Throttled === $refused->refusal ? 429 : 503,
+            previous: $refused,
         );
     }
 
     /**
      * Les paramètres attendus présents, chacun une chaîne, ni répété ni
-     * réécrit, `client_id` et `redirect_uri` non blancs, `state` borné. Aucun
+     * réécrit, `client_id` et `redirect_uri` non blancs, `client_id` sans blanc
+     * autour, `state` borné. Aucun
      * refus d'ici ne redirige, et aucun ne recopie la valeur reçue (le message
      * et l'indication de league ne nomment que le paramètre).
      *
@@ -124,6 +198,13 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
             if ('' === trim($parameters[$required] ?? '')) {
                 throw $this->missing($required);
             }
+        }
+
+        // Pas de blanc autour de `client_id` : league le rognerait et lirait la
+        // ligne en base, que l'admission (valeur brute) n'a pas jugée. Seul
+        // `client_id` : la redirection rognée reste validée sous cette forme.
+        if (trim($parameters['client_id']) !== $parameters['client_id']) {
+            throw OAuthServerException::invalidRequest('client_id', 'Check the `client_id` parameter: it must not start or end with whitespace.');
         }
 
         if (isset($parameters['state']) && \strlen($parameters['state']) > self::STATE_MAX_LENGTH) {

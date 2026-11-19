@@ -1,17 +1,47 @@
-import { NOMINATIVE_READ_SCOPE, type ConsentParams, type ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
+import {
+  NOMINATIVE_READ_SCOPE,
+  type ConsentClient,
+  type ConsentParams,
+  type ConsentRequest,
+} from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { consentQuery } from '../../domain/mcp/services/consentParams'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
+import { ConsentTemporarilyUnavailableError } from '../../domain/mcp/errors/ConsentTemporarilyUnavailableError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { retryAfterSeconds } from '../http/retryAfterSeconds'
 import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/oauth/consent'
+
+/**
+ * Le mode d'enregistrement du client et son domaine vérifié, lus ensemble : le
+ * domaine est une chaîne non vide si et seulement si le client est `cimd`
+ * (#651, contrat de la Task 10). Tout autre couple — un `cimd` sans domaine, un
+ * `preregistered` qui en porte un, un mode inconnu — est refusé : la page ne
+ * montre jamais « vérifié » à côté d'une information que le serveur n'a pas
+ * donnée pour telle, ni ne cache un domaine qu'elle devrait montrer.
+ */
+function parseRegistration(
+  registration: unknown,
+  domain: unknown,
+): Pick<ConsentClient, 'registration' | 'domain'> | null {
+  if ('cimd' === registration && 'string' === typeof domain && '' !== domain) {
+    return { registration, domain }
+  }
+
+  if ('preregistered' === registration && null === domain) {
+    return { registration, domain }
+  }
+
+  return null
+}
 
 /**
  * Le slug du 400 que le serveur rend quand il refuse la demande à la
@@ -38,6 +68,21 @@ export const REAUTHENTICATION_REQUIRED = 'reauthentication-required'
  * localisé : tout autre 409 reste un échec générique.
  */
 export const CONSENT_ACCOUNT_CHANGED = 'consent-account-changed'
+
+/**
+ * Le slug du refus passager (`ConsentTemporarilyUnavailableException`, #651) : un 429 (quota de
+ * revalidation atteint, `Retry-After` en secondes) ou un 503 (hôte du client injoignable, sans délai
+ * garanti), au `GET` comme au `POST`. Le `detail` est constant : seul le `type` décide, et un 429 ou un
+ * 503 d'un autre type reste un échec générique.
+ */
+export const CONSENT_TEMPORARILY_UNAVAILABLE = 'consent-temporarily-unavailable'
+
+/**
+ * Le slug du 429 que nginx rend quand la zone de limitation du consentement est atteinte
+ * (`docker/nginx/default.conf`, `"type":"/errors/rate-limited"`) : le backend n'a pas jugé la
+ * demande, c'est le même « réessayez ». Reconnu au 429 seulement, au `GET` comme au `POST`.
+ */
+export const RATE_LIMITED = 'rate-limited'
 
 /** Ce que veut dire un 422 : sur la décision, un corps que la page a mal formé. */
 type UnprocessableMeaning = 'malformed-decision' | 'generic'
@@ -153,9 +198,35 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           : new ConsentFailedError('The consent request failed with an unrecognised 409')
       case 403:
         return new AccessForbiddenError()
+      case 429:
+      case 503:
+        return this.temporaryRefusal(response)
       default:
         return new ConsentFailedError(`The consent request failed with status ${status}`)
     }
+  }
+
+  /**
+   * Un 429 ou un 503 : « réessayez » (la demande n'a pas été jugée) ou échec générique.
+   *
+   * Le corps ne se lit qu'une fois, d'où une lecture unique pour les deux slugs :
+   * - `consent-temporarily-unavailable`, rendu par le backend au 429 comme au 503 ;
+   * - `rate-limited`, rendu par nginx au seul 429 (`location @rate_limited`), sans `Retry-After` : la page
+   *   dit alors « réessayez » sans délai ; un `Retry-After` qu'un intermédiaire y ajouterait serait lu.
+   * Le délai n'est lu que sur un 429 : le backend ne pose `Retry-After` que là, et un 503 qui en
+   * porterait un (proxy, répartiteur) n'engage pas la durée d'une indisponibilité de l'hôte du client.
+   * Tout autre type, ou un corps illisible, reste un échec générique.
+   */
+  private async temporaryRefusal(response: Response): Promise<Error> {
+    const status = response.status
+    const body = (await response.json().catch(() => null)) as ApiProblemBody | null
+    const temporary =
+      null !== body &&
+      (hasProblemType(body, CONSENT_TEMPORARILY_UNAVAILABLE) || (429 === status && hasProblemType(body, RATE_LIMITED)))
+
+    return temporary
+      ? new ConsentTemporarilyUnavailableError(429 === status ? retryAfterSeconds(response) : null)
+      : new ConsentFailedError(`The consent request failed with status ${status}`)
   }
 
   /** Le problem+json porte-t-il ce `type` ? Un corps illisible n'en porte aucun. */
@@ -177,11 +248,12 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     const summary = body as Partial<Record<keyof ConsentRequest, unknown>> | null
     const client = summary?.client as Partial<Record<string, unknown>> | null | undefined
     const account = summary?.account as Partial<Record<string, unknown>> | null | undefined
+    const registration = parseRegistration(client?.registration, client?.domain)
 
     if (
       'string' !== typeof client?.id ||
       'string' !== typeof client.name ||
-      'preregistered' !== client.registration ||
+      null === registration ||
       'string' !== typeof summary?.redirectHost ||
       NOMINATIVE_READ_SCOPE !== summary.scope ||
       'string' !== typeof summary.resource ||
@@ -192,7 +264,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     }
 
     return {
-      client: { id: client.id, name: client.name, registration: client.registration },
+      client: { id: client.id, name: client.name, ...registration },
       redirectHost: summary.redirectHost,
       scope: NOMINATIVE_READ_SCOPE,
       resource: summary.resource,

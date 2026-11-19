@@ -26,8 +26,10 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
  *  - des clients publics seulement : aucune authentification au point de jeton
  *    ni à celui de révocation (`none`) ;
  *  - aucun enregistrement dynamique (pas de `registration_endpoint`), aucun
- *    document OpenID Connect : le client est pré-enregistré ou décrit par son
- *    document de métadonnées (`client_id_metadata_document_supported`) ;
+ *    document OpenID Connect : le client est pré-enregistré, ou décrit par
+ *    son document de métadonnées et alors admis seulement sur un domaine de
+ *    la liste fermée `app.mcp.cimd.allowed_domains`
+ *    (`client_id_metadata_document_supported: true`, tenu depuis #651) ;
  *  - l'émetteur renvoyé dans la réponse d'autorisation (`iss`, RFC 9207), ce
  *    qui protège le client d'une confusion entre serveurs d'autorisation ;
  *  - le jeton d'accès en en-tête `Authorization` seulement, jamais en

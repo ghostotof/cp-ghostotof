@@ -10,6 +10,17 @@ paths:
 
 > Moved verbatim from `.claude/CLAUDE.md` (#346), section « Project state ». The index of every rule is at the top of `.claude/CLAUDE.md`.
 
+## Where the rest went (#651)
+
+This rule outgrew the 50 000-byte ceiling and was split by sub-domain; what concerns writing a backend test moved
+**verbatim** to `.claude/rules/backend-tests.md`:
+
+- « Exception traces under PHPUnit (#420) », « Concurrency tests with child processes (#403) », « Reading a
+  repository file from a test (#629) », « Freezing the clock for a `Retry-After` (#743) » → `backend-tests.md`.
+
+This file keeps the quality tooling, Monolog and `tools/logs-select.sh`, the target PHP version, and API Platform's
+version and deprecation guard.
+
 ## Project state
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
@@ -22,7 +33,7 @@ reordered by drag-and-drop with an explicit FR/EN link in the database (spec 000
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
 `tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`;
-its traces carry no call arguments (see the last section, issue #420).
+its traces carry no call arguments (see `.claude/rules/backend-tests.md`, issue #420).
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
@@ -97,8 +108,51 @@ by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler
 processor of that channel, withholds the MCP session id a key of the sessions pool carries (#731, same rule). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
-`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
-ever receives the engine's own errors. The events are emitted by `SecurityAuditLogger` (see Phase 3 of
+`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, and `error_log` receives the
+engine's own errors plus one plain-text line of our own, the last resort of `Mcp/Connection/Application/FailSafeAudit`
+(the main logger failed while reporting a failed audit write: a constant message and the logger failure's class).
+No Monolog record is ever taken up by `error_log` — that line is written by the `error_log()` function, not by a
+handler. File descriptor 2 also carries the lines of the FPM master itself (`NOTICE: fpm is running`, `ready to
+handle connections`, `exiting, bye-bye!`, and the `WARNING`s it raises — its `[global] error_log` of `www.prod.conf`
+is that same descriptor) and the pool's access-log lines (`access.log` of the upstream image's `php-fpm.d/docker.conf`,
+read in dev; the production image inherits the same file), none of them JSON. `tools/logs-select.sh` (#651) is the only copy of the command that reads them:
+`kubectl logs deploy/backend -c php-fpm | tools/logs-select.sh '.channel == "security_audit"'` (audit events leave on
+`security_audit`; `security` is the framework's own channel, `.channel | IN("security", "security_audit")` reads both).
+It drops only the known noise (the pool's access line **in 2xx/3xx/4xx except 403**: every production 401/404 would drown
+the events looked for, and those 401s, 404s and other 4xx are **lost** to this script — read the raw logs to find them;
+the **403 stays visible** as `unparsed`, because only `backofficeAccessDenied`, `csrfRejected` and the MCP refusals have an
+audit record, a base-tier token trying `GET /api/cv` leaves none, and a 403 that is already audited comes out twice, which is
+accepted; a 5xx access line stays too, it carries the status PHP set — a 502/504 is written by nginx, not FPM, and a killed
+worker leaves a master `WARNING`, not an access line —, the master's **routine** `NOTICE`s — start-up and `child N started` —,
+the empty line, a line reduced to a kubectl prefix) and renders everything
+else as `{"unparsed": "<whole line>"}`: a 403 or 5xx access line, a line of blanks only (not empty: not known noise), any other `NOTICE` (`Terminating`, `exiting, bye-bye!`, `child N exited`), a `WARNING`, the last-resort trace of
+`FailSafeAudit`, a fatal error, the pieces of a line cut by `log_limit` (a `fromjson? // empty` would have dropped them
+silently). It strips the prefixes of `kubectl logs --prefix`/`--timestamps` (and the leading blanks of the line) before decoding, wraps the predicate in
+`((\n…\n))` and evaluates it with `any`; exit codes: 0 the stream read to the end, no error; 2 invalid usage; 3 a predicate
+that does not compile (decided by a first run of jq on an empty input, before any data: its stderr quotes only the
+program and is relayed; never decided from a text coming from the logs); 4 the stream read to the end with at least
+one line on which the predicate raised (the line is dropped, stderr carries only its number and a fixed label, never a
+value of the record; the stream goes on, each label comes **as it happens** and stays visible after a Ctrl-C or a `| head`,
+a final total line counts them and promises no code; never for a stream jq abandoned, never over a signal); 5 any other failure,
+a truncated stream included (any other non-zero exit of jq, a `halt_error(3)` of the predicate among them, or a failure of
+the error filter itself; a fixed label, never jq's text; kept even after predicate errors); 128 and more a signal passed
+through unchanged and silent (141 for `| head`).
+jq's stderr of the main pass goes through an awk allow-list filter that relays only the fixed labels (and counts them: no
+temporary file, no buffer, nothing grows during a `-f`); everything else is never relayed. Its predicate is a trusted jq filter, never
+external data, its reasons are in its header (the only copy), and `tools/tests/logs-select.test.sh` covers it. The
+`app:mcp:purge` job (CronJob `messenger-purge-cronjob.yaml`, container `purge`) writes its records through the same
+handlers to its container's stderr, but its stdout carries the three chained console commands' own output (`[OK] …`),
+which also comes out as `unparsed`. Read the **Job's pods**, not `deploy/backend -c php-fpm`: `kubectl logs -l
+job-name=<name> -c purge --prefix --tail=-1 | tools/logs-select.sh …` (with a selector `kubectl logs` shows only the
+last 10 lines per pod unless `--tail=-1` is given; `restartPolicy: OnFailure` re-runs the container **in the
+same pod**, a replaced pod — lost node, eviction — is another pod of the Job: the selector reads them all, up to
+`backoffLimit` + 1). The previous attempt of a restarted container is read on a **named** pod, `kubectl logs
+pod/<pod> -c purge --previous` (the last restart only), the pod being found with `kubectl get pods -l job-name=<name>`
+(RESTARTS column): `--previous` with `-l` fails as a whole as soon as one pod of the Job never restarted.
+A line longer than php-fpm's `log_limit`
+is cut into pieces that are no longer JSON: `www.prod.conf` and `www.dev.conf` set `log_limit = 8192` in `[global]`
+(php-fpm's own default is 1024; the upstream image's `docker.conf` already sets 8192, repeated so as not to depend on
+it; the dev file only takes effect at the next `make build`, it is copied into the image). The events are emitted by `SecurityAuditLogger` (see Phase 3 of
 the remediation plan). The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see `.claude/rules/frontend.md`) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
@@ -120,243 +174,6 @@ Rector's `ArrayFirstLastRector` rewrite four `$a[array_key_last($a)]` / `array_v
 `tests/Shared/PhpConstraintMatchesRuntimeTest.php` fails when the constraint is not exactly
 `>=<runtime major.minor>` or that version's polyfill is not replaced — so a runtime bump turns it red
 until both move in the same change.
-
-## Exception traces under PHPUnit (issue #420)
-
-`phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
-the deployed images: a trace carries no call arguments. `#[SensitiveParameter]` (#411, #414, see
-`.claude/rules/backend-conventions.md`) only covers `src/`; the vendor keeps its arguments
-(`Cookie::create($value)`, `JWTManager::parse($token)`, `LcobucciJWTEncoder::decode($token)`…), and the
-risk is a test trace pasted in a ticket or an assistant session. Facts measured before deciding
-(2026-10-10): **CI already ran with it On** — `setup-php` loads `php.ini-production` by default
-(`ini-file: production`) — while no ini file of the dev container sets it (no `php.ini`, `php.dev.ini`
-as `conf.d/zz-app.ini` is silent: PHP's built-in Off); the directive is `PHP_INI_ALL`, so PHPUnit's
-`ini_set()` applies it. **PHPUnit's report loses nothing**: it prints a trace as `file:line`, and its
-exporter skips an exception's `trace`. What loses the arguments is a trace rendered by a test or by
-Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetailsStamp` or in the debug
-`ProblemNormalizer` body of a non-API-Platform route — API Platform's own debug body already drops them).
-No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
-a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
-built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
-stderr, trace included, ends up in the failure message) — the concurrency tests, through
-`ChildPhpProcess::inTestEnvironment()` (see the next section), and `CreateCpgUserCommandTest`'s
-pseudo-terminal run. **To debug with arguments**, write a local
-`phpunit.xml` (gitignored, read instead of the dist file) that sets it **explicitly** to 0 —
-`bin/phpunit -d …=0` does not work, the XML `<ini>` is applied after the CLI one. The two runtime
-tests then **skip**, naming the cause, rather than fail; a local `phpunit.xml` that merely omits it (an
-old copy of the dist) fails them. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry and the
-shape of the child's command (the runtime checks alone would stay green in CI), the effect on
-`getTrace()`, on a `FlattenException` and in a child, and that no test names `PHP_BINARY` outside the
-helper. **Not covered**: `debug_backtrace()` (the directive only acts on exceptions — measured), the
-frame of a `require`, which keeps the included path, a child started otherwise (a literal `'php'`,
-`PhpExecutableFinder`, `bin/console` by its shebang — a token heuristic cannot tell a literal `'php'`
-command from test data, so the guard does not try), and dev over HTTP (`APP_DEBUG` error bodies, Off
-there) — which is why the #411/#414 guards stay. Setting it in `php.dev.ini` would cover every child at
-once, at the cost of dev CLI traces: not done, an open question of #420.
-
-## Concurrency tests with child processes (issue #403)
-
-A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
-`SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
-`InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
-`RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`,
-`OwnMcpConnectionRevocationConcurrencyTest`, `AccountWideRevocationDeadlockTest`)
-goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
-child's `Process`: its command line (above) and a copy of the test's `$_SERVER` (`phpunit.dist.xml`'s `<server>`
-values) — a variable not to pass on is excluded there, for every child at once —, overlaid by each `<env force="true">`
-of the loaded configuration (`@internal` `Registry`) with its `$_ENV` value, as `<env force>` never rewrites
-`$_SERVER` (the dev container's `APP_PUBLIC_API_BASE_URL`, #647). An `<env>` without `force` is not overlaid:
-PHPUnit keeps the shell's value there (a local `phpunit.xml`). Every `<server force>` of `phpunit.dist.xml` has
-an `<env force>` of the same value (#748), Symfony reading `$_ENV` first: `ForcedTestValuesWinOverTheShellTest`
-reruns `ForcedTestValuesProbeTest` (names read from the file) under a shell exporting them, by fingerprint; any
-other `<server>` or `<env>` name is in the probe's allow-list, with its exact form.
-`ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
-`tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
-the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
-then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps
-`SETTLE_MICROSECONDS` so that every child has reached its `flock()` — or `sessionPidOf()` (the PostgreSQL
-session it then watches in `pg_stat_activity`), and `release()`s; an unreferenced barrier releases itself.
-Children reach private services through `tests/Support/TestServiceLocator` (`limiter.<name>` included; it
-replaced `RateLimiterFactoryLocator`). `tests/Shared/ChildProcessHarnessTest.php` exercises the protocol on
-real processes and fails, in `tests/`, on any `flock()` outside `ProcessBarrier`, any `foreach ($_SERVER`
-outside `ChildPhpProcess`, and any `new Process(ChildPhpProcess::command(` outside its `OWN_ENVIRONMENT`
-allow-list (the Dotenv test isolating a pod's environment, the probe's shell rerun). Not seen: `proc_open()`
-(`CreateCpgUserCommandTest`'s pseudo-terminal child gets the inherited environment only).
-**The interleaving point is written once too** (issue #510): `tests/Support/FlushInterleaving`,
-`releaseBeforeNextFlush()` (`preFlush`: everything read, nothing written — #364, #389, #458) or
-`releaseAfterNextFlush()` (`postFlush`: written inside the operation's transaction, not committed — #435),
-given the EntityManager, the barrier, the started child and the timeout. It waits for the child's
-`ready <pid>`, arms a one-shot listener that removes itself on the first flush, releases the child, then
-returns as soon as the child has **finished** or **its** session waits on any `Lock` in `pg_stat_activity`
-(read from a separate probe connection, outside any transaction), and fails the test past the timeout.
-**That wait is written once too, in `tests/Support/SessionLockWait`** (lot C of the #649 reviews): built
-`beside($connection, $child, $childSessionPid, $timeoutSeconds)` (its own probe connection, closed when the wait
-returns, failure included), it offers `untilDoneOrBlocked()` — `FlushInterleaving`'s — and `untilBlocked()`, for
-the lock-order tests whose operation goes through **no ORM flush** (the revocation endpoint, the purge: native SQL
-all the way, so `FlushInterleaving` cannot interleave them): the window is opened by a row the test holds `FOR
-UPDATE`, the child **must** block on it, and a child that finishes without waiting fails the wait at once — it
-raced nothing (`RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`). Both failure messages
-quote the child's command line and output: a child reads any secret on stdin and writes none.
-`tests/Shared/FlushInterleavingTest.php` exercises the interleaving on a real child (blocked on an advisory lock
-the test holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
-`::preFlush` / `::onFlush` / `::postFlush` (whatever the class is called: `Events`, an alias, inside an
-attribute) outside `FlushInterleaving` and `FlushInterleavingTest`, and any string literal naming
-`pg_stat_activity` outside its **two owners**: `SessionLockWait` and the guard itself (it names the view to look
-for it) — broad on purpose: a test with another use joins its pattern's owners with its reason.
-Not seen: a listener armed on the event's name written as a string (`'preFlush'`), a view name built by
-concatenation. The wait returns once the child has finished **whatever its exit code**: each caller checks
-it, and names the refusal it expects or denounces.
-**Proving a concurrency test still fails without its fix** takes the right mutation, measured in #510
-before and after the extraction: remove the **lock and keep its transaction** — `FOR UPDATE` out of
-`PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
-of `PostgresUsernameAllocationLock` (#364: the parent's invitation fails on the username taken meanwhile)
-or `PostgresAdvisoryOrderScopeLock` (#389) — since #512, the statement inside the adapter's `acquire`
-closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction) — and
-`forUpdate: false` in `McpConnectionRepository::lockForUpdate()` (#649, task 5: the lock out, the transaction
-and the re-read under `HINT_REFRESH` kept), which turns both tests of `TokenEndpointConcurrencyTest` red on
-the child's `issued 200`, then on the connection left active and on the token rows (three access tokens and
-three refresh tokens after two simultaneous refreshes of one token, two and two after two exchanges of one
-code, instead of two and two, one and one); every sequential test of `Mcp/Connection` stays green under it.
-That test's child (`tests/Mcp/Connection/Fixtures/present-at-token-endpoint.php`) presents the form body to
-`TokenEndpointInterface` in PSR-7 and **reads it on its standard input** (`Process::setInput()`), never as an
-argument: the command line is copied into the harness's failure messages, and the body carries the refresh
-token or the code; it prints the refusal's JSON (league's, no token) and only the **status** of an issued
-answer. `RevocationEndpointConcurrencyTest` (#649, task 6) is a **lock-order** test, not a lock-presence one: its
-child (`Fixtures/revoke-at-revocation-endpoint.php`, same stdin rule, prints `revoked`, the refusal's JSON or
-`failed <SQLSTATE>` — never the driver's message) revokes a refresh token while the parent rotates it, released at
-the parent's first flush with the connection locked. Its mutation is the **order**: the token rows revoked before
-the connection, without `lockForUpdate()` — measured, a deadlock, the child aborted in `40P01`, the parent served
-`200` and the connection left active. **The purge's two orders are lock-order tests as well**
-(`McpConnectionPurgeLockOrderTest`, lot C of the reviews; child `Fixtures/purge-mcp-connections.php`, which runs the
-real `McpConnectionPurgerInterface` with the configured retention, no stdin — the purge reads no secret — and prints
-`purged <connections> <codes> <access> <refresh>` or `failed <SQLSTATE>`): the test holds the other side's first row
-`FOR UPDATE`, waits for the purge's session to block (`SessionLockWait::untilBlocked()`), then asks for the second row.
-Mutation for « connections before tokens »: the `'connections' =>` line of `McpConnectionPurger::purge()` moved after
-the token `deleteDead()`s — measured, the child `failed 40P01` on the old revoked connection the test held, the test
-holding it then asking for its access token as a cascading account deletion does. Mutation for « A before R »: the
-`'accessTokens' =>` and `'refreshTokens' =>` lines swapped — measured, the child `failed 40P01` with the test holding
-the connection then its access token (the revocation endpoint's order) and asking for the refresh token. Each mutation
-reddens its own test only. A third test pins how long the candidates stay locked (#726: the marking, then the deletions,
-in two transactions): holding another connection's expired access token, it asks for a live candidate `FOR UPDATE NOWAIT`
-once the purge blocks in its deletions; mutation, the two `run()`s merged back into one — measured, the parent refused
-in `55P03`, the two order tests green. Its precondition (`assertALiveCandidate()`: pre-selected, not yet expired) reads
-the purge's bounds through `ConnectionLifetimes::preselectionBoundsAt()` (#726, where the purge reads them too), never a
-copied margin, so a change of the margin cannot leave the `NOWAIT` free for nothing. **The supersession's order is one too** (#726, final review):
-`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder` holds the lower of two other active
-connections of the pair `FOR UPDATE`, waits for the exchanging child (`present-at-token-endpoint.php`) to block
-(`SessionLockWait::untilBlocked()`), then asks for the higher one `FOR UPDATE NOWAIT`. The heap order must
-contradict the ids, or the test proves nothing: the lower one's row is rewritten (a no-op `UPDATE`, its live version
-moves after the other in the heap), checked by `ctid` before anything — without that rewrite the unfixed `UPDATE` passes,
-measured. **The heap is built by the test, never inherited** (#650, R4: it failed 4 runs in 14 of `tests/Mcp` when the
-earlier tests had fragmented `mcp_connection` and the rewritten version of the lower row landed before the higher):
-`TestDatabase::assertSafeToWipe()` then `TRUNCATE mcp_connection CASCADE` first (a new heap: slots 1, 2, 3, the rewritten version at 4; the guard — see « A test that empties a table… » below — because `CASCADE` empties everything that references the table, on a connection opened outside the kernel), then `ANALYZE` (with
-empty statistics the planner chooses an index scan, which reads the ids' order), then a **second precondition** that
-says what the first one means: the search for the pair's others **without** an `ORDER BY` returns the higher before
-the lower. Mutation (`ORDER BY` out of `revokeWhere()`): red, `55P03`, this test alone. 20 runs of `tests/Mcp`: 20 green. **Only the heap order is contradicted**: the rewrite is a HOT update (no indexed column changes), the index
-entry still points at the root of its HOT chain, so an index scan would read the ids' order — the test discriminates
-under today's plan, a sequential scan of a few rows, only, and a plan by index would leave it green without the
-`ORDER BY`. Mutation, the `ORDER BY c.id` out of `revokeWhere()`'s sub-query — measured, `55P03` on the `NOWAIT`, the
-other three tests of the class green (measured again under `FOR NO KEY UPDATE`, #726 T6).
-
-**The person's revocation crossing the two other writers of a connection is pinned too** (#650, task 4:
-`OwnMcpConnectionRevocationConcurrencyTest`; child `Fixtures/revoke-own-mcp-connection.php`, which calls the real
-`OwnMcpConnectionsInterface::revoke()` and prints `done` or `not-found`, then `audit <n>` — the `mcp-connection-revoked`
-lines of the child's own `security_audit` handler —, or `failed <SQLSTATE>`; its two arguments are row UUIDs, no
-secret). Like the revocation endpoint's, the window is opened by a lock the test holds, in a session of its own
-(`OpensProbeConnection`): the connection `FOR UPDATE` plus the write of the other worker, then
-`SessionLockWait::untilBlocked()` (a child that finishes without waiting raced nothing), then the COMMIT. Two tests:
-a refresh (it writes `last_used_at`) — the connection ends revoked `person`, the refresh's `last_used_at` intact, one
-audit line —, and the purge's marking (it revokes `expired`) — the child answers `done` (the connection is the
-caller's), writes and audits nothing, the cause stays `expired` and so does the instant. **Measured**: `SKIP LOCKED`
-in the sub-query of `McpConnectionRepository::revokeWhere()` turns **both** red at the wait (the child no longer
-blocks: it skips the held row, revokes nothing and answers `done`, `audit 0`); removing **both** `revoked_at IS NULL`
-turns the second red (cause rewritten `person`, a second audit line) and leaves the first green. **Each of the two
-conditions alone is redundant** for this crossing (either one removed, both tests stay green: PostgreSQL re-checks
-the sub-query's quals on the locked row and the `UPDATE`'s on the target row), and so is the sub-query's `FOR NO KEY
-UPDATE` (removed, green: the `UPDATE` waits on the row by itself) — its job is the id order, pinned by
-`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`.
-
-**A deadlock that is accepted is pinned too, and so is the retry that absorbs half of it** (#650, R4, F1; S3 of the
-second review: `AccountWideRevocationDeadlockTest`; children `Fixtures/change-account-password.php`, which runs the real
-`CpgUserAdministrator::changePassword()`, and `present-at-token-endpoint.php`; neither prints a secret, the code passes on
-the child's stdin and the password is drawn in the child and never written). The test holds C1 `FOR UPDATE` in a session
-of its own; the revocation starts and blocks on C1 after taking the account; the exchange starts, takes C2 and blocks on
-C1 **behind** the revocation in the queue; C1 is released and the revocation, first in the queue, takes it and wants C2 —
-held by the exchange, which waits for C1: `40P01`. Each child starts once the other is **blocked on a lock**
-(`SessionLockWait::untilBlocked()`). **The victim is chosen, not left to the timers** (measured: 9 runs in 12 aborted the
-exchange, 3 the revocation): the child meant to lose starts with `deadlock_timeout = 100ms`, the other keeps the default
-second, so it is the first to look for the cycle. One test per victim. **Since S3 the revocation victim is retried once**
-(`DeadlockRetryInterface`, `.claude/rules/security-user.md`): the revocation child no longer fails, it prints
-`retried <n>` (the deadlocks the single retry absorbed, read on a probe of every channel), and the test proves the cycle
-happened by that line; the exchange victim keeps its `failed 40P01` (league, out of scope, not retried). The final state
-of each is asserted — revocation victim: the exchange won the cycle (C1 `superseded`, already inactive, C2
-`password-changed`), the password and `credentials_version` changed, the version advanced **once**, **one** audit line of
-connection (C2's) and **one** `password-changed`; exchange victim: no token for C2, its code still exchangeable
-(`code_exchanged_at` null), the revocation succeeded first time (C1 and C2 `password-changed`, two audit lines, no retry).
-Twelve runs in a row green. **Needs a role that may `SET deadlock_timeout`** (superuser, or the `SET` privilege on the
-parameter) — true of the dev database and of CI. Mutations: `SKIP LOCKED` in `revokeWhere()` (red at the wait, no cycle),
-`ORDER BY c.id DESC` (red: the cycle is gone). The limit itself: `.claude/rules/mcp-oauth-revocation-personne.md`, accepted
-limit 4.
-
-**A test that empties a table checks the database first** (#650, F-D of the second review): `tests/Support/TestDatabase::
-assertSafeToWipe(Connection)` reads `current_database()` **on the server** (not an environment variable the connection
-might not have followed) and requires it to end exactly in `_test` plus ParaTest's `TEST_TOKEN` when there is one (something
-must precede the suffix: `_test` alone is no derived name), else the test fails naming the database, **having emptied
-nothing**. **Mandatory before any `TRUNCATE`, or `DELETE FROM <table>` without `WHERE`, on a connection opened outside the
-kernel** (`OpensProbeConnection`, `DriverManager`): such a connection copies parameters by hand, and a wrong copy, another
-test's database or a forgotten `APP_ENV` would point it at data that is not disposable. It is applied to `SessionBeforePasswordChangeTest` and
-to the cleanups of `tests/Mcp` (sixteen files, `TokenEndpointConcurrencyTest` — its `TRUNCATE … CASCADE` — and the
-`DrivesTheOAuthFlow` trait among them: the repository and snapshot tests, the controllers, the commands, the league
-adapters, `McpEndpointTest`…) — also where the connection is the kernel's; `TestDatabaseGuardTest` pins the
-recogniser (with and without a token, a development name refused) and that the kernel's connection is on the test database.
-**Decision of the author: not generalised** to the ~110 other files of `tests/` that run a `DELETE FROM` without `WHERE`: they
-all go through the **kernel's connection**, whose database name `doctrine.yaml` already suffixes (`dbname_suffix: '_test'`).
-Extend it the day a test opens a connection otherwise. **A migration test whose column a later migration dropped recreates
-the earlier state inside its own rolled-back transaction** (`Version20261028160000Test` adds `credentials_changed_at` back, as
-`Version20261028200000::down()` does, then replays its own `down()`/`up()`): the migrated test schema no longer has the column.
-
-Every
-test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
-that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
-child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,
-as that fixture does. Removing `whileLocked()` from the invitation handler entirely
-proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
-committed token and the count is right. Removing the purge of unused tokens from the activation leaves
-#458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the
-purge is pinned sequentially, on the real `_test` database, by
-`AccountPasswordSetupResourceTest::testActivationPurgesTheOtherUsableLinksOfTheAccount` (issue #519: a
-second usable token saved through the repository, activation by the first; measured, only the table count turns
-red: the leftover link is refused anyway by the « account already active » guard), and by
-`PasswordSetupServiceTest`'s mock. Removing it from `CpgUserAdministrator::changePassword()` (#460) turns
-`testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
-the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
-concurrency harness for either: the purge is no race.
-
-## Reading a repository file from a test (issue #629)
-
-A test reads a file of `src/`, `config/`, the backend or the repository through
-**`tests/Support/RepositoryFiles`**: `backend('src')` and `repository('k8s/README.md')` are written in that
-class only, from its own location, and `read($absolutePath)` fails the test naming the path and the cause
-— missing, not a regular file (a directory passes `assertFileIsReadable`), unreadable —, never returning
-`''` the way `(string) file_get_contents()` did, the symptom of #615. Every reader of a repository file goes
-through it: `KubernetesManifests`, `PhpImageBuild`, `MigrationSources`, `Runbook`, `EnvironmentConfigKernel`,
-the token censuses of `tests/Support` (`DeclaredClasses`, `MisqualifiedNativeCalls`…) and the tests that walk
-`src/`. A file a test wrote itself (a sandbox, a temporary directory) is not a repository file. Never write
-`\dirname(__DIR__, n)` or `__DIR__.'/../..'` to reach out of `tests/`: such a path depends on the test's depth
-and silently reads elsewhere when the test moves. `tests/Shared/DirPathsStayInTestsTest.php`
-(`tests/Support/PathsLeavingTests`, by tokens) resolves every path built from `__DIR__` lexically from the
-file's directory — `dirname(<__DIR__ and its concatenation>[, n])`, qualified or not, `n` in any base,
-positional or named, trailing comma allowed, or a bare `__DIR__`, each followed by its concatenated pieces
-(literals, `DIRECTORY_SEPARATOR`, the start of an interpolated string) — and fails on one that leaves `tests/`
-or that it cannot resolve. **It judges where a path leads, not how it gets there**: a sibling fixture, and the
-child scripts' `require \dirname(__DIR__, n).'/bootstrap.php'` (which load the autoloader, so cannot use
-`RepositoryFiles`), stay in `tests/` and pass without an exemption — the issue meant to exempt them; a moved
-one fails loudly on its `require`. A path that climbs out and comes back into `tests/` passing is the same
-accepted limit. Its `EXEMPT` list holds pairs (file, resolved path) for the files that run before the
-autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script `await-barrier.php`) and
-`RepositoryFiles` itself, each pair still required to be written; a new path in an exempt file is refused.
-Not seen: a nested call on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a
-variable, one composed by `sprintf()` or `implode()`, a constant other than `DIRECTORY_SEPARATOR`, `__FILE__`.
 
 ## API Platform: one version for the whole family, and deprecations seen (issue #701)
 
@@ -438,36 +255,3 @@ service (a normalizer at its first normalization, a deprecated service an API Pl
 those requests; a reference to a deprecated alias added by autowiring during the optimization.
 `ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
 of the problem+json errors (400, 404, 405, 409, 415, 422, 429) the same way, read identical on both locks.
-
-## Freezing the clock for a `Retry-After` (issue #743)
-
-The project's listeners (`RetryAfterListener`, `LoginThrottlingRefusalListener`) read `Psr\Clock\ClockInterface`, which
-`mockTime()` freezes. Symfony's limiter (`microtime(true)` in `Symfony\Component\RateLimiter\Policy`) and
-`LoginThrottlingListener` (`time()`) read the **real** time and accept no clock: a test freezing only the first left the
-`Retry-After` at the mercy of the current fraction of second (a whole minute for a login, whose delay is counted in
-minutes). A test that asserts a `Retry-After` therefore uses `tests/Support/FreezesTheWholeClock`
-(`freezeTheWholeClock()`): `mockTime()` and `ClockMock::withClockMock()` (`symfony/phpunit-bridge`, dev) on the **same**
-instant, `.999` on purpose (the window opens and the refusal falls a thousandth before the next second), released by an
-`#[After]`. Freeze **after** the login of a functional test: the JWT must stay valid at the real time its check reads.
-
-`ClockMock::register()` is called by `tests/bootstrap.php`, not by the bridge's `SymfonyExtension`
-(`clock-mock-namespaces`): PHP caches the function resolved at each call site, so a registration after a first
-`microtime()` of the namespace has no effect, and the extension also enables `DebugClassLoader` and removes the
-deprecations' deduplication for the whole suite. **Only the namespaces whose calls compute a deadline**
-(`RateLimiter\Policy`, `Security\Http\EventListener`): `ClockMock` also replaces `sleep()`, `usleep()` and `hrtime()`, and
-the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real. `WholeClockFreezeTest` pins both lists
-(a mocked namespace that must be, an unmocked one that must stay so) and the effect on the real components. A new
-component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
-`symfony.lock` carries an entry for `symfony/phpunit-bridge` (recipe 7.3) on purpose, and `phpunit.dist.xml` does **not** carry its
-`SymfonyExtension`: without the entry, any `composer update` or `composer require` replays the recipe, which adds the extension with
-`clock-mock-namespaces=App` and `dns-mock-namespaces=App`. ClockMock would then mock `App\*` and falsify `FailedLoginTimingEqualizer`'s
-duration (measured: the update rewrites `phpunit.dist.xml` without the entry, and leaves it alone with it). If a bridge update ever
-brings a newer recipe, refuse its `phpunit.dist.xml` hunk.
-
-Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
-3600 s later (12:00:00.999 -> 13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
-`RetryAfterListener` rounds the remaining 3600.001 s **up** to whole seconds (in integer microseconds, issue #743: truncating
-two timestamps announced up to a second too early, 899 for 899.989 s left), so `AnswerControllerTest` reads `3601`
-(`WholeClockFreezeTest` derives the same deadline). A login refusal reads `900`: its deadline is `now + 15 min` exactly.
-That second above the real delay is the rounding of an integer-second header; announcing less would make the client retry too
-early. Never relax it to `<= 3601`.

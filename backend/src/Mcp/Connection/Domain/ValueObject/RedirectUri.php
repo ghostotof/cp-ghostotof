@@ -166,6 +166,29 @@ final readonly class RedirectUri implements Stringable
         return null === $port || ($port >= 1 && $port <= self::MAX_PORT);
     }
 
+    /**
+     * L'hôte tel que League\Uri le rend : en minuscules (une valeur écrite
+     * autrement n'a pas passé la normalisation de `fromString()`), sans port,
+     * entre crochets pour une adresse IPv6. `fromString()` a refusé un hôte
+     * absent ou vide : il y en a toujours un.
+     */
+    public function host(): string
+    {
+        return (string) $this->uri->getHost();
+    }
+
+    /**
+     * Le port écrit dans la redirection, `null` s'il n'y en a pas. League\Uri
+     * retire le port par défaut du schéma (`:443` en `https`) : une valeur qui
+     * l'écrirait n'a pas passé `fromString()`, un port non nul est donc toujours
+     * un port que l'auteur a voulu autre que le 443. Un accesseur et non un
+     * booléen : la règle qui en tire parti (le document CIMD) reste chez elle.
+     */
+    public function port(): ?int
+    {
+        return $this->uri->getPort();
+    }
+
     /** Une redirection `http` : la boucle locale, seule admise sans TLS. */
     public function isLoopback(): bool
     {

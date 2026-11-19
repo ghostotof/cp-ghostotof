@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
+use App\Shared\Infrastructure\Network\EmbeddedIpv4;
+use App\Shared\Infrastructure\Network\EmbeddedIpv4Form;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
@@ -13,8 +15,11 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * reste souvent le réseau d'un abonné (un foyer, une entreprise) : c'est une
  * donnée personnelle réduite, pas une donnée anonyme (registre RGPD, §6 bis).
  *
- * Trois formes d'IPv6 portent une IPv4, qu'un /48 garderait entière ou
- * effacerait :
+ * La reconnaissance des formes d'IPv6 qui portent une IPv4 est celle de
+ * {@see EmbeddedIpv4} (`Shared`), partagée avec le quota des documents CIMD ;
+ * seule la façon de tronquer chacune reste ici. Quatre formes portent une
+ * IPv4, qu'un /48 garderait entière ou effacerait ; trois ont leur troncature
+ * propre, la quatrième (la compatible) est traitée à part, plus bas :
  *
  *  - **l'IPv4 écrite en IPv6** (`::ffff:203.0.113.42`, une socket double pile) :
  *    elle est rendue en IPv4 (`203.0.113.0`), pour qu'un même /24 n'apparaisse
@@ -33,6 +38,13 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * avant de lui passer l'adresse. Elle tronque en /24, comme une IPv4,
  * l'IPv4 « compatible » (`::203.0.113.42`, dépréciée), qu'un /48 réduisait à
  * `::`.
+ *
+ * Une forme ajoutée à l'extracteur (un nouveau case de
+ * {@see EmbeddedIpv4Form}) doit recevoir ici sa troncature explicite. Le
+ * `match` de {@see self::tryFrom()} n'a pas de branche par défaut (la branche
+ * `null` ne couvre que l'absence de forme) : sans elle, il lève
+ * `UnhandledMatchError` à l'exécution, et PHPStan signale avant cela un `match`
+ * non exhaustif sur l'énumération.
  */
 final readonly class TruncatedIp
 {
@@ -46,12 +58,6 @@ final readonly class TruncatedIp
 
     /** Le dernier octet de l'IPv4 portée, préfixe de 96 bits gardé. */
     private const int TRANSLATED_ERASED_BYTES = 1;
-
-    private const string IPV4_MAPPED_PREFIX = "\0\0\0\0\0\0\0\0\0\0\xFF\xFF";
-
-    private const string SIX_TO_FOUR_PREFIX = "\x20\x02";
-
-    private const string TRANSLATION_PREFIX = "\0\x64\xFF\x9B\0\0\0\0\0\0\0\0";
 
     private function __construct(
         public string $value,
@@ -71,18 +77,21 @@ final readonly class TruncatedIp
 
         $bytes = (string) inet_pton($address);
 
-        if (str_starts_with($bytes, self::IPV4_MAPPED_PREFIX)) {
-            $bytes = substr($bytes, \strlen(self::IPV4_MAPPED_PREFIX));
-            $address = (string) inet_ntop($bytes);
+        if (4 === \strlen($bytes)) {
+            return new self(IpUtils::anonymize($address, v4Bytes: self::IPV4_ERASED_BYTES));
         }
 
-        return new self(match (true) {
-            4 === \strlen($bytes) => IpUtils::anonymize($address, v4Bytes: self::IPV4_ERASED_BYTES),
-            str_starts_with($bytes, self::SIX_TO_FOUR_PREFIX) => IpUtils::anonymize($address, v6Bytes: self::SIX_TO_FOUR_ERASED_BYTES),
-            str_starts_with($bytes, self::TRANSLATION_PREFIX) => IpUtils::anonymize($address, v6Bytes: self::TRANSLATED_ERASED_BYTES),
+        // La reconnaissance des quatre formes est celle de l'extracteur partagé
+        // (EmbeddedIpv4) ; ici ne reste que la façon de tronquer chacune.
+        $embedded = EmbeddedIpv4::tryFromPacked($bytes);
+
+        return new self(match ($embedded?->form) {
+            EmbeddedIpv4Form::Mapped => IpUtils::anonymize($embedded->address, v4Bytes: self::IPV4_ERASED_BYTES),
+            EmbeddedIpv4Form::SixToFour => IpUtils::anonymize($address, v6Bytes: self::SIX_TO_FOUR_ERASED_BYTES),
+            EmbeddedIpv4Form::Translated => IpUtils::anonymize($address, v6Bytes: self::TRANSLATED_ERASED_BYTES),
             // `v4Bytes` aussi : Symfony lit en IPv4 l'IPv4 « compatible »
             // (`::a.b.c.d`, douze octets nuls), tronquée en /24.
-            default => IpUtils::anonymize($address, v4Bytes: self::IPV4_ERASED_BYTES, v6Bytes: self::IPV6_ERASED_BYTES),
+            EmbeddedIpv4Form::Compatible, null => IpUtils::anonymize($address, v4Bytes: self::IPV4_ERASED_BYTES, v6Bytes: self::IPV6_ERASED_BYTES),
         });
     }
 }

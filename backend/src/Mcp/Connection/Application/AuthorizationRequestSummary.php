@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
 
 /**
@@ -16,6 +18,12 @@ use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
  * Tout y a été validé : le client et sa redirection par league (la
  * redirection jugée par McpClient::allowsRedirect()), PKCE par le grant, la
  * ressource par AuthorizationRequestValidator.
+ *
+ * Le client est soit une ligne pré-enregistrée, soit — quand le `client_id`
+ * est l'URL d'un document que le client publie (CIMD, #651) — un client
+ * « déclaré », non persisté, que l'admission a rendu à league : la page de
+ * consentement dit alors d'où il tient son identité (registration(),
+ * verifiedDomain()).
  */
 final readonly class AuthorizationRequestSummary
 {
@@ -23,6 +31,7 @@ final readonly class AuthorizationRequestSummary
      * @param string $redirectUri  la redirection **demandée**, telle que league l'a retenue (rognée), celle vers laquelle le code partira
      * @param string $redirectHost son hôte, tel que League\Uri le lit (`[::1]` entre crochets)
      * @param string $scope        les scopes retenus par league, séparés par une espace (RFC 6749 §3.3)
+     * @param McpClient|null $discoveredClient le client déclaré que l'admission a rendu à league, `null` pour une ligne pré-enregistrée ; privé, lu par judgedDiscoveredClient() seulement s'il est le client que league a jugé (même objet)
      */
     public function __construct(
         public string $clientId,
@@ -32,7 +41,62 @@ final readonly class AuthorizationRequestSummary
         public string $scope,
         public string $resource,
         public AuthorizationRequestInterface $authorizationRequest,
+        private ?McpClient $discoveredClient = null,
     ) {
+    }
+
+    /**
+     * D'où le client tient son identité, lu sur le client que league a jugé :
+     * le document qu'il publie (`Cimd`) ou la ligne enregistrée
+     * (`Preregistered`). Jamais tiré du seul client déclaré joint à la demande.
+     */
+    public function registration(): ClientRegistration
+    {
+        return $this->judgedMcpClient()?->registration() ?? ClientRegistration::Preregistered;
+    }
+
+    /**
+     * Le domaine que le document prouve : l'hôte du `client_id` du client que
+     * league a jugé quand il tient son identité d'un document, `null` pour un
+     * client pré-enregistré (aucun domaine n'y est vérifié, le nom vient de
+     * l'administrateur du site).
+     */
+    public function verifiedDomain(): ?string
+    {
+        $judged = $this->judgedMcpClient();
+
+        if (null === $judged || ClientRegistration::Cimd !== $judged->registration()) {
+            return null;
+        }
+
+        return $judged->cimdHost();
+    }
+
+    /**
+     * Le client déclaré que l'admission a rendu à league, **seulement s'il est
+     * celui que league a jugé** : le même objet (`===`), pas seulement le même
+     * `client_id` — une ligne pré-enregistrée du même identifiant n'est pas le
+     * client déclaré. Le seul accès au client déclaré, destiné à la
+     * persistance au consentement (#651) : sinon `null`.
+     */
+    public function judgedDiscoveredClient(): ?McpClient
+    {
+        if (null === $this->discoveredClient) {
+            return null;
+        }
+
+        return $this->judgedMcpClient() === $this->discoveredClient ? $this->discoveredClient : null;
+    }
+
+    /**
+     * Le McpClient du client que league a jugé, lu une fois ; `null` si ce
+     * client n'est pas porteur d'un McpClient (JudgedClientInterface).
+     */
+    private function judgedMcpClient(): ?McpClient
+    {
+        $judged = $this->authorizationRequest->getClient();
+
+        return $judged instanceof JudgedClientInterface ? $judged->mcpClient() : null;
     }
 
     /**

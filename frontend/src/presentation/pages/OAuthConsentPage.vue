@@ -8,6 +8,7 @@ import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { useDeliberateActivation } from '../ui/useDeliberateActivation'
 import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
+import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 
 /**
  * Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
@@ -15,9 +16,10 @@ import SignInAgainLink from '../ui/SignInAgainLink.vue'
  * La page en montre le résumé revalidé par le serveur, puis transmet la
  * décision et suit l'URL de retour vers le client.
  *
- * Ce que la personne doit pouvoir juger avant de cliquer : le nom du client
- * — celui sous lequel l'administrateur du site l'a enregistré (un client CIMD,
- * #651, déclarera le sien, que la page dira tel) —, l'hôte vers lequel elle
+ * Ce que la personne doit pouvoir juger avant de cliquer : le client — pour un
+ * client pré-enregistré, le nom sous lequel l'administrateur du site l'a
+ * enregistré ; pour un client CIMD (#651), le domaine que le site a vérifié, en
+ * évidence, puis le nom que le client se donne, dit « déclaré » —, l'hôte vers lequel elle
  * repartira, ce que la connexion ouvre (le corpus nominatif, en lecture) et
  * qu'il partira vers le fournisseur d'IA du client. Aucun texte ne nomme
  * l'auteur du site.
@@ -43,7 +45,7 @@ import SignInAgainLink from '../ui/SignInAgainLink.vue'
 const { t } = useI18n()
 const currentLocale = useCurrentLocale()
 const route = useRoute()
-const { state, request, failure, load, reload, approve, deny } = useOAuthConsent()
+const { state, request, failure, retryAfterSeconds, load, reload, approve, deny } = useOAuthConsent()
 
 const isSubmitting = computed(() => 'submitting' === state.value)
 /** La demande et les boutons ne se montrent que tant qu'une décision est possible. */
@@ -84,6 +86,16 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.unsafeRedirect')
     case 'malformed-decision':
       return t('oauthConsent.errors.malformedDecision')
+    case 'temporarily-unavailable': {
+      // Refus passager du serveur (#651) : « réessayez », avec la durée en minutes quand le serveur l'a donnée.
+      if (null === retryAfterSeconds.value) {
+        return t('oauthConsent.errors.temporarilyUnavailable')
+      }
+      // Calculé une fois : le nombre sert à la fois de variable nommée et de choix du singulier.
+      // Bloc propre au `case` : la constante ne déborde pas sur les autres branches du `switch`.
+      const minutes = retryAfterMinutes(retryAfterSeconds.value)
+      return t('oauthConsent.errors.temporarilyUnavailableIn', { minutes }, minutes)
+    }
     case 'unknown':
       return t('oauthConsent.errors.unknown')
     default:
@@ -116,7 +128,7 @@ const switchAccountTarget = computed(() => switchAccountLocation(route, currentL
  * la session vaut toujours, aucune reconnexion — et le résumé nomme alors le
  * compte d'aujourd'hui.
  */
-const offersReload = computed(() => 'account-changed' === failure.value)
+const accountChanged = computed(() => 'account-changed' === failure.value)
 
 /**
  * Un refus du serveur (403 qui n'est pas une session finie) : la personne est connectée,
@@ -125,6 +137,20 @@ const offersReload = computed(() => 'account-changed' === failure.value)
  * à l'accueil — et repose des cookies neufs, ce qui répare aussi une signature CSRF périmée.
  */
 const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
+
+/**
+ * Refus passager au résumé (#651) : la demande n'est pas montrée, « Réessayer » la relit. Un refus passager à la
+ * décision ne l'offre pas : la demande reste affichée (état `ready`), les boutons de décision sont le réessai, et
+ * aucun envoi ne repart seul.
+ */
+const offersRetry = computed(() => 'temporarily-unavailable' === failure.value && 'error' === state.value)
+
+/**
+ * Un seul bouton relit la demande (`reload`), dans les deux échecs qui l'offrent : son libellé dit pourquoi
+ * (« Relire la demande » quand le compte a changé, « Réessayer » après un refus passager au résumé).
+ */
+const offersReread = computed(() => accountChanged.value || offersRetry.value)
+const rereadLabel = computed(() => t(accountChanged.value ? 'oauthConsent.errors.reload' : 'oauthConsent.errors.retry'))
 
 const offersSignInAgain = computed(() => 'session-ended' === failure.value)
 
@@ -178,13 +204,13 @@ onMounted(() => {
       </RouterLink>
       <!-- Comme le lien de reconnexion : dans l'alerte, avec le message qu'il prolonge. -->
       <button
-        v-if="offersReload"
+        v-if="offersReread"
         type="button"
         class="btn btn-link p-0 align-baseline"
         data-testid="consent-reload"
         @click="reload"
       >
-        {{ t('oauthConsent.errors.reload') }}
+        {{ rereadLabel }}
       </button>
     </p>
 
@@ -225,14 +251,46 @@ onMounted(() => {
           {{ t('oauthConsent.client.heading') }}
         </h2>
         <dl class="mb-0">
-          <dt>{{ t('oauthConsent.client.nameLabel') }}</dt>
-          <dd data-testid="consent-client-name">
-            <!-- Texte interpolé, jamais v-html : le nom vient d'une saisie, demain du client (CIMD). -->
-            <span class="fw-semibold">{{ request.client.name }}</span>
-            <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.nameNotice') }}</span>
-          </dd>
-          <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
-          <dd>{{ t('oauthConsent.client.registration.preregistered') }}</dd>
+          <!--
+            Client CIMD (#651) : le domaine, que le site a vérifié, d'abord et en évidence ; le nom, que le client se
+            donne lui-même, ensuite, dit « déclaré ». Ce sont les libellés qui portent le sens, jamais une couleur
+            ni une icône seule. Tout est interpolé en texte, jamais v-html : le nom vient du client.
+          -->
+          <template v-if="'cimd' === request.client.registration">
+            <dt>{{ t('oauthConsent.client.domainLabel') }}</dt>
+            <dd>
+              <code
+                class="text-break"
+                data-testid="consent-client-domain"
+              >{{ request.client.domain }}</code>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.domainNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.documentLabel') }}</dt>
+            <dd>
+              <!-- Texte interpolé, jamais v-html : l'adresse est celle que le client a fournie. -->
+              <code
+                class="text-break"
+                data-testid="consent-client-document"
+              >{{ request.client.id }}</code>
+            </dd>
+            <dt>{{ t('oauthConsent.client.declaredNameLabel') }}</dt>
+            <dd data-testid="consent-client-name">
+              <span class="fw-semibold">{{ request.client.name }}</span>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.declaredNameNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
+            <dd>{{ t('oauthConsent.client.registration.cimd') }}</dd>
+          </template>
+          <template v-else>
+            <dt>{{ t('oauthConsent.client.nameLabel') }}</dt>
+            <dd data-testid="consent-client-name">
+              <!-- Texte interpolé, jamais v-html : le nom vient d'une saisie de l'administrateur. -->
+              <span class="fw-semibold">{{ request.client.name }}</span>
+              <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.nameNotice') }}</span>
+            </dd>
+            <dt>{{ t('oauthConsent.client.registrationLabel') }}</dt>
+            <dd>{{ t('oauthConsent.client.registration.preregistered') }}</dd>
+          </template>
           <dt>{{ t('oauthConsent.client.redirectLabel') }}</dt>
           <dd class="mb-0">
             <code data-testid="consent-redirect-host">{{ request.redirectHost }}</code>

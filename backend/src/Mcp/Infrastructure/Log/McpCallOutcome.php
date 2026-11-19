@@ -6,8 +6,11 @@ namespace App\Mcp\Infrastructure\Log;
 
 /**
  * L'issue d'une ligne du journal d'appels MCP (spec 0007, « Journal des
- * appels ») : la valeur sur laquelle filtrer (`jq 'select(.context.outcome ==
- * "protocol-error")'`).
+ * appels ») : la valeur sur laquelle filtrer, par exemple
+ * `kubectl logs deploy/backend -c php-fpm | tools/logs-select.sh
+ * '.channel == "mcp_usage" and .context.outcome == "protocol-error"'` (le script
+ * écarte le bruit du descripteur 2 et garde visible tout ce qui n'est pas du
+ * bruit connu, voir son en-tête).
  */
 enum McpCallOutcome: string
 {

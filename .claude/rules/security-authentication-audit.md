@@ -77,6 +77,28 @@ paths:
   ADR 0005-compliant) would cost an SQL read and write per refused request, on the very path a replay would hammer, to
   remove one line among several already written; the rate is bounded upstream by the nginx zones, and that replay is
   what the person reading the log wants to see).
+  `mcp-client-metadata-refused` (#651, `CimdClientAdmission`, `SecurityAuditLogger::mcpClientMetadataRefused()`:
+  `clientHost`, `cause`; **only a host of the allowed list** (the contract of the caller, the method checks
+  nothing), never the URL, the `client_id` nor the body; the `cause` is a `ClientMetadataRefusal` value:
+  `throttled`, `unresolvable`, `address-blocked`, `unreachable`, `redirected`, `unexpected-status`,
+  `upstream-error`, `unexpected-content-type`, `too-large`, `invalid-document` — **never `domain-not-allowed`**
+  (an unlisted host is chosen by an anonymous caller: it is refused without a trace); the usual `ip` is the
+  **requester's** (`getMainRequest()->getClientIp()`) and `actor` is anonymous at the authorization point, the
+  `userId` when the consent revalidates; written through `FailSafeAudit`, so an audit failure never replaces the
+  refusal; the whole is in `.claude/rules/mcp-oauth-cimd.md`) and `mcp-client-row-not-admitted` (#651,
+  `LoopbackAwareAuthCodeGrant`, `mcpClientRowNotAdmitted()`: league read the stored row of a `cimd` client
+  that no admission vouched for — two real triggers: (a) a divergence between the `client_id` the admission judged and
+  the one league reads (defence in depth); (b) a `cimd` row whose identifier no longer has the CIMD shape (hand-written,
+  or stored before a stricter rule): `admit()` returns `null`, league reads the row, the guard refuses and the host is
+  `unreadable`; (b) holds for an identifier **still valid under `McpClientId::fromString()`** but outside the CIMD form —
+  one `McpClientId` refuses is never looked up by league's repository (`ClientRepository::getClientEntity()`,
+  `LeagueRepositoriesTest::testAnUnreadableClientIdIsUnknownWithoutAQuery`): an `invalid_client` « unknown client », no such audit;
+  end to end, `CimdAuthorizationTest::testAStoredCimdRowOutsideTheCimdFormIsRefusedAndAuditedAsUnreadable`; refused `invalid_client`; a domain removed from the allowed list is **not**
+  audited (D-G: `DomainNotAllowed` is thrown before the guard); `clientHost` only, read from the **row**
+  (`McpClient::cimdHost()`, or `unreadable`), never the raw `client_id` an anonymous sent; actor from
+  `currentActor()`: `anonymous` at the authorization point (`oauth` firewall), the `userId` when the consent is
+  revalidated (`api` firewall); written through `FailSafeAudit`, so an audit failure leaves the refusal unchanged and
+  `critical` on the main channel).
   Every record carries `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
   **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
   login identifier** (issue #363): an invited account's username is derived from the local part of its
@@ -177,7 +199,7 @@ paths:
   `Assert\Email` whose value ends up in an e-mail.
   `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
   sentinel values run through every method (login identifiers of the actor and the subject included; it counts the
-  records, 30 since S4, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+  records, 32 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
   every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
   activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
   per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,

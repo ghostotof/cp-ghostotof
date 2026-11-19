@@ -95,17 +95,46 @@ when@prod:
             # Tout le reste de l'application. Une ligne JSON par enregistrement sur
             # la sortie d'erreur : c'est ce que Kubernetes collecte (il ne lit que
             # stdout/stderr des conteneurs), donc `kubectl logs deploy/backend -c
-            # php-fpm | jq 'select(.channel == "security")'` fonctionne sans aucune
-            # infrastructure de collecte. Un fichier dans var/log/ serait au
-            # contraire invisible — et perdu au redémarrage du pod, le système de
-            # fichiers étant en lecture seule hors de var/.
+            # php-fpm | tools/logs-select.sh '.channel == "security_audit"'`
+            # fonctionne sans aucune infrastructure de collecte (l'audit part sur
+            # le canal `security_audit`, pas sur `security`, celui du framework).
+            # Le descripteur 2 porte aussi des lignes qui ne sont pas du JSON :
+            # erreur du moteur PHP, trace de dernier recours de FailSafeAudit (voir
+            # plus bas), NOTICE ou WARNING du maître FPM, ligne d'accès du pool,
+            # morceaux d'une ligne coupée par `log_limit`. Le script n'écarte que
+            # le bruit connu (accès du pool en 2xx/3xx/4xx sauf 403 : les 401, 404 et
+            # autres 4xx sont perdus, voir les journaux bruts ; le 403 et les 5xx
+            # restent visibles, NOTICE de routine, ligne vide) et rend tout le
+            # reste en `{"unparsed": …}`, trace de dernier recours comprise ; ses
+            # raisons et ses prédicats sont dans son en-tête, seule copie.
+            # La purge `app:mcp:purge` (CronJob `messenger-purge-cronjob.yaml`,
+            # conteneur `purge`) écrit par les mêmes gestionnaires sur le stderr de
+            # son conteneur ; son stdout porte la sortie des trois commandes
+            # enchaînées (`[OK] …`), qui sort aussi en `unparsed`. Ses
+            # enregistrements se lisent dans les pods du Job, pas dans
+            # `deploy/backend -c php-fpm` : `kubectl logs -l job-name=<nom> -c purge
+            # --prefix --tail=-1 | tools/logs-select.sh …` (`OnFailure` relance le
+            # conteneur dans le même pod, un pod remplacé est un autre pod du Job :
+            # le sélecteur les lit tous ; avec un sélecteur, `kubectl logs` ne rend
+            # que 10 lignes par pod sans `--tail=-1`). La tentative précédente d'un
+            # conteneur relancé se lit sur un pod nommé, `kubectl logs pod/<pod> -c
+            # purge --previous`, trouvé par `kubectl get pods -l job-name=<nom>`
+            # (colonne RESTARTS) : avec `-l`, `--previous` échoue en bloc dès qu'un
+            # pod du Job n'a jamais redémarré.
+            # Un fichier dans var/log/ serait au contraire invisible — et perdu au
+            # redémarrage du pod, le système de fichiers étant en lecture seule
+            # hors de var/.
             #
             # Pas de doublon avec `error_log = /proc/self/fd/2` (docker/php/php.prod.ini) :
             # Monolog écrit lui-même sur le descripteur 2 via son propre handler,
-            # tandis qu'`error_log` ne reçoit que les erreurs émises par le moteur
-            # PHP (erreur fatale à la compilation, avertissement de démarrage) —
-            # celles qui, par définition, ne passent jamais par le conteneur Symfony.
-            # Aucun enregistrement Monolog n'est donc repris par `error_log`.
+            # tandis qu'`error_log` reçoit les erreurs émises par le moteur PHP
+            # (erreur fatale à la compilation, avertissement de démarrage) —
+            # celles qui, par définition, ne passent jamais par le conteneur
+            # Symfony — et, en texte brut, la trace de dernier recours de
+            # `Mcp/Connection/Application/FailSafeAudit` (le journal principal est
+            # lui-même en panne : un message constant et la classe de la panne).
+            # Aucun enregistrement Monolog n'est donc repris par `error_log` :
+            # cette trace vient de la fonction `error_log()`, pas d'un handler.
             main:
                 type: stream
                 path: php://stderr

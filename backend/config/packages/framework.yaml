@@ -60,6 +60,11 @@ framework:
         # rendait le 429 avant la journalisation du noyau, qui ne le voyait
         # jamais ; il passe désormais par logKernelException, et sans cette
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
+        # Quota de récupération des documents CIMD (#651) : un refus attendu,
+        # converti en refus OAuth par le point d'autorisation et tracé par
+        # `mcp-client-metadata-refused` ; sans cette entrée, `critical`.
+        App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException:
+            log_level: info
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
         # Refus de `login_throttling` (issue #399) : la défense anti-brute-force
@@ -103,6 +108,13 @@ framework:
         # Accord d'une connexion MCP sur une authentification de plus de dix
         # minutes (#647, F1) : 401 typé, la page renvoie à la connexion. Une
         # issue ordinaire d'une page restée ouverte, pas une alerte.
+        # Document d'un client CIMD non récupérable au consentement (#651) :
+        # 429 (quota) en `info`, refus attendu ; 503 (hôte, réseau) en `warning`,
+        # un 5xx ne se tait pas. Refus déjà tracé à sa source par `mcp-client-metadata-refused`.
+        App\Mcp\Connection\Domain\Exception\ConsentRevalidationThrottledException:
+            log_level: info
+        App\Mcp\Connection\Domain\Exception\ConsentRevalidationUnavailableException:
+            log_level: warning
         App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException:
             log_level: info
         # Décision de consentement prise sur la page d'un autre compte que celui

@@ -6,6 +6,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
+use App\Mcp\Connection\Domain\Exception\ClientMetadataFetchRateLimitExceededException;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
 use App\Security\Authentication\Infrastructure\Log\ThrottledRequestAuditListener;
@@ -64,6 +65,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
      * sa trace.
      */
     private const array TRACED_UPSTREAM = [
+        ClientMetadataFetchRateLimitExceededException::class => 'Quota de récupération des documents de métadonnées d\'un client CIMD (#651) : la récupération n\'a pas de route à elle, elle a lieu dans le point d\'autorisation OAuth. Le refus est tracé par CimdClientAdmission (événement `mcp-client-metadata-refused`, cause `throttled`, Task 9 du plan de la tâche 12), jamais par ThrottledRequestAuditListener.',
         LoginRateLimitExceededException::class => 'Refus de login_throttling (issue #399) : `login-throttled`, avec l\'empreinte de l\'identifiant tenté (issue #418), est émis par SecurityEventsSubscriber sur LoginFailureEvent (priorité 0), avant que LoginThrottlingRefusalListener (-200) ne lève l\'exception (SecurityAuditLogTest::testASixthFailedLoginIsRecordedAsThrottledNotAsFailed).',
     ];
 

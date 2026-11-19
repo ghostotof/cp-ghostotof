@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
 use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
+use App\Mcp\Connection\Domain\Exception\ConsentTemporarilyUnavailableException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -99,8 +100,11 @@ final readonly class ConsentService implements ConsentServiceInterface
 
     public function decide(ConsentDecision $decision, CpgUser $account): string
     {
-        $summary = $this->validated($this->requestOf($decision));
+        // Le 409 ne dépend que du corps et du compte du cookie : jugé avant la
+        // revalidation, il ne déclenche aucune récupération de document pour une
+        // décision qui sera refusée de toute façon (#651, F5).
         $this->refuseADecisionShownToAnotherAccount($decision, $account);
+        $summary = $this->validated($this->requestOf($decision));
         $this->refuseASessionOlderThanThePasswordChange($account);
         $location = $decision->approved ? $this->grant($summary, $account) : $this->completer->deny($summary);
 
@@ -119,9 +123,13 @@ final readonly class ConsentService implements ConsentServiceInterface
      * **L'accord et le refus sont liés**, par une règle unique : une décision
      * nomme le compte pour lequel elle a été prise. Lier le refus ne protège rien
      * (il ne crée rien) mais coûte un clic à peine, et évite une exception à
-     * expliquer. Jugé **après** la revalidation (une demande devenue invalide reste
-     * son 400, qu'une relecture ne répare pas) et **avant** tout jugement sur le
-     * compte du cookie : la décision ne le concerne pas.
+     * expliquer. Jugé **avant** la revalidation (#651, F5 : il ne lit que le corps et le
+     * compte du cookie, et la revalidation d'un client déclaré récupère son
+     * document, ce qu'une décision refusée de toute façon ne doit pas coûter, ni
+     * répondre 429/503 à la place du 409) et **avant** tout jugement sur le
+     * compte du cookie : la décision ne le concerne pas. Une demande à la fois
+     * invalide et montrée à un autre compte répond donc 409 : la relecture que la
+     * page propose lui rendra son 400.
      *
      * Un compte montré absent (`null`) ne correspond à aucun compte : refusé de
      * même, en défense en profondeur de la validation du corps.
@@ -216,17 +224,28 @@ final readonly class ConsentService implements ConsentServiceInterface
     {
         $this->requireRecentAuthentication();
 
-        $client = $this->clients->findOneByClientId($summary->clientId)
-            ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
-        $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
+        $discovered = $summary->judgedDiscoveredClient();
+        $connection = null;
 
-        $location = $this->transaction->run(function () use ($summary, $connection): string {
+        $location = $this->transaction->run(function () use ($summary, $account, $discovered, &$connection): string {
+            // Un client déclaré n'a pas de ligne avant l'accord : elle est écrite
+            // ici, dans la transaction et avant la connexion qui la référence
+            // (ordre des verrous : mcp_client avant mcp_connection). Un
+            // identifiant pris entre-temps par une ligne pré-enregistrée refuse
+            // l'accord. Sinon, la ligne pré-enregistrée est relue comme avant.
+            $client = (null !== $discovered
+                ? $this->clients->saveDiscovered($discovered)
+                : $this->clients->findOneByClientId($summary->clientId))
+                ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
+
+            $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
             $this->connections->add($connection);
 
             return $this->completer->approve($summary, $connection);
         });
 
         // Après le COMMIT seulement : une transaction annulée n'a rien accordé.
+        \assert($connection instanceof McpConnection);
         $this->auditLogger->mcpConnectionGranted($connection);
 
         return $location;
@@ -250,13 +269,22 @@ final readonly class ConsentService implements ConsentServiceInterface
 
     /**
      * @throws AuthorizationRequestRejectedException
+     * @throws ConsentTemporarilyUnavailableException un refus passager (#651) : le document du client n'a pas pu être récupéré
      */
     private function validated(ServerRequestInterface $request): AuthorizationRequestSummary
     {
         try {
-            return $this->validator->validate($request);
+            $summary = $this->validator->validate($request);
         } catch (OAuthServerException $refusal) {
+            // Un refus passager (quota, hôte) n'est pas une demande invalide :
+            // même verdict qu'au point d'autorisation, 429 ou 503, jamais le 400.
+            if ('temporarily_unavailable' === $refusal->getErrorType()) {
+                throw ConsentTemporarilyUnavailableException::after($refusal, $refusal->getHttpStatusCode());
+            }
+
             throw AuthorizationRequestRejectedException::onRevalidation($refusal);
         }
+
+        return $summary;
     }
 }

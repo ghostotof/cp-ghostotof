@@ -21,9 +21,11 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\McpConnectionReference;
+use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Closure;
 use DateInterval;
@@ -99,6 +101,15 @@ final class ConsentServiceTest extends TestCase
     private bool $commitRefused = false;
 
     private bool $clientRegistered = true;
+
+    /** Le client déclaré que le résumé porte et que league a jugé (CIMD, #651) ; null, un client pré-enregistré. */
+    private ?McpClient $discovered = null;
+
+    /** La ligne que le dépôt connaît déjà, quand le test en impose une autre que celle de setUp(). */
+    private ?McpClient $storedRow = null;
+
+    /** Le dépôt que service() a construit : de quoi lire ce qu'il a reçu. */
+    private ?McpClientRepositoryFake $clientsRepository = null;
 
     /**
      * L'instant d'authentification que le port rend : par défaut celui de
@@ -246,7 +257,48 @@ final class ConsentServiceTest extends TestCase
             self::assertSame('/errors/authorization-request-rejected', $rejection->getType());
         }
 
-        self::assertSame([], $this->effects);
+        // La ligne est relue dans la transaction : rien n'est écrit, la transaction s'ouvre seule.
+        self::assertSame(['begin'], $this->effects);
+    }
+
+    /**
+     * Un client déclaré par son document (CIMD, #651) n'existe pas en base
+     * avant l'approbation : elle l'écrit, dans la transaction, avant la
+     * connexion qui s'y rattache.
+     */
+    public function testAnApprovalOfADiscoveredClientPersistsItBeforeTheConnection(): void
+    {
+        $this->clientRegistered = false;
+        $this->discovered = ClaudeCodeMetadata::storedRow();
+
+        $this->service()->decide($this->decision(true), $this->account);
+
+        self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
+        self::assertSame([ClaudeCodeMetadata::CLIENT_ID => $this->discovered], $this->clientsRepository?->discovered);
+        self::assertSame($this->discovered, $this->added?->client());
+    }
+
+    /**
+     * Entre l'affichage et l'approbation, une ligne pré-enregistrée a pris
+     * l'identifiant : `saveDiscovered()` refuse de l'écraser, rien n'est écrit.
+     */
+    public function testAPreregisteredRowTakenWhileConsentingRefusesTheGrant(): void
+    {
+        $this->discovered = ClaudeCodeMetadata::storedRow();
+        $this->storedRow = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Client enregistré', ['http://localhost/callback']);
+
+        try {
+            $this->service()->decide($this->decision(true), $this->account);
+            self::fail('Un identifiant pris par une ligne pré-enregistrée doit être refusé.');
+        } catch (AuthorizationRequestRejectedException $rejection) {
+            self::assertSame('/errors/authorization-request-rejected', $rejection->getType());
+        }
+
+        // Refusé dans la transaction, avant la connexion : ni ajout, ni accord, ni COMMIT.
+        self::assertSame(['begin'], $this->effects);
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+        self::assertSame([], $this->clientsRepository?->discovered);
     }
 
     /**
@@ -389,8 +441,9 @@ final class ConsentServiceTest extends TestCase
     /**
      * F5 de la relecture de #650 : la décision n'est prise que pour le compte
      * que la page a montré. Accord comme refus, avec un autre UUID ou aucun :
-     * un 409 typé, la demande a été revalidée (le refus ne la contourne pas) et
-     * rien n'a eu d'effet — ni connexion, ni code, ni audit.
+     * un 409 typé, jugé avant la revalidation (#651, F5 : aucune récupération
+     * du document d'un client déclaré pour une décision refusée) et rien n'a eu
+     * d'effet — ni connexion, ni code, ni audit.
      */
     #[DataProvider('decisionsShownToAnotherAccount')]
     public function testADecisionShownToAnotherAccountIsRefusedWithoutEffect(bool $approved, bool $shownToNobody): void
@@ -406,7 +459,7 @@ final class ConsentServiceTest extends TestCase
             self::assertStringNotContainsString($this->account->getId()->toRfc4122(), (string) $refusal->getDetail());
         }
 
-        self::assertNotNull($this->validated, 'La demande n\'a pas été revalidée.');
+        self::assertNull($this->validated, 'La demande ne doit pas être revalidée avant le 409.');
         self::assertSame([], $this->effects, 'Le refus a eu un effet.');
         self::assertNull($this->added);
         self::assertNull($this->audited);
@@ -422,18 +475,18 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * Le compte montré est jugé **après** la revalidation de la demande (une
-     * demande devenue invalide reste son 400, qu'un rechargement ne répare pas) et
-     * **avant** le jugement du compte du cookie (mot de passe changé, âge de
-     * l'authentification) : la décision ne le concerne pas.
+     * Le compte montré est jugé **avant** la revalidation de la demande (#651, F5 :
+     * elle peut récupérer le document d'un client déclaré, et un refus passager ne
+     * doit pas masquer le 409) et **avant** le jugement du compte du cookie (mot de
+     * passe changé, âge de l'authentification) : la décision ne le concerne pas.
      */
-    public function testTheShownAccountIsJudgedAfterTheRequestAndBeforeTheCookieAccount(): void
+    public function testTheShownAccountIsJudgedBeforeTheRequestAndBeforeTheCookieAccount(): void
     {
         $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
         try {
             $this->service()->decide($this->decision(true, Uuid::v7()), $this->account);
-            self::fail('Une demande invalide doit rester son 400.');
-        } catch (AuthorizationRequestRejectedException) {
+            self::fail('Une décision montrée à un autre compte doit rester son 409, même pour une demande invalide.');
+        } catch (ConsentAccountChangedException) {
             $this->addToAssertionCount(1);
         }
 
@@ -647,7 +700,7 @@ final class ConsentServiceTest extends TestCase
             $validator,
             $completer,
             $transaction,
-            new McpClientRepositoryFake($this->clientRegistered ? $this->client : null, null),
+            $this->clientsRepository = new McpClientRepositoryFake($this->storedRow ?? ($this->clientRegistered ? $this->client : null), null),
             $connections,
             $auditLogger,
             new OAuthEndpoints(self::API_BASE, 'https://site.example.test'),
@@ -689,8 +742,21 @@ final class ConsentServiceTest extends TestCase
             redirectHost: 'localhost',
             scope: 'nominative:read',
             resource: self::API_BASE.'/api/mcp',
-            authorizationRequest: new AuthorizationRequest(),
+            authorizationRequest: $this->judgedRequest(),
+            discoveredClient: $this->discovered,
         );
+    }
+
+    /** La demande de league, dont le client jugé est le client déclaré quand le test en pose un. */
+    private function judgedRequest(): AuthorizationRequest
+    {
+        $request = new AuthorizationRequest();
+
+        if (null !== $this->discovered) {
+            $request->setClient(new OAuthClient($this->discovered));
+        }
+
+        return $request;
     }
 
     /**

@@ -61,7 +61,7 @@ paths:
   « Revoking a refresh token at the revocation endpoint »; deleting an A rewrites every R that outlives it whatever the
   order, a live R whose access token expired included — the *extra* cost is the SET NULL rewrite of dead R rows the
   next statement deletes, measured by no counter: `McpConnectionPurgerTest` counts the same two, two, two). **Pinned in real processes** (`McpConnectionPurgeLockOrderTest`, child
-  `Fixtures/purge-mcp-connections.php`, `.claude/rules/backend-outillage.md`): the test holds the other side's first
+  `Fixtures/purge-mcp-connections.php`, `.claude/rules/backend-tests.md`): the test holds the other side's first
   row, waits for the purge to block, asks for the second — an old revoked connection then its access token for (4)
   before (5), the connection, its access token, then its refresh token for A before R, each inverted order a `40P01`;
   and the lock's duration: a live candidate (its idle deadline twelve hours away — `last_used_at = now − idle +
