@@ -47,8 +47,9 @@
     privé `exceedsQueryParameterBound()`), `9ec95642` (messages via constantes), `54746105` (`discovered()` par
     `distinctBounded()`, rouge vérifié ; test qui construit `ClientMetadataDocument` par réflexion), `3dba345f`
     (assertion du message, mordant prouvé par mutation). Contrôlé : `tests/Mcp/Connection` OK (1 453).
-  - **Relecture de C1** : `/code-review medium` sur `diff 8a44a8a0...<HEAD de ce commit>` (point fixe de S2).
-  - **Prochaine action** : trier la relecture de C1 ; si aucun critique/haut/moyen, lancer la Task 5.
+  - **Relecture de C1** (`8a44a8a0...45daeb53`) : 9 constats, tous faibles → **boucle S1 close**.
+  - **Point fixe de S2** : `45daeb53`.
+  - **Prochaine action** : Task 5 lancée (sonnet/high) ; S2 = Tasks 5-8, relue avec audit sécurité.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -100,6 +101,17 @@ Relecture S1 (pour la description de la PR) :
 - (faible, conf. haute) la commande analyse toutes les `--redirect-uri` avant que l'entité ne refuse le nombre.
 - (C1, faible) `CimdClientAdmission.php:94` ne rattrape pas `InvalidMcpClientRedirectsException` levée par
   `discovered()` : inatteignable (`ClientMetadataDocument::fromJson()` borne déjà), un 500 si elle le devenait.
+Relecture de C1 (pour la description de la PR) :
+- (faible, conf. haute) `matches()` borne la valeur brute avant d'ignorer le port loopback : une redirection
+  loopback enregistrée près de 2 048 octets ne correspond plus une fois le port éphémère ajouté (théorique).
+- (faible) cycle d'import `McpClient` ↔ `InvalidMcpClientRedirectsException` (constante lue par l'exception) ;
+  passer la borne en paramètre de `tooMany()` ou lire `ClientMetadataDocument::MAX_REDIRECT_URIS`.
+- (faible, conf. haute) docblock de `InvalidMcpClientRedirectsException` : « de une à dix » encore en dur.
+- (faible) borne de la redirection demandée vérifiée par redirection enregistrée, pas une fois à la frontière
+  (`AuthorizationRequestValidator` / `LoopbackAwareAuthCodeGrant`) ; `allowsRedirect()` ré-analyse tout à chaque appel.
+- (faible) `McpClientTest::documentWithRedirects()` : `getConstructor()?->invoke()` masquerait un constructeur disparu.
+- (faible, conf. basse) `RegisterMcpClientCommandTest` cherche le message entier, que `SymfonyStyle` peut replier
+  selon `COLUMNS`.
 - (Task 4, question ouverte à l'utilisateur) `$io->listing()` n'échappe pas ; inatteignable (`RedirectUri`
   refuse `<`). Recommandation : ne pas échapper, le noter dans la PR.
 
