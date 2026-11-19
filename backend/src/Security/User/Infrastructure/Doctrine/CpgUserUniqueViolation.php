@@ -7,6 +7,7 @@ namespace App\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
+use App\Shared\Infrastructure\Doctrine\ViolatedUniqueIndex;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use DomainException;
 
@@ -30,12 +31,9 @@ use DomainException;
  */
 final class CpgUserUniqueViolation
 {
-    /** Un identifiant SQL entre guillemets droits ou chevrons, espaces insécables compris. */
-    private const string QUOTED_IDENTIFIER = '/["«]\s*([A-Za-z0-9_]+)\s*["»]/u';
-
     public static function refusalFor(UniqueConstraintViolationException $violation): DomainException|UnrecognisedCpgUserUniqueViolationException
     {
-        $index = 1 === preg_match(self::QUOTED_IDENTIFIER, $violation->getMessage(), $matches) ? $matches[1] : null;
+        $index = ViolatedUniqueIndex::of($violation);
 
         return match ($index) {
             CpgUser::EMAIL_UNIQUE_INDEX => EmailAlreadyUsedException::alreadyLinkedToAnAccount(),

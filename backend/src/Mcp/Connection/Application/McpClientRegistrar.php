@@ -9,20 +9,12 @@ use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
+use App\Shared\Infrastructure\Doctrine\ViolatedUniqueIndex;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
 
 final readonly class McpClientRegistrar implements McpClientRegistrarInterface
 {
-    /**
-     * Le premier identifiant SQL entre guillemets droits ou chevrons du
-     * message de PostgreSQL, espaces insécables comprises : le nom de l'index
-     * violé, jamais traduit. Même lecture que
-     * {@see \App\Security\User\Infrastructure\Doctrine\CpgUserUniqueViolation} :
-     * jamais une recherche dans tout le message, dont le `DETAIL` cite la valeur.
-     */
-    private const string QUOTED_IDENTIFIER = '/["«]\s*([A-Za-z0-9_]+)\s*["»]/u';
-
     public function __construct(
         private McpClientRepositoryInterface $clients,
         private ClockInterface $clock,
@@ -47,7 +39,7 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
             // aucune cause n'étant affirmée à tort. La violation reconnue n'est
             // pas gardée en `previous` : elle n'apprend rien de plus à
             // l'opérateur.
-            if (McpClient::CLIENT_ID_UNIQUE_INDEX !== $this->violatedIndex($violation)) {
+            if (McpClient::CLIENT_ID_UNIQUE_INDEX !== ViolatedUniqueIndex::of($violation)) {
                 throw $violation;
             }
 
@@ -55,10 +47,5 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
         }
 
         return $client;
-    }
-
-    private function violatedIndex(UniqueConstraintViolationException $violation): ?string
-    {
-        return 1 === preg_match(self::QUOTED_IDENTIFIER, $violation->getMessage(), $matches) ? $matches[1] : null;
     }
 }
