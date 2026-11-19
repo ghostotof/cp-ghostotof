@@ -23,6 +23,7 @@ use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Nyholm\Psr7\ServerRequest;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -92,25 +93,48 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
     }
 
     /**
-     * Une redirection retirée et une charge mal typée (`expire_time` en chaîne) :
-     * le code n'est ni jugé échu ni consommé sur une charge dont le contrôle ne
-     * peut rien dire, il est refusé comme un code illisible (message de league,
-     * « Authorization code malformed ») et jamais échangé.
+     * Les quatre formes de charge que le contrôle ne sait pas juger : l'échéance
+     * ou l'identifiant du code mal typés ou absents (chaque cas ne corrompt que
+     * son champ, le reste de la charge est valide).
+     *
+     * @return iterable<string, array{array<string, mixed>}>
      */
-    public function testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed(): void
+    public static function malformedPayloads(): iterable
+    {
+        yield '`expire_time` en chaîne' => [['expire_time' => (string) (time() + 600)]];
+        yield '`expire_time` absent' => [['expire_time' => null]];
+        yield '`auth_code_id` entier' => [['auth_code_id' => 42]];
+        yield '`auth_code_id` absent' => [['auth_code_id' => null]];
+    }
+
+    /**
+     * Une redirection retirée et une charge mal typée ou incomplète : le code
+     * n'est ni jugé échu ni consommé sur une charge dont le contrôle ne peut rien
+     * dire, il est refusé comme un code illisible (message de league,
+     * « Authorization code malformed ») et jamais échangé.
+     *
+     * @param array<string, mixed> $corruption les champs de la charge à écraser ; `null` retire le champ
+     */
+    #[DataProvider('malformedPayloads')]
+    public function testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed(array $corruption): void
     {
         $codes = $this->createMock(AuthCodeRepositoryInterface::class);
         // Ni le repli ni league ne doivent atteindre le dépôt : refusé avant tout échange.
         $codes->expects(self::never())->method('isAuthCodeRevoked');
         $grant = $this->grant(self::createStub(SecurityAuditLoggerInterface::class), new Logger('app', [new TestHandler()]), null, $codes);
-        $code = Crypto::encrypt(json_encode([
-            'client_id' => ClaudeCodeMetadata::CLIENT_ID,
-            'redirect_uri' => 'https://client.example.test/callback',
-            'auth_code_id' => 'identifiant-du-code',
-            'expire_time' => (string) (time() + 600),
-            'user_id' => '0199f0a4-5c3e-7a2b-8d1e-2f3a4b5c6d7e',
-            'scopes' => [],
-        ], \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret($this->keyMaterial()));
+        // Charge valide, puis un seul champ corrompu : un champ à `null` est retiré.
+        $payload = array_filter(
+            $corruption + [
+                'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+                'redirect_uri' => 'https://client.example.test/callback',
+                'auth_code_id' => 'identifiant-du-code',
+                'expire_time' => time() + 600,
+                'user_id' => '0199f0a4-5c3e-7a2b-8d1e-2f3a4b5c6d7e',
+                'scopes' => [],
+            ],
+            static fn (mixed $value): bool => null !== $value,
+        );
+        $code = Crypto::encrypt(json_encode($payload, \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret($this->keyMaterial()));
         $request = new ServerRequest('POST', 'http://localhost/api/oauth/token')->withParsedBody([
             'grant_type' => 'authorization_code',
             'client_id' => ClaudeCodeMetadata::CLIENT_ID,
