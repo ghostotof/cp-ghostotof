@@ -49,15 +49,20 @@
     (assertion du message, mordant prouvé par mutation). Contrôlé : `tests/Mcp/Connection` OK (1 453).
   - **Relecture de C1** (`8a44a8a0...45daeb53`) : 9 constats, tous faibles → **boucle S1 close**.
   - **Point fixe de S2** : `45daeb53`.
-  - **Prochaine action** : Task 5 lancée (sonnet/high) ; S2 = Tasks 5-8, relue avec audit sécurité.
+  - **Task 5 faite** : `1067573a` — `McpClient::revise()` (via `distinctBounded()`), `McpClientDeclaredByDocumentException`
+    (409 `client-declared-by-document` par `HasProblemType`, sans `exception_to_status` : plan l. 555), `log_level: info`
+    dans `framework.yaml` (exigé par `ExceptionLogLevelCoverageTest`). Contrôlé : `McpClientTest|ExceptionLogLevelCoverageTest`
+    OK (53) ; dossier OK (1 458) selon l'agent.
+  - **Prochaine action** : Task 6 lancée (sonnet/high, `sed -n 307,331p` du plan) ; puis 7A, 7B, 8 ; relecture S2
+    depuis `45daeb53` avec audit sécurité.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
   S1 = Tasks 1-4 (bornes et hygiène de T8) ; S2 = 5-8 ; S3 = 9-11 ; S4 = 12-15 ; S5 = 16-18 ;
   S6 = F1-F7 ; puis Task 19 et la relecture complète avant la PR.
-- Risques relevés au contrôle : `FlushInterleaving` existe (`backend/tests/Shared/`) ; **aucun
-  compteur de requêtes ni sonde `pg_locks`** dans `backend/tests` — Task 6 (`FOR SHARE`) et Task 7A
-  (sans N+1) devront en construire un ; `CompiledExceptionConfig` (Task 15) à vérifier.
+- Risques relevés au contrôle : `FlushInterleaving` existe (`backend/tests/Shared/`) ; la sonde
+  `pg_locks` existe (`tests/Support/ProbesLocks.php`, corrigé le 2026-11-19) ; compteur de requêtes à vérifier
+  pour la Task 7A (sans N+1) ; `CompiledExceptionConfig` (Task 15) à vérifier.
 - Report « borne du `client_id` 255 / 512 » : **déjà fait** (`McpClient.php:53`, `McpClientId.php:23`,
   migration `Version20261023120000.php:41` en 255) — noté par la Task 19.
 - Point fixe de relecture : S1 relue depuis `bd61b215` jusqu'au commit « reprise … Task 4 faite, relecture S1 ».
