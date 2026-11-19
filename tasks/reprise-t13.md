@@ -94,9 +94,13 @@
     Un docblock corrigé dans la foulée (`d604141b`, l'implémentation attribue aussi le plafond à la zone nginx `oauth`).
     Constat 2 (moyen : accords non échangés non bornés) → **Task 13** (brief ci-dessous) ; constat 6 (redirection non
     revérifiée à l'échange) = T6 du brief de la Task 11 ; le reste → constats écrits. **Boucle S2 close.**
-  - **Point fixe de la relecture S3** : le commit de cette reprise (« reprise … C2 relue »), HEAD au lancement de la Task 9.
-  - **Prochaine action** : S3, **Task 9** (trois événements d'audit des clients, sensible), agent sonnet/high ;
-    puis Tasks 10 et 11 ; puis `/code-review medium diff <point fixe S3>...HEAD` + auditeur sécurité opus/high.
+  - **Point fixe de la relecture S3** : **`8c5d8586`** (reprise « C2 relue et triée »).
+  - **Task 9 faite** (agent sonnet/high) : `02ace373` (`AuditOrigin`, trois événements, règle d'audit : 36 méthodes
+    au garde des contextes). Preuve contrôlée : rouge (méthodes absentes), `--filter 'SecurityAuditLoggerTest|SecurityEventsSubscriberTest'`
+    OK (68), suite complète OK (6 510), PHPStan et Rector verts. À relire en S3 : le `clientId` d'un client CIMD est
+    une URL (publique), portée au contexte.
+  - **Prochaine action** : S3, **Task 10** (l'enregistrement audite son origine), agent sonnet/high ; puis Task 11 ;
+    puis `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
