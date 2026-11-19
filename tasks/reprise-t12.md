@@ -715,10 +715,13 @@
     d'hôte remise à sa place dans la règle).
   - **Pour la PR (micro-série, écrit, non corrigé)** : https vers la boucle locale refusé avec un message
     « hors de l'hôte » trompeur, sans test ; code curl perdu (TLS, DNS, blocage SSRF indiscernables) ; docblock
-    du Domain (`ClientMetadataRefusedException`) qui cite une classe d'Infrastructure ; port et hôte refusés
+    du Domain qui citait une classe d'Infrastructure (corrigé ensuite, décision de l'utilisateur) ; port et hôte refusés
     par la même fabrique ; test de non-chaînage limité à l'erreur de `MockResponse` (ni blocage
     `NoPrivateNetworkHttpClient`, ni erreur en cours de flux dans `boundedBody()`).
-  - **Prochaine action : étape 08** (sonnet/low), après accord sur l'audit sécurité et sur push + PR.
+  - **Décisions** : pas d'audit sécurité sur la micro-série ; docblock DDD corrigé au fil principal ; étape 08
+    approuvée : push, PR vers `feature/379-mcp-paliers`, commentaire sur #653 (ChatGPT `private_key_jwt`,
+    document du connecteur web claude.ai inconnu). #651 fermée à la main après la fusion.
+  - **Prochaine action : étape 08** (sonnet/low), agent lancé.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
