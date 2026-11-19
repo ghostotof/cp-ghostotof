@@ -57,8 +57,14 @@
     (DQL `PESSIMISTIC_READ` + `HINT_REFRESH`), `remove()` ; cascade assurée par la base (`Version20261023120000.php`
     l. 47-64, `ON DELETE CASCADE`) ; 9 tests (sonde `ProbesLocks` : `RowShareLock`, `FOR UPDATE SKIP LOCKED` bloqué).
     Contrôlé : `McpClientRepositoryTest|ConsentServiceTest|McpClientRegistrarTest` OK (58). Fake : `$removed` public.
-  - **Prochaine action** : Task 7A lancée (sonnet/high, `sed -n 332,351p`) ; aucun compteur de requêtes dans
-    `backend/tests` (`DebugStack` absent de DBAL 4) : l'agent l'écrit sous `tests/Support/` si besoin ; puis 7B, 8.
+  - **Task 7A faite** : `02450161` — `lockActiveOfClient()` (SQL natif `FOR UPDATE OF c`, refus hors transaction par
+    `RevocationOutsideTransactionException::forClient()`), `countActiveByClient()` (une requête, prouvée par
+    `doctrine.debug_data_holder`, variante à 2 requêtes vue rouge). Contrôlé : `McpConnectionRepositoryTest` OK (39).
+    **Écart accepté** : rend `list<ConnectionReference>` et non `list<RevokedConnection>` (rien n'est encore révoqué,
+    pas de cause) ; la Task 11 consomme `record(McpConnectionReference, string)`, que `ConnectionReference` implémente.
+    **Constat écrit (PR)** : une connexion échue non encore marquée par la purge compte comme active (comme
+    `findNotRevokedOfAccount`) — à revoir en 7B/12 si le statut affiché doit la distinguer.
+  - **Prochaine action** : Task 7B lancée (sonnet/high, `sed -n 352,372p`) ; puis 8 ; relecture S2 depuis `45daeb53`.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
