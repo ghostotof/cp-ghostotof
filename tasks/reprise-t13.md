@@ -22,8 +22,14 @@
     par l'agent (4 échecs pour la bonne raison) ; PHPStan, Rector verts. Écart justifié : le test des
     1 001 paramètres utilise `a&a&…` (sinon la borne de longueur coupe avant). Trailer de l'agent :
     `Claude Sonnet 5.5` (modèle réel), accepté.
-  - **Prochaine action** : lancer la Task 3 (`grep -n '### Task 3' tasks/plan-t13-backoffice-mcp.md`
-    pour ses lignes), même brief que la Task 2.
+  - **Task 3 faite** : `3d4f3b73` — `McpClient::MAX_REDIRECT_URIS` (= `ClientMetadataDocument::MAX_REDIRECT_URIS`),
+    `InvalidMcpClientRedirectsException::none()` / `tooMany()`, dédoublonnage puis bornes dans `register()`.
+    Preuve contrôlée : rouge vérifié par l'agent ; `McpClientTest|McpClientRegistrarTest|McpClientRepositoryTest`
+    OK (26) ; PHPStan, Rector verts. L'invariant cassait 65 tests (5 fixtures `RegisteredMcpClient::of(…, [])`) :
+    corrigé par le fil principal en `test(mcp)` séparé (redirection `https://client.example.test/callback`,
+    conforme à la docblock de la fixture) ; `tests/Mcp/Connection` OK (1 447 tests) contrôlé.
+  - **Prochaine action** : lancer la Task 4 (`sed -n 268,282p` du plan), même brief ; elle attrape aussi
+    `InvalidMcpClientRedirectsException` dans la commande. Après elle : relecture S1 (Tasks 1-4) depuis `bd61b215`.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -67,6 +73,8 @@
   borne de longueur ; seul appelant `McpClient.php:184`, valeur venue de `GET /authorize`, déjà bornée
   par la taille d'en-tête de nginx (~8 Ko), sans `parse_str()`. À reprendre dans la description de la
   PR, ou à borner (retour `false` si `strlen > MAX_LENGTH`) si la relecture S1 le juge utile.
+- (Task 3, faible, confiance haute) le message de `InvalidMcpClientRedirectsException::tooMany()` écrit
+  « 10 » en dur au lieu de dériver de `McpClient::MAX_REDIRECT_URIS` : divergence possible si la borne change.
 
 ## Interdits des briefs
 
