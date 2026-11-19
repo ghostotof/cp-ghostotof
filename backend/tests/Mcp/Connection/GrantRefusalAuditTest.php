@@ -130,6 +130,23 @@ final class GrantRefusalAuditTest extends WebTestCase
     }
 
     /**
+     * Un code mort (connexion révoquée avant l'échange) dont la redirection a
+     * été retirée (#652) : `isAuthCodeRevoked()` le juge mort avant que le refus
+     * de la redirection ne s'exerce, la cause reste celle de league
+     * (`code-refused`), jamais `redirect-no-longer-registered`.
+     */
+    public function testADeadCodeWhoseRedirectWasRemovedKeepsLeaguesCause(): void
+    {
+        $code = $this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']);
+        $this->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'");
+        $this->executeStatement("UPDATE mcp_client SET redirect_uris = '[\"http://localhost/callback\"]'::jsonb WHERE client_id = '".self::CLIENT_ID."'");
+
+        $this->assertRefused($this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']));
+
+        $this->assertAudited('code-refused', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
      * Ce que le juge sous verrou tient pour mort (TokenUnderConnectionLock),
      * sans compromission : refusé « has been revoked » par league.
      *
