@@ -101,12 +101,16 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * elle-même `AuthorizationCodeReplayedException` sur un code déjà échangé,
      * laissée remonter : le point de jeton révoque ou audite le rejeu comme
      * avant). Sinon la main revient au parent, qui refuse sous sa propre cause.
-     * Le second appel de `isAuthCodeRevoked()` par league, dans la même
-     * transaction, relit sous le même verrou de ligne : aucun effet de bord.
+     * Le second appel de `isAuthCodeRevoked()` par league n'a lieu que pour un
+     * code que le premier a déjà jugé mort (sinon ce refus a levé avant) : il ne
+     * verrouille que si le premier l'a fait, et n'écrit rien.
      *
      * Le contrôle ne s'exerce que sur un code lisible, émis à ce client et lié
      * à une redirection : tout autre cas (illisible, autre client, redirection
-     * absente) reste jugé par league, sous sa propre cause.
+     * absente) reste jugé par league, sous sa propre cause. Une charge dont
+     * `expire_time` n'est pas un entier ou `auth_code_id` pas une chaîne, avec
+     * une redirection retirée, est refusée `invalid_request` « Authorization
+     * code malformed » (le message de league) : jamais échangée.
      *
      * @throws OAuthServerException `invalid_grant` ; les refus de league sinon
      */
@@ -120,15 +124,31 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
 
         if (null !== $payload
             && \is_string($payload->redirect_uri ?? null)
-            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($payload->redirect_uri))
-            && \is_string($payload->auth_code_id ?? null)
-            && \is_int($payload->expire_time ?? null)
-            && time() <= $payload->expire_time
-            && !$this->authCodeRepository->isAuthCodeRevoked($payload->auth_code_id)) {
-            throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
+            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($payload->redirect_uri))) {
+            $this->refuseTheRemovedRedirect($payload);
         }
 
         return parent::respondToAccessTokenRequest($request, $responseType, $accessTokenTTL);
+    }
+
+    /**
+     * Le code dont la redirection n'est plus admise : refusé ici s'il est vivant,
+     * sinon la main revient à league (qui le refuse sous sa propre cause).
+     *
+     * @throws OAuthServerException `invalid_request` (charge mal typée) ou `invalid_grant`
+     */
+    private function refuseTheRemovedRedirect(object $payload): void
+    {
+        // Une charge dont l'échéance ou l'identifiant sont mal typés ne peut être
+        // jugée ni échue ni consommée : refusée comme league refuse un code
+        // illisible, jamais laissée aboutir sur une redirection retirée.
+        if (!\is_int($payload->expire_time ?? null) || !\is_string($payload->auth_code_id ?? null)) {
+            throw OAuthServerException::invalidRequest('code', 'Authorization code malformed');
+        }
+
+        if (time() <= $payload->expire_time && !$this->authCodeRepository->isAuthCodeRevoked($payload->auth_code_id)) {
+            throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
+        }
     }
 
     /**
