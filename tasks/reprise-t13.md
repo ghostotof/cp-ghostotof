@@ -37,7 +37,13 @@
     du plan (`… échappe sa sortie et rend la borne lisible`), non amendé. `tests/Mcp/Connection` OK (1 449).
   - **Étape 07, série S1 (Tasks 1-4)** : `/code-review medium` sur `diff bd61b215...HEAD` lancé le 2026-11-19,
     HEAD relu = celui du commit de cette reprise (point fixe de S2). Pas d'audit sécurité (S1 hors auth).
-  - **Prochaine action** : trier les constats de S1 (critique/haut/moyen → série de correction), puis Task 5.
+  - **S1 relue** (10 constats : 1 moyen, 9 faibles). Moyen confirmé : `matches()` reçoit aussi la
+    `redirect_uri` du corps de `POST /token` (`LoopbackAwareAuthCodeGrant.php:198`, nginx 16 Ko à 1 Mo).
+  - **Série de correction C1** (sonnet/high) : (1) `matches()` rend `false` au-delà de `MAX_LENGTH` avant
+    `Uri::parse` ; (5) compte des paramètres sorti de `carriesIss()` vers `fromString()` ; (6) messages dérivés
+    des constantes ; (9) `discovered()` passe par `distinctBounded()` ; (10) le test des 11 redirections vérifie
+    le message `tooMany()`. Point fixe de sa relecture : `8a44a8a0`.
+  - **Prochaine action** : contrôler C1, la relire (`/code-review medium` sur `diff 8a44a8a0...HEAD`), puis Task 5.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -77,12 +83,18 @@
 
 ## Constats écrits non corrigés
 
-- (Task 2, faible, confiance moyenne) `RedirectUri::matches()` appelle `Uri::parse($requested)` sans
-  borne de longueur ; seul appelant `McpClient.php:184`, valeur venue de `GET /authorize`, déjà bornée
-  par la taille d'en-tête de nginx (~8 Ko), sans `parse_str()`. À reprendre dans la description de la
-  PR, ou à borner (retour `false` si `strlen > MAX_LENGTH`) si la relecture S1 le juge utile.
-- (Task 3, faible, confiance haute) le message de `InvalidMcpClientRedirectsException::tooMany()` écrit
-  « 10 » en dur au lieu de dériver de `McpClient::MAX_REDIRECT_URIS` : divergence possible si la borne change.
+Relecture S1 (pour la description de la PR) :
+- (faible, conf. moyenne) `McpClient::allowsRedirect()` saute une redirection stockée qui dépasse désormais
+  2 048 octets ou 50 paramètres : elle cesse de correspondre sans journal ni migration.
+- (faible, conf. haute) `McpClientRegistrar` (Application) importe `Shared\Infrastructure\Doctrine\ViolatedUniqueIndex` ;
+  la lecture du message du pilote irait dans `McpClientRepository::add()`.
+- (faible, conf. basse) le compte `explode('&')` suppose `arg_separator.input = '&'` (défaut PHP, non modifié
+  dans `docker/`).
+- (faible, conf. haute) la commande compte après dédoublonnage, `ClientMetadataDocument` avant : 10 distinctes +
+  1 doublon acceptées par l'une, refusées par l'autre.
+- (faible, conf. haute) la commande analyse toutes les `--redirect-uri` avant que l'entité ne refuse le nombre.
+- (Task 4, question ouverte à l'utilisateur) `$io->listing()` n'échappe pas ; inatteignable (`RedirectUri`
+  refuse `<`). Recommandation : ne pas échapper, le noter dans la PR.
 
 ## Interdits des briefs
 
