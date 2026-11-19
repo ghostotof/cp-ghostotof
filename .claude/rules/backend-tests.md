@@ -50,7 +50,8 @@ A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `Contri
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
 `InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
 `RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`,
-`OwnMcpConnectionRevocationConcurrencyTest`, `AccountWideRevocationDeadlockTest`)
+`OwnMcpConnectionRevocationConcurrencyTest`, `AccountWideRevocationDeadlockTest`,
+`McpClientRemovalDeadlockTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER` (`phpunit.dist.xml`'s `<server>`
 values) — a variable not to pass on is excluded there, for every child at once —, overlaid by each `<env force="true">`
@@ -187,6 +188,11 @@ Twelve runs in a row green. **Needs a role that may `SET deadlock_timeout`** (su
 parameter) — true of the dev database and of CI. Mutations: `SKIP LOCKED` in `revokeWhere()` (red at the wait, no cycle),
 `ORDER BY c.id DESC` (red: the cycle is gone). The limit itself: `.claude/rules/mcp-oauth-revocation-personne.md`, accepted
 limit 4.
+
+`McpClientRemovalDeadlockTest` (#652, T13) pins the same way the retry of `McpClientAdministrator::remove()`: same harness, child
+`Fixtures/remove-mcp-client.php` (which assembles the administrator as `McpClientAdministratorTest` does, the container wires it
+nowhere yet). `remove()` locks the client then C1, C2 by id; the exchange locks C2 then wants C1 — one case per victim. Proof
+that the test bites: with a `DeadlockRetryInterface` that catches nothing, the victim case fails on `failed 40P01`.
 
 **A test that empties a table checks the database first** (#650, F-D of the second review): `tests/Support/TestDatabase::
 assertSafeToWipe(Connection)` reads `current_database()` **on the server** (not an environment variable the connection
