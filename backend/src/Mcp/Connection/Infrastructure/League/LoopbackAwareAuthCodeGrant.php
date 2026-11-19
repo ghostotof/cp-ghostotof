@@ -122,7 +122,8 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
             && \is_string($payload->redirect_uri ?? null)
             && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($payload->redirect_uri))
             && \is_string($payload->auth_code_id ?? null)
-            && time() <= (int) ($payload->expire_time ?? 0)
+            && \is_int($payload->expire_time ?? null)
+            && time() <= $payload->expire_time
             && !$this->authCodeRepository->isAuthCodeRevoked($payload->auth_code_id)) {
             throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
         }
