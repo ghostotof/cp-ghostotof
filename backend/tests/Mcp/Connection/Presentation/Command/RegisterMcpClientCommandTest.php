@@ -187,6 +187,50 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertSame(1, $this->clientCount());
     }
 
+    /**
+     * Le nom reçu est affiché tel quel : une balise de mise en forme saisie
+     * (<error>…</error>) ne doit pas être interprétée par le formateur de
+     * la console. La sortie est décorée pour que l'interprétation se voie.
+     */
+    public function testAClientNameWithFormattingTagsIsPrintedLiterally(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => '<error>x</error>',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false, 'decorated' => true]);
+
+        self::assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
+        self::assertStringContainsString('<error>x</error>', $tester->getDisplay());
+    }
+
+    /**
+     * Onze redirections distinctes passent la saisie, mais pas la borne de
+     * l'entité : le refus est un message lisible, pas une trace, et rien
+     * n'est enregistré.
+     */
+    public function testElevenRedirectsAreRefusedWithAReadableError(): void
+    {
+        $redirects = [];
+        for ($i = 1; $i <= 11; ++$i) {
+            $redirects[] = \sprintf('https://app.example/cb%d', $i);
+        }
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => $redirects,
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertStringContainsString('[ERROR]', $tester->getDisplay());
+        self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
+        self::assertSame(0, $this->clientCount());
+    }
+
     private function commandTester(): CommandTester
     {
         \assert(self::$kernel instanceof KernelInterface);

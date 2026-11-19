@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
@@ -25,6 +26,7 @@ interface McpClientRegistrarInterface
      * @param non-empty-list<RedirectUri> $redirectUris
      *
      * @throws McpClientAlreadyRegisteredException si l'identifiant public est déjà pris
+     * @throws InvalidMcpClientRedirectsException   si les redirections distinctes sont hors de la borne de l'entité (une à dix)
      */
     public function register(McpClientId $clientId, McpClientName $name, array $redirectUris): McpClient;
 }
