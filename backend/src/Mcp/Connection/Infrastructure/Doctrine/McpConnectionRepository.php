@@ -111,6 +111,41 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * fin pour les terminées ; dans les deux cas l'identifiant décroissant
      * départage deux instants égaux, un ordre qui ne dépend pas du plan.
      */
+    public function findNotRevokedForAdministration(): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.revokedAt IS NULL')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findTerminatedForAdministration(int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.revokedAt IS NOT NULL')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Le socle des deux listes de l'administration (#652) : le client **et** le
+     * compte joints et sélectionnés (jointures explicites, jamais une requête
+     * par ligne), du plus récemment octroyé au plus ancien, l'identifiant
+     * décroissant départageant deux octrois de la même seconde.
+     */
+    private function forAdministration(): QueryBuilder
+    {
+        return $this->createQueryBuilder('connection')
+            ->addSelect('client', 'account')
+            ->innerJoin('connection.client', 'client')
+            ->innerJoin('connection.account', 'account')
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC');
+    }
+
     private function ofAccount(Uuid $accountId): QueryBuilder
     {
         return $this->createQueryBuilder('connection')

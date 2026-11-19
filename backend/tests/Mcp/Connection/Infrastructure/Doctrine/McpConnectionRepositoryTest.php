@@ -962,6 +962,93 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Les listes de l'administration (#652, T13) ne se limitent à aucun compte
+     * ni à aucun client : deux comptes, deux clients, et chaque moitié rend
+     * les connexions de tous, la plus récemment octroyée d'abord. La moitié
+     * non révoquée ne rend jamais une révoquée, la terminée jamais une active.
+     */
+    public function testAdministrationListsSpanEveryAccount(): void
+    {
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $first = $this->registerClient('https://client.example.test/metadata.json');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        $janeOnFirst = McpConnection::grant($jane, $first, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        $johnOnSecond = McpConnection::grant($john, $second, self::SCOPE, new DateTimeImmutable('2026-10-03T10:00:00+02:00'));
+        $janeRevoked = McpConnection::grant($jane, $second, self::SCOPE, new DateTimeImmutable('2026-10-02T10:00:00+02:00'));
+        $johnRevoked = McpConnection::grant($john, $first, self::SCOPE, new DateTimeImmutable('2026-10-04T10:00:00+02:00'));
+        foreach ([$janeOnFirst, $johnOnSecond, $janeRevoked, $johnRevoked] as $connection) {
+            $this->connections()->add($connection);
+        }
+        foreach ([$janeRevoked, $johnRevoked] as $connection) {
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        }
+        $this->em->clear();
+
+        self::assertSame(
+            [$johnOnSecond->getId()->toRfc4122(), $janeOnFirst->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findNotRevokedForAdministration()),
+        );
+        self::assertSame(
+            [$johnRevoked->getId()->toRfc4122(), $janeRevoked->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findTerminatedForAdministration(10)),
+        );
+    }
+
+    /** La moitié terminée de l'administration est bornée par `$limit` : les plus récentes d'abord, les plus anciennes sortent. */
+    public function testTerminatedForAdministrationIsBoundedAndMostRecentFirst(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $terminated = [];
+        foreach (range(1, 3) as $day) {
+            $terminated[$day] = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-10-%02dT10:00:00+02:00', $day)));
+            $this->connections()->add($terminated[$day]);
+            $this->connections()->revokeActive($terminated[$day]->getId(), RevocationCause::Expired, new DateTimeImmutable(\sprintf('2026-10-25T10:%02d:00+02:00', $day)));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedForAdministration(2);
+
+        self::assertSame(
+            [$terminated[3]->getId()->toRfc4122(), $terminated[2]->getId()->toRfc4122()],
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+        );
+    }
+
+    /**
+     * Le client et le compte arrivent avec chaque connexion, par jointure :
+     * lire leur nom ensuite n'envoie aucune requête de plus que la lecture
+     * elle-même (une seule), sur une identity map vidée — sans quoi un client
+     * déjà géré masquerait le chargement paresseux d'une N+1.
+     */
+    public function testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries(): void
+    {
+        $first = $this->registerClient('https://client.example.test/metadata.json');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        $revoked = McpConnection::grant($this->persistAccount('jane'), $first, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        $active = McpConnection::grant($this->persistAccount('john'), $second, self::SCOPE, new DateTimeImmutable('2026-10-02T10:00:00+02:00'));
+        $this->connections()->add($revoked);
+        $this->connections()->add($active);
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        $this->em->clear();
+
+        $read = function (): array {
+            $names = [];
+            foreach ([...$this->connections()->findNotRevokedForAdministration(), ...$this->connections()->findTerminatedForAdministration(10)] as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        };
+
+        $queries = $this->queriesDuring($read);
+
+        self::assertSame(2, $queries['count'], 'Une requête par moitié, aucune de plus pour le client ni pour le compte.');
+        self::assertCount(2, $queries['result']);
+    }
+
+    /**
      * Exécute `$action` et compte les requêtes que la connexion DBAL du
      * conteneur de test a envoyées pendant ce temps : le service
      * `doctrine.debug_data_holder` de DoctrineBundle (le middleware de
@@ -988,6 +1075,16 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertGreaterThan(0, $count, 'Le relevé des requêtes est vide : le profilage DBAL est inactif, le compteur ne prouverait rien.');
 
         return ['count' => $count, 'result' => $result];
+    }
+
+    /**
+     * @param list<McpConnection> $connections
+     *
+     * @return list<string> les identifiants RFC 4122, dans l'ordre reçu
+     */
+    private function idsOf(array $connections): array
+    {
+        return array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $connections);
     }
 
     private function purge(): void

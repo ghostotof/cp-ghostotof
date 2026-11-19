@@ -63,6 +63,36 @@ interface McpConnectionRepositoryInterface
     public function findTerminatedOfAccount(Uuid $accountId, int $limit): array;
 
     /**
+     * Pour l'administration (#652, T13) : **toutes** les connexions non révoquées
+     * (`revoked_at` nul), de **tous** les comptes et de tous les clients, la plus
+     * récemment octroyée d'abord, l'identifiant décroissant départageant deux
+     * octrois de la même seconde. Le client et le compte arrivent avec elles,
+     * par jointure : lire leur nom n'envoie aucune requête de plus. Comme pour
+     * {@see self::findNotRevokedOfAccount()}, « non révoquée » est l'état de la
+     * ligne — une connexion échue que la purge n'a pas encore marquée en est —
+     * et la liste est bornée par nature (liste fermée de clients, accords
+     * abandonnés échus en une heure). Une lecture, sans verrou.
+     *
+     * @return list<McpConnection>
+     */
+    public function findNotRevokedForAdministration(): array;
+
+    /**
+     * La seconde moitié de l'administration : les `$limit` connexions
+     * **terminées** (`revoked_at` posé, quelle qu'en soit la cause), de tous les
+     * comptes et de tous les clients, la plus récemment octroyée d'abord,
+     * l'identifiant décroissant départageant deux octrois égaux et décidant
+     * *quelles* terminées une limite garde. Même jointure que
+     * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
+     * que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findTerminatedForAdministration(int $limit): array;
+
+    /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,
      * révoquée ou non (#725). Une instruction SQL, hors de l'unité de
      * travail : valable après une transaction annulée qui a fermé
