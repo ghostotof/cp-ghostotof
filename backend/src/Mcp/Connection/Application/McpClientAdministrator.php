@@ -84,7 +84,7 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
     public function revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient
     {
         $client = $this->transaction->run(function () use ($id, $name, $redirectUris): McpClient {
-            $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::withId();
+            $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
             $locked->revise($name, $redirectUris);
 
             return $locked;
@@ -133,7 +133,7 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
     {
         $removal = $this->deadlockRetry->retryOnce(
             fn (): array => $this->transaction->run(function () use ($id): array {
-                $client = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::withId();
+                $client = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
                 // Les valeurs de l'audit, lues avant la suppression.
                 $clientId = $client->getClientId();
                 $registration = $client->registration();

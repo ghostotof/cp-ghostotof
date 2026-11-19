@@ -17,12 +17,16 @@ use DomainException;
  * Le message est une constante, sans identifiant : le `detail` est rendu tel
  * quel (ProblemDetailStaysStaticTest). `log_level: info` : l'erreur d'une
  * page restée ouverte, pas une alerte.
+ *
+ * La fabrique ne prend aucun identifiant et s'appelle `forTheCaller()` : le
+ * message est le même pour tout appelant (l'identifiant demandé n'est jamais
+ * relayé).
  */
 final class McpClientNotFoundException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 
-    public static function withId(): self
+    public static function forTheCaller(): self
     {
         return new self('Ce client MCP n\'existe pas, ou n\'existe plus.');
     }
