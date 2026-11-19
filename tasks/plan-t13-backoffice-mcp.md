@@ -454,7 +454,8 @@ Les tests de chaque tâche sont nommés dans la tâche. Ils vivent sous `backend
     - `revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient` ;
     - `remove(Uuid $id): int` (nombre de connexions coupées).
   - `McpClientAdministrator::REMOVAL_CAUSE = 'client-removed'` ;
-  - `McpClientNotFoundException::withId(): self` (message constant).
+  - `McpClientNotFoundException::forTheCaller(): self` (message constant ; renommée depuis `withId()` le 2026-11-19, elle ne prend aucun identifiant).
+  - Écart accepté (2026-11-19) : `revise()` audite `count($client->redirectUris())` après déduplication, et non le nombre de redirections soumises.
 
 - [ ] **Step 1 : tests rouges** (`KernelTestCase`, base de test, logger d'audit lu par `ReadsSecurityAuditLog`) :
   - `testRemovingCutsEveryActiveConnectionAndAuditsEach` : deux connexions actives, une révoquée. `remove()` rend 2 ; deux `mcp-connection-revoked` de cause `client-removed`, puis un `mcp-client-removed` avec `cutConnections: 2`.
