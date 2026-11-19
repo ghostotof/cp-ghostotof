@@ -6,8 +6,17 @@
 
 - Branche : `feature/spec-0007-t13-backoffice-mcp`, coupée le 2026-11-19 de la mère
   `feature/379-mcp-paliers` à jour (tête `bd61b215`, fusion de la T12, PR #777). Non poussée.
-- Étape : **04**, plan à écrire dans `tasks/plan-t13-backoffice-mcp.md` (agent opus/medium).
-- Prochaine action : contrôler le plan rendu, poser ses questions ouvertes, puis étape 05.
+- Étape : **04 close** — plan `tasks/plan-t13-backoffice-mcp.md` commité (`32c9fb3e`, 28 tâches :
+  1-18 backend dont 7A/7B et 17A/17B, F1-F7 frontend, 19 documentation ; aucune migration, aucune
+  variable d'environnement). Contrôlé par le fil principal (aucun marqueur, arbre propre).
+- Prochaine action : faire trancher les 9 questions ouvertes du plan (rapport de l'agent, section
+  « Questions ouvertes » du plan), amender le plan si une réponse s'écarte de la recommandation,
+  puis étape 05 à la Task 1.
+- Risques relevés au contrôle : `FlushInterleaving` existe (`backend/tests/Shared/`) ; **aucun
+  compteur de requêtes ni sonde `pg_locks`** dans `backend/tests` — Task 6 (`FOR SHARE`) et Task 7A
+  (sans N+1) devront en construire un ; `CompiledExceptionConfig` (Task 15) à vérifier.
+- Report « borne du `client_id` 255 / 512 » : **déjà fait** (`McpClient.php:53`, `McpClientId.php:23`,
+  migration `Version20261023120000.php:41` en 255) — noté par la Task 19.
 - Point fixe de relecture : aucun encore (la première série se relira depuis `bd61b215`).
 - PR à l'étape 08 : base **`feature/379-mcp-paliers`**, jamais `develop`.
 
