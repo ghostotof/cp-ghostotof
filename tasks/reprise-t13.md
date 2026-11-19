@@ -231,8 +231,16 @@
         appel ») et citant les deux tests, **sans dépasser 50 000 octets** (49 026 aujourd'hui : remplacer, pas ajouter).
     - **Pour la PR** : voir « Relecture de C3c » dans les constats écrits.
     - **Vers la Task 17A/B** : F10, supprimer un client CIMD ne le bannit pas (déjà T8).
-  - **Prochaine action** : C3d (agent sonnet/high, étape 05), puis `/code-review medium diff <HEAD de cette
-    reprise>...HEAD` sans auditeur, puis tri ; ensuite S4 (Tasks 12-15).
+  - **C3d faite** (agent sonnet/high, 2026-11-20), point fixe de sa relecture **`7cdad714`** : `90bb1755` (test en
+    DataProvider sur 4 charges, RED par mutation sur `auth_code_id`), `9056aee5` (dédoublonnage de `revise()` dans la
+    closure d'audit, mutation vérifiée), `c3a9282b` (docblocks FailSafeAudit / NotACode / `@throws` + `use`),
+    `f4315586` (phrase de la règle, 49 228 octets, `check-claude-rules.sh` conforme). Preuve contrôlée par le fil
+    principal : 25 tests ciblés OK, `make back-quality` exit 0, suite complète 6546 OK (124334 assertions).
+    Signalé par l'agent, à verser au tri : le docblock de `respondToAccessTokenRequest()` (l. 99-103 de
+    `LoopbackAwareAuthCodeGrant.php`) garde l'ancienne formulation du second appel de `isAuthCodeRevoked()`
+    (« pour un code que le premier a déjà jugé mort ») — faible, à aligner sur la règle.
+  - **Prochaine action** : `/code-review medium diff 7cdad714...HEAD` sans auditeur (aucun comportement
+    d'authentification modifié), puis tri ; ensuite S4 (Tasks 12-15).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
