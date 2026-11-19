@@ -41,8 +41,9 @@ final readonly class RedirectUri implements Stringable
      * La plus longue redirection admise, en octets (`strlen`). Une redirection
      * OAuth réelle en compte une centaine ; 2 048 est la borne usuelle des URL
      * (navigateurs, serveurs) et reste très au-dessus. Vérifiée **avant**
-     * `Uri::parse()` : l'analyseur n'a pas à lire ce qu'un enregistrement ou une
-     * demande ne peut pas porter (T8 de #652).
+     * `Uri::parse()`, par `fromString()` (refus) comme par `matches()` (réponse
+     * `false`, jamais d'exception) : l'analyseur n'a pas à lire ce qu'un
+     * enregistrement ou une demande ne peut pas porter (T8 de #652).
      */
     public const int MAX_LENGTH = 2048;
 
@@ -147,11 +148,17 @@ final readonly class RedirectUri implements Stringable
      * demande illisible, pas écrite sous sa forme normalisée (hors casse du
      * schéma et de l'hôte ; un port vide, `localhost:/`, est donc refusé), qui
      * porte un fragment ou des identifiants (même vides : `#`, `@`) ou un port
-     * hors de 1 à 65535 n'en désigne aucune — jamais d'exception ici, le point
+     * hors de 1 à 65535, ou de plus de `MAX_LENGTH` octets, n'en désigne aucune — jamais d'exception ici, le point
      * d'autorisation répond par un refus.
      */
     public function matches(string $requested): bool
     {
+        // Avant toute analyse, comme à l'enregistrement : le corps de `POST /token`
+        // n'a pas de borne propre, l'analyseur n'a pas à le lire.
+        if (\strlen($requested) > self::MAX_LENGTH) {
+            return false;
+        }
+
         $candidate = Uri::parse($requested);
 
         if (null === $candidate

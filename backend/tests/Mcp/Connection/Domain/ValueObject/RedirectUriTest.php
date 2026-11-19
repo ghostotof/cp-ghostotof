@@ -224,6 +224,37 @@ final class RedirectUriTest extends TestCase
     }
 
     /**
+     * Une redirection **demandée** de plus de `MAX_LENGTH` octets n'en désigne
+     * aucune : `matches()` rend `false` avant d'analyser quoi que ce soit, sans
+     * exception. La demande ci-dessous correspondrait, analysée, à la
+     * redirection enregistrée (boucle locale, port ignoré) — l'enregistrée
+     * fait `MAX_LENGTH` octets pile, la demande deux de plus pour `:5` : seule
+     * la borne de longueur explique le refus.
+     */
+    public function testARequestedRedirectOverTheMaximumLengthMatchesNothing(): void
+    {
+        $registered = RedirectUri::fromString('http://localhost/cb?x='.str_repeat('a', RedirectUri::MAX_LENGTH - 22));
+        $requested = 'http://localhost:5/cb?x='.str_repeat('a', RedirectUri::MAX_LENGTH - 22);
+
+        self::assertSame(RedirectUri::MAX_LENGTH + 2, \strlen($requested));
+        self::assertFalse($registered->matches($requested));
+    }
+
+    /**
+     * Le témoin du test précédent : la même demande avec une enregistrée plus
+     * courte de deux octets, de sorte qu'elle fasse `MAX_LENGTH` octets pile,
+     * correspond. La borne est inclusive pour une demande aussi.
+     */
+    public function testARequestedRedirectOfExactlyTheMaximumLengthMatches(): void
+    {
+        $registered = RedirectUri::fromString('http://localhost/cb?x='.str_repeat('a', RedirectUri::MAX_LENGTH - 24));
+        $requested = 'http://localhost:5/cb?x='.str_repeat('a', RedirectUri::MAX_LENGTH - 24);
+
+        self::assertSame(RedirectUri::MAX_LENGTH, \strlen($requested));
+        self::assertTrue($registered->matches($requested));
+    }
+
+    /**
      * 1 001 paramètres tiennent sous la borne de longueur (`a&a&…`, 2 027
      * octets) et dépassent `max_input_vars` (1 000 par défaut) : `parse_str()`
      * émettrait « Input variables exceeded », que dev et test changent en
