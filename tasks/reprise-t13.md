@@ -174,8 +174,14 @@
     OK (113), `make back-quality` vert (PHPStan, Rector, Psalm, lsp:check sans bloquant), suite complète 6534 OK
     avant `f13db9bc` (changement de garde de type seul), `isAuthCodeRevoked()` appelé deux fois dans la même
     transaction (`TokenEndpoint::issue()` sous `transaction->run`), lecture seule.
-  - **Prochaine action** : **C3b**, agent sonnet/high ; puis `/code-review medium diff 32afd264...HEAD` + auditeur
-    opus/high (point de jeton).
+  - **C3b faite** : `d07e83e9` (`register()` audite par `FailSafeAudit`, après COMMIT), `2da88040`
+    (`addedRedirectCount` / `removedRedirectCount`, sans URI), `1a3bf4c6` (fixture : cause `client-removed`,
+    mutation testée), `a769e116` + `452cbaf6` (style, PHPStan). Preuve contrôlée : suite complète 6540 OK après
+    `452cbaf6`, qualité verte (lsp:check : 6 faux positifs `ai.yaml`, 0 bloquant), tests ciblés 79 OK.
+    `McpClientAdministratorInterface` toujours non câblé → fixture par `new` jusqu'à la Task 17B. À noter pour la
+    PR / Task 19 : docblock de `FailSafeAudit` dit « sept sites », il y en a 11.
+  - **Prochaine action** : relecture C3 `/code-review medium diff 32afd264...HEAD` + auditeur opus/high (point de
+    jeton), puis tri. HEAD relu : `452cbaf6`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
