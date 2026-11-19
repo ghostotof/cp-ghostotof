@@ -84,8 +84,14 @@
   - **Relecture S2 faite** (`/code-review medium` sur `diff 45daeb53...2878d007` + auditeur sécurité opus/high) :
     un haut (redirection non revérifiée sous `FOR SHARE`, = A1 de l'audit) → série de correction **C2**. Point fixe
     de la relecture de C2 : **`2878d007`**. Le reste : brief de la Task 11 (ci-dessous) ou constats écrits.
-  - **Prochaine action** : série de correction **C2** (A1 + A6 + A5), un agent sonnet/high, puis
-    `/code-review medium` sur `diff 2878d007...HEAD`. Ensuite S3 (Tasks 9-11, avec l'auditeur).
+  - **C2 faite** (agent sonnet/high) : `4694b145` (A1, refus `redirectNoLongerRegistered()` sous `FOR SHARE`,
+    rouge vérifié), `f3d2b179` (A6, sonde `55P03` + deux refus hors transaction, mutations M1-M3 rouges),
+    `d5bc3dcd` (A5, `forClient(Uuid)`), puis le fil principal `c5910b79` (docblock de
+    `findNotRevokedForAdministration` : le plafond est la zone nginx `oauth`, 10 r/min par adresse et par pod,
+    pas des « limiteurs du consentement »). Preuve de l'agent : `tests/Mcp/Connection` OK (1 479), PHPStan et
+    Rector verts ; arbre propre contrôlé.
+  - **Prochaine action** : `/code-review medium diff 2878d007...HEAD` (relecture de C2), tri des constats.
+    Ensuite S3 (Tasks 9-11, avec l'auditeur).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
