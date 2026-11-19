@@ -226,6 +226,26 @@ final class McpClientAdministratorTest extends KernelTestCase
         self::assertSame(2, $event['redirectUriCount']);
     }
 
+    /**
+     * Écart ACCEPTÉ (décision du 2026-11-19) : l'audit de révision compte les
+     * redirections après déduplication par l'entité, pas celles que l'appelant a
+     * soumises. Deux redirections identiques soumises donnent 1 au journal. Ce test
+     * fige ce comportement : le changer est une décision, pas une correction.
+     */
+    public function testRevisingAuditsTheDeduplicatedRedirectCountAnAcceptedGap(): void
+    {
+        $client = $this->persistedClient();
+        $this->em->clear();
+
+        $this->administrator()->revise($client->getId(), McpClientName::fromString('Nouveau nom'), [
+            RedirectUri::fromString('https://client.example.test/one'),
+            RedirectUri::fromString('https://client.example.test/one'),
+        ]);
+
+        $event = self::singleSecurityAuditEvent('mcp-client-revised');
+        self::assertSame(1, $event['redirectUriCount']);
+    }
+
     /** La révision ne coupe aucune connexion : elles survivent, intactes et actives. */
     public function testRevisingCutsNoConnection(): void
     {
