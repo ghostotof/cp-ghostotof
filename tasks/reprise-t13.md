@@ -72,7 +72,12 @@
     (`revokedAt DESC, id DESC` puis `LIMIT`), affichées ensuite par date d'octroi. 7B' : `findTerminatedForAdministration`
     trie par `revokedAt DESC, id DESC` + test qui discrimine. **Task 12** : le service retrie par octroi (`usort`, comme
     `OwnMcpConnections::newestGrantFirst`) — à mettre dans son brief.
-  - **Prochaine action** : 7B' lancée (sonnet/high) ; puis 8 ; relecture S2 depuis `45daeb53`.
+  - **7B' faite** : `3f381fee` (tri `revokedAt DESC, id DESC` puis `LIMIT`, test discriminant
+    `testTerminatedForAdministrationKeepsTheMostRecentlyTerminated`) ; `e422deec` (fil principal : docblock
+    d'`ofAccount()` remis au-dessus de sa méthode, la 7B l'avait déplacé). Contrôlé : `McpConnectionRepositoryTest`
+    OK (43 tests, 412 assertions), PHPStan et Rector verts sur le fichier.
+  - **Prochaine action** : Task 8 (plan l. 373 et suivantes, sensible : concurrence et consentement, sonnet/high),
+    puis relecture S2 depuis `45daeb53` (`/code-review medium` + `agent-skills:security-auditor` opus/high).
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
