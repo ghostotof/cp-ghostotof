@@ -15,9 +15,9 @@ use Throwable;
  * ({@see ClientMetadataRefusal}), un mot stable : ni l'URL du `client_id`, ni
  * l'adresse résolue, ni rien de ce que l'hôte distant a répondu, tout cela
  * étant choisi par un tiers. L'exception précédente, quand il y en a une, ne
- * porte rien d'un tiers non plus : pour le transport, c'est
- * {@see \App\Mcp\Connection\Infrastructure\Cimd\ClientMetadataTransportFailedException},
- * au message constant ; elle sert au diagnostic, jamais à décider.
+ * porte rien d'un tiers non plus : pour le transport, l'adaptateur chaîne
+ * une exception au message constant, qui ne nomme que la classe d'origine ;
+ * elle sert au diagnostic, jamais à décider.
  *
  * N'implémente pas `ProblemExceptionInterface`, volontairement : la règle des
  * exceptions (`.claude/rules/backend-conventions.md`) réserve l'interface aux
