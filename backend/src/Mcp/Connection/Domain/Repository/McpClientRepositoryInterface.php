@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Les clients MCP enregistrés. L'implémentation vit dans
@@ -52,4 +53,42 @@ interface McpClientRepositoryInterface
      * (ClientMetadataFetchQuotaInterface::consumeForKnownClient()).
      */
     public function isDiscovered(McpClientId $clientId): bool;
+
+    /**
+     * Tous les clients, pré-enregistrés et déclarés par document (#652), le
+     * plus récemment enregistré d'abord ; à date égale, l'identifiant (UUID
+     * v7) décroissant, pour un ordre stable d'une lecture à l'autre.
+     *
+     * Aucune pagination : la liste est celle de l'administration, bornée par
+     * le nombre de clients qu'une personne saisit ou que le quota de
+     * récupération des documents (#651) laisse déclarer.
+     *
+     * @return list<McpClient>
+     */
+    public function all(): array;
+
+    /**
+     * La ligne du client relue et verrouillée en écriture (`FOR UPDATE`), pour
+     * le restant de la transaction de l'appelant — qui doit l'avoir ouverte.
+     * Rend `null` si la ligne a disparu depuis qu'elle a été lue (l'instance
+     * périmée est alors détachée). **Ordre des verrous** : `mcp_client` avant
+     * `mcp_connection`, comme partout.
+     */
+    public function findOneByIdForUpdate(Uuid $id): ?McpClient;
+
+    /**
+     * Le client désigné par son identifiant public, relu sous un verrou
+     * **partagé** (`FOR SHARE`) pour le restant de la transaction de
+     * l'appelant — qui doit l'avoir ouverte. Le consentement s'y appuie : tant
+     * qu'il court, ni la suppression ni la révision du client (`FOR UPDATE`)
+     * ne passent, et deux consentements ne s'attendent pas.
+     */
+    public function findOneByClientIdForShare(string $clientId): ?McpClient;
+
+    /**
+     * Supprime le client **pour de bon** : les clés étrangères portent
+     * `ON DELETE CASCADE`, la base emporte ses connexions, et par elles leurs
+     * codes, jetons d'accès et jetons de rafraîchissement.
+     */
+    public function remove(McpClient $client): void;
 }

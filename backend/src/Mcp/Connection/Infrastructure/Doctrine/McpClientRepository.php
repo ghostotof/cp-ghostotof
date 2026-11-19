@@ -8,18 +8,24 @@ use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<McpClient>
  */
 class McpClientRepository extends ServiceEntityRepository implements McpClientRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly RereadUnderLock $rereadUnderLock,
+    ) {
         parent::__construct($registry, McpClient::class);
     }
 
@@ -97,5 +103,57 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
             'SELECT 1 FROM mcp_client WHERE client_id = :clientId AND registration = :registration',
             ['clientId' => (string) $clientId, 'registration' => ClientRegistration::Cimd->value],
         );
+    }
+
+    /**
+     * Les deux modes d'enregistrement, sans jointure : un client n'en porte
+     * aucune ici. Le tri est total (la date, puis la clé) et l'index de la clé
+     * primaire départage les égalités sans dépendre du plan de la base.
+     */
+    public function all(): array
+    {
+        /** @var list<McpClient> */
+        return $this->createQueryBuilder('client')
+            ->orderBy('client.registeredAt', 'DESC')
+            ->addOrderBy('client.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * La relecture sous verrou du projet ({@see RereadUnderLock::row()}) avec
+     * `FOR UPDATE` : l'instance déjà gérée est rafraîchie sur place, une
+     * ligne disparue rend `null` et détache l'instance périmée. Sans
+     * transaction ouverte, Doctrine refuse le verrou (`TransactionRequiredException`).
+     */
+    public function findOneByIdForUpdate(Uuid $id): ?McpClient
+    {
+        return $this->rereadUnderLock->row($this->getEntityManager(), McpClient::class, $id, forUpdate: true);
+    }
+
+    /**
+     * Une requête DQL à `PESSIMISTIC_READ` (`FOR SHARE`) : {@see RereadUnderLock}
+     * ne sait prendre que `FOR UPDATE`, trop fort ici — deux consentements du
+     * même client ne doivent pas s'attendre. `HINT_REFRESH` : une révision
+     * validée par l'administrateur depuis le chargement de l'instance (ses
+     * redirections, son nom) est lue, jamais la copie périmée de la carte
+     * d'identité. Sans transaction ouverte, Doctrine refuse le verrou.
+     */
+    public function findOneByClientIdForShare(string $clientId): ?McpClient
+    {
+        /** @var McpClient|null */
+        return $this->createQueryBuilder('client')
+            ->where('client.clientId = :clientId')
+            ->setParameter('clientId', $clientId)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_READ)
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+    }
+
+    public function remove(McpClient $client): void
+    {
+        $this->getEntityManager()->remove($client);
+        $this->getEntityManager()->flush();
     }
 }
