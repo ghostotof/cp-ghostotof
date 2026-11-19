@@ -239,8 +239,13 @@
     Signalé par l'agent, à verser au tri : le docblock de `respondToAccessTokenRequest()` (l. 99-103 de
     `LoopbackAwareAuthCodeGrant.php`) garde l'ancienne formulation du second appel de `isAuthCodeRevoked()`
     (« pour un code que le premier a déjà jugé mort ») — faible, à aligner sur la règle.
-  - **Prochaine action** : `/code-review medium diff 7cdad714...HEAD` sans auditeur (aucun comportement
-    d'authentification modifié), puis tri ; ensuite S4 (Tasks 12-15).
+  - **C3d relue** (2026-11-20) : `/code-review medium diff 7cdad714...HEAD`, HEAD relu `8597490a`, sans auditeur
+    (aucun comportement d'authentification modifié). Aucun constat critique, haut ni moyen : **boucle close**. Six
+    constats faibles (R1-R6), écrits dans « Constats écrits non corrigés » ; décision de l'utilisateur : R1, R2, R3,
+    R4, R6 corrigés en **Task 19**, R5 dans la PR.
+  - **Prochaine action** : **S4**, Task 12 (agent sonnet/high, étape 05, brief ci-dessous), puis Tasks 13, 14, 15,
+    un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+    seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -289,6 +294,8 @@
 - Report « borne du `client_id` 255 / 512 » : **déjà fait** (`McpClient.php:53`, `McpClientId.php:23`,
   migration `Version20261023120000.php:41` en 255) — noté par la Task 19.
 - Point fixe de relecture : S1 relue depuis `bd61b215` jusqu'au commit « reprise … Task 4 faite, relecture S1 ».
+  C3d relue depuis `7cdad714` jusqu'à `8597490a`. **Point fixe de S4** : le commit « reprise de la T13, C3d relue,
+  S4 à lancer » (le `HEAD` avant l'agent de la Task 12).
 - PR à l'étape 08 : base **`feature/379-mcp-paliers`**, jamais `develop`.
 
 ## Décisions de l'utilisateur (2026-11-19)
@@ -318,6 +325,8 @@
   **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
 - Relecture de C3c (2026-11-19) : **micro-série C3d courte**, relue par `/code-review medium` seul ; F1 et le reste
   dans la PR.
+- Relecture de C3d (2026-11-20) : **écrire, corriger en Task 19** — R1, R2, R3, R4, R6 en Task 19, R5 dans la PR ;
+  S4 démarre aussitôt.
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
   `app.mcp.cimd.allowed_domains`, pas une donnée du backoffice ; limite acceptée de l'ADR 0006 à
   documenter seulement) ; révocation d'une connexion par l'administrateur (ticket).
@@ -384,6 +393,17 @@ Relecture de C3c (pour la description de la PR) :
 - (faible, CR2) repli plus strict que league (une charge que league aurait lue est refusée `invalid_request`).
 - (faible, CR4) un code refusé n'est pas consommé (limite 4 de la règle).
 - (faible, CR6/CR7) assertions de tests à resserrer (messages, cause exacte).
+Relecture de C3d (2026-11-20 ; **R1, R2, R3, R4, R6 → Task 19**, R5 → PR) :
+- (R1, faible, conf. haute) le docblock de `respondToAccessTokenRequest()` (`LoopbackAwareAuthCodeGrant.php`,
+  l. 99-105) contredit `mcp-oauth-cycle-de-vie.md:316` sur le moment du second appel de `isAuthCodeRevoked()`.
+- (R2, faible, conf. haute) docblock de `GrantRefusal::NotACode` (l. 62) : « mal typés » sans « ou absents » ; même
+  défaut dans le nom du test `…WithAMistypedPayload…`.
+- (R3, faible, conf. haute) `array_unique($after)` mort (`McpClientAdministrator.php:106`) : l'entité dédoublonne déjà.
+- (R4, faible, conf. moyenne) le test des 4 charges vérifie le hint par `assertStringContainsString` et pas la cause
+  d'audit `NotACode`, alors que `causeOf()` exige le message exact : `assertSame` ou assertion de cause.
+- (R5, faible, conf. basse) `is_int(expire_time)` rejette un float JSON : inatteignable avec league 9.4.1 (PR).
+- (R6, très faible, conf. moyenne) commentaire `McpClientAdministrator.php:88` : justification fausse du déplacement
+  (`array_unique` ne lève rien).
 
 
 - Jamais lire `.env.local`, `.env.test.local` ni aucun fichier de secret.
