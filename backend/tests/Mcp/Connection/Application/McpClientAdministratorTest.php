@@ -253,7 +253,7 @@ final class McpClientAdministratorTest extends KernelTestCase
      * le même journal qu'un changement anodin. Aucune URI n'en sort.
      *
      * @param list<string> $initial
-     * @param list<string> $submitted
+     * @param non-empty-list<string> $submitted
      */
     #[DataProvider('redirectChanges')]
     public function testRevisingAuditsWhatWasAddedAndRemovedNeverTheUris(array $initial, array $submitted, int $total, int $added, int $removed): void
@@ -264,7 +264,7 @@ final class McpClientAdministratorTest extends KernelTestCase
         $this->administrator()->revise(
             $client->getId(),
             McpClientName::fromString('Claude Code'),
-            array_map(RedirectUri::fromString(...), $submitted),
+            array_map(static fn (string $uri): RedirectUri => RedirectUri::fromString($uri), $submitted),
         );
 
         $event = self::singleSecurityAuditEvent('mcp-client-revised');
@@ -274,7 +274,7 @@ final class McpClientAdministratorTest extends KernelTestCase
         self::assertStringNotContainsString('client.example.test', json_encode($event, \JSON_THROW_ON_ERROR));
     }
 
-    /** @return iterable<string, array{list<string>, list<string>, int, int, int}> */
+    /** @return iterable<string, array{list<string>, non-empty-list<string>, int, int, int}> */
     public static function redirectChanges(): iterable
     {
         $callback = 'https://client.example.test/callback';
