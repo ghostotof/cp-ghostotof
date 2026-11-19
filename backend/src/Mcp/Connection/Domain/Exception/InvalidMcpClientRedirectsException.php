@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Exception;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use InvalidArgumentException;
 
 /**
  * Le nombre de redirections proposées pour un client MCP n'est pas de ceux que
- * {@see \App\Mcp\Connection\Domain\Entity\McpClient} admet : de une à dix
+ * {@see McpClient} admet : de une à dix
  * redirections distinctes.
  *
  * Levée à l'enregistrement d'un client (la commande
@@ -25,6 +26,6 @@ final class InvalidMcpClientRedirectsException extends InvalidArgumentException
 
     public static function tooMany(): self
     {
-        return new self('Un client ne peut pas déclarer plus de 10 redirections distinctes.');
+        return new self(\sprintf('Un client ne peut pas déclarer plus de %d redirections distinctes.', McpClient::MAX_REDIRECT_URIS));
     }
 }

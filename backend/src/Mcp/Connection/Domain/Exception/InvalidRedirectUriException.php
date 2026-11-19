@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Exception;
 
+use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use InvalidArgumentException;
 
 /**
  * Une redirection proposée à l'enregistrement d'un client MCP n'est pas de
- * celles que {@see \App\Mcp\Connection\Domain\ValueObject\RedirectUri} admet :
+ * celles que {@see RedirectUri} admet :
  * `https` sans fragment ni identifiants, ou
  * `http` sur la seule boucle locale (`localhost`, `127.0.0.1`, `[::1]`).
  *
@@ -76,20 +77,20 @@ final class InvalidRedirectUriException extends InvalidArgumentException
     }
 
     /**
-     * Plus de {@see \App\Mcp\Connection\Domain\ValueObject\RedirectUri::MAX_LENGTH}
+     * Plus de {@see RedirectUri::MAX_LENGTH}
      * octets : refusée avant d'être analysée. Message constant, sans la valeur.
      */
     public static function tooLong(): self
     {
-        return new self('La redirection dépasse 2048 octets.');
+        return new self(\sprintf('La redirection dépasse %d octets.', RedirectUri::MAX_LENGTH));
     }
 
     /**
-     * Plus de {@see \App\Mcp\Connection\Domain\ValueObject\RedirectUri::MAX_QUERY_PARAMETERS}
+     * Plus de {@see RedirectUri::MAX_QUERY_PARAMETERS}
      * paramètres : refusée avant que `parse_str()` ne les lise. Message constant, sans la valeur.
      */
     public static function tooManyQueryParameters(): self
     {
-        return new self('La requête de la redirection porte plus de 50 paramètres.');
+        return new self(\sprintf('La requête de la redirection porte plus de %d paramètres.', RedirectUri::MAX_QUERY_PARAMETERS));
     }
 }
