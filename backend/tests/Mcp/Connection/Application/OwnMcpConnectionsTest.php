@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\FailSafeAudit;
+use App\Mcp\Connection\Application\McpConnectionStatus;
 use App\Mcp\Connection\Application\OwnMcpConnections;
 use App\Mcp\Connection\Application\OwnMcpConnectionView;
 use App\Mcp\Connection\Application\ReadSnapshotInterface;
@@ -225,10 +226,12 @@ final class OwnMcpConnectionsTest extends TestCase
 
     private function service(McpConnectionRepositoryInterface $connections, SecurityAuditLoggerInterface $auditLogger, ?ReadSnapshotInterface $snapshot = null): OwnMcpConnections
     {
+        $clock = new MockClock(new DateTimeImmutable(self::NOW));
+
         return new OwnMcpConnections(
             $connections,
-            new MockClock(new DateTimeImmutable(self::NOW)),
-            ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H'),
+            $clock,
+            new McpConnectionStatus(ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H'), $clock),
             new RevokedConnectionAudit($auditLogger, new FailSafeAudit(new NullLogger())),
             $snapshot ?? $this->passThroughSnapshot(),
         );
