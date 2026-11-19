@@ -81,7 +81,10 @@ interface McpClientRepositoryInterface
      * **partagé** (`FOR SHARE`) pour le restant de la transaction de
      * l'appelant — qui doit l'avoir ouverte. Le consentement s'y appuie : tant
      * qu'il court, ni la suppression ni la révision du client (`FOR UPDATE`)
-     * ne passent, et deux consentements ne s'attendent pas.
+     * ne passent, et deux consentements ne s'attendent pas. Le verrou ne
+     * couvre que ce qui suit sa prise : une révision commise avant elle est
+     * lue (l'instance rendue est l'état courant), et l'appelant revérifie sur
+     * elle ce qu'il avait validé plus tôt, la redirection demandée en tête.
      */
     public function findOneByClientIdForShare(string $clientId): ?McpClient;
 

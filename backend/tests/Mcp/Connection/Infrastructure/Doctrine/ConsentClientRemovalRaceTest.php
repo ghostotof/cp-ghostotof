@@ -142,6 +142,47 @@ final class ConsentClientRemovalRaceTest extends KernelTestCase
     }
 
     /**
+     * La redirection validée n'est plus celle du client quand l'accord le relit
+     * sous verrou (#652, TOCTOU) : une révision de l'administrateur, entre
+     * `validate()` et `grant()`, a retiré la redirection demandée. Le verrou
+     * `FOR SHARE` n'empêche que ce qui vient après sa prise ; la révision d'avant
+     * est lue par la relecture (`HINT_REFRESH`), et c'est à l'appelant d'en
+     * revérifier la redirection. Sans cela, le code partirait vers une
+     * redirection que le client n'a plus.
+     */
+    public function testAGrantToARedirectionRetiredSinceTheValidationIsRefused(): void
+    {
+        $real = $this->realValidator();
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $clientRowId = $this->client->getId()->toRfc4122();
+        $validator = self::createStub(AuthorizationRequestValidatorInterface::class);
+        $validator->method('validate')->willReturnCallback(
+            static function (ServerRequestInterface $request) use ($real, $connection, $clientRowId): AuthorizationRequestSummary {
+                $summary = $real->validate($request);
+                // La révision de l'administrateur : la liste ne contient plus la redirection demandée.
+                $connection->executeStatement(
+                    'UPDATE mcp_client SET redirect_uris = :uris WHERE id = :id',
+                    ['uris' => '["https://other.example.test/callback"]', 'id' => $clientRowId],
+                );
+
+                return $summary;
+            },
+        );
+
+        try {
+            $this->service($validator)->decide($this->approval(), $this->account);
+            self::fail('L\'accord vers une redirection retirée aurait dû être refusé.');
+        } catch (AuthorizationRequestRejectedException $refusal) {
+            self::assertStringContainsString('redirection', $refusal->getMessage());
+            // Le `detail` est rendu tel quel : il ne cite jamais l'URI demandée.
+            self::assertStringNotContainsString(self::REDIRECT, $refusal->getMessage());
+        }
+
+        self::assertSame(0, $this->rowsOf('mcp_connection'), 'Un accord refusé a écrit une connexion.');
+        self::assertSame(0, $this->rowsOf('mcp_authorization_code'), 'Un accord refusé a écrit un code.');
+    }
+
+    /**
      * Démarre le fils et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
      */
     private function deletionReleasedBeforeTheNextFlush(): Process

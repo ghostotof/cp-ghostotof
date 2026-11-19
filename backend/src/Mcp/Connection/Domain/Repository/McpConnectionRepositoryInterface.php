@@ -70,8 +70,14 @@ interface McpConnectionRepositoryInterface
      * par jointure : lire leur nom n'envoie aucune requête de plus. Comme pour
      * {@see self::findNotRevokedOfAccount()}, « non révoquée » est l'état de la
      * ligne — une connexion échue que la purge n'a pas encore marquée en est —
-     * et la liste est bornée par nature (liste fermée de clients, accords
-     * abandonnés échus en une heure). Une lecture, sans verrou.
+     * et la liste n'a **aucune borne de code** (ni limite ni pagination) : elle
+     * compte les connexions actives et les accords que ni le client ni la
+     * personne n'ont fait suivre d'un échange de code. Un compte de confiance
+     * peut en laisser, de l'ordre de 14 000 par jour et par adresse (constat de
+     * la relecture de la T13, d'après les limiteurs du consentement) ; échus au
+     * bout d'une heure, ils restent non révoqués jusqu'à ce que la purge de
+     * nuit les marque. Un constat écrit, pas une garantie « par nature ». Une
+     * lecture, sans verrou.
      *
      * @return list<McpConnection>
      */

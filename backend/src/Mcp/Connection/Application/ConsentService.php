@@ -253,6 +253,15 @@ final readonly class ConsentService implements ConsentServiceInterface
                 : $this->clients->findOneByClientIdForShare($summary->clientId))
                 ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
 
+            // La redirection validée plus haut l'a été sur une lecture sans
+            // verrou : une révision du client entre-temps a pu la retirer. Le
+            // verrou ne couvre que ce qui suit sa prise ; la relecture
+            // (`HINT_REFRESH`) rend l'état courant, et c'est ici qu'on s'en
+            // sert. Refus avant toute écriture : ni connexion ni code.
+            if (!$client->allowsRedirect($summary->redirectUri)) {
+                throw AuthorizationRequestRejectedException::redirectNoLongerRegistered();
+            }
+
             $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
             $this->connections->add($connection);
 

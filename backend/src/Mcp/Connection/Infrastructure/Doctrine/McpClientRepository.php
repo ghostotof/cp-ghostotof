@@ -134,10 +134,14 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
     /**
      * Une requête DQL à `PESSIMISTIC_READ` (`FOR SHARE`) : {@see RereadUnderLock}
      * ne sait prendre que `FOR UPDATE`, trop fort ici — deux consentements du
-     * même client ne doivent pas s'attendre. `HINT_REFRESH` : une révision
-     * validée par l'administrateur depuis le chargement de l'instance (ses
-     * redirections, son nom) est lue, jamais la copie périmée de la carte
-     * d'identité. Sans transaction ouverte, Doctrine refuse le verrou.
+     * même client ne doivent pas s'attendre. Le verrou ne sert qu'à **bloquer
+     * la suppression** (et toute écriture de la ligne) jusqu'au COMMIT de
+     * l'appelant : il n'apporte aucune garantie sur ce qui a été validé avant
+     * sa prise. `HINT_REFRESH` rend l'état courant de la ligne (jamais la copie
+     * périmée de la carte d'identité) ; **la redirection demandée est donc à
+     * revérifier par l'appelant sur l'instance relue** (`allowsRedirect()`), une
+     * révision validée entre sa validation et ce verrou l'ayant pu retirer.
+     * Sans transaction ouverte, Doctrine refuse le verrou.
      */
     public function findOneByClientIdForShare(string $clientId): ?McpClient
     {

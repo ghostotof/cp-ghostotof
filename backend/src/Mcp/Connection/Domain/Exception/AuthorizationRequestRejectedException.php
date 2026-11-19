@@ -45,6 +45,17 @@ final class AuthorizationRequestRejectedException extends DomainException implem
         return new self('Le client de la demande d\'autorisation n\'est plus enregistré : aucune connexion ne peut lui être accordée.');
     }
 
+    /**
+     * La redirection validée n'est plus l'une de celles du client au moment de
+     * créer la connexion : le client a été révisé entre la validation et la
+     * lecture sous verrou, le cas d'une course. Le message ne cite pas l'URI
+     * (le `detail` est rendu tel quel).
+     */
+    public static function redirectNoLongerRegistered(): self
+    {
+        return new self('La redirection de la demande d\'autorisation n\'est plus enregistrée pour ce client : aucune connexion ne peut être accordée sur elle.');
+    }
+
     protected function problemType(): string
     {
         return 'authorization-request-rejected';

@@ -100,6 +100,11 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->getResult();
     }
 
+    /**
+     * Sans limite ni pagination : le volume n'est borné ni par le code ni « par
+     * nature » (voir l'interface), seulement par ce que les limiteurs du
+     * consentement laissent s'accumuler entre deux purges.
+     */
     public function findNotRevokedForAdministration(): array
     {
         /** @var list<McpConnection> */
