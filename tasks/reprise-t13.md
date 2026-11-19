@@ -128,9 +128,22 @@
     OK (21) ; suite complète OK (6 526) et `make back-quality` vert (rapportés). Décisions de l'utilisateur
     (2026-11-19) : `DeadlockRetryIntegrationTest` **reste** sous `tests/Shared/Application` ; **figer l'écart** par un
     test (redirection en double → audit à 1) dans la 11b-2.
-  - **Prochaine action** : S3, **Task 11b-2**, agent sonnet/high : test de concurrence réel de l'interblocage de
-    `remove()` (modèle `AccountWideRevocationDeadlockTest`, relance après `resetManager()` prouvée) + test de l'écart.
-    Puis 11c ; puis `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high. HEAD avant 11b-2 : `591d7c01`.
+  - **Task 11b-2 faite** (agent sonnet/high) : `99450963` (test de caractérisation de l'écart, vert d'emblée) ;
+    `e9b5f295` (`McpClientRemovalDeadlockTest` + fixture `remove-mcp-client.php` qui assemble l'administrateur à la
+    main, non câblé au conteneur ; `backend-tests.md` complétée). Chemin réel : le test tient C1, `remove()` prend le
+    client puis attend C1 (`lockActiveOfClient`, ordre des id), l'échange tient C2 puis veut C1 (supersession) → `40P01`.
+    Deux cas (victime choisie par `deadlock_timeout`) : `remove()` relancé une fois et aboutit, ou l'échange échoue
+    (`40P01`, 500 côté client, non relancé). RED : relance neutralisée dans le fixture → `failed 40P01`. Preuve
+    contrôlée : `--filter 'McpClientRemovalDeadlockTest|McpClientAdministratorTest'` OK (15), deux passages ; 5 passages,
+    suite complète OK (6 529), `make back-quality` vert (rapportés). Écart d'agent : deux `Read` dans `tests/Mcp`.
+  - **À reprendre en Task 19** : la règle MCP (`mcp-oauth.md` ou `mcp-oauth-cycle-de-vie.md`) ne décrit pas encore la
+    suppression d'un client par le backoffice — verrous (client puis connexions par id), relance unique, limite
+    acceptée (l'échange perdant rend un 500, comme la limite 4), audit `client-removed` après COMMIT — ni ne cite
+    `McpClientRemovalDeadlockTest` ; et le fixture assemble l'administrateur à la main tant que le conteneur ne le câble
+    pas (Tasks 16-17B : le câbler, puis passer le fixture au conteneur ?).
+  - **Prochaine action** : S3, **Task 11c**, agent sonnet/high : T6, revérifier la redirection à l'échange dans
+    `LoopbackAwareAuthCodeGrant` (`invalid_grant`). Puis `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité
+    opus/high. HEAD avant 11c : `e9b5f295`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
