@@ -100,17 +100,6 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->getResult();
     }
 
-    /**
-     * Le socle des deux lectures de la liste : les connexions du compte, leur
-     * client joint (`innerJoin` + `addSelect`) — la liste affiche son nom, et
-     * une jointure évite une requête par connexion. Le compte n'est pas joint :
-     * l'appelant le tient déjà, la colonne `account_id` suffit au filtre, et son
-     * identifiant est typé comme elle. **L'ordre est celui de chaque appelant**,
-     * car il décide *quelles* lignes une limite garde : l'octroi pour les non
-     * révoquées (toutes rendues, l'ordre n'est que de présentation), l'instant de
-     * fin pour les terminées ; dans les deux cas l'identifiant décroissant
-     * départage deux instants égaux, un ordre qui ne dépend pas du plan.
-     */
     public function findNotRevokedForAdministration(): array
     {
         /** @var list<McpConnection> */
@@ -154,6 +143,17 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->innerJoin('connection.account', 'account');
     }
 
+    /**
+     * Le socle des deux lectures de la liste : les connexions du compte, leur
+     * client joint (`innerJoin` + `addSelect`) — la liste affiche son nom, et
+     * une jointure évite une requête par connexion. Le compte n'est pas joint :
+     * l'appelant le tient déjà, la colonne `account_id` suffit au filtre, et son
+     * identifiant est typé comme elle. **L'ordre est celui de chaque appelant**,
+     * car il décide *quelles* lignes une limite garde : l'octroi pour les non
+     * révoquées (toutes rendues, l'ordre n'est que de présentation), l'instant de
+     * fin pour les terminées ; dans les deux cas l'identifiant décroissant
+     * départage deux instants égaux, un ordre qui ne dépend pas du plan.
+     */
     private function ofAccount(Uuid $accountId): QueryBuilder
     {
         return $this->createQueryBuilder('connection')
