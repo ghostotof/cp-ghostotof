@@ -110,7 +110,7 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
             'expire_time' => (string) (time() + 600),
             'user_id' => '0199f0a4-5c3e-7a2b-8d1e-2f3a4b5c6d7e',
             'scopes' => [],
-        ], \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret(self::keyMaterial()));
+        ], \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret($this->keyMaterial()));
         $request = new ServerRequest('POST', 'http://localhost/api/oauth/token')->withParsedBody([
             'grant_type' => 'authorization_code',
             'client_id' => ClaudeCodeMetadata::CLIENT_ID,
@@ -128,7 +128,7 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         }
     }
 
-    private static function keyMaterial(): string
+    private function keyMaterial(): string
     {
         return TestKeys::material('grant-test');
     }
@@ -147,7 +147,7 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
             new FailSafeAudit($logger),
         );
         $grant->setClientRepository($clients);
-        $grant->setEncryptionKey(OAuthEncryptionKey::fromSecret(self::keyMaterial()));
+        $grant->setEncryptionKey(OAuthEncryptionKey::fromSecret($this->keyMaterial()));
 
         return $grant;
     }
