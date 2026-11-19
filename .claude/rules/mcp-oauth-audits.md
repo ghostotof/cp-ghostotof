@@ -67,7 +67,7 @@ paths:
   CR4): the connection is the one the compromise already designates under league's lock, so the code is **not
   decrypted again**, and `record($request, $refusal)` keeps league's hint alone, which says `code-refused` here;
   `LeagueGrantRefusalAuditTest` pins the line on the passed connection, that an unreadable code changes nothing there
-  (while `record()` writes nothing for it), and `record()`'s classification unchanged); `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
+  (while `record()` writes nothing for it), and `record()`'s classification unchanged); `foreign-client`, `redirect-mismatch`, `redirect-no-longer-registered` (#652: a code whose redirection a revision removed from its client, refused `invalid_grant` by `LoopbackAwareAuthCodeGrant::respondToAccessTokenRequest()` on the client re-read at the exchange, through `McpClient::allowsRedirect()`), `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
   or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
   grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost. **Not audited, and
   why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection

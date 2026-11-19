@@ -32,6 +32,8 @@ final class LeagueGrantRefusals
         'Authorization code was not issued to this client' => GrantRefusal::ForeignClient,
         'Check the `redirect_uri` parameter' => GrantRefusal::RedirectMismatch,
         'Invalid redirect URI' => GrantRefusal::RedirectMismatch,
+        // Une redirection retirée du client depuis l'accord, refusée par ce dépôt.
+        LoopbackAwareAuthCodeGrant::REDIRECT_NO_LONGER_REGISTERED_HINT => GrantRefusal::RedirectNoLongerRegistered,
         'Token has expired' => GrantRefusal::TokenExpired,
         'Token has been revoked' => GrantRefusal::TokenRefused,
         'Token is not linked to client' => GrantRefusal::ForeignClient,

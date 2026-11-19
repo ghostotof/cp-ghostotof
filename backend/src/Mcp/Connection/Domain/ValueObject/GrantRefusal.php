@@ -64,6 +64,12 @@ enum GrantRefusal: string
     /** `redirect_uri` absente ou autre que celle de l'autorisation (RFC 6749 §4.1.3). */
     case RedirectMismatch = 'redirect-mismatch';
 
+    /**
+     * Code dont la redirection n'est plus admise par son client : retirée par
+     * une révision entre l'accord et l'échange (#652).
+     */
+    case RedirectNoLongerRegistered = 'redirect-no-longer-registered';
+
     /** Jeton de rafraîchissement présenté après son échéance (jugée par league sur sa charge). */
     case TokenExpired = 'token-expired';
 

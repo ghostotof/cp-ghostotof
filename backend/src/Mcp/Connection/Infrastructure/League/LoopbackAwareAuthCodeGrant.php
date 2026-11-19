@@ -18,6 +18,8 @@ use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
 use League\OAuth2\Server\RequestEvent;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
+use League\OAuth2\Server\ResponseTypes\ResponseTypeInterface;
+use LogicException;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -60,6 +62,13 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      */
     private const string AUTHORIZATION_POINT_ATTRIBUTE = 'mcp.authorization_point';
 
+    /**
+     * L'indication du refus d'un code dont la redirection n'est plus admise
+     * par son client (#652), constante : aucune URL, aucun identifiant.
+     * Écrite ici seule, LeagueGrantRefusals la lit pour classer le refus.
+     */
+    public const string REDIRECT_NO_LONGER_REGISTERED_HINT = 'The redirect URI of the authorization code is no longer registered for this client.';
+
     /** Le message d'une panne de l'audit du refus d'une ligne `cimd` non admise, constant (#651). */
     private const string STALE_ROW_REFUSAL_NOT_AUDITED = 'Refused stored CIMD client row not audited.';
 
@@ -75,6 +84,63 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
         private readonly FailSafeAudit $failSafeAudit,
     ) {
         parent::__construct($authCodeRepository, $refreshTokenRepository, $authCodeTTL);
+    }
+
+    /**
+     * Refuse, à l'échange, un code dont la redirection n'est plus admise par
+     * son client (#652) : la révision des redirections ne coupe aucune
+     * connexion ouverte, elle ne doit pas non plus laisser aboutir un code déjà
+     * accordé pour une redirection retirée. Le client est relu en base ici,
+     * et la règle est celle de l'accord (`McpClient::allowsRedirect()`, tolérance
+     * loopback comprise), jamais une égalité de chaînes.
+     *
+     * Le contrôle ne s'exerce que sur un code lisible, émis à ce client et lié
+     * à une redirection : tout autre cas (illisible, autre client, redirection
+     * absente) reste jugé par league, sous sa propre cause.
+     *
+     * @throws OAuthServerException `invalid_grant` ; les refus de league sinon
+     */
+    public function respondToAccessTokenRequest(
+        ServerRequestInterface $request,
+        ResponseTypeInterface $responseType,
+        DateInterval $accessTokenTTL,
+    ): ResponseTypeInterface {
+        $client = $this->validateClient($request);
+        $redirectUri = $this->redirectUriOfTheCode($request, $client);
+
+        if (null !== $redirectUri
+            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($redirectUri))) {
+            throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
+        }
+
+        return parent::respondToAccessTokenRequest($request, $responseType, $accessTokenTTL);
+    }
+
+    /**
+     * La redirection portée par le code présenté, ou `null` quand le code est
+     * illisible, émis à un autre client ou sans redirection : league en juge.
+     */
+    private function redirectUriOfTheCode(ServerRequestInterface $request, ClientEntityInterface $client): ?string
+    {
+        $encrypted = $this->getRequestParameter('code', $request);
+
+        if (null === $encrypted) {
+            return null;
+        }
+
+        try {
+            $payload = json_decode($this->decrypt($encrypted));
+        } catch (LogicException) {
+            return null;
+        }
+
+        if (!\is_object($payload)
+            || ($payload->client_id ?? null) !== $client->getIdentifier()
+            || !\is_string($payload->redirect_uri ?? null)) {
+            return null;
+        }
+
+        return $payload->redirect_uri;
     }
 
     /**
