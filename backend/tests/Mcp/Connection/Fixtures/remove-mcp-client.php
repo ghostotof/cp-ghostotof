@@ -31,6 +31,7 @@ declare(strict_types=1);
  *  3. supprime le client ;
  *  4. écrit « done », « removed <n> » (la valeur rendue : connexions coupées),
  *     « connectionaudit <n> » (`mcp-connection-revoked` écrites par CET appel),
+ *     « causedaudit <n> » (parmi elles, celles de cause `client-removed`),
  *     « clientaudit <n> » (`mcp-client-removed`) et « retried <n> » (le nombre
  *     d'interblocages que la relance unique a absorbés) puis sort en 0 ;
  *     « failed <SQLSTATE> » et sort en 3 si la base l'a refusé (la classe pour
@@ -138,11 +139,17 @@ try {
 }
 
 $connectionAudit = 0;
+$causedAudit = 0;
 $clientAudit = 0;
 foreach ($auditHandler->getRecords() as $record) {
     $event = $record->context['event'] ?? null;
     if ('mcp-connection-revoked' === $event) {
         ++$connectionAudit;
+        // La cause du journal est un contrat (D-B) : la valeur littérale, pas la
+        // constante de la classe, pour qu'un renommage ne passe pas en silence.
+        if ('client-removed' === ($record->context['cause'] ?? null)) {
+            ++$causedAudit;
+        }
     }
     if ('mcp-client-removed' === $event) {
         ++$clientAudit;
@@ -159,6 +166,7 @@ foreach ($allChannelsHandler->getRecords() as $record) {
 echo "done\n";
 echo 'removed '.$removed."\n";
 echo 'connectionaudit '.$connectionAudit."\n";
+echo 'causedaudit '.$causedAudit."\n";
 echo 'clientaudit '.$clientAudit."\n";
 echo 'retried '.$retried."\n";
 
