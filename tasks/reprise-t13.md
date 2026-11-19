@@ -81,8 +81,40 @@
     le second test supprime après la validation (stub de validateur), sinon league refuse avant `clientNoLongerRegistered()`.
     Contrôlé par le fil principal : `ConsentClientRemovalRaceTest|ConsentServiceTest|ConsentControllerTest` OK (79) deux
     fois ; l'agent : trois fois, `tests/Mcp/Connection` OK (1 475), PHPStan et Rector verts.
-  - **Prochaine action** : relecture S2 (Tasks 5-8), `/code-review medium` sur `diff 45daeb53...HEAD` (HEAD = commit
-    de cette reprise, point fixe de S3) ; auditeur sécurité opus/high à confirmer par l'utilisateur.
+  - **Relecture S2 faite** (`/code-review medium` sur `diff 45daeb53...2878d007` + auditeur sécurité opus/high) :
+    un haut (redirection non revérifiée sous `FOR SHARE`, = A1 de l'audit) → série de correction **C2**. Point fixe
+    de la relecture de C2 : **`2878d007`**. Le reste : brief de la Task 11 (ci-dessous) ou constats écrits.
+  - **Prochaine action** : série de correction **C2** (A1 + A6 + A5), un agent sonnet/high, puis
+    `/code-review medium` sur `diff 2878d007...HEAD`. Ensuite S3 (Tasks 9-11, avec l'auditeur).
+  - **C2, contenu** :
+    - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
+      (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
+      `testAGrantAfterTheDeletionIsRefusedAsNoLongerRegistered` (stub du validateur qui révise le client après
+      `validate()`). Corriger le docblock de `findOneByClientIdForShare` (l. 137-139) pour dire ce que la relecture sert.
+    - A6 : tests du refus hors transaction de `findOneByIdForUpdate` et de `findOneByClientIdForShare`
+      (`TransactionRequiredException`) ; sonde `FOR NO KEY UPDATE NOWAIT` qui doit échouer (distingue `FOR SHARE`
+      de `FOR KEY SHARE`).
+    - A5 : `RevocationOutsideTransactionException::forClient(Uuid $client)`, `toRfc4122()` dans la fabrique.
+    - Docblock de `findNotRevokedForAdministration` : « borné par nature » est inexact (A2), le corriger.
+  - **Brief de la Task 11 (à reprendre tel quel)** :
+    - T1 (moyen) : `remove()` peut s'interbloquer avec l'échange et la supersession → envelopper la transaction dans
+      `DeadlockRetryInterface::retryOnce()`, test sur le modèle d'`AccountWideRevocationDeadlockTest`, limite documentée.
+      Constat 2 de la relecture : `lockActiveOfClient` (`ORDER BY c.id FOR UPDATE OF c`) contre l'échange de code
+      (connexion du code puis autres de la paire) → `40P01` possible ; c'est le même point.
+    - T2 : cycles avec la purge (`deleteRevokedBefore`) et `CpgUserAdministrator::delete()` ; couverts par la relance de T1.
+    - T3 : toujours `findOneByIdForUpdate()` d'abord (`null` → 404), idéalement une méthode qui prend les deux verrous ;
+      transaction courte (`lock_timeout`, `55P03`).
+    - T4 : audit après le COMMIT (`FailSafeAudit`) ; décider la cause des connexions échues non marquées.
+    - T5 : DTO obligatoire, jamais sérialiser `McpConnection` ni `CpgUser` ; nom d'utilisateur, pas l'e-mail ;
+      `ROLE_SUPER`, `ApiRouteExposureTest`, tests de parité.
+    - T6 (décision utilisateur) : la révision ne coupe rien ; **revérifier à l'échange** dans `LoopbackAwareAuthCodeGrant`
+      (un code dont la redirection n'est plus dans la liste du client → `invalid_grant`) ; auditer chaque révision ;
+      réviser sous `findOneByIdForUpdate()`. Les connexions ouvertes restent actives (la suppression les coupe).
+    - T7 : `Assert\Count(max: …)` sur l'entrée de la révision.
+    - T8 : supprimer un client CIMD n'est pas un bannissement : le dire (ou refuser).
+    - T9 : `McpClientDeclaredByDocumentException` en 409 problem+json ; borner `$limit` de `findTerminatedForAdministration()`.
+    - T10 : `remove()` en dernier, sans réutiliser les entités périmées.
+  - **Brief de la Task 12** : retrier les terminées par octroi (`usort`, comme `OwnMcpConnections::newestGrantFirst`).
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -116,6 +148,9 @@
   pas de pagination, 200 dernières terminées ; audit de révision = nombre d'URI ; un seul port
   frontend `AdminMcpRepository` ; `AuditOrigin` dans `Security/Authentication/Application`.
 - Moteur de l'étape 05 : `agent-skills:build` (pas `subagent-driven-development`).
+- Relecture S2 (2026-11-19) : auditeur sécurité opus/high **retenu** ; `$io->listing()` non échappé : **noter dans
+  la PR**, pas de correction ; série C2 = **A1 + A6 + A5** (bornée à 3-4 fichiers) ; révision d'un client :
+  **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
   `app.mcp.cimd.allowed_domains`, pas une donnée du backoffice ; limite acceptée de l'ADR 0006 à
   documenter seulement) ; révocation d'une connexion par l'administrateur (ticket).
@@ -146,7 +181,20 @@ Relecture de C1 (pour la description de la PR) :
 - (faible, conf. basse) `RegisterMcpClientCommandTest` cherche le message entier, que `SymfonyStyle` peut replier
   selon `COLUMNS`.
 - (Task 4, question ouverte à l'utilisateur) `$io->listing()` n'échappe pas ; inatteignable (`RedirectUri`
-  refuse `<`). Recommandation : ne pas échapper, le noter dans la PR.
+  refuse `<`). Décision : ne pas échapper, le noter dans la PR.
+Relecture S2 (pour la description de la PR) :
+- (faible) `findOneByClientIdForShare` écrit sa relecture en DQL (`HINT_REFRESH`) au lieu de `RereadUnderLock` :
+  pas de `detachVanished()` d'une instance disparue.
+- (faible) `McpClientRepository::remove()` laisse des connexions gérées périmées ; son `flush` porte sur toute l'unité
+  de travail.
+- (faible) pas d'index sur `mcp_connection.revoked_at` pour les terminées de l'administration.
+- (faible, A2) `findNotRevokedForAdministration` sans limite : un compte de confiance peut laisser ~14 000 connexions
+  jamais échangées par jour et par IP (expirées après une heure, purgées la nuit).
+- (faible) `McpClientRepository::all()` sans borne.
+- (faible) le fake du dépôt de clients ne relit ni ne détache.
+- (info, A3) `forAdministration()` hydrate `CpgUser` entier (empreinte, e-mail) : le DTO de la Task 11/12 n'en expose rien.
+- (info, A4) `countActiveByClient` compte une connexion échue non marquée par la purge.
+- (info, A7) famine possible de la suppression d'un client derrière des `FOR SHARE` successifs.
 
 ## Interdits des briefs
 
@@ -155,3 +203,5 @@ Relecture de C1 (pour la description de la PR) :
   `Read` par zone, le reste en `sed -n` / `grep -n` ; jamais un plan entier ; sorties coupées.
 - Jamais `git checkout` / `switch` / `stash` ; un commit par tâche, fichiers nommés.
 - PHPStan, Rector, PHPUnit dans le conteneur en `-u dev`.
+- Pas de secret en dur dans un test (`TestKeys` / `TestCredentials`) ; une commande qui pose un secret ne se lance
+  jamais dans la session.
