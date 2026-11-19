@@ -141,9 +141,17 @@
     acceptée (l'échange perdant rend un 500, comme la limite 4), audit `client-removed` après COMMIT — ni ne cite
     `McpClientRemovalDeadlockTest` ; et le fixture assemble l'administrateur à la main tant que le conteneur ne le câble
     pas (Tasks 16-17B : le câbler, puis passer le fixture au conteneur ?).
-  - **Prochaine action** : S3, **Task 11c**, agent sonnet/high : T6, revérifier la redirection à l'échange dans
-    `LoopbackAwareAuthCodeGrant` (`invalid_grant`). Puis `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité
-    opus/high. HEAD avant 11c : `e9b5f295`.
+  - **Task 11c faite** (agent sonnet/high) : `b4846612` (`respondToAccessTokenRequest()` surchargé : client validé, code
+    déchiffré, `allowsRedirect()` sur le client relu ; refus `invalid_grant` constant ; cause d'audit
+    `redirect-no-longer-registered`). RED réel : league ne revérifie pas la liste du client (200 + jetons). Preuve
+    contrôlée : `--filter 'GrantRefusalAuditTest|TokenControllerTest'` OK (77) ; suite complète OK (6 531),
+    `make back-quality` vert (rapportés). **Constat du fil principal à verser à la relecture S3** (moyen, confiance
+    haute) : le contrôle passe **avant** `isAuthCodeRevoked()` de league, donc un code **déjà échangé** rejoué avec une
+    redirection retirée est refusé sans la révocation `code-replay` de sa connexion (RFC 6749 §4.1.2), et un code
+    échu/révoqué est audité sous la nouvelle cause. Questions de l'agent : préséance des causes (il recommande de
+    garder) ; `validateClient()` appelé deux fois (secret vérifié deux fois).
+  - **Prochaine action** : S3, relecture `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high
+    (série touchant le point de jeton), puis tri. HEAD relu : `b4846612`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
