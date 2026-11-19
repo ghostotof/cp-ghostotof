@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
@@ -227,6 +228,8 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
 
         self::assertSame(Command::FAILURE, $exitCode);
         self::assertStringContainsString('[ERROR]', $tester->getDisplay());
+        // La sortie cite la borne : le message de la fabrique, celui que le refus d'un client à onze redirections porte.
+        self::assertStringContainsString(InvalidMcpClientRedirectsException::tooMany()->getMessage(), $tester->getDisplay());
         self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
         self::assertSame(0, $this->clientCount());
     }
