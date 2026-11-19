@@ -180,8 +180,29 @@
     `452cbaf6`, qualité verte (lsp:check : 6 faux positifs `ai.yaml`, 0 bloquant), tests ciblés 79 OK.
     `McpClientAdministratorInterface` toujours non câblé → fixture par `new` jusqu'à la Task 17B. À noter pour la
     PR / Task 19 : docblock de `FailSafeAudit` dit « sept sites », il y en a 11.
-  - **Prochaine action** : relecture C3 `/code-review medium diff 32afd264...HEAD` + auditeur opus/high (point de
-    jeton), puis tri. HEAD relu : `452cbaf6`.
+  - **C3 relue** (`/code-review medium diff 32afd264...HEAD` + auditeur opus/high, HEAD relu `4c61e429`). Ni critique
+    ni haut ; un seul moyen (CR « ordre de league recopié / altitude ») : **rangé sous la décision 1** de l'utilisateur
+    (« laisser league juger d'abord », alternative « altitude » écartée), risque de montée réduit par l'épinglage
+    exact `league/oauth2-server 9.4.1` et par les tests d'ordre ci-dessous. Tri :
+    - **Micro-série C3c** (faibles à risque réel, peu coûteux) :
+      - **C3c-1** (grant) : repli strict si la charge est mal typée alors que la redirection n'est plus admise
+        (`invalidRequest`, test unitaire `expire_time` en chaîne) ; test « code mort (connexion révoquée) + redirection
+        retirée → cause de league, pas `redirect-no-longer-registered` » ; docblock du grant (second appel seulement
+        pour un code déjà mort, verrou seulement si le premier l'a pris ; conditions de typage) ; règle
+        `mcp-oauth-cycle-de-vie.md` l. 316 (même précision) + limite « un code refusé redirection-retirée n'est pas
+        consommé : rétablir la redirection dans ses 10 min le rend échangeable ».
+      - **C3c-2** : `$before` dédoublonné dans `revise()` + cas `DataProvider` ; docblock `FailSafeAudit` (« sept
+        sites » → sans compte figé, sites nommés) ; indentation `McpClientRemovalDeadlockTest.php:122`.
+    - **Constats écrits pour la PR** : comptes ajoutées/retirées littéraux (tolérance de port loopback et casse non
+      normalisées) ; la commande `app:mcp:client:register` répond succès quand l'audit tombe (seul un `critical` en
+      témoigne) ; `time()` lu avant l'attente du verrou (cause `redirect-no-longer-registered` au lieu de
+      `code-expired` à la seconde près, refus dans les deux cas).
+    - **Vers la Task 17A/B** : le futur processeur d'inscription ne doit pas envelopper `register()` dans une
+      transaction (audit après COMMIT) — test « pas d'audit après ROLLBACK » ou garde ; câbler
+      `McpClientAdministratorInterface`.
+  - **Prochaine action** : **C3c-1**, agent sonnet/high ; puis **C3c-2**, agent sonnet/medium (mécanique) ; puis
+    `/code-review medium diff 4c61e429...HEAD` (auditeur seulement si C3c-1 change le comportement du point de jeton,
+    oui pour le repli strict).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
