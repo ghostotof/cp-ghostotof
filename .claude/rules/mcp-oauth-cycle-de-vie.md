@@ -313,9 +313,11 @@ paths:
   only when league would have accepted it so far — unexpired (`time()`, league's own clock on the encrypted payload) and
   unconsumed (`isAuthCodeRevoked()` called there, which raises `AuthorizationCodeReplayedException` itself: the replay
   is then revoked or audited `replay-unproven` by the token endpoint as above). An expired code stays `code-expired`.
-  League's own second call of `isAuthCodeRevoked()` happens only for a code the first call already judged dead; it locks only
-  if the first did, and writes nothing. A payload whose `expire_time` is not an integer or `auth_code_id` not a string, with
-  the redirect removed, is refused `invalid_request` « Authorization code malformed » (league's message), never exchanged.
+  League's own second call of `isAuthCodeRevoked()` happens only when this check made the first one (redirect removed); it
+  locks only if the first did, writes nothing (`GrantRefusalAuditTest::testADeadCodeWhoseRedirectWasRemovedKeepsLeaguesCause`).
+  A payload with `expire_time` not an integer or `auth_code_id` not a string (mistyped or absent), redirect removed, is refused
+  `invalid_request` « Authorization code malformed » (league's message), never exchanged
+  (`LoopbackAwareAuthCodeGrantTest::testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed`).
   `CodeReplayTest::testAProvenReplayAfterTheRedirectWasRemovedRevokesTheConnection` and its unproven twin,
   `GrantRefusalAuditTest::testAnExpiredCodeWhoseRedirectWasRemovedIsAuditedAsExpired` (red before #652's correction, measured).
   A code
