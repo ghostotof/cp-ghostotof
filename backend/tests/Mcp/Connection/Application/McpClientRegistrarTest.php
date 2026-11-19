@@ -24,8 +24,8 @@ use Monolog\Level;
 use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Clock\MockClock;
 use RuntimeException;
+use Symfony\Component\Clock\MockClock;
 use Throwable;
 
 /**
