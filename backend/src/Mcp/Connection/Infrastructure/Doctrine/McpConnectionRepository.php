@@ -258,6 +258,50 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         );
     }
 
+    public function lockActiveOfClient(Uuid $client): array
+    {
+        $database = $this->getEntityManager()->getConnection();
+        if (!$database->isTransactionActive()) {
+            throw RevocationOutsideTransactionException::forClient($client->toRfc4122());
+        }
+
+        // `FOR UPDATE OF c` : les seules lignes de `mcp_connection` sont
+        // verrouillées, celle du client (déjà tenue par l'appelant) et la
+        // jointure restent libres. Le tri par identifiant fixe l'ordre des
+        // verrous, comme les cinq révocations.
+        $rows = $database->fetchAllAssociative(
+            'SELECT c.id, c.account_id, cl.client_id'
+            .' FROM mcp_connection c'
+            .' INNER JOIN mcp_client cl ON cl.id = c.mcp_client_id'
+            .' WHERE c.mcp_client_id = :client AND c.revoked_at IS NULL'
+            .' ORDER BY c.id FOR UPDATE OF c',
+            ['client' => $client],
+            ['client' => UuidType::NAME],
+        );
+
+        // Pas de cause ici : rien n'est encore révoqué, la cause vient de
+        // l'écriture de l'appelant.
+        return array_map(fn (array $row): ConnectionReference => $this->referenceInRow($row), $rows);
+    }
+
+    public function countActiveByClient(): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT mcp_client_id, COUNT(*) AS active FROM mcp_connection WHERE revoked_at IS NULL GROUP BY mcp_client_id',
+        );
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $active = $row['active'] ?? null;
+            if (!\is_int($active)) {
+                throw UnexpectedRevocationRowException::forColumn('active');
+            }
+            $counts[Uuid::fromString($this->text($row, 'mcp_client_id'))->toRfc4122()] = $active;
+        }
+
+        return $counts;
+    }
+
     /**
      * La même instruction que {@see self::revokeActive()}, sur un couple au
      * lieu d'un identifiant : `RETURNING` rend chaque connexion remplacée, de

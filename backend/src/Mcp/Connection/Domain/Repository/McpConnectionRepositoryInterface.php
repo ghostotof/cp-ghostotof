@@ -162,6 +162,41 @@ interface McpConnectionRepositoryInterface
     public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array;
 
     /**
+     * Verrouille les connexions **actives** d'un client (#652, la suppression
+     * d'un client pré-enregistré) et les désigne, de quoi auditer chacune
+     * (`RevokedConnectionAudit::record()` prend une référence et la cause, que
+     * l'appelant connaît ; rien n'étant encore révoqué, un `RevokedConnection`
+     * n'aurait pas de cause à porter) :
+     * `FOR UPDATE` sur les lignes de `mcp_connection` seules, **dans l'ordre
+     * des identifiants** comme toute révocation ({@see self::revokeAllActiveOfAccount()}).
+     * L'appelant tient déjà la ligne du client (`mcp_client`) : l'ordre des
+     * verrous est client, puis connexions, jamais l'inverse. Une connexion
+     * révoquée, ou d'un autre client, n'est ni verrouillée ni rendue. Aucune
+     * écriture : l'appelant révoque ou supprime ensuite, dans la même
+     * transaction.
+     *
+     * **Dans la transaction de l'appelant, exigée** : hors transaction le
+     * verrou serait relâché avec l'instruction, avant l'écriture qu'il doit
+     * protéger — `RevocationOutsideTransactionException`, avant de lire.
+     *
+     * @return list<ConnectionReference> les connexions actives du client, par identifiant croissant
+     */
+    public function lockActiveOfClient(Uuid $client): array;
+
+    /**
+     * Le nombre de connexions **actives** (`revoked_at` nul) de chaque client,
+     * **en une seule requête** `GROUP BY` — jamais une par client — pour la
+     * liste du backoffice (#652). Clé : l'UUID RFC 4122 de la ligne
+     * `mcp_client` ; un client sans connexion active est **absent** du
+     * tableau (l'appelant lit `?? 0`). Une lecture, sans verrou. « Active »
+     * est l'état de la ligne : une connexion échue que la purge n'a pas
+     * encore marquée compte encore, comme dans {@see self::findNotRevokedOfAccount()}.
+     *
+     * @return array<string, int>
+     */
+    public function countActiveByClient(): array;
+
+    /**
      * Révoque toute **autre** connexion active du même couple compte/client
      * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
      * même compte, même client, autre identifiant, pas encore révoquée ; une

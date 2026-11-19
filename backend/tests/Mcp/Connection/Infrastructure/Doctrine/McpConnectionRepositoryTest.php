@@ -14,6 +14,7 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
@@ -476,6 +477,99 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Le verrou des actives d'un client (#652) : celles de ce client seulement
+     * — ni une révoquée, ni celle d'un autre client —, dans l'ordre des
+     * identifiants, chacune désignée comme `RevokedConnectionAudit::record()`
+     * la consomme (compte, client public). Aucune ligne n'est écrite.
+     */
+    public function testLockActiveOfClientReturnsOnlyItsActiveConnectionsInIdOrder(): void
+    {
+        $client = $this->registerClient('https://client.example.test/one.json');
+        $other = $this->registerClient('https://client.example.test/two.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $first = McpConnection::grant($jane, $client, self::SCOPE, new DateTimeImmutable());
+        $second = McpConnection::grant($john, $client, self::SCOPE, new DateTimeImmutable());
+        $revoked = McpConnection::grant($jane, $client, self::SCOPE, new DateTimeImmutable());
+        $foreign = McpConnection::grant($jane, $other, self::SCOPE, new DateTimeImmutable());
+        foreach ([$second, $first, $revoked, $foreign] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $locked = $this->connections()->lockActiveOfClient($client->getId());
+        } finally {
+            $database->commit();
+        }
+
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        sort($expected);
+        self::assertSame($expected, array_map(static fn (ConnectionReference $connection): string => $connection->connectionId()->toRfc4122(), $locked), 'Les deux actives du client, par identifiant croissant.');
+        foreach ($locked as $connection) {
+            self::assertSame('https://client.example.test/one.json', $connection->clientId());
+        }
+        $accountOf = [$first->getId()->toRfc4122() => $jane->getId()->toRfc4122(), $second->getId()->toRfc4122() => $john->getId()->toRfc4122()];
+        foreach ($locked as $connection) {
+            self::assertSame($accountOf[$connection->connectionId()->toRfc4122()], $connection->accountId());
+        }
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($first), 'Le verrou ne révoque rien.');
+    }
+
+    /**
+     * Hors transaction, `FOR UPDATE` ne tiendrait que le temps de
+     * l'instruction : le verrou n'existerait pas pour l'écriture qui le suit.
+     * Même garde, même exception que `revokeAllActiveOfAccount()`.
+     */
+    public function testLockActiveOfClientOutsideATransactionIsRefused(): void
+    {
+        $connection = $this->grantConnection();
+
+        $this->expectException(RevocationOutsideTransactionException::class);
+        $this->connections()->lockActiveOfClient($connection->client()->getId());
+    }
+
+    /**
+     * Le décompte de la liste des clients (#652) : les actives de chaque
+     * client, **en une seule requête** (jamais une par client), une révoquée
+     * ne comptant pas et un client sans connexion active étant absent du
+     * tableau (l'appelant lit `?? 0`). Clé : l'UUID RFC 4122 de la ligne
+     * `mcp_client`.
+     */
+    public function testCountActiveByClientCountsActiveConnectionsInOneQuery(): void
+    {
+        $busy = $this->registerClient('https://client.example.test/busy.json');
+        $single = $this->registerClient('https://client.example.test/single.json');
+        $idle = $this->registerClient('https://client.example.test/idle.json');
+        $onlyRevoked = $this->registerClient('https://client.example.test/revoked.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $revoked = McpConnection::grant($jane, $onlyRevoked, self::SCOPE, new DateTimeImmutable());
+        foreach ([
+            McpConnection::grant($jane, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($jane, $single, self::SCOPE, new DateTimeImmutable()),
+            $revoked,
+        ] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $queries = $this->queriesDuring(fn (): array => $this->connections()->countActiveByClient());
+
+        self::assertSame(1, $queries['count'], 'Une seule requête pour tous les clients.');
+        // L'ordre d'un GROUP BY n'est pas garanti : les deux tableaux sont triés par clé.
+        $counts = $queries['result'];
+        $expected = [$busy->getId()->toRfc4122() => 2, $single->getId()->toRfc4122() => 1];
+        ksort($counts);
+        ksort($expected);
+        self::assertSame($expected, $counts, 'Un client sans connexion active, ou dont toutes sont révoquées, est absent.');
+        self::assertArrayNotHasKey($idle->getId()->toRfc4122(), $counts);
+    }
+
+    /**
      * Un nouvel accord remplace l'accord actif du même couple compte/client
      * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
      * instruction, toute autre connexion active de ce couple — et rien
@@ -865,6 +959,35 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         $highest = max($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
         self::assertSame([$highest], array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found));
+    }
+
+    /**
+     * Exécute `$action` et compte les requêtes que la connexion DBAL du
+     * conteneur de test a envoyées pendant ce temps : le service
+     * `doctrine.debug_data_holder` de DoctrineBundle (le middleware de
+     * profilage) les consigne, `DebugStack` n'existant plus en DBAL 4. Le
+     * relevé est remis à zéro avant l'appel ; un relevé vide après un appel
+     * qui a lu la base fait échouer le test, plutôt que de laisser un compte
+     * à zéro passer pour une preuve.
+     *
+     * @template T
+     *
+     * @param callable(): T $action
+     *
+     * @return array{count: int, result: T}
+     */
+    private function queriesDuring(callable $action): array
+    {
+        // Service privé, mais le conteneur de test l'expose.
+        $holder = self::getContainer()->get('doctrine.debug_data_holder');
+        $holder->reset();
+
+        $result = $action();
+
+        $count = \count($holder->getData()['default'] ?? []);
+        self::assertGreaterThan(0, $count, 'Le relevé des requêtes est vide : le profilage DBAL est inactif, le compteur ne prouverait rien.');
+
+        return ['count' => $count, 'result' => $result];
     }
 
     private function purge(): void
