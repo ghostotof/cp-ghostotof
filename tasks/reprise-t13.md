@@ -209,9 +209,30 @@
     `5efcc8c7` (docblock `FailSafeAudit` sans compte figé — 10 appels relevés —, indentation). Trailers « Sonnet
     5.5 » (rappel du harnais), comme la 11c : laissé tel quel (pas d'amend). Preuve contrôlée : suite complète 6543
     OK et qualité verte, toutes deux après `5efcc8c7`.
-  - **Prochaine action (faite au commit suivant)** : C3c-2 ; puis
-    `/code-review medium diff 4c61e429...HEAD` + auditeur opus/high (repli strict au point de jeton), puis tri.
-    HEAD relu : `5efcc8c7`.
+  - **C3c relue** (`/code-review medium diff 4c61e429...HEAD` + auditeur opus/high, HEAD relu `5efcc8c7`). Ni
+    critique, ni haut, ni moyen. Constat 3 du code-review (`isAuthCodeRevoked` hors du try) **écarté**, conf. haute :
+    league fait le même appel hors de son try (`AuthCodeGrant.php:212`), la seule LogicException possible est un
+    défaut de câblage, 500 voulu. Tri (décision « micro-série C3d courte ») :
+    - **Micro-série C3d** (un agent sonnet/high, relue par `/code-review medium` seul, sans auditeur : aucun
+      comportement d'authentification modifié) :
+      - F2/CR5 : `testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed` en `#[DataProvider]` sur
+        4 charges (`expire_time` chaîne, `expire_time` absent, `auth_code_id` entier, `auth_code_id` absent) ; RED
+        vérifié au moins sur `auth_code_id` entier (la mutation qui ne teste que `expire_time` survit aujourd'hui).
+      - F3/CR8 : dans `McpClientAdministrator::revise()`, `$before` brut sous le verrou ; le dédoublonnage
+        (`array_unique`) de `$before` et `$after` passe dans la closure de `FailSafeAudit::attempt()` (aucun calcul
+        d'audit ne peut faire échouer l'écriture ; plus de redondance). Le test du dédoublonnage reste vert.
+      - F4/CR9 : docblock de `FailSafeAudit.php:18` → « l'inscription, la révision et la suppression d'un client »
+        (+ la supersession si elle passe par là), rewrappée.
+      - F5 : docblock de `GrantRefusal::NotACode` (`GrantRefusal.php:61`) + « ou une charge de code dont l'échéance
+        ou l'identifiant sont mal typés (#652) ».
+      - F8 : `@throws` de `refuseTheRemovedRedirect()` complété (`AuthorizationCodeReplayedException` /
+        `CompromisedMcpConnectionException`).
+      - CR10/F9 : phrase de la l. 316 de `mcp-oauth-cycle-de-vie.md` reformulée (« quand ce contrôle a fait le premier
+        appel ») et citant les deux tests, **sans dépasser 50 000 octets** (49 026 aujourd'hui : remplacer, pas ajouter).
+    - **Pour la PR** : voir « Relecture de C3c » dans les constats écrits.
+    - **Vers la Task 17A/B** : F10, supprimer un client CIMD ne le bannit pas (déjà T8).
+  - **Prochaine action** : C3d (agent sonnet/high, étape 05), puis `/code-review medium diff <HEAD de cette
+    reprise>...HEAD` sans auditeur, puis tri ; ensuite S4 (Tasks 12-15).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -287,6 +308,8 @@
 - Relecture S2 (2026-11-19) : auditeur sécurité opus/high **retenu** ; `$io->listing()` non échappé : **noter dans
   la PR**, pas de correction ; série C2 = **A1 + A6 + A5** (bornée à 3-4 fichiers) ; révision d'un client :
   **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
+- Relecture de C3c (2026-11-19) : **micro-série C3d courte**, relue par `/code-review medium` seul ; F1 et le reste
+  dans la PR.
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
   `app.mcp.cimd.allowed_domains`, pas une donnée du backoffice ; limite acceptée de l'ADR 0006 à
   documenter seulement) ; révocation d'une connexion par l'administrateur (ticket).
@@ -338,8 +361,22 @@ Relecture de C2 (pour la description de la PR) :
 - (faible) seule la redirection est revérifiée sous le verrou, pas le nom du client affiché au résumé.
 - (faible) `McpClientRepositoryTest.php:270` attrape `DriverException` au lieu de `LockWaitTimeoutException`.
 - (faible) `McpClientRepositoryTest.php:262` : pas de rollback dans le `finally` de la sonde.
+Relecture de C3 (pour la description de la PR) :
+- (faible) comptes ajoutées/retirées de l'audit de révision littéraux (port loopback, casse non normalisés).
+- (faible) `app:mcp:client:register` répond succès quand l'audit tombe (seul un `critical` en témoigne).
+- (faible) `time()` lu avant l'attente du verrou : `redirect-no-longer-registered` au lieu de `code-expired` à la
+  seconde près (refus dans les deux cas).
+Relecture de C3c (pour la description de la PR) :
+- (faible, conf. haute, F1) rejeu non détecté d'une charge à `expire_time` mal typé dont la redirection est retirée
+  (refus `not-a-code` sans jugement de rejeu) : inatteignable avec league 9.4.1 (charge chiffrée par nous) ; limite
+  acceptée.
+- (faible, F6) pas de test d'audit de bout en bout pour la cause `not-a-code` sur ce chemin.
+- (faible, F7) « jamais échangée » ne vaut qu'avec une redirection retirée (sinon league juge seule).
+- (faible, CR1) pas de normalisation de casse des URI héritées dans la comparaison de révision.
+- (faible, CR2) repli plus strict que league (une charge que league aurait lue est refusée `invalid_request`).
+- (faible, CR4) un code refusé n'est pas consommé (limite 4 de la règle).
+- (faible, CR6/CR7) assertions de tests à resserrer (messages, cause exacte).
 
-## Interdits des briefs
 
 - Jamais lire `.env.local`, `.env.test.local` ni aucun fichier de secret.
 - Jamais relire à la main une règle `.claude/rules/mcp*.md` (chargées d'office, ~180 Ko) ; un seul
