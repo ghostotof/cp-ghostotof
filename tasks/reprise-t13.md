@@ -205,9 +205,13 @@
     mutation constatée rouge), `fbb4b631` (règle l. 316 + limite 4 ; règle à 49 026 octets, plafond 50 000 :
     **ne plus rien y ajouter sans la découper**), `030c8836` (Rector). Preuve contrôlée : tests ciblés 98 OK,
     qualité verte, suite complète 6542 OK (avant `030c8836`, helper de test seul).
-  - **Prochaine action** : **C3c-2**, agent sonnet/high (défaut de l'étape 05) ; puis
-    `/code-review medium diff 4c61e429...HEAD` (auditeur seulement si C3c-1 change le comportement du point de jeton,
-    oui pour le repli strict).
+  - **C3c-2 faite** : `6513c480` (`$before`/`$after` dédoublonnés, RED « 2 is identical to 1 » constaté),
+    `5efcc8c7` (docblock `FailSafeAudit` sans compte figé — 10 appels relevés —, indentation). Trailers « Sonnet
+    5.5 » (rappel du harnais), comme la 11c : laissé tel quel (pas d'amend). Preuve contrôlée : suite complète 6543
+    OK et qualité verte, toutes deux après `5efcc8c7`.
+  - **Prochaine action (faite au commit suivant)** : C3c-2 ; puis
+    `/code-review medium diff 4c61e429...HEAD` + auditeur opus/high (repli strict au point de jeton), puis tri.
+    HEAD relu : `5efcc8c7`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
