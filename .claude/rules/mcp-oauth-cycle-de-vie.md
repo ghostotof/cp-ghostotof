@@ -313,7 +313,9 @@ paths:
   only when league would have accepted it so far — unexpired (`time()`, league's own clock on the encrypted payload) and
   unconsumed (`isAuthCodeRevoked()` called there, which raises `AuthorizationCodeReplayedException` itself: the replay
   is then revoked or audited `replay-unproven` by the token endpoint as above). An expired code stays `code-expired`.
-  Called twice in one transaction, `isAuthCodeRevoked()` rereads under the same row lock and writes nothing.
+  League's own second call of `isAuthCodeRevoked()` happens only for a code the first call already judged dead; it locks only
+  if the first did, and writes nothing. A payload whose `expire_time` is not an integer or `auth_code_id` not a string, with
+  the redirect removed, is refused `invalid_request` « Authorization code malformed » (league's message), never exchanged.
   `CodeReplayTest::testAProvenReplayAfterTheRedirectWasRemovedRevokesTheConnection` and its unproven twin,
   `GrantRefusalAuditTest::testAnExpiredCodeWhoseRedirectWasRemovedIsAuditedAsExpired` (red before #652's correction, measured).
   A code
@@ -446,3 +448,5 @@ paths:
   3. **The redirection refusal precedes the PKCE check** (#652): the holder of a stolen code, without the verifier,
      learns from `redirect-no-longer-registered` that the client was revised. Written, not worked around: the code is
      still useless to them, and league's own order (revocation before PKCE) already tells as much.
+  4. **A code refused `redirect-no-longer-registered` is not consumed** (#652): if the administrator restores the
+     redirect within the code's ten minutes of life, it can be exchanged again. A deliberate restoration, minimal impact.
