@@ -1017,6 +1017,44 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Spec 0007, S4 : la limite garde les terminées **dernièrement terminées**,
+     * pas les dernièrement octroyées (même invariant que
+     * {@see self::testFindTerminatedOfAccountKeepsTheLatestTerminatedNotTheLatestGranted()}).
+     * Ici l'ordre d'octroi et l'ordre de révocation sont inverses : la plus
+     * anciennement octroyée est la plus récemment révoquée. Triée par octroi,
+     * la borne la chasserait de la liste au profit d'une terminée plus ancienne.
+     * L'ordre rendu est celui de l'instant de fin ; l'ordre d'affichage par
+     * octroi revient au service.
+     */
+    public function testTerminatedForAdministrationKeepsTheMostRecentlyTerminated(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedLongAgo = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-05-01T10:00:00+02:00'));
+        $grantedMiddle = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-01T10:00:00+02:00'));
+        $grantedRecently = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        // Révoquées dans l'ordre inverse de l'octroi : la plus ancienne octroyée en dernier.
+        $revocations = [
+            [$grantedRecently, '2026-10-20T10:00:00+02:00'],
+            [$grantedMiddle, '2026-10-25T10:00:00+02:00'],
+            [$grantedLongAgo, '2026-10-28T10:00:00+01:00'],
+        ];
+        foreach ($revocations as [$connection, $revokedAt]) {
+            $this->connections()->add($connection);
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Person, new DateTimeImmutable($revokedAt));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedForAdministration(2);
+
+        self::assertSame(
+            [$grantedLongAgo->getId()->toRfc4122(), $grantedMiddle->getId()->toRfc4122()],
+            $this->idsOf($found),
+            'Les deux dernièrement terminées, la plus récente d\'abord, quelle que soit leur date d\'octroi.',
+        );
+    }
+
+    /**
      * Le client et le compte arrivent avec chaque connexion, par jointure :
      * lire leur nom ensuite n'envoie aucune requête de plus que la lecture
      * elle-même (une seule), sur une identity map vidée — sans quoi un client

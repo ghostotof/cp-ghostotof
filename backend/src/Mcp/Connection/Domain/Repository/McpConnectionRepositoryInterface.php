@@ -80,9 +80,12 @@ interface McpConnectionRepositoryInterface
     /**
      * La seconde moitié de l'administration : les `$limit` connexions
      * **terminées** (`revoked_at` posé, quelle qu'en soit la cause), de tous les
-     * comptes et de tous les clients, la plus récemment octroyée d'abord,
-     * l'identifiant décroissant départageant deux octrois égaux et décidant
-     * *quelles* terminées une limite garde. Même jointure que
+     * comptes et de tous les clients, **choisies par instant de fin** : les
+     * dernièrement terminées (`revoked_at` décroissant, l'identifiant décroissant
+     * départageant deux instants égaux), quelle que soit leur date d'octroi —
+     * sans quoi une ancienne connexion qu'on vient de révoquer serait chassée par
+     * des terminées octroyées plus récemment (spec 0007, S4). L'ordre d'affichage
+     * par octroi est laissé au service. Même jointure que
      * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
      * que ce qu'on montre dit s'il y en a davantage.
      *

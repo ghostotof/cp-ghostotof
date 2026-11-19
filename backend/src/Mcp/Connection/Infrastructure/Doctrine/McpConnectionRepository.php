@@ -116,6 +116,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         /** @var list<McpConnection> */
         return $this->forAdministration()
             ->where('connection.revokedAt IS NULL')
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
             ->getQuery()
             ->getResult();
     }
@@ -125,6 +127,12 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         /** @var list<McpConnection> */
         return $this->forAdministration()
             ->where('connection.revokedAt IS NOT NULL')
+            // L'instant de fin décide quelles terminées la limite garde (spec 0007,
+            // S4) : trier par octroi chasserait une ancienne connexion qu'on vient
+            // de révoquer au profit de terminées octroyées plus récemment. L'ordre
+            // d'affichage par octroi est l'affaire du service, pas du dépôt.
+            ->orderBy('connection.revokedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
@@ -133,17 +141,17 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * Le socle des deux listes de l'administration (#652) : le client **et** le
      * compte joints et sélectionnés (jointures explicites, jamais une requête
-     * par ligne), du plus récemment octroyé au plus ancien, l'identifiant
-     * décroissant départageant deux octrois de la même seconde.
+     * par ligne). **Sans ordre** : il décide *quelles* lignes une limite garde,
+     * et il n'est pas le même pour les deux listes — l'octroi pour les non
+     * révoquées, l'instant de fin pour les terminées —, chaque appelant fixe donc
+     * le sien (jamais `resetDQLPart()` pour défaire celui d'un socle).
      */
     private function forAdministration(): QueryBuilder
     {
         return $this->createQueryBuilder('connection')
             ->addSelect('client', 'account')
             ->innerJoin('connection.client', 'client')
-            ->innerJoin('connection.account', 'account')
-            ->orderBy('connection.grantedAt', 'DESC')
-            ->addOrderBy('connection.id', 'DESC');
+            ->innerJoin('connection.account', 'account');
     }
 
     private function ofAccount(Uuid $accountId): QueryBuilder
