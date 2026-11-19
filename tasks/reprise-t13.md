@@ -16,11 +16,15 @@
     principal : `--filter 'ViolatedUniqueIndexTest|CpgUserUniqueViolationTest|McpClientRegistrarTest|InviteUniqueViolationTest'`
     OK (22 tests) ; rouge vérifié par l'agent (classe absente) ; PHPStan, Rector verts sur les fichiers.
     Écart sans conséquence : `CpgUserUniqueViolation` n'avait pas de `violatedIndex()` (lecture inline).
-  - **Prochaine action** : lancer la Task 2 (`sed -n 223,243p` du plan : bornes d'une redirection,
-    `RedirectUri`, `InvalidRedirectUriException`, `RedirectUriTest`), même brief que la Task 1
-    (lignes du plan, contraintes globales l. 13-59, interdits ci-dessous, critère de fin, trailers).
-  - Brief à durcir : l'agent de la Task 1 n'a pas invoqué `superpowers:verification-before-completion`
-    (il a relancé les commandes) — l'exiger explicitement.
+  - **Task 2 faite** : `2d4488d2` — `RedirectUri::MAX_LENGTH` (2 048) / `MAX_QUERY_PARAMETERS` (50),
+    `InvalidRedirectUriException::tooLong()` / `tooManyQueryParameters()`. Preuve contrôlée :
+    `--filter 'RedirectUriTest|McpClientTest|ClientMetadataDocumentTest'` OK (183 tests) ; rouge vérifié
+    par l'agent (4 échecs pour la bonne raison) ; PHPStan, Rector verts. Écart justifié : le test des
+    1 001 paramètres utilise `a&a&…` (sinon la borne de longueur coupe avant). Trailer de l'agent :
+    `Claude Sonnet 5.5` (modèle réel), accepté.
+  - **Prochaine action** : lancer la Task 3 (`grep -n '### Task 3' tasks/plan-t13-backoffice-mcp.md`
+    pour ses lignes), même brief que la Task 2.
+  - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
   S1 = Tasks 1-4 (bornes et hygiène de T8) ; S2 = 5-8 ; S3 = 9-11 ; S4 = 12-15 ; S5 = 16-18 ;
@@ -59,7 +63,10 @@
 
 ## Constats écrits non corrigés
 
-Aucun pour l'instant.
+- (Task 2, faible, confiance moyenne) `RedirectUri::matches()` appelle `Uri::parse($requested)` sans
+  borne de longueur ; seul appelant `McpClient.php:184`, valeur venue de `GET /authorize`, déjà bornée
+  par la taille d'en-tête de nginx (~8 Ko), sans `parse_str()`. À reprendre dans la description de la
+  PR, ou à borner (retour `false` si `strlen > MAX_LENGTH`) si la relecture S1 le juge utile.
 
 ## Interdits des briefs
 
