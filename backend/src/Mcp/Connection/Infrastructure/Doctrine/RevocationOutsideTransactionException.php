@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
 use LogicException;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * La révocation de toutes les connexions d'un compte (#650), ou le verrou
@@ -27,8 +28,8 @@ final class RevocationOutsideTransactionException extends LogicException
         return new self(\sprintf('La révocation de toutes les connexions MCP du compte %s se fait dans la transaction de l\'appelant : hors transaction, elle serait validée avant le reste de son opération.', $accountId));
     }
 
-    public static function forClient(string $clientId): self
+    public static function forClient(Uuid $client): self
     {
-        return new self(\sprintf('Le verrou des connexions MCP actives du client %s se prend dans la transaction de l\'appelant : hors transaction, il serait relâché avant l\'écriture qu\'il protège.', $clientId));
+        return new self(\sprintf('Le verrou des connexions MCP actives du client %s se prend dans la transaction de l\'appelant : hors transaction, il serait relâché avant l\'écriture qu\'il protège.', $client->toRfc4122()));
     }
 }

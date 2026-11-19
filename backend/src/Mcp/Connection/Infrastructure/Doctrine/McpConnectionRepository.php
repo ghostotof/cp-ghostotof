@@ -310,7 +310,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     {
         $database = $this->getEntityManager()->getConnection();
         if (!$database->isTransactionActive()) {
-            throw RevocationOutsideTransactionException::forClient($client->toRfc4122());
+            throw RevocationOutsideTransactionException::forClient($client);
         }
 
         // `FOR UPDATE OF c` : les seules lignes de `mcp_connection` sont

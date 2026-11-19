@@ -526,9 +526,12 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     public function testLockActiveOfClientOutsideATransactionIsRefused(): void
     {
         $connection = $this->grantConnection();
+        $client = $connection->client()->getId();
 
         $this->expectException(RevocationOutsideTransactionException::class);
-        $this->connections()->lockActiveOfClient($connection->client()->getId());
+        // Le message cite l'UUID du client (RFC 4122), mis en forme par la fabrique.
+        $this->expectExceptionMessage($client->toRfc4122());
+        $this->connections()->lockActiveOfClient($client);
     }
 
     /**
