@@ -9,8 +9,18 @@
 - Étape : **04 close** — plan `tasks/plan-t13-backoffice-mcp.md` commité (`32c9fb3e`, 28 tâches :
   1-18 backend dont 7A/7B et 17A/17B, F1-F7 frontend, 19 documentation ; aucune migration, aucune
   variable d'environnement). Contrôlé par le fil principal (aucun marqueur, arbre propre).
-- Étape : **05**, Task 1 lancée (agent sonnet/high, `agent-skills:build` +
-  `superpowers:test-driven-development`), un agent par tâche, l'un après l'autre.
+- Étape : **05**, un agent par tâche (sonnet/high, `agent-skills:build` +
+  `superpowers:test-driven-development`), l'un après l'autre.
+  - **Task 1 faite** : `7196ec62` — `ViolatedUniqueIndex` (Shared/Infrastructure/Doctrine) + test ;
+    `CpgUserUniqueViolation` et `McpClientRegistrar` l'appellent. Preuve contrôlée par le fil
+    principal : `--filter 'ViolatedUniqueIndexTest|CpgUserUniqueViolationTest|McpClientRegistrarTest|InviteUniqueViolationTest'`
+    OK (22 tests) ; rouge vérifié par l'agent (classe absente) ; PHPStan, Rector verts sur les fichiers.
+    Écart sans conséquence : `CpgUserUniqueViolation` n'avait pas de `violatedIndex()` (lecture inline).
+  - **Prochaine action** : lancer la Task 2 (`sed -n 223,243p` du plan : bornes d'une redirection,
+    `RedirectUri`, `InvalidRedirectUriException`, `RedirectUriTest`), même brief que la Task 1
+    (lignes du plan, contraintes globales l. 13-59, interdits ci-dessous, critère de fin, trailers).
+  - Brief à durcir : l'agent de la Task 1 n'a pas invoqué `superpowers:verification-before-completion`
+    (il a relancé les commandes) — l'exiger explicitement.
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
   S1 = Tasks 1-4 (bornes et hygiène de T8) ; S2 = 5-8 ; S3 = 9-11 ; S4 = 12-15 ; S5 = 16-18 ;
