@@ -28,8 +28,16 @@
     OK (26) ; PHPStan, Rector verts. L'invariant cassait 65 tests (5 fixtures `RegisteredMcpClient::of(…, [])`) :
     corrigé par le fil principal en `test(mcp)` séparé (redirection `https://client.example.test/callback`,
     conforme à la docblock de la fixture) ; `tests/Mcp/Connection` OK (1 447 tests) contrôlé.
-  - **Prochaine action** : lancer la Task 4 (`sed -n 268,282p` du plan), même brief ; elle attrape aussi
-    `InvalidMcpClientRedirectsException` dans la commande. Après elle : relecture S1 (Tasks 1-4) depuis `bd61b215`.
+  - **Task 4 faite** : `23c68ca7` — `catch` de `InvalidMcpClientRedirectsException` dans la commande
+    (`$io->error()`, `FAILURE`), `@throws` ajouté à `McpClientRegistrarInterface` (sinon `catch.neverThrown`).
+    Écart justifié et vérifié dans le vendor : `SymfonyStyle::block()` échappe déjà (`$escape = true`), donc pas
+    d'`OutputFormatter::escape()` dans `success()` (il doublerait l'échappement) ; le test de la balise est un
+    garde-fou qui n'a pas pu être rouge. `listing()` n'échappe pas, mais `RedirectUri` refuse `<` : non échappé,
+    **question posée à l'utilisateur** (défense en profondeur sans test rouge ?). Message de commit différent
+    du plan (`… échappe sa sortie et rend la borne lisible`), non amendé. `tests/Mcp/Connection` OK (1 449).
+  - **Étape 07, série S1 (Tasks 1-4)** : `/code-review medium` sur `diff bd61b215...HEAD` lancé le 2026-11-19,
+    HEAD relu = celui du commit de cette reprise (point fixe de S2). Pas d'audit sécurité (S1 hors auth).
+  - **Prochaine action** : trier les constats de S1 (critique/haut/moyen → série de correction), puis Task 5.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -40,7 +48,7 @@
   (sans N+1) devront en construire un ; `CompiledExceptionConfig` (Task 15) à vérifier.
 - Report « borne du `client_id` 255 / 512 » : **déjà fait** (`McpClient.php:53`, `McpClientId.php:23`,
   migration `Version20261023120000.php:41` en 255) — noté par la Task 19.
-- Point fixe de relecture : aucun encore (la première série se relira depuis `bd61b215`).
+- Point fixe de relecture : S1 relue depuis `bd61b215` jusqu'au commit « reprise … Task 4 faite, relecture S1 ».
 - PR à l'étape 08 : base **`feature/379-mcp-paliers`**, jamais `develop`.
 
 ## Décisions de l'utilisateur (2026-11-19)
