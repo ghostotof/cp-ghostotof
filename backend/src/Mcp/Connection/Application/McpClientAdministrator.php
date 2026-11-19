@@ -89,14 +89,15 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
         // compare deux ensembles de la même ligne, pas un état relu plus tard.
         [$client, $before] = $this->transaction->run(function () use ($id, $name, $redirectUris): array {
             $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
-            $before = $locked->redirectUris();
+            // Dédoublonné : une ligne écrite avant la règle peut porter deux fois la même URI.
+            $before = array_values(array_unique($locked->redirectUris()));
             $locked->revise($name, $redirectUris);
 
             return [$locked, $before];
         });
 
         // Des ensembles dédoublonnés : seuls des nombres sortent, jamais une URI.
-        $after = $client->redirectUris();
+        $after = array_values(array_unique($client->redirectUris()));
 
         $this->failSafeAudit->attempt(
             fn () => $this->auditLogger->mcpClientRevised(

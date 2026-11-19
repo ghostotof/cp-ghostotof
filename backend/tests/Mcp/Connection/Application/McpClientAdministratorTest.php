@@ -287,6 +287,28 @@ final class McpClientAdministratorTest extends KernelTestCase
         yield 'doublons soumis, comptés une fois' => [[$callback], [$callback, $two, $two], 2, 1, 0];
     }
 
+    /**
+     * Une ligne écrite à la main, ou avant la règle de dédoublonnage, peut porter
+     * deux fois la même redirection : le journal compte des ensembles, pas des lignes.
+     */
+    public function testARowWithDuplicatedRedirectsIsCountedAsASet(): void
+    {
+        $client = $this->persistedClient(['https://client.example.test/callback']);
+        $this->em->getConnection()->executeStatement(
+            'UPDATE mcp_client SET redirect_uris = :uris WHERE id = :id',
+            ['uris' => json_encode(['https://client.example.test/a', 'https://client.example.test/a'], \JSON_THROW_ON_ERROR), 'id' => $client->getId()->toRfc4122()],
+        );
+        $this->em->clear();
+
+        $this->administrator()->revise($client->getId(), McpClientName::fromString('Claude Code'), [
+            RedirectUri::fromString('https://client.example.test/b'),
+        ]);
+
+        $event = self::singleSecurityAuditEvent('mcp-client-revised');
+        self::assertSame(1, $event['addedRedirectCount']);
+        self::assertSame(1, $event['removedRedirectCount']);
+    }
+
     /** La révision ne coupe aucune connexion : elles survivent, intactes et actives. */
     public function testRevisingCutsNoConnection(): void
     {
