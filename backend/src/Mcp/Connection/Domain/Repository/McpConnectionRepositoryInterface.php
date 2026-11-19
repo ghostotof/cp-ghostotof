@@ -73,9 +73,10 @@ interface McpConnectionRepositoryInterface
      * et la liste n'a **aucune borne de code** (ni limite ni pagination) : elle
      * compte les connexions actives et les accords que ni le client ni la
      * personne n'ont fait suivre d'un échange de code. Un compte de confiance
-     * peut en laisser, de l'ordre de 14 000 par jour et par adresse (constat de
-     * la relecture de la T13 : la zone nginx `oauth`, 10 requêtes par minute,
-     * par adresse et par pod, est le seul plafond du consentement) ; échus au
+     * peut en laisser, de l'ordre de 14 000 par jour, par adresse et par pod
+     * (constat de la relecture de la T13 : la zone nginx `oauth`, 10 requêtes
+     * par minute, est le seul plafond du consentement ; elle se multiplie par
+     * le nombre de pods et d'adresses de l'appelant) ; échus au
      * bout d'une heure, ils restent non révoqués jusqu'à ce que la purge de
      * nuit les marque. Un constat écrit, pas une garantie « par nature ». Une
      * lecture, sans verrou.
