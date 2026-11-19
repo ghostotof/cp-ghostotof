@@ -121,10 +121,16 @@
     2. **corriger** le docblock de `RevokedConnectionAudit::record()` et la règle d'audit pour admettre `client-removed` ;
     3. **renommer** `McpClientNotFoundException::withId()` en `forTheCaller()` ;
     4. **accepter** que `revise()` audite le nombre de redirections après déduplication, et le **noter au plan** (Task 11).
-  - **Prochaine action** : S3, **Task 11b**, en deux agents sonnet/high successifs (budget MCP) : **11b-1** les quatre
-    décisions ci-dessus ; **11b-2** le test de concurrence réel de l'interblocage de `remove()` (modèle
-    `AccountWideRevocationDeadlockTest`, relance après `resetManager()` prouvée). Puis 11c ; puis
-    `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high. HEAD avant 11b : `8d7aadde`.
+  - **Task 11b-1 faite** (agent sonnet/high) : `08ac6b9d` (relance déplacée dans `Shared`, RED 7 erreurs de classe
+    absente), `4dbdad67` (`client-removed` cause d'audit seule, docblock + `security-authentication-audit.md`),
+    `43e1df98` (`forTheCaller()`), `591d7c01` (écart noté au plan). Preuve contrôlée : plus aucune ancienne référence,
+    `--filter 'DoctrineDeadlockRetryTest|DeadlockRetryIntegrationTest|AccountWideRevocationDeadlockTest|McpClientAdministratorTest'`
+    OK (21) ; suite complète OK (6 526) et `make back-quality` vert (rapportés). Décisions de l'utilisateur
+    (2026-11-19) : `DeadlockRetryIntegrationTest` **reste** sous `tests/Shared/Application` ; **figer l'écart** par un
+    test (redirection en double → audit à 1) dans la 11b-2.
+  - **Prochaine action** : S3, **Task 11b-2**, agent sonnet/high : test de concurrence réel de l'interblocage de
+    `remove()` (modèle `AccountWideRevocationDeadlockTest`, relance après `resetManager()` prouvée) + test de l'écart.
+    Puis 11c ; puis `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high. HEAD avant 11b-2 : `591d7c01`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
