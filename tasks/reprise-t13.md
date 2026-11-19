@@ -168,8 +168,14 @@
       cycles de cascade autres que T1 (purge, suppression de compte) absorbés par `retryOnce` ; lot de verrous et
       cascade non bornés ; « altitude » (règle placée devant league plutôt que dans le jugement sous verrou).
     - **Vers la Task 17B** : rappeler à l'écran que supprimer un client CIMD ne le bannit pas (F10).
-  - **Prochaine action** : **C3a**, agent sonnet/high ; puis **C3b**, agent sonnet/high ; puis
-    `/code-review medium diff <HEAD de ce commit>...HEAD` + auditeur opus/high (point de jeton).
+  - **C3a faite** : `1df6ea5b` (surcharge + 3 tests de régression, RED constaté), `64b0c9f7` (règle cycle de vie :
+    ordre des refus, limites « client lu sans verrou » et « refus avant PKCE »), `05a9e12a` (docblock
+    `DeadlockRetryInterface`), `f13db9bc` (`expire_time` gardé par `is_int`, PHPStan). Preuve contrôlée : tests ciblés
+    OK (113), `make back-quality` vert (PHPStan, Rector, Psalm, lsp:check sans bloquant), suite complète 6534 OK
+    avant `f13db9bc` (changement de garde de type seul), `isAuthCodeRevoked()` appelé deux fois dans la même
+    transaction (`TokenEndpoint::issue()` sous `transaction->run`), lecture seule.
+  - **Prochaine action** : **C3b**, agent sonnet/high ; puis `/code-review medium diff 32afd264...HEAD` + auditeur
+    opus/high (point de jeton).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
