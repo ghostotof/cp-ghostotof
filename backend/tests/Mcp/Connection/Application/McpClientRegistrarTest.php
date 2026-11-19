@@ -8,9 +8,12 @@ use App\Mcp\Connection\Application\McpClientRegistrar;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
+use App\Security\Authentication\Application\AuditOrigin;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
 use Doctrine\DBAL\Driver\AbstractException;
@@ -34,16 +37,58 @@ final class McpClientRegistrarTest extends TestCase
         $repository = $this->repository();
         $clock = new MockClock(new DateTimeImmutable('2026-10-25T02:30:00+02:00'));
 
-        $client = new McpClientRegistrar($repository, $clock)->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
+        $client = new McpClientRegistrar($repository, $clock, self::createStub(SecurityAuditLoggerInterface::class))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
             RedirectUri::fromString('http://localhost/callback'),
             RedirectUri::fromString('https://app.example/cb'),
-        ]);
+        ], AuditOrigin::Console);
 
         self::assertSame([$client], $repository->added);
         self::assertSame(self::CLIENT_ID, $client->getClientId());
         self::assertSame('Claude Code', $client->getName());
         self::assertSame(['http://localhost/callback', 'https://app.example/cb'], $client->redirectUris());
         self::assertSame($clock->now()->getTimestamp(), $client->registeredAt()->getTimestamp());
+    }
+
+    /**
+     * L'audit suit l'écriture : le client est déjà ajouté quand la ligne part,
+     * et l'origine reçue est celle que l'appelant a déclarée.
+     */
+    public function testARegistrationIsAuditedWithItsOrigin(): void
+    {
+        $repository = $this->repository();
+        $logger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $logger->expects(self::once())
+            ->method('mcpClientRegistered')
+            ->with(self::CLIENT_ID, ClientRegistration::Preregistered->value, AuditOrigin::Console)
+            ->willReturnCallback(static function () use ($repository): void {
+                self::assertCount(1, $repository->added, 'L\'audit part après l\'écriture, jamais avant.');
+            });
+
+        $this->register($repository, $logger);
+    }
+
+    /** Un refus n'a rien écrit : il n'audite rien, ni avant ni après la lecture. */
+    public function testARefusedRegistrationAuditsNothing(): void
+    {
+        $repository = $this->repository(existing: RegisteredMcpClient::of(self::CLIENT_ID, 'Premier', ['http://localhost/callback']));
+        $logger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $logger->expects(self::never())->method('mcpClientRegistered');
+
+        $this->expectException(McpClientAlreadyRegisteredException::class);
+
+        $this->register($repository, $logger);
+    }
+
+    /** Deux enregistrements simultanés : la base refuse, rien n'est écrit, rien n'est audité. */
+    public function testARegistrationTakenMeanwhileAuditsNothing(): void
+    {
+        $repository = $this->repository(failure: $this->violation(self::english(McpClient::CLIENT_ID_UNIQUE_INDEX, 'client_id', self::CLIENT_ID)));
+        $logger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $logger->expects(self::never())->method('mcpClientRegistered');
+
+        $this->expectException(McpClientAlreadyRegisteredException::class);
+
+        $this->register($repository, $logger);
     }
 
     public function testAClientIdAlreadyRegisteredIsRefusedBeforeAnyWrite(): void
@@ -117,9 +162,9 @@ final class McpClientRegistrarTest extends TestCase
         }
     }
 
-    private function register(McpClientRepositoryInterface $repository): McpClient
+    private function register(McpClientRepositoryInterface $repository, ?SecurityAuditLoggerInterface $logger = null): McpClient
     {
-        return new McpClientRegistrar($repository, new MockClock())->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')]);
+        return new McpClientRegistrar($repository, new MockClock(), $logger ?? self::createStub(SecurityAuditLoggerInterface::class))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
     }
 
     private static function english(string $index, string $column, string $value): string

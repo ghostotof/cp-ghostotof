@@ -13,6 +13,7 @@ use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
+use App\Security\Authentication\Application\AuditOrigin;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -77,7 +78,7 @@ final class RegisterMcpClientCommand extends Command
         }
 
         try {
-            $client = $this->registrar->register($clientId, $name, $redirectUris);
+            $client = $this->registrar->register($clientId, $name, $redirectUris, AuditOrigin::Console);
         } catch (McpClientAlreadyRegisteredException|InvalidMcpClientRedirectsException $exception) {
             $io->error($exception->getMessage());
 

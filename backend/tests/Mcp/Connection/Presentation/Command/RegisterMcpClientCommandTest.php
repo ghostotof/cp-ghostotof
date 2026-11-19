@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Command;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -23,6 +24,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 final class RegisterMcpClientCommandTest extends KernelTestCase
 {
+    use ReadsSecurityAuditLog;
+
     /** Les tables du modèle, des feuilles vers la racine. */
     private const array TABLES = ['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client'];
 
@@ -62,6 +65,25 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertSame('Claude Code', $client->getName());
         self::assertSame(['http://localhost/callback', 'https://app.example/cb'], $client->redirectUris());
         self::assertTrue($client->allowsRedirect('http://localhost:53412/callback'));
+    }
+
+    /**
+     * Le câblage réel, du conteneur au canal `security_audit` : la commande
+     * déclare `Console`, l'acteur est `console` (hors requête, le jeton n'existe
+     * pas), l'enregistrement est celui d'un client pré-enregistré.
+     */
+    public function testTheRegistrationIsAuditedAsAConsoleAction(): void
+    {
+        $this->commandTester()->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        $event = self::singleSecurityAuditEvent('mcp-client-registered');
+        self::assertSame('console', $event['actor']);
+        self::assertSame(self::CLIENT_ID, $event['clientId']);
+        self::assertSame('preregistered', $event['registration']);
     }
 
     /**

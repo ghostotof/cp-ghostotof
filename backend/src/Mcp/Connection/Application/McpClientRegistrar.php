@@ -7,8 +7,11 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
+use App\Security\Authentication\Application\AuditOrigin;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Doctrine\ViolatedUniqueIndex;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
@@ -18,10 +21,11 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
     public function __construct(
         private McpClientRepositoryInterface $clients,
         private ClockInterface $clock,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
-    public function register(McpClientId $clientId, McpClientName $name, array $redirectUris): McpClient
+    public function register(McpClientId $clientId, McpClientName $name, array $redirectUris, AuditOrigin $origin): McpClient
     {
         if (null !== $this->clients->findOneByClientId((string) $clientId)) {
             throw McpClientAlreadyRegisteredException::alreadyTaken();
@@ -45,6 +49,12 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
 
             throw McpClientAlreadyRegisteredException::takenMeanwhile();
         }
+
+        // L'audit suit l'écriture, jamais avant : un refus (lecture ou
+        // contrainte unique) a levé plus haut et n'a rien à auditer. La valeur
+        // d'enregistrement vient de l'énuméré du domaine, pas d'une chaîne
+        // recopiée.
+        $this->auditLogger->mcpClientRegistered((string) $clientId, ClientRegistration::Preregistered->value, $origin);
 
         return $client;
     }
