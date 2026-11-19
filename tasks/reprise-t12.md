@@ -4,7 +4,8 @@
 
 ## Où en est la tâche
 
-- Branche : `feature/spec-0007-t12-cimd` (locale, non poussée), empilée sur la mère
+- **T12 close** (voir la fin de la Reprise : PR #777 fusionnée dans la mère). Historique ci-dessous.
+- Branche : `feature/spec-0007-t12-cimd` (poussée, PR #777), empilée sur la mère
   `feature/379-mcp-paliers` (`origin`, tête `0c0733fb`).
 - Étape : **05**, Task 9 du plan `tasks/plan-t12-cimd.md`, découpée en trois parties après deux
   agents morts sur « Autocompact is thrashing » (mémoire `feedback_agents_budget_regles_mcp.md`) :
@@ -721,7 +722,13 @@
   - **Décisions** : pas d'audit sécurité sur la micro-série ; docblock DDD corrigé au fil principal ; étape 08
     approuvée : push, PR vers `feature/379-mcp-paliers`, commentaire sur #653 (ChatGPT `private_key_jwt`,
     document du connecteur web claude.ai inconnu). #651 fermée à la main après la fusion.
-  - **Prochaine action : étape 08** (sonnet/low), agent lancé.
+  - **Étape 08 faite** (agent sonnet/low, contrôlé sur GitHub) : branche poussée, **PR #777** vers
+    `feature/379-mcp-paliers` (sans mot-clé de fermeture), commentaire sur #653 (ChatGPT `private_key_jwt`,
+    document du connecteur web claude.ai). `make back-test` OK (6461 tests) ; Pipeline verte sur `24bfdfb5`.
+  - **Clôture décidée par l'utilisateur le 2026-11-19** : fusion de #777 dans la mère une fois la Pipeline
+    verte sur ce commit d'état, puis #651 fermée à la main, puis instantané du suivi portfolio réécrit.
+    **T12 close à la fusion.** Prochaine tâche de la spec : T13 (#652, backoffice MCP), nouvelle session
+    (`/clear`), branche coupée de la mère à jour.
   - **Pour la PR (écrit, non corrigé)** : audit `throttled` hors quota (borné par nginx 10 r/min par adresse,
     registre « bornée par le quota » inexact pour ce cas) ; lecture SQL avant la liste ; GET d'un anonyme vers
     des chemins arbitraires des hôtes listés (≤ 100/10 min) ; `CURLOPT_RESOLVE` sans crochets si l'IPv6 vient un
