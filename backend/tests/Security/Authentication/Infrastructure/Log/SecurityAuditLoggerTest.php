@@ -869,7 +869,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->pushRequest('/api/backoffice/mcp-clients/client-public-id', 'PUT');
         $super = $this->authenticatedSuper();
 
-        $this->auditLogger->mcpClientRevised('client-public-id', 3);
+        $this->auditLogger->mcpClientRevised('client-public-id', 3, 2, 1);
 
         $record = $this->singleRecord();
         self::assertSame('MCP client revised.', $record->message);
@@ -877,6 +877,8 @@ final class SecurityAuditLoggerTest extends TestCase
             'event' => 'mcp-client-revised',
             'clientId' => 'client-public-id',
             'redirectUriCount' => 3,
+            'addedRedirectCount' => 2,
+            'removedRedirectCount' => 1,
             'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/mcp-clients/client-public-id',
@@ -1060,7 +1062,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->mcpClientRowNotAdmitted('client.example.test');
         $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Request);
         $this->auditLogger->mcpClientRegistered('client-public-id', 'manual', AuditOrigin::Console);
-        $this->auditLogger->mcpClientRevised('client-public-id', 2);
+        $this->auditLogger->mcpClientRevised('client-public-id', 2, 1, 0);
         $this->auditLogger->mcpClientRemoved('client-public-id', 'manual', 1);
 
         $records = $this->handler->getRecords();

@@ -77,21 +77,34 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
      * jamais entre les deux. Un client déclaré par son document est refusé
      * par l'entité avant toute écriture : rien n'est écrit, rien n'est audité.
      *
-     * L'audit compte les redirections **écrites** (dédupliquées par l'entité), et
+     * L'audit compte les redirections **écrites** (dédupliquées par l'entité), puis
+     * celles ajoutées et retirées par rapport à l'état d'avant (des nombres, jamais
+     * une URI), et
      * suit le COMMIT ; sa panne ne fait pas croire que la révision a échoué
      * ({@see FailSafeAudit}).
      */
     public function revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient
     {
-        $client = $this->transaction->run(function () use ($id, $name, $redirectUris): McpClient {
+        // Les URI d'avant sont lues sous le verrou, avant la révision : le journal
+        // compare deux ensembles de la même ligne, pas un état relu plus tard.
+        [$client, $before] = $this->transaction->run(function () use ($id, $name, $redirectUris): array {
             $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
+            $before = $locked->redirectUris();
             $locked->revise($name, $redirectUris);
 
-            return $locked;
+            return [$locked, $before];
         });
 
+        // Des ensembles dédoublonnés : seuls des nombres sortent, jamais une URI.
+        $after = $client->redirectUris();
+
         $this->failSafeAudit->attempt(
-            fn () => $this->auditLogger->mcpClientRevised($client->getClientId(), \count($client->redirectUris())),
+            fn () => $this->auditLogger->mcpClientRevised(
+                $client->getClientId(),
+                \count($after),
+                \count(array_diff($after, $before)),
+                \count(array_diff($before, $after)),
+            ),
             self::REVISION_NOT_AUDITED,
         );
 

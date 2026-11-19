@@ -198,7 +198,7 @@ paths:
   failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
   `Assert\Email` whose value ends up in an e-mail.
   **The three events of the MCP clients** (#652): `mcp-client-registered` (`mcpClientRegistered($clientId, $registration, AuditOrigin)`),
-  `mcp-client-revised` (`redirectUriCount`) and `mcp-client-removed` (`registration`, `cutConnections`), each carrying the
+  `mcp-client-revised` (`redirectUriCount`, `addedRedirectCount`, `removedRedirectCount`: counts over deduplicated sets, so swapping a redirect leaves a trace; never the URIs, not even a digest) and `mcp-client-removed` (`registration`, `cutConnections`), each carrying the
   `clientId` (the public identifier, no secret) and never a redirect URI nor the client's name. `AuditOrigin`
   (`Application/`, `Request` or `Console`) is the one argument that changes the actor: `Console` records `console` like
   `userCreated()`, `Request` reads the token; the two others have no console path and read the token.

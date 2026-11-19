@@ -290,11 +290,13 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         );
     }
 
-    public function mcpClientRevised(string $clientId, int $redirectUriCount): void
+    public function mcpClientRevised(string $clientId, int $redirectUriCount, int $addedRedirectCount, int $removedRedirectCount): void
     {
         $this->record('mcp-client-revised', 'MCP client revised.', [
             'clientId' => $clientId,
             'redirectUriCount' => $redirectUriCount,
+            'addedRedirectCount' => $addedRedirectCount,
+            'removedRedirectCount' => $removedRedirectCount,
         ]);
     }
 

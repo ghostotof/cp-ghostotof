@@ -28,6 +28,7 @@ use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -246,6 +247,46 @@ final class McpClientAdministratorTest extends KernelTestCase
         self::assertSame(1, $event['redirectUriCount']);
     }
 
+    /**
+     * Le journal dit ce qui a changé, jamais lesquelles : remplacer la
+     * redirection existante par une autre laisse 1 ajoutée et 1 retirée, et non
+     * le même journal qu'un changement anodin. Aucune URI n'en sort.
+     *
+     * @param list<string> $initial
+     * @param list<string> $submitted
+     */
+    #[DataProvider('redirectChanges')]
+    public function testRevisingAuditsWhatWasAddedAndRemovedNeverTheUris(array $initial, array $submitted, int $total, int $added, int $removed): void
+    {
+        $client = $this->persistedClient($initial);
+        $this->em->clear();
+
+        $this->administrator()->revise(
+            $client->getId(),
+            McpClientName::fromString('Claude Code'),
+            array_map(RedirectUri::fromString(...), $submitted),
+        );
+
+        $event = self::singleSecurityAuditEvent('mcp-client-revised');
+        self::assertSame($total, $event['redirectUriCount']);
+        self::assertSame($added, $event['addedRedirectCount']);
+        self::assertSame($removed, $event['removedRedirectCount']);
+        self::assertStringNotContainsString('client.example.test', json_encode($event, \JSON_THROW_ON_ERROR));
+    }
+
+    /** @return iterable<string, array{list<string>, list<string>, int, int, int}> */
+    public static function redirectChanges(): iterable
+    {
+        $callback = 'https://client.example.test/callback';
+        $two = 'https://client.example.test/two';
+
+        yield 'remplacement 1 pour 1' => [[$callback], ['https://attacker.example.test/cb'], 1, 1, 1];
+        yield 'ajout pur' => [[$callback], [$callback, $two], 2, 1, 0];
+        yield 'retrait pur' => [[$callback, $two], [$callback], 1, 0, 1];
+        yield 'révision identique' => [[$callback], [$callback], 1, 0, 0];
+        yield 'doublons soumis, comptés une fois' => [[$callback], [$callback, $two, $two], 2, 1, 0];
+    }
+
     /** La révision ne coupe aucune connexion : elles survivent, intactes et actives. */
     public function testRevisingCutsNoConnection(): void
     {
@@ -332,9 +373,10 @@ final class McpClientAdministratorTest extends KernelTestCase
         );
     }
 
-    private function persistedClient(): McpClient
+    /** @param list<string> $redirects */
+    private function persistedClient(array $redirects = ['https://client.example.test/callback']): McpClient
     {
-        $client = RegisteredMcpClient::of(self::CLIENT_ID, 'Claude Code', ['https://client.example.test/callback']);
+        $client = RegisteredMcpClient::of(self::CLIENT_ID, 'Claude Code', $redirects);
         self::getContainer()->get(McpClientRepositoryInterface::class)->add($client);
 
         return $client;

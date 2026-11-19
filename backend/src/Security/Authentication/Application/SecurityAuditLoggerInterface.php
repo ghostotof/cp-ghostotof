@@ -377,11 +377,15 @@ interface SecurityAuditLoggerInterface
     public function mcpClientRegistered(string $clientId, string $registration, AuditOrigin $origin): void;
 
     /**
-     * Client MCP révisé depuis le backoffice (#652) : seul le nombre de ses URI
-     * de redirection sort (`redirectUriCount`), jamais les URI ni le nom.
-     * L'acteur est lu dans le jeton de la requête.
+     * Client MCP révisé depuis le backoffice (#652) : seuls des nombres sortent,
+     * jamais les URI (ni en clair ni en empreinte) ni le nom — le nombre total
+     * de redirections (`redirectUriCount`), celles ajoutées
+     * (`addedRedirectCount`) et celles retirées (`removedRedirectCount`), comptées
+     * sur des ensembles dédoublonnés : remplacer une redirection par une autre
+     * ne laisse pas le journal d'un changement anodin. L'acteur est lu dans le
+     * jeton de la requête.
      */
-    public function mcpClientRevised(string $clientId, int $redirectUriCount): void;
+    public function mcpClientRevised(string $clientId, int $redirectUriCount, int $addedRedirectCount, int $removedRedirectCount): void;
 
     /**
      * Client MCP supprimé depuis le backoffice (#652) : son identifiant, son mode
