@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
@@ -55,6 +56,13 @@ class McpClient
     /** La borne du domaine (McpClientName), en caractères comme `VARCHAR`. */
     public const int NAME_MAX_LENGTH = McpClientName::MAX_LENGTH;
 
+    /**
+     * Le plus de redirections distinctes d'un client (#652) : la borne d'un
+     * document CIMD ({@see ClientMetadataDocument}), pour qu'un client
+     * pré-enregistré n'en porte pas plus qu'un client déclaré.
+     */
+    public const int MAX_REDIRECT_URIS = ClientMetadataDocument::MAX_REDIRECT_URIS;
+
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
     #[ORM\Column(type: UuidType::NAME)]
@@ -94,15 +102,42 @@ class McpClient
      * Enregistre un client à l'instant `$at`, à partir de valeurs que le
      * domaine a déjà jugées : le type l'impose, aucune chaîne brute n'atteint
      * l'entité par ici. Une redirection répétée à l'identique n'est gardée
-     * qu'une fois, dans l'ordre reçu.
+     * qu'une fois, dans l'ordre reçu ; il en faut de une à
+     * {@see self::MAX_REDIRECT_URIS} **distinctes** (la borne s'applique après
+     * déduplication).
      *
      * @param list<RedirectUri> $redirectUris
+     *
+     * @throws InvalidMcpClientRedirectsException aucune redirection, ou plus que la borne, une fois dédupliquées
      */
     public static function register(McpClientId $clientId, McpClientName $name, array $redirectUris, DateTimeImmutable $at): self
     {
+        return new self((string) $clientId, (string) $name, self::distinctBounded($redirectUris), $at, ClientRegistration::Preregistered);
+    }
+
+    /**
+     * Les redirections distinctes, dans l'ordre reçu, et leur nombre jugé :
+     * un client sans redirection ne pourrait jamais passer le consentement,
+     * un client qui en porte trop élargit sans limite ce que le consentement
+     * autorise.
+     *
+     * @param list<RedirectUri> $redirectUris
+     *
+     * @return list<string>
+     */
+    private static function distinctBounded(array $redirectUris): array
+    {
         $distinct = array_values(array_unique(array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris)));
 
-        return new self((string) $clientId, (string) $name, $distinct, $at, ClientRegistration::Preregistered);
+        if ([] === $distinct) {
+            throw InvalidMcpClientRedirectsException::none();
+        }
+
+        if (\count($distinct) > self::MAX_REDIRECT_URIS) {
+            throw InvalidMcpClientRedirectsException::tooMany();
+        }
+
+        return $distinct;
     }
 
     /**

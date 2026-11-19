@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\ClientMetadataDocument;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
@@ -101,6 +102,40 @@ final class McpClientTest extends TestCase
         self::assertSame(['http://localhost/callback', 'https://app.example/cb'], $client->redirectUris());
     }
 
+    /** Un client sans redirection ne pourrait jamais passer le consentement (#652) : refusé à l'enregistrement. */
+    public function testRegisteringWithoutRedirectIsRefused(): void
+    {
+        $this->expectException(InvalidMcpClientRedirectsException::class);
+
+        $this->client([]);
+    }
+
+    /** Au-delà de dix redirections distinctes (la borne d'un document CIMD), le client est refusé (#652). */
+    public function testRegisteringElevenDistinctRedirectsIsRefused(): void
+    {
+        $this->expectException(InvalidMcpClientRedirectsException::class);
+
+        $this->client($this->distinctRedirects(McpClient::MAX_REDIRECT_URIS + 1));
+    }
+
+    /** La borne est incluse : dix redirections distinctes sont admises. */
+    public function testTenDistinctRedirectsAreAccepted(): void
+    {
+        $redirects = $this->distinctRedirects(McpClient::MAX_REDIRECT_URIS);
+
+        self::assertSame($redirects, $this->client($redirects)->redirectUris());
+    }
+
+    /** La borne s'applique après déduplication : dix distinctes plus un doublon font dix redirections, pas onze. */
+    public function testElevenRedirectsWithOneDuplicateAreAcceptedAfterDeduplication(): void
+    {
+        $redirects = $this->distinctRedirects(McpClient::MAX_REDIRECT_URIS);
+
+        $client = $this->client([...$redirects, $redirects[0]]);
+
+        self::assertSame($redirects, $client->redirectUris());
+    }
+
     public function testARedirectMatchingOneOfTheRegisteredOnesIsAllowed(): void
     {
         $client = $this->client(['https://app.example/cb', 'http://127.0.0.1/callback']);
@@ -133,6 +168,14 @@ final class McpClientTest extends TestCase
         self::assertFalse($client->allowsRedirect('http://app.example/cb'));
         self::assertFalse($client->allowsRedirect('javascript:alert(1)'));
         self::assertTrue($client->allowsRedirect('https://app.example/ok'));
+    }
+
+    /**
+     * @return list<string> $count redirections https valides, deux à deux distinctes
+     */
+    private function distinctRedirects(int $count): array
+    {
+        return array_map(static fn (int $i): string => \sprintf('https://app.example/cb/%d', $i), range(1, $count));
     }
 
     /**
