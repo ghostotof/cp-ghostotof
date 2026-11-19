@@ -90,8 +90,13 @@
     `findNotRevokedForAdministration` : le plafond est la zone nginx `oauth`, 10 r/min par adresse et par pod,
     pas des « limiteurs du consentement »). Preuve de l'agent : `tests/Mcp/Connection` OK (1 479), PHPStan et
     Rector verts ; arbre propre contrôlé.
-  - **Prochaine action** : `/code-review medium diff 2878d007...HEAD` (relecture de C2), tri des constats.
-    Ensuite S3 (Tasks 9-11, avec l'auditeur).
+  - **Relecture de C2 faite** (`/code-review medium diff 2878d007...5a5440fd`) : 8 constats, triés avec l'utilisateur.
+    Un docblock corrigé dans la foulée (`d604141b`, l'implémentation attribue aussi le plafond à la zone nginx `oauth`).
+    Constat 2 (moyen : accords non échangés non bornés) → **Task 13** (brief ci-dessous) ; constat 6 (redirection non
+    revérifiée à l'échange) = T6 du brief de la Task 11 ; le reste → constats écrits. **Boucle S2 close.**
+  - **Point fixe de la relecture S3** : le commit de cette reprise (« reprise … C2 relue »), HEAD au lancement de la Task 9.
+  - **Prochaine action** : S3, **Task 9** (trois événements d'audit des clients, sensible), agent sonnet/high ;
+    puis Tasks 10 et 11 ; puis `/code-review medium diff <point fixe S3>...HEAD` + auditeur sécurité opus/high.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -121,6 +126,14 @@
     - T9 : `McpClientDeclaredByDocumentException` en 409 problem+json ; borner `$limit` de `findTerminatedForAdministration()`.
     - T10 : `remove()` en dernier, sans réutiliser les entités périmées.
   - **Brief de la Task 12** : retrier les terminées par octroi (`usort`, comme `OwnMcpConnections::newestGrantFirst`).
+  - **Brief de la Task 13** (décision utilisateur, relecture de C2, constat 2) : un accord **non échangé**
+    (`code_exchanged_at IS NULL`) passé son délai `connection_unexchanged` (1 h, `ConnectionLifetimes::unexchangedDeadline()`)
+    est filtré **en SQL** hors des « non révoquées » de `findNotRevokedForAdministration()` et rejoint la moitié bornée
+    des terminées (`TERMINATED_LIMIT`) ; les actives restent servies en entier. Seuil typé `datetimetz_immutable`,
+    calculé en PHP (heures écoulées, `add(new DateInterval(…))`), pas de `modify()`. Tests : un accord non échangé de
+    59 min reste dans les non révoquées, de 61 min passe dans les terminées ; un accord échangé n'est jamais filtré par
+    ce seuil. Corriger aussi D-D du plan (l. 106) et le docblock de l'interface/l'implémentation : la supplantation
+    n'a lieu qu'à l'échange et l'expiration d'une heure n'est marquée qu'à la purge.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -154,6 +167,8 @@
   pas de pagination, 200 dernières terminées ; audit de révision = nombre d'URI ; un seul port
   frontend `AdminMcpRepository` ; `AuditOrigin` dans `Security/Authentication/Application`.
 - Moteur de l'étape 05 : `agent-skills:build` (pas `subagent-driven-development`).
+- Relecture de C2 (2026-11-19) : constat 1 (`deny()` hors verrou) **noter dans la PR** ; constat 2 (accords non
+  échangés non bornés) **traiter dans la Task 13**.
 - Relecture S2 (2026-11-19) : auditeur sécurité opus/high **retenu** ; `$io->listing()` non échappé : **noter dans
   la PR**, pas de correction ; série C2 = **A1 + A6 + A5** (bornée à 3-4 fichiers) ; révision d'un client :
   **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
@@ -201,6 +216,13 @@ Relecture S2 (pour la description de la PR) :
 - (info, A3) `forAdministration()` hydrate `CpgUser` entier (empreinte, e-mail) : le DTO de la Task 11/12 n'en expose rien.
 - (info, A4) `countActiveByClient` compte une connexion échue non marquée par la purge.
 - (info, A7) famine possible de la suppression d'un client derrière des `FOR SHARE` successifs.
+Relecture de C2 (pour la description de la PR) :
+- (faible à moyen, conf. moyenne) `ConsentService.php:109` : `deny()` renvoie vers une redirection validée hors verrou
+  (pas de `FOR SHARE` comme `grant()`) ; décision utilisateur : noter dans la PR.
+- (faible) aucun audit ni journal du refus `redirectNoLongerRegistered` (`ConsentService.php:261`).
+- (faible) seule la redirection est revérifiée sous le verrou, pas le nom du client affiché au résumé.
+- (faible) `McpClientRepositoryTest.php:270` attrape `DriverException` au lieu de `LockWaitTimeoutException`.
+- (faible) `McpClientRepositoryTest.php:262` : pas de rollback dans le `finally` de la sonde.
 
 ## Interdits des briefs
 
