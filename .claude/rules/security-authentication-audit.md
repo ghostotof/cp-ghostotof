@@ -48,7 +48,7 @@ paths:
   connection of an account, through the `Shared` port, audited by its caller **after the COMMIT** that holds the
   password or the role; the actor of `password-changed` is the administrator on the backoffice `PUT` and `anonymous`
   when an invitation link *replaces* a password, `PasswordSetupService`; `trusted-tier-withdrawn`'s is the
-  administrator demoting — `.claude/rules/mcp-oauth-revocation-personne.md`); `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
+  administrator demoting — `.claude/rules/mcp-oauth-revocation-personne.md`); `client-removed` (#652, removing a client from the backoffice: an **audit-only** cause, never written to the database — the connection is deleted by the foreign-key cascade, not revoked, and `RevocationCause` and its CHECK constraint do not know it —, one line per connection written **after the COMMIT** of the client's deletion, `RevokedConnectionAudit`); `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
   plus `supersededBy`, the RFC 4122 UUID of the connection that replaces it (#726, audit B3: nothing else ties the
   line, written at the exchange, to the grant that caused it); `expired` through `mcpConnectionExpired()`, actor `system`
   like `user-purged`, the purge being a scheduled command; never the token or code presented),
