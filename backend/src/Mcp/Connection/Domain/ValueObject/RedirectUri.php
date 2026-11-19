@@ -108,6 +108,12 @@ final readonly class RedirectUri implements Stringable
             throw InvalidRedirectUriException::withFragment();
         }
 
+        // Le compte précède l'analyse : `parse_str()` (dans `carriesIss()`) avertit
+        // au-delà de `max_input_vars`.
+        if (self::exceedsQueryParameterBound($uri)) {
+            throw InvalidRedirectUriException::tooManyQueryParameters();
+        }
+
         if (self::carriesIss($uri)) {
             throw InvalidRedirectUriException::withIssParameter();
         }
@@ -119,11 +125,20 @@ final readonly class RedirectUri implements Stringable
         return new self($value, $uri);
     }
 
+    /** La requête compte-t-elle plus de `MAX_QUERY_PARAMETERS` paramètres ? Sans l'analyser. */
+    private static function exceedsQueryParameterBound(Uri $uri): bool
+    {
+        $query = $uri->getQuery();
+
+        return null !== $query && \count(explode('&', $query)) > self::MAX_QUERY_PARAMETERS;
+    }
+
     /**
      * La requête porte-t-elle un `iss` ? Le serveur ajoute le sien (RFC 9207)
      * à toute redirection vers le client : une redirection qui en porterait
      * déjà un en aurait deux, et le client lirait peut-être le mauvais. Lu
-     * comme PHP le lit (`parse_str()` : `%69ss`, `iss[]` comptent aussi).
+     * comme PHP le lit (`parse_str()` : `%69ss`, `iss[]` comptent aussi). Le
+     * nombre de paramètres est borné par l'appelant, avant cette analyse.
      */
     private static function carriesIss(Uri $uri): bool
     {
@@ -131,11 +146,6 @@ final readonly class RedirectUri implements Stringable
 
         if (null === $query) {
             return false;
-        }
-
-        // Le compte précède l'analyse : `parse_str()` avertit au-delà de `max_input_vars`.
-        if (\count(explode('&', $query)) > self::MAX_QUERY_PARAMETERS) {
-            throw InvalidRedirectUriException::tooManyQueryParameters();
         }
 
         parse_str($query, $parameters);
