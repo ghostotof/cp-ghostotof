@@ -102,8 +102,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
     /**
      * Sans limite ni pagination : le volume n'est borné ni par le code ni « par
-     * nature » (voir l'interface), seulement par ce que les limiteurs du
-     * consentement laissent s'accumuler entre deux purges.
+     * nature » (voir l'interface), seulement par ce que la zone nginx `oauth`
+     * laisse s'accumuler entre deux purges, par adresse et par pod.
      */
     public function findNotRevokedForAdministration(): array
     {
