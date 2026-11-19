@@ -246,6 +246,57 @@ final class CodeReplayTest extends WebTestCase
     }
 
     /**
+     * Un code déjà échangé, rejoué après qu'une révision du client a retiré
+     * sa redirection (#652) : league juge d'abord le rejeu, le refus
+     * `redirect-no-longer-registered` ne passe pas devant. Avec le bon
+     * vérificateur, la connexion est révoquée `code-replay`, comme si la
+     * redirection était restée.
+     */
+    public function testAProvenReplayAfterTheRedirectWasRemovedRevokesTheConnection(): void
+    {
+        $code = $this->grantedCode();
+        $held = $this->heldMcpConnectionOf($this->exchange($code));
+        $this->removeTheCodesRedirectFromTheClient();
+
+        $replay = $this->exchange($code);
+
+        $this->assertOAuthError($replay, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame(self::REPLAY_HINT, $this->json($replay)['hint'] ?? null);
+        self::assertSame('code-replay', $this->revocationCauseOf($held));
+        $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
+        self::assertSame('code-replay', $event['cause'] ?? null);
+    }
+
+    /**
+     * Même scénario sans le vérificateur : la ligne `replay-unproven`, aucune
+     * révocation, la connexion reste active.
+     */
+    public function testAnUnprovenReplayAfterTheRedirectWasRemovedLeavesTheConnectionActive(): void
+    {
+        $code = $this->grantedCode();
+        $held = $this->heldMcpConnectionOf($this->exchange($code));
+        $this->removeTheCodesRedirectFromTheClient();
+
+        $replay = $this->exchange($code, ['code_verifier' => null]);
+
+        $this->assertOAuthError($replay, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame(self::REPLAY_HINT, $this->json($replay)['hint'] ?? null);
+        $this->assertConnectionActive($held);
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        $line = self::singleSecurityAuditEvent(self::REFUSED_EVENT);
+        self::assertSame('replay-unproven', $line['cause'] ?? null);
+    }
+
+    /** Le client ne garde que la redirection https : celle du code (loopback) n'est plus admise. */
+    private function removeTheCodesRedirectFromTheClient(): void
+    {
+        $this->mcpRows()->executeStatement(
+            'UPDATE mcp_client SET redirect_uris = :uris::jsonb WHERE client_id = :id',
+            ['uris' => '["https://client.example.test/callback"]', 'id' => self::CLIENT_ID],
+        );
+    }
+
+    /**
      * @param array<string, string|null> $overrides le vérificateur du rejeu, absent ou faux
      */
     private function assertAnUnprovenReplayLeavesTheConnectionActive(array $overrides): void

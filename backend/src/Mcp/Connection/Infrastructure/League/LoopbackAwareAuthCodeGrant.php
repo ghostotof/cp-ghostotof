@@ -94,6 +94,16 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * et la règle est celle de l'accord (`McpClient::allowsRedirect()`, tolérance
      * loopback comprise), jamais une égalité de chaînes.
      *
+     * **League juge d'abord** : l'échéance, puis le rejeu, sont ceux de son
+     * `validateAuthorizationCode()`. Le refus n'est donc levé ici que pour un
+     * code **non échu** (`time()`, l'horloge de league, la charge chiffrée
+     * étant la sienne) et **non consommé** (`isAuthCodeRevoked()`, qui lève
+     * elle-même `AuthorizationCodeReplayedException` sur un code déjà échangé,
+     * laissée remonter : le point de jeton révoque ou audite le rejeu comme
+     * avant). Sinon la main revient au parent, qui refuse sous sa propre cause.
+     * Le second appel de `isAuthCodeRevoked()` par league, dans la même
+     * transaction, relit sous le même verrou de ligne : aucun effet de bord.
+     *
      * Le contrôle ne s'exerce que sur un code lisible, émis à ce client et lié
      * à une redirection : tout autre cas (illisible, autre client, redirection
      * absente) reste jugé par league, sous sa propre cause.
@@ -106,10 +116,14 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
         DateInterval $accessTokenTTL,
     ): ResponseTypeInterface {
         $client = $this->validateClient($request);
-        $redirectUri = $this->redirectUriOfTheCode($request, $client);
+        $payload = $this->payloadOfTheCode($request, $client);
 
-        if (null !== $redirectUri
-            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($redirectUri))) {
+        if (null !== $payload
+            && \is_string($payload->redirect_uri ?? null)
+            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($payload->redirect_uri))
+            && \is_string($payload->auth_code_id ?? null)
+            && time() <= (int) ($payload->expire_time ?? 0)
+            && !$this->authCodeRepository->isAuthCodeRevoked($payload->auth_code_id)) {
             throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
         }
 
@@ -117,10 +131,10 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
     }
 
     /**
-     * La redirection portée par le code présenté, ou `null` quand le code est
-     * illisible, émis à un autre client ou sans redirection : league en juge.
+     * La charge du code présenté, ou `null` quand le code est illisible ou émis
+     * à un autre client : league en juge.
      */
-    private function redirectUriOfTheCode(ServerRequestInterface $request, ClientEntityInterface $client): ?string
+    private function payloadOfTheCode(ServerRequestInterface $request, ClientEntityInterface $client): ?object
     {
         $encrypted = $this->getRequestParameter('code', $request);
 
@@ -134,13 +148,11 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
             return null;
         }
 
-        if (!\is_object($payload)
-            || ($payload->client_id ?? null) !== $client->getIdentifier()
-            || !\is_string($payload->redirect_uri ?? null)) {
+        if (!\is_object($payload) || ($payload->client_id ?? null) !== $client->getIdentifier()) {
             return null;
         }
 
-        return $payload->redirect_uri;
+        return $payload;
     }
 
     /**

@@ -115,6 +115,21 @@ final class GrantRefusalAuditTest extends WebTestCase
     }
 
     /**
+     * Un code échu dont la redirection a été retirée du client (#652) : league
+     * juge l'échéance avant le contrôle de la redirection, la cause reste
+     * `code-expired`, jamais `redirect-no-longer-registered`.
+     */
+    public function testAnExpiredCodeWhoseRedirectWasRemovedIsAuditedAsExpired(): void
+    {
+        $code = $this->reencrypted($this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']), ['expire_time' => time() - 60]);
+        $this->executeStatement("UPDATE mcp_client SET redirect_uris = '[\"http://localhost/callback\"]'::jsonb WHERE client_id = '".self::CLIENT_ID."'");
+
+        $this->assertRefused($this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']));
+
+        $this->assertAudited('code-expired', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
      * Ce que le juge sous verrou tient pour mort (TokenUnderConnectionLock),
      * sans compromission : refusé « has been revoked » par league.
      *
