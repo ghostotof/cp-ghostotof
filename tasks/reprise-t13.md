@@ -200,7 +200,12 @@
     - **Vers la Task 17A/B** : le futur processeur d'inscription ne doit pas envelopper `register()` dans une
       transaction (audit après COMMIT) — test « pas d'audit après ROLLBACK » ou garde ; câbler
       `McpClientAdministratorInterface`.
-  - **Prochaine action** : **C3c-1**, agent sonnet/high ; puis **C3c-2**, agent sonnet/medium (mécanique) ; puis
+  - **C3c-1 faite** : `aa2a9c69` (repli strict `invalidRequest('code', 'Authorization code malformed')` → cause
+    `not-a-code`, RED constaté ; docblock du grant), `b6296090` (code mort + redirection retirée → `code-refused`,
+    mutation constatée rouge), `fbb4b631` (règle l. 316 + limite 4 ; règle à 49 026 octets, plafond 50 000 :
+    **ne plus rien y ajouter sans la découper**), `030c8836` (Rector). Preuve contrôlée : tests ciblés 98 OK,
+    qualité verte, suite complète 6542 OK (avant `030c8836`, helper de test seul).
+  - **Prochaine action** : **C3c-2**, agent sonnet/high (défaut de l'étape 05) ; puis
     `/code-review medium diff 4c61e429...HEAD` (auditeur seulement si C3c-1 change le comportement du point de jeton,
     oui pour le repli strict).
   - **C2, contenu** :
