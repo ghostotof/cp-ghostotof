@@ -74,7 +74,8 @@ interface McpConnectionRepositoryInterface
      * compte les connexions actives et les accords que ni le client ni la
      * personne n'ont fait suivre d'un échange de code. Un compte de confiance
      * peut en laisser, de l'ordre de 14 000 par jour et par adresse (constat de
-     * la relecture de la T13, d'après les limiteurs du consentement) ; échus au
+     * la relecture de la T13 : la zone nginx `oauth`, 10 requêtes par minute,
+     * par adresse et par pod, est le seul plafond du consentement) ; échus au
      * bout d'une heure, ils restent non révoqués jusqu'à ce que la purge de
      * nuit les marque. Un constat écrit, pas une garantie « par nature ». Une
      * lecture, sans verrou.
