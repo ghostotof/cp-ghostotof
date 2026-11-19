@@ -110,8 +110,21 @@
     `LoopbackAwareAuthCodeGrant` (`invalid_grant`). T5, T7, T9 (DTO, `Assert\Count`, 409, borne de `$limit`) vont aux
     Tasks 12-15 (présentation). Attention : `register()` du registrar audite après son `flush` ; l'administrateur ne
     doit pas l'envelopper dans une transaction (l'audit précéderait le COMMIT).
-  - **Prochaine action** : S3, **Task 11a**, agent sonnet/high ; puis 11b, 11c ; puis
-    `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high.
+  - **Task 11a faite** (agent sonnet/high) : `8d7aadde` (`McpClientAdministrator` + interface,
+    `McpClientNotFoundException` 404 `log_level: info`, `remove()` sous `retryOnce` → `findOneByIdForUpdate` →
+    `lockActiveOfClient` → suppression, audit `FailSafeAudit` après le COMMIT, cause `client-removed`). Preuve
+    contrôlée : `--filter McpClientAdministratorTest` OK (12) ; suite complète OK (6 526) et `make back-quality` vert
+    (rapportés par l'agent). Décisions de l'utilisateur sur 11a (2026-11-19, toutes recommandées) :
+    1. **déplacer** `DeadlockRetryInterface` vers `Shared/Application/` et `DoctrineDeadlockRetry` vers
+       `Shared/Infrastructure/Doctrine/` (appelants, tests, règles `security-user.md`,
+       `mcp-oauth-revocation-personne.md`, `mcp-oauth-cycle-de-vie.md`) ;
+    2. **corriger** le docblock de `RevokedConnectionAudit::record()` et la règle d'audit pour admettre `client-removed` ;
+    3. **renommer** `McpClientNotFoundException::withId()` en `forTheCaller()` ;
+    4. **accepter** que `revise()` audite le nombre de redirections après déduplication, et le **noter au plan** (Task 11).
+  - **Prochaine action** : S3, **Task 11b**, en deux agents sonnet/high successifs (budget MCP) : **11b-1** les quatre
+    décisions ci-dessus ; **11b-2** le test de concurrence réel de l'interblocage de `remove()` (modèle
+    `AccountWideRevocationDeadlockTest`, relance après `resetManager()` prouvée). Puis 11c ; puis
+    `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high. HEAD avant 11b : `8d7aadde`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
