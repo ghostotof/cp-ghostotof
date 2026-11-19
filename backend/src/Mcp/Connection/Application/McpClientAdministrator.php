@@ -85,27 +85,33 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
      */
     public function revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient
     {
-        // Les URI d'avant sont lues sous le verrou, avant la révision : le journal
-        // compare deux ensembles de la même ligne, pas un état relu plus tard.
-        [$client, $before] = $this->transaction->run(function () use ($id, $name, $redirectUris): array {
+        // Les URI d'avant et d'après sont lues sous le verrou, brutes : le journal
+        // compare deux états de la même ligne, pas un état relu plus tard, et aucun
+        // calcul d'audit ne tourne avant le COMMIT (il ne peut pas faire échouer
+        // l'écriture).
+        [$client, $before, $after] = $this->transaction->run(function () use ($id, $name, $redirectUris): array {
             $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
-            // Dédoublonné : une ligne écrite avant la règle peut porter deux fois la même URI.
-            $before = array_values(array_unique($locked->redirectUris()));
+            $before = $locked->redirectUris();
             $locked->revise($name, $redirectUris);
 
-            return [$locked, $before];
+            return [$locked, $before, $locked->redirectUris()];
         });
 
-        // Des ensembles dédoublonnés : seuls des nombres sortent, jamais une URI.
-        $after = array_values(array_unique($client->redirectUris()));
-
+        // Le dédoublonnage vit dans la fermeture d'audit : une ligne écrite avant la
+        // règle peut porter deux fois la même URI, le journal compte des ensembles.
+        // Seuls des nombres sortent, jamais une URI.
         $this->failSafeAudit->attempt(
-            fn () => $this->auditLogger->mcpClientRevised(
-                $client->getClientId(),
-                \count($after),
-                \count(array_diff($after, $before)),
-                \count(array_diff($before, $after)),
-            ),
+            function () use ($client, $before, $after): void {
+                $beforeSet = array_unique($before);
+                $afterSet = array_unique($after);
+
+                $this->auditLogger->mcpClientRevised(
+                    $client->getClientId(),
+                    \count($afterSet),
+                    \count(array_diff($afterSet, $beforeSet)),
+                    \count(array_diff($beforeSet, $afterSet)),
+                );
+            },
             self::REVISION_NOT_AUDITED,
         );
 
