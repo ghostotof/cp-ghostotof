@@ -23,7 +23,9 @@ use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\TransactionRequiredException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -238,6 +240,66 @@ final class McpClientRepositoryTest extends KernelTestCase
         } finally {
             $probe->close();
         }
+    }
+
+    /**
+     * `FOR SHARE` et non `FOR KEY SHARE` (#652) : `FOR KEY SHARE`, le plus faible
+     * des verrous de ligne, laisserait passer une révision du client (`UPDATE`
+     * qui ne touche pas la clé, donc `FOR NO KEY UPDATE`). `FOR SHARE` la bloque.
+     * `NOWAIT` : une sonde qui attendrait bloquerait le test ; le refus attendu
+     * est l'état SQL `55P03` (lock_not_available).
+     *
+     * `FOR UPDATE SKIP LOCKED` (test précédent) ne distingue pas les deux : il
+     * échoue contre les deux verrous.
+     */
+    public function testFindOneByClientIdForShareBlocksARevisionOfTheRow(): void
+    {
+        $client = RegisteredMcpClient::of(self::PREREGISTERED_ID, 'Client', ['https://client.example.test/cb']);
+        $this->repository()->add($client);
+        $connection = $this->em->getConnection();
+        $probe = self::openProbeBeside($connection);
+
+        try {
+            $connection->beginTransaction();
+            $this->repository()->findOneByClientIdForShare(self::PREREGISTERED_ID);
+
+            try {
+                $probe->fetchOne('SELECT 1 FROM mcp_client WHERE id = :id FOR NO KEY UPDATE NOWAIT', ['id' => $client->getId()->toRfc4122()]);
+                self::fail('Une révision du client (FOR NO KEY UPDATE) passerait : le verrou est plus faible que FOR SHARE.');
+            } catch (DriverException $refusal) {
+                self::assertSame('55P03', $refusal->getSQLState());
+            }
+        } finally {
+            $probe->close();
+        }
+    }
+
+    /**
+     * Sans transaction, Doctrine refuse de poser le verrou : `setLockMode()`
+     * lève avant toute requête ({@see \App\Shared\Infrastructure\Doctrine\RereadUnderLock::row()} le propage,
+     * sans le rattraper). Un appelant hors transaction est un bogue
+     * de câblage, qui doit échouer bruyamment et non lire sans verrou.
+     */
+    public function testFindOneByIdForUpdateRefusesToRunOutsideATransaction(): void
+    {
+        $client = RegisteredMcpClient::of(self::PREREGISTERED_ID, 'Client', ['https://client.example.test/cb']);
+        $this->repository()->add($client);
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+
+        $this->expectException(TransactionRequiredException::class);
+
+        $this->repository()->findOneByIdForUpdate($client->getId());
+    }
+
+    public function testFindOneByClientIdForShareRefusesToRunOutsideATransaction(): void
+    {
+        $client = RegisteredMcpClient::of(self::PREREGISTERED_ID, 'Client', ['https://client.example.test/cb']);
+        $this->repository()->add($client);
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+
+        $this->expectException(TransactionRequiredException::class);
+
+        $this->repository()->findOneByClientIdForShare(self::PREREGISTERED_ID);
     }
 
     public function testFindOneByClientIdForShareReturnsNullForAnUnknownClient(): void
