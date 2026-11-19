@@ -76,8 +76,13 @@
     `testTerminatedForAdministrationKeepsTheMostRecentlyTerminated`) ; `e422deec` (fil principal : docblock
     d'`ofAccount()` remis au-dessus de sa méthode, la 7B l'avait déplacé). Contrôlé : `McpConnectionRepositoryTest`
     OK (43 tests, 412 assertions), PHPStan et Rector verts sur le fichier.
-  - **Prochaine action** : Task 8 (plan l. 373 et suivantes, sensible : concurrence et consentement, sonnet/high),
-    puis relecture S2 depuis `45daeb53` (`/code-review medium` + `agent-skills:security-auditor` opus/high).
+  - **Task 8 faite** : `931e9616` — `grant()` lit son client par `findOneByClientIdForShare()` ; test à processus fils
+    `ConsentClientRemovalRaceTest` (rouge FK 23503 vérifié, mutation rejouée) + fixture `delete-mcp-client.php`. Écart :
+    le second test supprime après la validation (stub de validateur), sinon league refuse avant `clientNoLongerRegistered()`.
+    Contrôlé par le fil principal : `ConsentClientRemovalRaceTest|ConsentServiceTest|ConsentControllerTest` OK (79) deux
+    fois ; l'agent : trois fois, `tests/Mcp/Connection` OK (1 475), PHPStan et Rector verts.
+  - **Prochaine action** : relecture S2 (Tasks 5-8), `/code-review medium` sur `diff 45daeb53...HEAD` (HEAD = commit
+    de cette reprise, point fixe de S3) ; auditeur sécurité opus/high à confirmer par l'utilisateur.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
