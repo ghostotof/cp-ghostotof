@@ -150,8 +150,26 @@
     redirection retirée est refusé sans la révocation `code-replay` de sa connexion (RFC 6749 §4.1.2), et un code
     échu/révoqué est audité sous la nouvelle cause. Questions de l'agent : préséance des causes (il recommande de
     garder) ; `validateClient()` appelé deux fois (secret vérifié deux fois).
-  - **Prochaine action** : S3, relecture `/code-review medium diff 8c5d8586...HEAD` + auditeur sécurité opus/high
-    (série touchant le point de jeton), puis tri. HEAD relu : `b4846612`.
+  - **S3 relue** (`/code-review medium diff 8c5d8586...HEAD` + auditeur opus/high, HEAD relu `a7a360bb`). Tri :
+    - **Série C3 (correction)**, décisions de l'utilisateur (2026-11-19, toutes recommandées) :
+      - **C3a** (grant) : rejeu masqué (relecture haute / auditeur moyenne, confiance haute) → **laisser league juger
+        d'abord** : la surcharge ne refuse qu'un code non échu (`expire_time`) et non consommé (`isAuthCodeRevoked()`,
+        qui lève le rejeu sous verrou) ; tests de régression (rejeu avec vérificateur → connexion révoquée
+        `code-replay` ; sans → `replay-unproven`, connexion active ; code échu → sa cause, pas la nouvelle) ; règle
+        `mcp-oauth-cycle-de-vie.md` l. ~263 et ~307 (l'échange compare désormais à la liste du client) ; **course
+        révision/échange acceptée et documentée** (même règle) ; docblock de `DeadlockRetryInterface` (« opération de
+        compte » → générique ; l'appelant ne tient aucune entité ni transaction englobante, F7).
+      - **C3b** (audit) : `register()` audite via `FailSafeAudit` (relecture moyenne / auditeur faible) + test de
+        panne du journal ; `mcp-client-revised` porte **`addedRedirectCount` / `removedRedirectCount`** (aucune URI) ;
+        fixture `remove-mcp-client.php` vérifie la cause `client-removed` (F8).
+    - **Constats écrits pour la PR** : `validateClient()` deux fois (clients tous publics, coût négligeable) ; branche
+      `redirect_uri` nulle inatteignable (obligatoire à l'autorisation) ; refus avant PKCE (indice à un porteur de code
+      volé, bruit d'audit) ; `revise()` sans relance sur interblocage ; pas d'`AuditOrigin` sur révision/suppression ;
+      cycles de cascade autres que T1 (purge, suppression de compte) absorbés par `retryOnce` ; lot de verrous et
+      cascade non bornés ; « altitude » (règle placée devant league plutôt que dans le jugement sous verrou).
+    - **Vers la Task 17B** : rappeler à l'écran que supprimer un client CIMD ne le bannit pas (F10).
+  - **Prochaine action** : **C3a**, agent sonnet/high ; puis **C3b**, agent sonnet/high ; puis
+    `/code-review medium diff <HEAD de ce commit>...HEAD` + auditeur opus/high (point de jeton).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
