@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Application\DeadlockRetryInterface;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
-use App\Security\User\Application\DeadlockRetryInterface;
+use App\Shared\Application\DeadlockRetryInterface;
 use Closure;
 
 /**

@@ -14,7 +14,7 @@ use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Security\Authentication\Application\AuditOrigin;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
-use App\Security\User\Application\DeadlockRetryInterface;
+use App\Shared\Application\DeadlockRetryInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**

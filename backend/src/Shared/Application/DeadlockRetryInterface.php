@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Security\User\Application;
+namespace App\Shared\Application;
 
 use Closure;
 use Throwable;

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Security\User\Infrastructure\Doctrine;
+namespace App\Tests\Shared\Infrastructure\Doctrine;
 
-use App\Security\User\Infrastructure\Doctrine\DoctrineDeadlockRetry;
+use App\Shared\Infrastructure\Doctrine\DoctrineDeadlockRetry;
 use App\Tests\Support\DeadlockedStatement;
 use Doctrine\DBAL\Exception\DeadlockException;
 use Doctrine\DBAL\Exception\DriverException;

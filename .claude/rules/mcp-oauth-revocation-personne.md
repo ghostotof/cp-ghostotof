@@ -15,8 +15,8 @@ paths:
   - "backend/src/Security/User/Application/CpgUserRoleAdministrator.php"
   - "backend/src/Security/User/Application/PasswordSetupService.php"
   - "backend/src/Security/User/Application/RoleChangeOutcome.php"
-  - "backend/src/Security/User/Application/DeadlockRetryInterface.php"
-  - "backend/src/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetry.php"
+  - "backend/src/Shared/Application/DeadlockRetryInterface.php"
+  - "backend/src/Shared/Infrastructure/Doctrine/DoctrineDeadlockRetry.php"
   - "backend/src/Mcp/Connection/Application/ReadSnapshotInterface.php"
   - "backend/src/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshot.php"
   - "backend/src/Mcp/Connection/Infrastructure/Doctrine/ReadSnapshotInsideTransactionException.php"
@@ -31,8 +31,8 @@ paths:
   - "backend/tests/Migrations/Version20261028180000Test.php"
   - "backend/tests/Migrations/Version20261028200000Test.php"
   - "backend/tests/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshotTest.php"
-  - "backend/tests/Security/User/Application/DeadlockRetryIntegrationTest.php"
-  - "backend/tests/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetryTest.php"
+  - "backend/tests/Shared/Application/DeadlockRetryIntegrationTest.php"
+  - "backend/tests/Shared/Infrastructure/Doctrine/DoctrineDeadlockRetryTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationTest.php"
   - "backend/tests/Mcp/Connection/AbandonedGrantsTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationDeadlockTest.php"
@@ -368,8 +368,8 @@ The first delivery listed three; review R1, R1b and R2 **lifted two of them** an
    endpoint, outside the OAuth format (no OAuth layer catches a `DriverException`), its code is left unexchanged
    (not revoked, `code_exchanged_at` null) and it presents it again; the revocation then ends with C1 and C2 both
    `password-changed`, two audit lines, no retry. No `NOWAIT`, no pair lock before league. **Where the retry lives**: a
-   port `Security/User/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)` and its adapter
-   `Infrastructure/Doctrine/DoctrineDeadlockRetry`, asked for by each service
+   port `Shared/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)` and its adapter
+   `Shared/Infrastructure/Doctrine/DoctrineDeadlockRetry`, asked for by each service
    (`CpgUserAdministrator::changePassword()`, `CpgUserRoleAdministrator::setSuperAdmin()`,
    `PasswordSetupService::complete()`), **never inside the account locks** nor `PostgresLockedTransaction`: their other
    callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only
