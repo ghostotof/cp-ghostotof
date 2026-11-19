@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\McpClientRegistrar;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
@@ -18,9 +19,13 @@ use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
 use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -37,7 +42,7 @@ final class McpClientRegistrarTest extends TestCase
         $repository = $this->repository();
         $clock = new MockClock(new DateTimeImmutable('2026-10-25T02:30:00+02:00'));
 
-        $client = new McpClientRegistrar($repository, $clock, self::createStub(SecurityAuditLoggerInterface::class))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
+        $client = new McpClientRegistrar($repository, $clock, self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [new TestHandler()])))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
             RedirectUri::fromString('http://localhost/callback'),
             RedirectUri::fromString('https://app.example/cb'),
         ], AuditOrigin::Console);
@@ -65,6 +70,30 @@ final class McpClientRegistrarTest extends TestCase
             });
 
         $this->register($repository, $logger);
+    }
+
+    /**
+     * Une panne du journal ne défait pas une inscription déjà écrite : le client
+     * est ajouté, le client est rendu, rien ne remonte.
+     */
+    public function testAFailingAuditDoesNotUndoTheRegistration(): void
+    {
+        $repository = $this->repository();
+        $logger = self::createStub(SecurityAuditLoggerInterface::class);
+        $logger->method('mcpClientRegistered')->willThrowException(new RuntimeException('client cité claude-code-dev'));
+
+        $mainChannel = new TestHandler();
+
+        $client = $this->register($repository, $logger, $mainChannel);
+
+        self::assertSame([$client], $repository->added);
+        // La panne est journalisée sous le message constant, la classe seule :
+        // ni le message de l'exception ni l'identifiant du client n'en sortent.
+        $records = $mainChannel->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(Level::Critical, $records[0]->level);
+        self::assertSame('MCP client registration not audited.', $records[0]->message);
+        self::assertSame(['exceptionClass' => RuntimeException::class], $records[0]->context);
     }
 
     /** Un refus n'a rien écrit : il n'audite rien, ni avant ni après la lecture. */
@@ -162,9 +191,9 @@ final class McpClientRegistrarTest extends TestCase
         }
     }
 
-    private function register(McpClientRepositoryInterface $repository, ?SecurityAuditLoggerInterface $logger = null): McpClient
+    private function register(McpClientRepositoryInterface $repository, ?SecurityAuditLoggerInterface $logger = null, ?TestHandler $mainChannel = null): McpClient
     {
-        return new McpClientRegistrar($repository, new MockClock(), $logger ?? self::createStub(SecurityAuditLoggerInterface::class))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+        return new McpClientRegistrar($repository, new MockClock(), $logger ?? self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [$mainChannel ?? new TestHandler()])))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
     }
 
     private static function english(string $index, string $column, string $value): string

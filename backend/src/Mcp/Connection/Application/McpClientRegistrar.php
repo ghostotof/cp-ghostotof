@@ -18,10 +18,14 @@ use Psr\Clock\ClockInterface;
 
 final readonly class McpClientRegistrar implements McpClientRegistrarInterface
 {
+    /** Constant : il nomme ce qui n'a pas été audité, jamais la panne ni le client. */
+    private const string REGISTRATION_NOT_AUDITED = 'MCP client registration not audited.';
+
     public function __construct(
         private McpClientRepositoryInterface $clients,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -53,8 +57,12 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
         // L'audit suit l'écriture, jamais avant : un refus (lecture ou
         // contrainte unique) a levé plus haut et n'a rien à auditer. La valeur
         // d'enregistrement vient de l'énuméré du domaine, pas d'une chaîne
-        // recopiée.
-        $this->auditLogger->mcpClientRegistered((string) $clientId, ClientRegistration::Preregistered->value, $origin);
+        // recopiée. Une panne du journal ne défait pas l'inscription déjà
+        // écrite, ni ne la fait croire échouée : FailSafeAudit la journalise.
+        $this->failSafeAudit->attempt(
+            fn () => $this->auditLogger->mcpClientRegistered((string) $clientId, ClientRegistration::Preregistered->value, $origin),
+            self::REGISTRATION_NOT_AUDITED,
+        );
 
         return $client;
     }
