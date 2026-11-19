@@ -64,7 +64,15 @@
     pas de cause) ; la Task 11 consomme `record(McpConnectionReference, string)`, que `ConnectionReference` implémente.
     **Constat écrit (PR)** : une connexion échue non encore marquée par la purge compte comme active (comme
     `findNotRevokedOfAccount`) — à revoir en 7B/12 si le statut affiché doit la distinguer.
-  - **Prochaine action** : Task 7B lancée (sonnet/high, `sed -n 352,372p`) ; puis 8 ; relecture S2 depuis `45daeb53`.
+  - **Task 7B faite** : `65696e47` — `findNotRevokedForAdministration()`, `findTerminatedForAdministration()` par
+    `forAdministration()` (client et compte joints, 0 requête paresseuse prouvée : sans `account`, 4 au lieu de 2).
+    Contrôlé : `McpConnectionRepositoryTest` OK (42). Accesseurs réels : `client()`, `account()`, `getUsername()`.
+  - **Correction 7B' (écart plan/spec, tranché par la spec)** : plan l. 362 trie les terminées par `grantedAt`, mais
+    spec 0007 S4 (l. 503, 812) et D-D (« même motif que `OwnMcpConnections` ») les **choisissent par instant de fin**
+    (`revokedAt DESC, id DESC` puis `LIMIT`), affichées ensuite par date d'octroi. 7B' : `findTerminatedForAdministration`
+    trie par `revokedAt DESC, id DESC` + test qui discrimine. **Task 12** : le service retrie par octroi (`usort`, comme
+    `OwnMcpConnections::newestGrantFirst`) — à mettre dans son brief.
+  - **Prochaine action** : 7B' lancée (sonnet/high) ; puis 8 ; relecture S2 depuis `45daeb53`.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
