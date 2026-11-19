@@ -15,8 +15,10 @@ use Throwable;
  * l'appelant rend (le refus de league, les jetons émis, la purge menée à son
  * terme, le refus d'une admission — 401 `invalid_client` s'il est définitif,
  * 429 ou 503 `temporarily_unavailable` s'il est passager —, le 401 d'un
- * garde, la révocation, l'inscription et la révision d'un client). La liste exacte des sites se relève,
- * depuis `backend/`, par `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'`.
+ * garde, la révocation, l'inscription, la révision et la suppression d'un
+ * client, la supersession d'une connexion). La liste exacte des sites se
+ * relève, depuis `backend/`, par
+ * `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'`.
  *
  * La ligne est tentée ; une panne, quelle qu'elle soit (`Throwable` : une
  * erreur du pilote, du chiffrement, du journal lui-même), sort en `critical`

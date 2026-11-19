@@ -58,7 +58,11 @@ enum GrantRefusal: string
      */
     case ReplayUnproven = 'replay-unproven';
 
-    /** Artefact authentique présenté comme code, qui n'en est pas un (un jeton de rafraîchissement). */
+    /**
+     * Artefact authentique présenté comme code, qui n'en est pas un (un jeton de
+     * rafraîchissement), ou charge de code dont l'échéance ou l'identifiant sont
+     * mal typés (#652).
+     */
     case NotACode = 'not-a-code';
 
     /** `redirect_uri` absente ou autre que celle de l'autorisation (RFC 6749 §4.1.3). */

@@ -8,6 +8,7 @@ use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use DateInterval;
@@ -136,6 +137,7 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      * sinon la main revient à league (qui le refuse sous sa propre cause).
      *
      * @throws OAuthServerException `invalid_request` (charge mal typée) ou `invalid_grant`
+     * @throws AuthorizationCodeReplayedException quand un code déjà échangé revient sur une connexion active (levée par `isAuthCodeRevoked()`, laissée remonter)
      */
     private function refuseTheRemovedRedirect(object $payload): void
     {
