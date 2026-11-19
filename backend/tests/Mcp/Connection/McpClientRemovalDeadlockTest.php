@@ -119,7 +119,7 @@ final class McpClientRemovalDeadlockTest extends WebTestCase
             self::assertSame(1, preg_match('/^issued 200$/m', $exchangeOutput), $observed);
             self::assertSame(1, preg_match('/^removed 1$/m', $removalOutput), 'Le second essai relit C2 seule. '.$observed);
             self::assertSame(1, preg_match('/^connectionaudit 1$/m', $removalOutput), $observed);
-        self::assertSame(1, preg_match('/^causedaudit 1$/m', $removalOutput), 'Chaque connexion coupée porte la cause `client-removed`. '.$observed);
+            self::assertSame(1, preg_match('/^causedaudit 1$/m', $removalOutput), 'Chaque connexion coupée porte la cause `client-removed`. '.$observed);
 
             return;
         }
