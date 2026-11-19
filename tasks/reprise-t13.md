@@ -43,7 +43,12 @@
     `Uri::parse` ; (5) compte des paramètres sorti de `carriesIss()` vers `fromString()` ; (6) messages dérivés
     des constantes ; (9) `discovered()` passe par `distinctBounded()` ; (10) le test des 11 redirections vérifie
     le message `tooMany()`. Point fixe de sa relecture : `8a44a8a0`.
-  - **Prochaine action** : contrôler C1, la relire (`/code-review medium` sur `diff 8a44a8a0...HEAD`), puis Task 5.
+  - **C1 faite** : `d3b6ea3a` (matches borné, rouge vérifié), `5ca627a7` (compte hors de `carriesIss()`, prédicat
+    privé `exceedsQueryParameterBound()`), `9ec95642` (messages via constantes), `54746105` (`discovered()` par
+    `distinctBounded()`, rouge vérifié ; test qui construit `ClientMetadataDocument` par réflexion), `3dba345f`
+    (assertion du message, mordant prouvé par mutation). Contrôlé : `tests/Mcp/Connection` OK (1 453).
+  - **Relecture de C1** : `/code-review medium` sur `diff 8a44a8a0...<HEAD de ce commit>` (point fixe de S2).
+  - **Prochaine action** : trier la relecture de C1 ; si aucun critique/haut/moyen, lancer la Task 5.
   - Brief : exiger explicitement `superpowers:verification-before-completion` (fait à la Task 2, suivi).
 - Séries de relecture prévues (`/code-review medium` sur le seul diff de la série ; audit sécurité en
   plus pour S2, S3 et S5, qui touchent la révocation, la concurrence ou les routes protégées) :
@@ -93,6 +98,8 @@ Relecture S1 (pour la description de la PR) :
 - (faible, conf. haute) la commande compte après dédoublonnage, `ClientMetadataDocument` avant : 10 distinctes +
   1 doublon acceptées par l'une, refusées par l'autre.
 - (faible, conf. haute) la commande analyse toutes les `--redirect-uri` avant que l'entité ne refuse le nombre.
+- (C1, faible) `CimdClientAdmission.php:94` ne rattrape pas `InvalidMcpClientRedirectsException` levée par
+  `discovered()` : inatteignable (`ClientMetadataDocument::fromJson()` borne déjà), un 500 si elle le devenait.
 - (Task 4, question ouverte à l'utilisateur) `$io->listing()` n'échappe pas ; inatteignable (`RedirectUri`
   refuse `<`). Recommandation : ne pas échapper, le noter dans la PR.
 
