@@ -147,14 +147,16 @@ class McpClient
      * `cimd` : ce client peut être rafraîchi depuis un document plus récent, ce
      * qu'un client pré-enregistré ne peut jamais.
      *
-     * Le document a déjà écarté les redirections inadmissibles ; une
-     * redirection répétée n'est gardée qu'une fois, dans l'ordre reçu.
+     * Le document a déjà écarté les redirections inadmissibles, mais l'entité
+     * ne s'en remet pas à lui : l'invariant des redirections (de une à
+     * {@see self::MAX_REDIRECT_URIS} distinctes, une redirection répétée n'étant
+     * gardée qu'une fois, dans l'ordre reçu) est celui de {@see self::register()}.
+     *
+     * @throws InvalidMcpClientRedirectsException aucune redirection, ou plus que la borne, une fois dédupliquées
      */
     public static function discovered(ClientMetadataDocument $document, DateTimeImmutable $at): self
     {
-        $distinct = array_values(array_unique(array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $document->redirectUris)));
-
-        return new self((string) $document->clientId->toMcpClientId(), (string) $document->name, $distinct, $at, ClientRegistration::Cimd);
+        return new self((string) $document->clientId->toMcpClientId(), (string) $document->name, self::distinctBounded($document->redirectUris), $at, ClientRegistration::Cimd);
     }
 
     public function getId(): Uuid

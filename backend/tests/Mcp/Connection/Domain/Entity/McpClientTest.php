@@ -15,6 +15,7 @@ use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use ReflectionProperty;
 
 /**
@@ -69,6 +70,32 @@ final class McpClientTest extends TestCase
         self::assertTrue($client->allowsRedirect('http://localhost:53124/callback'));
         self::assertFalse($client->allowsRedirect('http://localhost:53124/other'));
         self::assertFalse($client->allowsRedirect('https://evil.test/callback'));
+    }
+
+    /**
+     * Un client découvert respecte l'invariant des redirections, comme un
+     * client pré-enregistré (#652) : le document les borne déjà à la lecture,
+     * mais l'entité ne s'en remet pas à lui. Le constructeur du document étant
+     * privé, un document hors bornes se construit par réflexion — l'état que
+     * l'entité refuse d'enregistrer, sans qu'aucune porte publique ne le fabrique.
+     */
+    public function testADiscoveredClientWithoutRedirectIsRefused(): void
+    {
+        $this->expectException(InvalidMcpClientRedirectsException::class);
+        $this->expectExceptionMessage(InvalidMcpClientRedirectsException::none()->getMessage());
+
+        McpClient::discovered($this->documentWithRedirects([]), new DateTimeImmutable());
+    }
+
+    public function testADiscoveredClientWithElevenDistinctRedirectsIsRefused(): void
+    {
+        $this->expectException(InvalidMcpClientRedirectsException::class);
+        $this->expectExceptionMessage(InvalidMcpClientRedirectsException::tooMany()->getMessage());
+
+        McpClient::discovered(
+            $this->documentWithRedirects(array_map(RedirectUri::fromString(...), $this->distinctRedirects(McpClient::MAX_REDIRECT_URIS + 1))),
+            new DateTimeImmutable(),
+        );
     }
 
     /** Un client dont l'identifiant a la forme CIMD donne l'hôte de cet identifiant. */
@@ -176,6 +203,24 @@ final class McpClientTest extends TestCase
     private function distinctRedirects(int $count): array
     {
         return array_map(static fn (int $i): string => \sprintf('https://app.example/cb/%d', $i), range(1, $count));
+    }
+
+    /**
+     * Un document dont les redirections sont celles données, hors de ce que
+     * `fromJson()` admet : son constructeur est privé, on l'appelle par réflexion.
+     *
+     * @param list<RedirectUri> $redirectUris
+     */
+    private function documentWithRedirects(array $redirectUris): ClientMetadataDocument
+    {
+        $clientId = CimdClientId::tryFrom(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($clientId);
+
+        $class = new ReflectionClass(ClientMetadataDocument::class);
+        $document = $class->newInstanceWithoutConstructor();
+        $class->getConstructor()?->invoke($document, $clientId, McpClientName::fromString('Client de test'), $redirectUris);
+
+        return $document;
     }
 
     /**
