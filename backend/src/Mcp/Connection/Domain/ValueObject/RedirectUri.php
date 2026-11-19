@@ -37,6 +37,24 @@ use Stringable;
  */
 final readonly class RedirectUri implements Stringable
 {
+    /**
+     * La plus longue redirection admise, en octets (`strlen`). Une redirection
+     * OAuth réelle en compte une centaine ; 2 048 est la borne usuelle des URL
+     * (navigateurs, serveurs) et reste très au-dessus. Vérifiée **avant**
+     * `Uri::parse()` : l'analyseur n'a pas à lire ce qu'un enregistrement ou une
+     * demande ne peut pas porter (T8 de #652).
+     */
+    public const int MAX_LENGTH = 2048;
+
+    /**
+     * Le plus grand nombre de paramètres de requête admis. Une redirection
+     * OAuth réelle en porte rarement plus de quelques-uns : 50 laisse une marge
+     * large. Compté **avant** `parse_str()` — qui, au-delà de `max_input_vars`
+     * (1 000), émet un avertissement que dev et test changent en exception —,
+     * jamais après : l'ordre est compte, puis analyse.
+     */
+    public const int MAX_QUERY_PARAMETERS = 50;
+
     /** Les seuls hôtes admis en `http`, tels que League\Uri les rend. */
     private const array LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
@@ -54,6 +72,11 @@ final readonly class RedirectUri implements Stringable
      */
     public static function fromString(string $value): self
     {
+        // Avant toute analyse : la longueur ne coûte rien, l'analyse si.
+        if (\strlen($value) > self::MAX_LENGTH) {
+            throw InvalidRedirectUriException::tooLong();
+        }
+
         $uri = Uri::parse($value) ?? throw InvalidRedirectUriException::unparsable();
 
         if ($uri->toString() !== $value) {
@@ -107,6 +130,11 @@ final readonly class RedirectUri implements Stringable
 
         if (null === $query) {
             return false;
+        }
+
+        // Le compte précède l'analyse : `parse_str()` avertit au-delà de `max_input_vars`.
+        if (\count(explode('&', $query)) > self::MAX_QUERY_PARAMETERS) {
+            throw InvalidRedirectUriException::tooManyQueryParameters();
         }
 
         parse_str($query, $parameters);

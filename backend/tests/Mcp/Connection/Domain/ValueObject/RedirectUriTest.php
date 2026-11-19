@@ -194,4 +194,73 @@ final class RedirectUriTest extends TestCase
         self::assertFalse(RedirectUri::fromString('https://localhost/callback')->isLoopback());
         self::assertFalse(RedirectUri::fromString('https://app.example/callback')->isLoopback());
     }
+
+    /**
+     * Une redirection de plus de `MAX_LENGTH` octets est refusée avant toute
+     * analyse : League\Uri n'a pas à lire ce qu'un enregistrement ne peut pas
+     * porter (T8 de #652). Le message est celui de la fabrique, constant.
+     */
+    public function testAnOverlongRedirectIsRefusedBeforeParsing(): void
+    {
+        try {
+            RedirectUri::fromString('https://a.example.test/cb?x='.str_repeat('a', 2048));
+            self::fail('La redirection aurait dû être refusée.');
+        } catch (InvalidRedirectUriException $exception) {
+            self::assertSame(InvalidRedirectUriException::tooLong()->getMessage(), $exception->getMessage());
+        }
+    }
+
+    /**
+     * La borne est inclusive : une redirection de `MAX_LENGTH` octets pile,
+     * par ailleurs valide, est acceptée.
+     */
+    public function testARedirectOfExactlyTheMaximumLengthIsAccepted(): void
+    {
+        $prefix = 'https://a.example.test/cb?x=';
+        $value = $prefix.str_repeat('a', RedirectUri::MAX_LENGTH - \strlen($prefix));
+
+        self::assertSame(RedirectUri::MAX_LENGTH, \strlen($value));
+        self::assertSame($value, (string) RedirectUri::fromString($value));
+    }
+
+    /**
+     * 1 001 paramètres tiennent sous la borne de longueur (`a&a&…`, 2 027
+     * octets) et dépassent `max_input_vars` (1 000 par défaut) : `parse_str()`
+     * émettrait « Input variables exceeded », que dev et test changent en
+     * exception. Le compte est donc fait avant : le gestionnaire ci-dessous
+     * échoue sur tout avertissement, et prouve que `parse_str()` n'est pas appelé.
+     */
+    public function testAQueryWithTooManyParametersIsRefusedBeforeParsing(): void
+    {
+        $value = 'https://a.example.test/cb?'.implode('&', array_fill(0, 1001, 'a'));
+
+        set_error_handler(static function (int $severity, string $message): never {
+            self::fail(\sprintf('Un avertissement a été émis : %s', $message));
+        });
+
+        try {
+            RedirectUri::fromString($value);
+            self::fail('La redirection aurait dû être refusée.');
+        } catch (InvalidRedirectUriException $exception) {
+            self::assertSame(InvalidRedirectUriException::tooManyQueryParameters()->getMessage(), $exception->getMessage());
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * La borne est inclusive : 50 paramètres passent, 51 sont refusés.
+     */
+    public function testFiftyQueryParametersAreAccepted(): void
+    {
+        $query = static fn (int $count): string => implode('&', array_map(static fn (int $i): string => \sprintf('p%d=1', $i), range(0, $count - 1)));
+
+        $fifty = 'https://a.example.test/cb?'.$query(50);
+        self::assertSame($fifty, (string) RedirectUri::fromString($fifty));
+
+        $this->expectException(InvalidRedirectUriException::class);
+        $this->expectExceptionMessage(InvalidRedirectUriException::tooManyQueryParameters()->getMessage());
+
+        RedirectUri::fromString('https://a.example.test/cb?'.$query(51));
+    }
 }

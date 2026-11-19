@@ -74,4 +74,22 @@ final class InvalidRedirectUriException extends InvalidArgumentException
     {
         return new self('Le port de la redirection doit être compris entre 1 et 65535.');
     }
+
+    /**
+     * Plus de {@see \App\Mcp\Connection\Domain\ValueObject\RedirectUri::MAX_LENGTH}
+     * octets : refusée avant d'être analysée. Message constant, sans la valeur.
+     */
+    public static function tooLong(): self
+    {
+        return new self('La redirection dépasse 2048 octets.');
+    }
+
+    /**
+     * Plus de {@see \App\Mcp\Connection\Domain\ValueObject\RedirectUri::MAX_QUERY_PARAMETERS}
+     * paramètres : refusée avant que `parse_str()` ne les lise. Message constant, sans la valeur.
+     */
+    public static function tooManyQueryParameters(): self
+    {
+        return new self('La requête de la redirection porte plus de 50 paramètres.');
+    }
 }
