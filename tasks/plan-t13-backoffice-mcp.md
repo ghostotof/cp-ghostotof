@@ -647,15 +647,15 @@ Les tests de chaque tâche sont nommés dans la tâche. Ils vivent sous `backend
   - DTO aux propriétés `#[ApiProperty(identifier: false)] string $id`, `string $account`, `string $clientId`, `string $clientName`, `string $clientRegistration`, `string $grantedAt`, `bool $codeExchanged`, `?string $lastUsedAt`, `string $expiresAt`, `string $state` (`active`, `expired` ou `revoked`), `?string $revokedAt`, `?string $revocationCause` ;
   - une seule opération, `GetCollection /backoffice/mcp/connections`, avec `skip_null_values: false`.
 
-- [ ] **Step 1 : tests rouges** :
+- [x] **Step 1 : tests rouges** :
   - `testSuperSeesEveryConnectionOfEveryAccount` (deux comptes) ;
   - `testNullFieldsAreAlwaysPresent` ;
   - `testAnAccountWithoutSuperGets403AndAnonymous401` ;
   - `testNoItemRouteIsSynthesised` : `/api/backoffice_mcp_connections/{uuid}` répond 404, et le routeur ne compile aucune route de ce nom.
-- [ ] **Step 2 : vérifier l'échec** — route absente.
-- [ ] **Step 3 : implémenter.**
-- [ ] **Step 4 : vérifier** — `--filter 'BackofficeMcpConnectionResourceTest|ApiRouteExposureTest|RouterScopeTest'` vert.
-- [ ] **Step 5 : commit** — `feat(mcp): le backoffice liste toutes les connexions MCP (#652)`.
+- [x] **Step 2 : vérifier l'échec** — route absente (404 « No route found », 4 échecs et 1 erreur : Provider absent).
+- [x] **Step 3 : implémenter.**
+- [x] **Step 4 : vérifier** — `--filter 'BackofficeMcpConnectionResourceTest|ApiRouteExposureTest|RouterScopeTest'` vert.
+- [x] **Step 5 : commit** — `feat(mcp): le backoffice liste toutes les connexions MCP (#652)`.
 
 ---
 
