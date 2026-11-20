@@ -6,9 +6,11 @@ use Rector\CodeQuality\Rector\Attribute\SortAttributeNamedArgsRector;
 use Rector\CodeQuality\Rector\FuncCall\SortCallLikeNamedArgsRector;
 use Rector\CodeQuality\Rector\If_\ExplicitNullableObjectInstanceRector;
 use Rector\Config\RectorConfig;
+use Rector\DeadCode\Rector\ClassMethod\RemoveUnusedPrivateMethodParameterRector;
 use Rector\Php80\Rector\Class_\ClassPropertyAssignToConstructorPromotionRector;
 use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Php84\Rector\MethodCall\NewMethodCallWithoutParenthesesRector;
+use Rector\TypeDeclaration\Rector\ClassMethod\ReturnNeverTypeRector;
 
 /*
  * Rector : modernisation PHP + qualite de code. Le CI (job `rector-backend`)
@@ -61,6 +63,20 @@ return RectorConfig::configure()
         // ExplicitNullableObjectInstanceRector instead ») et n'enregistre plus :
         // l'ancien skip, devenu mort, a ete retire.
         ExplicitNullableObjectInstanceRector::class,
+
+        // Provisoire, a retirer a la Task 17B (#652) : `update()` et `delete()` du
+        // Processor des clients MCP ne font que lever UnsupportedOperationException
+        // en attendant leur livraison. Rector y retire les parametres (que le trait
+        // DispatchesWriteOperations impose dans sa signature abstraite, ce qu'il ne
+        // voit pas) et type `delete()` en `never`, ce qui rend inatteignable le
+        // `return null` du trait (PHPStan). Des que les deux methodes font un vrai
+        // travail, aucune des deux regles ne les touche plus.
+        RemoveUnusedPrivateMethodParameterRector::class => [
+            __DIR__.'/src/Mcp/Connection/Infrastructure/ApiPlatform/BackofficeMcpClientProcessor.php',
+        ],
+        ReturnNeverTypeRector::class => [
+            __DIR__.'/src/Mcp/Connection/Infrastructure/ApiPlatform/BackofficeMcpClientProcessor.php',
+        ],
     ])
     ->withCache(__DIR__.'/var/cache/rector')
     // Toute classe est importee par `use`, natives comprises (`use Throwable;`,

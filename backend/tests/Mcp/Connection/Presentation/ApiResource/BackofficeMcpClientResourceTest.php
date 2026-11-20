@@ -18,6 +18,8 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsSecurityAuditLog;
+use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
 use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
@@ -27,14 +29,16 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * Couvre la lecture des clients MCP par le backoffice (#652, spec 0007 T13) :
- * GET /api/backoffice/mcp/clients et GET /api/backoffice/mcp/clients/{id},
+ * Couvre la lecture et l'enregistrement des clients MCP par le backoffice
+ * (#652, spec 0007 T13) : GET /api/backoffice/mcp/clients, GET
+ * /api/backoffice/mcp/clients/{id} et POST /api/backoffice/mcp/clients,
  * réservés ROLE_SUPER par l'`access_control` `^/api/backoffice`, et la garde
  * des opérations de la ressource déjà déclarées.
  */
 final class BackofficeMcpClientResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsSecurityAuditLog;
 
     private const string SUPER_USERNAME = 'super';
     private const string TRUSTED_USERNAME = 'trusted';
@@ -140,39 +144,150 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    public function testSuperRegistersAPreregisteredClient(): void
+    {
+        $client = self::createClient();
+        $super = $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/mcp/clients', server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'clientId' => self::PREREGISTERED_CLIENT_ID,
+            'name' => 'Client pré-enregistré',
+            'redirectUris' => ['https://client.example.test/callback', 'http://localhost/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(201);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        $stored = $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID);
+        self::assertNotNull($stored);
+        self::assertSame($stored->getId()->toRfc4122(), $body['id']);
+        self::assertSame(self::PREREGISTERED_CLIENT_ID, $body['clientId']);
+        self::assertSame('Client pré-enregistré', $body['name']);
+        self::assertSame(['https://client.example.test/callback', 'http://localhost/callback'], $body['redirectUris']);
+        self::assertSame('preregistered', $body['registration']);
+        self::assertSame($stored->registeredAt()->format(\DATE_ATOM), $body['registeredAt']);
+        self::assertSame(0, $body['activeConnections']);
+
+        // L'audit est celui d'une requête : l'acteur est celui du jeton, jamais `console`.
+        $event = self::singleSecurityAuditEvent('mcp-client-registered');
+        self::assertSame(self::PREREGISTERED_CLIENT_ID, $event['clientId']);
+        self::assertSame('preregistered', $event['registration']);
+        self::assertSame($super->getId()->toRfc4122(), $event['actor']);
+    }
+
+    public function testAnInvalidRedirectAnswers422AtItsPath(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/mcp/clients', server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'clientId' => self::PREREGISTERED_CLIENT_ID,
+            'name' => 'Client pré-enregistré',
+            'redirectUris' => ['not a redirect uri'],
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsArray($body['violations']);
+        self::assertIsArray($body['violations'][0]);
+        self::assertSame('redirectUris[0]', $body['violations'][0]['propertyPath']);
+        // Un refus n'écrit rien et n'audite rien.
+        self::assertNull($this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID));
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
+    }
+
+    public function testATakenClientIdAnswers409(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $this->clients()->add(RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Premier', ['https://client.example.test/callback']));
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/mcp/clients', server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'clientId' => self::PREREGISTERED_CLIENT_ID,
+            'name' => 'Second',
+            'redirectUris' => ['https://other.example.test/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(409);
+        // Le premier client est intact, et le refus n'est pas audité comme un enregistrement.
+        self::assertSame('Premier', $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID)?->getName());
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
+    }
+
+    /**
+     * `McpClientRegistrar` audite **après** son `flush` (COMMIT) : un Processor
+     * qui enveloppait l'appel dans une transaction ferait précéder le COMMIT
+     * par l'audit, et un échec du COMMIT laisserait un enregistrement audité
+     * que la base n'a pas. Le Processor n'ouvre donc aucune transaction, ne
+     * touche ni l'EntityManager ni la connexion : il assemble et délègue.
+     */
+    public function testTheProcessorOpensNoTransactionAroundTheRegistration(): void
+    {
+        $source = RepositoryFiles::read(RepositoryFiles::backend('src/Mcp/Connection/Infrastructure/ApiPlatform/BackofficeMcpClientProcessor.php'));
+
+        foreach (['beginTransaction', 'wrapInTransaction', 'TransactionInterface', 'Doctrine\\'] as $forbidden) {
+            self::assertStringNotContainsString($forbidden, $source, 'Le Processor ne porte aucune transaction : l\'audit suit le COMMIT du registrar.');
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function jsonWrite(string $csrf): array
+    {
+        return ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf];
+    }
+
     /**
      * La garde est l'`access_control`, pas la ressource : un compte de
      * confiance sans ROLE_SUPER et un jeton du palier de base reçoivent 403,
-     * un anonyme 401.
+     * un anonyme 401 (403 pour une écriture : la garde CSRF, qui précède le
+     * pare-feu, refuse d'abord une écriture sans cookie de session).
      *
-     * Seules les deux opérations de lecture figurent ici : une route absente
+     * Seules les opérations déjà déclarées figurent ici : une route absente
      * répond 404 à tout le monde, anonyme compris, car le routeur passe avant
-     * le pare-feu (constaté à la Task 16 sur Post, Put et Delete). Les trois
-     * opérations d'écriture entrent dans ce fournisseur avec leur route
-     * (Tasks 17A, 17B, 18).
+     * le pare-feu (constaté à la Task 16 sur Post, Put et Delete). Les
+     * opérations restantes entrent dans ce fournisseur avec leur route
+     * (Tasks 17B, 18). Le troisième élément est le corps d'une écriture : un
+     * corps valide, pour que seul le refus de l'accès puisse répondre.
      *
-     * @return iterable<string, array{string, string}>
+     * @return iterable<string, array{string, string, array<string, mixed>|null}>
      */
     public static function operations(): iterable
     {
-        yield 'GetCollection' => ['GET', '/api/backoffice/mcp/clients'];
-        yield 'Get' => ['GET', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID];
+        yield 'GetCollection' => ['GET', '/api/backoffice/mcp/clients', null];
+        yield 'Get' => ['GET', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID, null];
+        yield 'Post' => ['POST', '/api/backoffice/mcp/clients', [
+            'clientId' => self::PREREGISTERED_CLIENT_ID,
+            'name' => 'Client pré-enregistré',
+            'redirectUris' => ['https://client.example.test/callback'],
+        ]];
     }
 
+    /**
+     * @param array<string, mixed>|null $body
+     */
     #[DataProvider('operations')]
-    public function testEveryOperationRefusesAnAccountWithoutSuper(string $method, string $path): void
+    public function testEveryOperationRefusesAnAccountWithoutSuper(string $method, string $path, ?array $body): void
     {
-        // Anonyme : 401.
+        $content = null === $body ? null : self::jsonBody($body);
+        $json = null === $body ? [] : ['CONTENT_TYPE' => 'application/json'];
+
+        // Anonyme : 401 (403 par la garde CSRF pour une écriture).
         $anonymous = self::createClient();
-        $anonymous->request($method, $path);
-        self::assertResponseStatusCodeSame(401, 'Anonyme : '.$method.' '.$path);
+        $anonymous->request($method, $path, server: $json, content: $content);
+        self::assertResponseStatusCodeSame(null === $body ? 401 : 403, 'Anonyme : '.$method.' '.$path);
 
         // Compte de confiance sans ROLE_SUPER : 403.
         self::ensureKernelShutdown();
         $trusted = self::createClient();
         $this->registerAccount($trusted, self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
         $csrf = $this->loginAs($trusted, self::TRUSTED_USERNAME, TestCredentials::plainPassword());
-        $trusted->request($method, $path, server: ['HTTP_X_XSRF_TOKEN' => $csrf]);
+        $trusted->request($method, $path, server: [...$json, 'HTTP_X_XSRF_TOKEN' => $csrf], content: $content);
         self::assertResponseStatusCodeSame(403, 'Compte de confiance : '.$method.' '.$path);
 
         // Jeton du palier de base (ROLE_USER seul) : 403.
@@ -183,8 +298,11 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $csrfCookie = $base->getCookieJar()->get('XSRF-TOKEN');
         self::assertNotNull($csrfCookie);
-        $base->request($method, $path, server: ['HTTP_X_XSRF_TOKEN' => $csrfCookie->getValue()]);
+        $base->request($method, $path, server: [...$json, 'HTTP_X_XSRF_TOKEN' => $csrfCookie->getValue()], content: $content);
         self::assertResponseStatusCodeSame(403, 'Palier de base : '.$method.' '.$path);
+
+        // Un refus n'écrit rien : ni ligne, ni audit d'enregistrement.
+        self::assertNull($this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID));
     }
 
     /**

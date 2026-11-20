@@ -7,15 +7,18 @@ namespace App\Mcp\Connection\Presentation\ApiResource;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Post;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProcessor;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
 use DateTimeInterface;
 use Symfony\Component\Routing\Requirement\Requirement;
 
 /**
- * Les clients MCP, vus du backoffice (#652, spec 0007 T13) : lecture seule à
- * cette tâche, réservée ROLE_SUPER par l'`access_control` `^/api/backoffice`
- * (aucune garde sur la ressource elle-même : la garde est unique, voir
+ * Les clients MCP, vus du backoffice (#652, spec 0007 T13) : lecture et
+ * enregistrement à cette tâche (révision et suppression : Task 17B), réservés
+ * ROLE_SUPER par l'`access_control` `^/api/backoffice` (aucune garde sur la
+ * ressource elle-même : la garde est unique, voir
  * `.claude/rules/backoffice-api.md`).
  *
  * L'identifiant exposé est celui de la ligne `mcp_client` (UUID), pas le
@@ -39,6 +42,12 @@ use Symfony\Component\Routing\Requirement\Requirement;
             uriTemplate: '/backoffice/mcp/clients/{id}',
             requirements: ['id' => Requirement::UUID],
             provider: BackofficeMcpClientProvider::class,
+        ),
+        new Post(
+            uriTemplate: '/backoffice/mcp/clients',
+            status: 201,
+            input: BackofficeMcpClientInput::class,
+            processor: BackofficeMcpClientProcessor::class,
         ),
     ],
 )]
