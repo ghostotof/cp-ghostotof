@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\ApiResource;
 
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
+use App\Mcp\Connection\Presentation\ApiResource\BackofficeMcpClientResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
@@ -208,6 +211,51 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
     }
 
     /**
+     * Le détail d'un client est une vraie lecture d'item : une requête pour le
+     * client, une pour ses connexions actives — jamais la liste entière ni le
+     * décompte de tous les clients. Même mesure que la liste, sur le Provider,
+     * à 2 puis 8 clients : le coût ne grandit pas avec leur nombre.
+     */
+    public function testDetailTakesTwoQueriesWhateverTheClientCount(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register('jane', TestCredentials::plainPassword());
+
+        $this->addClientsWithOneConnectionEach(2, 0);
+        $id = $this->idOfDetailedClient();
+        $few = $this->queriesDuring(fn (): mixed => $this->provider()->provide(new Get(), ['id' => $id]));
+
+        $this->addClientsWithOneConnectionEach(6, 2);
+        $id = $this->idOfDetailedClient();
+        $many = $this->queriesDuring(fn (): mixed => $this->provider()->provide(new Get(), ['id' => $id]));
+
+        foreach ([$few, $many] as $read) {
+            self::assertInstanceOf(BackofficeMcpClientResource::class, $read['result']);
+            self::assertSame('https://client0.example.test/metadata.json', $read['result']->clientId);
+            self::assertSame(1, $read['result']->activeConnections);
+        }
+        self::assertSame(2, $few['count'], 'Deux requêtes pour 2 clients.');
+        self::assertSame(2, $many['count'], 'Deux requêtes pour 8 clients.');
+        // Le nombre de requêtes ne suffit pas (la liste en coûte aussi deux) :
+        // seul le client demandé a été chargé, pas les sept autres.
+        $loaded = self::getContainer()->get(EntityManagerInterface::class)->getUnitOfWork()->getIdentityMap()[McpClient::class] ?? [];
+        self::assertCount(1, $loaded, 'Le détail ne lit que le client demandé, pas toute la liste.');
+    }
+
+    /** Un identifiant inconnu : `null` (le 404), après la seule lecture du client — sans décompte à faire. */
+    public function testDetailOfAnUnknownClientIsNullAfterOneQuery(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register('jane', TestCredentials::plainPassword());
+        $this->addClientsWithOneConnectionEach(2, 0);
+
+        $read = $this->queriesDuring(fn (): mixed => $this->provider()->provide(new Get(), ['id' => self::UNKNOWN_ID]));
+
+        self::assertNull($read['result']);
+        self::assertSame(1, $read['count'], 'Un client absent coûte une requête : pas de décompte pour rien.');
+    }
+
+    /**
      * @return list<mixed>
      */
     private function listing(): array
@@ -217,6 +265,25 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertIsArray($rows);
 
         return $rows;
+    }
+
+    /**
+     * La clé du client mesuré, lue **avant** la mesure, puis l'unité de travail
+     * vidée : le cache d'identité ne doit pas masquer une requête.
+     */
+    private function idOfDetailedClient(): string
+    {
+        $client = $this->clients()->findOneByClientId('https://client0.example.test/metadata.json');
+        self::assertNotNull($client);
+        $id = $client->getId()->toRfc4122();
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        return $id;
+    }
+
+    private function provider(): BackofficeMcpClientProvider
+    {
+        return self::getContainer()->get(BackofficeMcpClientProvider::class);
     }
 
     private function addClientsWithOneConnectionEach(int $count, int $offset): void

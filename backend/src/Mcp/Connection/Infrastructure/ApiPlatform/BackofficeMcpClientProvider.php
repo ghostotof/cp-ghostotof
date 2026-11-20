@@ -12,10 +12,13 @@ use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Presentation\ApiResource\BackofficeMcpClientResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
- * Lit les clients MCP pour le backoffice : deux requêtes, quel que soit leur
- * nombre (les clients, puis les connexions actives de tous en un `GROUP BY`).
+ * Lit les clients MCP pour le backoffice, en deux requêtes dans les deux cas :
+ * la liste lit les clients puis les connexions actives de tous en un `GROUP BY`
+ * (quel que soit leur nombre) ; le détail lit un client par sa clé, puis le
+ * décompte de ses seules connexions actives.
  *
  * @implements ProviderInterface<BackofficeMcpClientResource>
  */
@@ -34,28 +37,42 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
      */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeMcpClientResource|array|null
     {
+        if ($operation instanceof GetCollection) {
+            return $this->collection();
+        }
+
+        return $this->item($this->uriVariableUuid($uriVariables));
+    }
+
+    /**
+     * Deux requêtes : tous les clients, puis le décompte de tous en un `GROUP BY`.
+     *
+     * @return list<BackofficeMcpClientResource>
+     */
+    private function collection(): array
+    {
         $counts = $this->connections->countActiveByClient();
 
-        if ($operation instanceof GetCollection) {
-            return array_map(
-                static fn (McpClient $client): BackofficeMcpClientResource => BackofficeMcpClientResource::fromClient(
-                    $client,
-                    $counts[$client->getId()->toRfc4122()] ?? 0,
-                ),
-                $this->clients->all(),
-            );
+        return array_map(
+            static fn (McpClient $client): BackofficeMcpClientResource => BackofficeMcpClientResource::fromClient(
+                $client,
+                $counts[$client->getId()->toRfc4122()] ?? 0,
+            ),
+            $this->clients->all(),
+        );
+    }
+
+    /**
+     * Une vraie lecture d'item : le client, puis ses seules connexions
+     * actives. Un client inconnu rend `null` (404) **avant** tout décompte.
+     */
+    private function item(Uuid $id): ?BackofficeMcpClientResource
+    {
+        $client = $this->clients->findOneById($id);
+        if (!$client instanceof McpClient) {
+            return null;
         }
 
-        // Le dépôt n'offre pas de lecture simple par identifiant (`findOneByIdForUpdate`
-        // verrouille et exige une transaction) : l'item se lit dans la liste, bornée
-        // par nature (voir McpClientRepositoryInterface::all()). `null` = 404.
-        $id = $this->uriVariableUuid($uriVariables)->toRfc4122();
-        foreach ($this->clients->all() as $client) {
-            if ($client->getId()->toRfc4122() === $id) {
-                return BackofficeMcpClientResource::fromClient($client, $counts[$id] ?? 0);
-            }
-        }
-
-        return null;
+        return BackofficeMcpClientResource::fromClient($client, $this->connections->countActiveOfClient($id));
     }
 }
