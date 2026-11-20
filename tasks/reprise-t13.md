@@ -507,7 +507,17 @@
     `BackofficeMcpClientRevisionInput` ; (3) `rector.php` : `withSkip` provisoire de
     `RemoveUnusedPrivateMethodParameterRector` et `ReturnNeverTypeRector` sur ce seul Processor — **la 17B le
     retire** (obligatoire).
-  - **Prochaine action** : agent **17B** (sonnet/high, sensible : révocation ; pas de `-hme`). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **17B faite** (sonnet/high) : `5d0755bb` (`BackofficeMcpClientRevisionInput` ; `Put` 200 / `Delete` 204,
+    `provider:` explicite + `requirements` UUID ; Processor `revise()`/`remove()` sans transaction ; garde étendue à
+    `PUT`/`DELETE`, avec état intact après refus ; aucun audit sur 404/409/422 ; course « supprimé entre Provider et
+    `remove()` » → `McpClientNotFoundException` 404 ; `BackofficeMcpClientRemovalTest` à part, collision de traits
+    `HoldsAnMcpConnection`/`DrivesTheOAuthFlow`), `3c33356a` (skip Rector retiré). Contrôlé après `restart backend` :
+    42 tests OK, 5 routes `backoffice/mcp/clients` ; agent : `make back-test` 6660 OK, qualité verte.
+    **Décisions de l'utilisateur (2026-11-20)** : la réponse du `PUT` **relit** `countActiveOfClient()` (une requête
+    de plus, compte frais) ; **Task 19** : le fixture `tests/Mcp/Connection/Fixtures/remove-mcp-client.php` prend
+    `McpClientAdministratorInterface` **au conteneur de test**, commentaire « aucune route ne le câble » corrigé.
+  - **Prochaine action** : agent **Task 18** (sonnet/high), puis relecture S5 (`/code-review medium` sur
+    `diff 2dd76a7c...HEAD` + `agent-skills:security-auditor` opus/high). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
