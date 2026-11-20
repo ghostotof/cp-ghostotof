@@ -303,11 +303,20 @@
   - **Questions de S4c-1 tranchées** (2026-11-20) : curseur = **Value Object dédié** (`final readonly`,
     `revokedAt` non nul + id, construit depuis la dernière connexion lue) ; invariant « fin réelle ≤ `revoked_at` »
     = **test + ligne dans `mcp-oauth-purge.md`** (édition en sed).
-  - **Prochaine action** : trois agents sonnet/high successifs (budget zone Mcp : > 4 fichiers = découpe) :
-    **S4c-2** = curseur VO + invariant de purge, en cours (vérifier d'abord si la purge sélectionne en SQL ou en
-    PHP : en SQL, la divergence PHP/PostgreSQL peut marquer avant l'échéance PHP → question) ; **S4c-3** =
-    constat 2, migration d'index partiels sur le SQL ci-dessus (empreinte `verify.sql`) ; **S4c-4** = constats 3
-    et 9 (validateur) ; puis relecture `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
+  - **S4c-2 faite** (2026-11-20) : `5454cc9f` curseur `ExchangedExpiredCursor` (`Domain/ValueObject`, fabrique
+    `after()`, `ConnectionNeverRevokedException` = LogicException) ; `dc6af1e7` invariant : la purge présélectionne
+    en SQL mais juge en PHP (`McpConnectionPurger.php:173-183`, `isExpiredAt`), donc échéance ≤ `revoked_at` tient ;
+    assertion ajoutée à `McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary`, paragraphe en fin
+    de `mcp-oauth-purge.md`. Contrôle fil principal : `tests/Mcp/Connection` 1568 OK. Annexes à écrire dans la PR :
+    échec transitoire non reproduit juste après ajout de classes (confiance faible, sévérité basse) ; `docker
+    compose` lancé depuis `backend/` prend le `compose.yaml` résiduel de Flex.
+  - **Décision** (2026-11-20) : allonger `app.mcp.lifetime.*` après une purge pouvait rendre une échéance
+    recalculée > `revoked_at` et fausser l'arrêt anticipé → **fin d'une expirée = min(`deadline()`, `revoked_at`)**,
+    invariant vrai par construction ; ajouté à S4c-4.
+  - **Prochaine action** : **S4c-3** (sonnet/high) = constat 2, migration d'index partiels sur le SQL ci-dessus
+    (empreinte `verify.sql`), en cours ; puis **S4c-4** (sonnet/high) = constats 3 et 9 (validateur) + fin
+    min(échéance, marquage) avec son test ; puis relecture `/code-review medium diff c25e103b...HEAD`
+    (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
