@@ -1334,8 +1334,10 @@ final class McpConnectionRepositoryTest extends KernelTestCase
      */
     public function testExchangedExpiredReadHydratesClientAndAccountWithoutFurtherQueries(): void
     {
-        $first = $this->registerClient('https://client.example.test/metadata.json');
-        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        // Deux clients de noms distincts : sans cela, une jointure croisée
+        // (le client de l'autre connexion) passerait inaperçue.
+        $first = $this->registerClient('https://client.example.test/metadata.json', 'Client Jane');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json', 'Client John');
         $this->expiredExchanged($this->persistAccount('jane'), $first, '2026-09-01T10:00:00+02:00', null);
         $this->expiredExchanged($this->persistAccount('john'), $second, '2026-09-02T10:00:00+02:00', null);
         $this->em->clear();
@@ -1350,7 +1352,42 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         });
 
         self::assertSame(1, $queries['count'], 'Une requête pour la lecture, aucune de plus pour le client ni pour le compte.');
-        self::assertCount(2, $queries['result']);
+        // Activité décroissante : la connexion de john (2 septembre) vient d'abord,
+        // chacune avec SON client et SON compte.
+        self::assertSame(['Client John/john', 'Client Jane/jane'], $queries['result']);
+    }
+
+    /**
+     * Même garde sur la page reprise : la branche à curseur ajoute une
+     * condition au SQL natif, et c'est celle que la console parcourt dès la
+     * deuxième page (#652). Le curseur vient de la dernière connexion d'une
+     * première page de taille 1, l'identity map est vidée, puis la page
+     * suivante coûte une requête et porte son client et son compte.
+     */
+    public function testExchangedExpiredResumedPageHydratesClientAndAccountWithoutFurtherQueries(): void
+    {
+        $first = $this->registerClient('https://client.example.test/metadata.json', 'Client Jane');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json', 'Client John');
+        $this->expiredExchanged($this->persistAccount('jane'), $first, '2026-09-01T10:00:00+02:00', null);
+        $this->expiredExchanged($this->persistAccount('john'), $second, '2026-09-02T10:00:00+02:00', null);
+        $this->em->clear();
+
+        $firstPage = $this->connections()->findExchangedExpiredForAdministration(null, 1);
+        self::assertCount(1, $firstPage);
+        $cursor = ExchangedExpiredCursor::after($firstPage[0]);
+        $this->em->clear();
+
+        $queries = $this->queriesDuring(function () use ($cursor): array {
+            $names = [];
+            foreach ($this->connections()->findExchangedExpiredForAdministration($cursor, 1) as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        });
+
+        self::assertSame(1, $queries['count'], 'Une requête pour la page reprise, aucune de plus pour le client ni pour le compte.');
+        self::assertSame(['Client Jane/jane'], $queries['result']);
     }
 
     /**
@@ -1440,9 +1477,9 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         return $account;
     }
 
-    private function registerClient(string $clientId): McpClient
+    private function registerClient(string $clientId, string $name = 'Client de test'): McpClient
     {
-        $client = RegisteredMcpClient::of($clientId, 'Client de test', ['https://client.example.test/callback', 'http://127.0.0.1/callback']);
+        $client = RegisteredMcpClient::of($clientId, $name, ['https://client.example.test/callback', 'http://127.0.0.1/callback']);
         $this->clients()->add($client);
 
         return $client;
