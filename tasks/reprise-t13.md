@@ -375,6 +375,14 @@
     `deadline()`) et constat 4 (échéance affichée d'une expirée échangée = fin bornée déjà calculée, sans recalcul).
     Agent sonnet/high lancé. Puis **tâche 4** (constats 5+6 et règle `mcp-oauth-purge.md:106-112`, qui décrit encore
     l'arrêt par `revoked_at`).
+  - **Tâches 2+3 faites** : `6c296bd0`. Constat 4 : RED `1796036400 ≠ 1793617200` (échéance recalculée au lieu du
+    marquage), test `testAnExpiredExchangedConnectionDisplaysItsBoundedEndWhenLifetimesWereLengthened`. Constat 3 :
+    refactoring sans rouge possible (expérience : `fromConfiguration()` refuse toute `unexchanged` ≥ idle), « limite
+    acceptée » retirée du docblock. Contrôlé : 16 tests OK, PHPStan des 2 fichiers OK, arbre propre ; `make back-test`
+    6626 OK (agent). **Tâche 4 lancée** (sonnet/high) : constat 5 (`expiredLiteral()`), règle
+    `mcp-oauth-purge.md:106-112` (arrêt par majorant d'activité + P1D, plus par `revoked_at`), docblock « deux listes »
+    du repository (l. 215-218). Le docblock de l'interface est déjà à jour (1b). Ensuite : relecture de série
+    `/code-review medium diff f4cca85a...HEAD`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
