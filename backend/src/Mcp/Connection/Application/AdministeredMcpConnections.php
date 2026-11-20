@@ -27,15 +27,24 @@ use Psr\Clock\ClockInterface;
  *   `revoked_at`, triées par SQL ;
  * - les accords **jamais échangés** (abandonnés non marqués, ou marqués
  *   expirés) : la fin est l'octroi plus le délai du code non échangé
- *   ({@see ConnectionLifetimes::unexchangedDeadline()}), triés par octroi en SQL ;
+ *   ({@see ConnectionLifetimes::unexchangedDeadline()}), triés par octroi en SQL.
+ *   Cette fin ne dépend que de l'octroi, **jamais du marquage** : c'est ce qui
+ *   rend le tri SQL par octroi exact, sans arrêt anticipé. Limite acceptée : si
+ *   `app.mcp.lifetime.connection_unexchanged` est allongée après la purge, une
+ *   abandonnée déjà marquée est rangée sur une fin postérieure à son marquage,
+ *   donc un peu trop haut ; aucune ligne n'est omise ;
  * - les **expirées échangées** : la fin est la plus proche des échéances
- *   d'inactivité et de plafond ({@see McpConnection::deadline()}), qu'on ne
+ *   d'inactivité et de plafond ({@see McpConnection::deadline()}), bornée par
+ *   leur marquage `revoked_at` (la fin est `min(échéance, revoked_at)`), qu'on ne
  *   calcule **que** en PHP — jour de calendrier d'un changement d'heure, fin
  *   de mois : PostgreSQL et PHP divergent. SQL les rend par `revoked_at`
- *   décroissant, par pages à clé de reprise, et comme la fin réelle ne dépasse
- *   jamais `revoked_at`, la lecture s'arrête dès que le `revoked_at` d'une page
- *   passe **strictement** sous la {@see self::TERMINATED_LIMIT}-ième meilleure
- *   fin connue : aucune ligne suivante ne peut plus l'égaler.
+ *   décroissant, par pages à clé de reprise. La fin réelle ne dépasse jamais
+ *   `revoked_at` **par construction** — la purge le garantit avec les durées en
+ *   vigueur à son passage, le `min` avec toutes celles qui suivront (une durée
+ *   `app.mcp.lifetime.*` allongée depuis repousserait l'échéance recalculée
+ *   au-delà du marquage) : la lecture s'arrête dès que le `revoked_at` d'une
+ *   page passe **strictement** sous la {@see self::TERMINATED_LIMIT}-ième
+ *   meilleure fin connue : aucune ligne suivante ne peut plus l'égaler.
  *
  * Les terminées se fusionnent sur leur fin réelle (l'identifiant décroissant
  * départageant deux fins égales) et les {@see self::TERMINATED_LIMIT} dernières
@@ -121,8 +130,10 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
      * ligne lue (le curseur) est strictement sous la meilleure fin que la liste
      * pleine ne peut plus battre, toutes les suivantes (`revoked_at` décroissant)
      * finissent plus tôt. Strict : à égalité, l'identifiant peut encore départager
-     * en leur faveur. L'invariant « fin réelle ≤ `revoked_at` » est celui de la
-     * purge, qui ne marque une connexion expirée qu'une fois son échéance passée.
+     * en leur faveur. L'invariant « fin réelle ≤ `revoked_at` » est vrai **par
+     * construction** pour ces lignes ({@see self::endOf()} borne la fin d'une
+     * expirée échangée par son marquage), quelles que soient les durées
+     * configurées aujourd'hui : il ne repose plus sur celles de la purge.
      *
      * @param list<EndedMcpConnection> $terminated
      */
@@ -146,8 +157,14 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
      * L'instant où la connexion a **réellement** pris fin : la révocation si une
      * personne, le client, un rejeu ou une supplantation l'a posée ; sinon (marquée
      * expirée par la purge, ou abandonnée que la purge n'a pas vue) l'échéance que
-     * le domaine calcule — le délai du code pour un accord jamais échangé, la plus
-     * proche des échéances d'inactivité et de plafond sinon.
+     * le domaine calcule :
+     * - un accord jamais échangé : octroi plus le délai du code, **sans** borne par
+     *   le marquage — le tri SQL par octroi de sa lecture en dépend (limite acceptée
+     *   décrite en tête de classe : un peu trop haut après un allongement) ;
+     * - un accord échangé : la plus proche des échéances d'inactivité et de plafond,
+     *   **bornée par `revoked_at`** — une durée allongée depuis la purge ne peut
+     *   pas la repousser après le marquage, ce que l'arrêt anticipé de sa lecture
+     *   suppose.
      */
     private function endOf(McpConnection $connection, DateTimeZone $zone): DateTimeImmutable
     {
@@ -156,9 +173,13 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
             return $revokedAt;
         }
 
-        return null === $connection->codeExchangedAt()
-            ? $this->lifetimes->unexchangedDeadline($connection->grantedAt()->setTimezone($zone))
-            : $connection->deadline($zone, $this->lifetimes);
+        if (null === $connection->codeExchangedAt()) {
+            return $this->lifetimes->unexchangedDeadline($connection->grantedAt()->setTimezone($zone));
+        }
+
+        $deadline = $connection->deadline($zone, $this->lifetimes);
+
+        return null !== $revokedAt && $revokedAt < $deadline ? $revokedAt : $deadline;
     }
 
     /**

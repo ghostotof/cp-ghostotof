@@ -297,6 +297,62 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         self::assertSame(6, $selects, 'Trois lectures fixes et trois pages d\'expirées échangées.');
     }
 
+    /**
+     * Des durées allongées après la purge (`app.mcp.lifetime.*`) repoussent l'échéance
+     * recalculée d'une expirée échangée au-delà de son `revoked_at` : sa fin est alors
+     * son marquage, jamais l'échéance recalculée. Ici l'inactivité passe de 30 à 60
+     * jours : la connexion A (octroyée J-50, purgée J-18) aurait une échéance à J+10,
+     * en tête de la liste, alors qu'elle a pris fin à J-18, avant les révocations de J-10.
+     * La B (octroyée J-40, purgée J-5) finit à J-5, après elles.
+     */
+    public function testAnExpiredConnectionEndsAtItsMarkingWhenLengthenedLifetimesPushItsDeadlinePastIt(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $older = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P50D')), $this->now->sub(new DateInterval('P18D')));
+        $newer = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P40D')), $this->now->sub(new DateInterval('P5D')));
+        $this->em->clear();
+
+        $ids = array_map(static fn (AdministeredMcpConnectionView $view): string => $view->id->toRfc4122(), $this->service($this->lengthenedLifetimes())->list());
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $ids);
+        self::assertContains($newer->getId()->toRfc4122(), $ids, 'Fin réelle J-5 (son marquage) : plus récente que les révocations de J-10.');
+        self::assertNotContains($older->getId()->toRfc4122(), $ids, 'Fin réelle J-18 (son marquage), pas J+10 (l\'échéance recalculée) : plus ancienne que les révocations.');
+    }
+
+    /**
+     * L'arrêt anticipé reste exact avec des durées allongées : 450 expirées échangées
+     * dont l'échéance recalculée est future, mais dont le marquage (J-25) est plus
+     * ancien que les 200 révocations (J-10). Aucune n'entre dans la liste, et une seule
+     * page est lue : le `revoked_at` de la page passe sous la 200e meilleure fin.
+     */
+    public function testTheKeysetReadingStaysExactWhenLengthenedLifetimesPushDeadlinesPastTheMarking(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        // Octroyées vers J-50, marquées vers J-25 : valides sous les durées de la purge (30 jours d'inactivité).
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P50D')), $this->now->sub(new DateInterval('P25D')), 450);
+        $this->em->clear();
+
+        $service = $this->service($this->lengthenedLifetimes());
+        $holder = self::getContainer()->get('doctrine.debug_data_holder');
+        $holder->reset();
+        $views = $service->list();
+        $selects = 0;
+        foreach ($holder->getData()['default'] ?? [] as $query) {
+            if (\is_string($query['sql'] ?? null) && str_starts_with(ltrim($query['sql']), 'SELECT')) {
+                ++$selects;
+            }
+        }
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
+        $revoked = array_filter($views, static fn (AdministeredMcpConnectionView $view): bool => RevocationCause::Expired->value !== $view->revocationCause);
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $revoked, 'Que les 200 révocations : aucune expirée ne finit après J-25.');
+        self::assertSame(4, $selects, 'Une seule page d\'expirées échangées : les suivantes ne pouvaient rien apporter.');
+    }
+
     /** Un accord jamais échangé, expiré puis purgé, se classe à octroi + délai du code, pas à sa purge. */
     public function testANeverExchangedExpiredGrantIsRankedOnItsGrantPlusTheUnexchangedDelay(): void
     {
@@ -379,15 +435,17 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         );
     }
 
-    private function service(): AdministeredMcpConnections
+    /** Le service, aux durées du conteneur par défaut ; `$lifetimes` pour les simuler changées depuis la purge. */
+    private function service(?ConnectionLifetimes $lifetimes = null): AdministeredMcpConnections
     {
         $clock = new MockClock($this->now);
+        $lifetimes ??= $this->lifetimes();
 
         return new AdministeredMcpConnections(
             $this->connections(),
             $clock,
-            new McpConnectionStatus($this->lifetimes(), $clock),
-            $this->lifetimes(),
+            new McpConnectionStatus($lifetimes, $clock),
+            $lifetimes,
             self::getContainer()->get(ReadSnapshotInterface::class),
         );
     }
@@ -471,6 +529,12 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         }
         $connection->executeStatement('DELETE FROM cpg_user');
         $this->em->clear();
+    }
+
+    /** Inactivité 60 jours et plafond 120 jours, contre 30 et 90 en configuration : un allongement postérieur à la purge. */
+    private function lengthenedLifetimes(): ConnectionLifetimes
+    {
+        return ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P60D', 'P120D', 'PT1H');
     }
 
     private function lifetimes(): ConnectionLifetimes
