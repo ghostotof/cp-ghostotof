@@ -1,0 +1,316 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Mcp\Connection\Presentation\ApiResource;
+
+use ApiPlatform\Metadata\GetCollection;
+use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
+use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestDatabase;
+use DateTimeImmutable;
+use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+
+/**
+ * Couvre la lecture des clients MCP par le backoffice (#652, spec 0007 T13) :
+ * GET /api/backoffice/mcp/clients et GET /api/backoffice/mcp/clients/{id},
+ * réservés ROLE_SUPER par l'`access_control` `^/api/backoffice`, et la garde
+ * des opérations de la ressource déjà déclarées.
+ */
+final class BackofficeMcpClientResourceTest extends WebTestCase
+{
+    use HttpJson;
+
+    private const string SUPER_USERNAME = 'super';
+    private const string TRUSTED_USERNAME = 'trusted';
+    private const string SCOPE = 'nominative:read';
+
+    /** UUID syntaxiquement valide mais absent de la base : 404 applicatif. */
+    private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
+
+    private const string PREREGISTERED_CLIENT_ID = 'https://client.example.test/metadata.json';
+
+    protected function setUp(): void
+    {
+        self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->purge();
+        parent::tearDown();
+    }
+
+    public function testSuperListsBothRegistrationsWithTheirActiveConnectionCount(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+
+        $preregistered = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Client pré-enregistré', ['https://client.example.test/callback']);
+        $discovered = ClaudeCodeMetadata::storedRow();
+        $clients = $this->clients();
+        $clients->add($preregistered);
+        $clients->add($discovered);
+
+        // Deux connexions actives et une révoquée sur le client pré-enregistré :
+        // seules les actives comptent. Le client CIMD n'en a aucune : 0, pas une clé absente.
+        $jane = $this->registerAccount($client, 'jane');
+        $john = $this->registerAccount($client, 'john');
+        $revoked = $this->registerAccount($client, 'revoked');
+        $connections = $this->connections();
+        $revokedConnection = McpConnection::grant($revoked, $preregistered, self::SCOPE, new DateTimeImmutable());
+        foreach ([
+            McpConnection::grant($jane, $preregistered, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $preregistered, self::SCOPE, new DateTimeImmutable()),
+            $revokedConnection,
+        ] as $connection) {
+            $connections->add($connection);
+        }
+        $connections->revokeActive($revokedConnection->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->request('GET', '/api/backoffice/mcp/clients');
+
+        self::assertResponseIsSuccessful();
+        $rows = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($rows);
+        self::assertCount(2, $rows);
+
+        $byClientId = [];
+        foreach ($rows as $row) {
+            self::assertIsArray($row);
+            self::assertIsString($row['clientId']);
+            $byClientId[$row['clientId']] = $row;
+        }
+
+        $pre = $byClientId[self::PREREGISTERED_CLIENT_ID];
+        self::assertSame($preregistered->getId()->toRfc4122(), $pre['id']);
+        self::assertSame('Client pré-enregistré', $pre['name']);
+        self::assertSame(['https://client.example.test/callback'], $pre['redirectUris']);
+        self::assertSame('preregistered', $pre['registration']);
+        self::assertSame($preregistered->registeredAt()->format(\DATE_ATOM), $pre['registeredAt']);
+        self::assertSame(2, $pre['activeConnections']);
+
+        $cimd = $byClientId[ClaudeCodeMetadata::CLIENT_ID];
+        self::assertSame('cimd', $cimd['registration']);
+        self::assertSame(0, $cimd['activeConnections']);
+    }
+
+    public function testGetReturnsOneClientAndUnknownIdIs404(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $registered = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Client pré-enregistré', ['https://client.example.test/callback']);
+        $this->clients()->add($registered);
+        // Un second client, pour prouver que la lecture désigne bien le bon.
+        $this->clients()->add(ClaudeCodeMetadata::storedRow());
+        $this->registerAccount($client, 'jane');
+        $this->connections()->add(McpConnection::grant($this->findAccount('jane'), $registered, self::SCOPE, new DateTimeImmutable()));
+
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->request('GET', '/api/backoffice/mcp/clients/'.$registered->getId()->toRfc4122());
+
+        self::assertResponseIsSuccessful();
+        $row = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($row);
+        self::assertSame($registered->getId()->toRfc4122(), $row['id']);
+        self::assertSame(self::PREREGISTERED_CLIENT_ID, $row['clientId']);
+        self::assertSame(1, $row['activeConnections']);
+
+        $client->request('GET', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID);
+        self::assertResponseStatusCodeSame(404);
+
+        // Un identifiant mal formé est refusé par le routeur (Requirement::UUID), pas par le Provider.
+        $client->request('GET', '/api/backoffice/mcp/clients/not-a-uuid');
+        self::assertResponseStatusCodeSame(404);
+    }
+
+    /**
+     * La garde est l'`access_control`, pas la ressource : un compte de
+     * confiance sans ROLE_SUPER et un jeton du palier de base reçoivent 403,
+     * un anonyme 401.
+     *
+     * Seules les deux opérations de lecture figurent ici : une route absente
+     * répond 404 à tout le monde, anonyme compris, car le routeur passe avant
+     * le pare-feu (constaté à la Task 16 sur Post, Put et Delete). Les trois
+     * opérations d'écriture entrent dans ce fournisseur avec leur route
+     * (Tasks 17A, 17B, 18).
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function operations(): iterable
+    {
+        yield 'GetCollection' => ['GET', '/api/backoffice/mcp/clients'];
+        yield 'Get' => ['GET', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID];
+    }
+
+    #[DataProvider('operations')]
+    public function testEveryOperationRefusesAnAccountWithoutSuper(string $method, string $path): void
+    {
+        // Anonyme : 401.
+        $anonymous = self::createClient();
+        $anonymous->request($method, $path);
+        self::assertResponseStatusCodeSame(401, 'Anonyme : '.$method.' '.$path);
+
+        // Compte de confiance sans ROLE_SUPER : 403.
+        self::ensureKernelShutdown();
+        $trusted = self::createClient();
+        $this->registerAccount($trusted, self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $csrf = $this->loginAs($trusted, self::TRUSTED_USERNAME, TestCredentials::plainPassword());
+        $trusted->request($method, $path, server: ['HTTP_X_XSRF_TOKEN' => $csrf]);
+        self::assertResponseStatusCodeSame(403, 'Compte de confiance : '.$method.' '.$path);
+
+        // Jeton du palier de base (ROLE_USER seul) : 403.
+        self::ensureKernelShutdown();
+        $base = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $base->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+        self::assertResponseIsSuccessful();
+        $csrfCookie = $base->getCookieJar()->get('XSRF-TOKEN');
+        self::assertNotNull($csrfCookie);
+        $base->request($method, $path, server: ['HTTP_X_XSRF_TOKEN' => $csrfCookie->getValue()]);
+        self::assertResponseStatusCodeSame(403, 'Palier de base : '.$method.' '.$path);
+    }
+
+    /**
+     * Le coût de la liste ne dépend pas du nombre de clients : une requête
+     * pour les clients, une `GROUP BY` pour les connexions actives — jamais
+     * une par client. Mesuré sur le Provider, hors authentification, pour que
+     * le compte ne soit pas celui de la garde.
+     */
+    public function testListingTakesTwoQueriesWhateverTheClientCount(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register('jane', TestCredentials::plainPassword());
+
+        $this->addClientsWithOneConnectionEach(2, 0);
+        $few = $this->queriesDuring(fn (): array => $this->listing());
+
+        $this->addClientsWithOneConnectionEach(6, 2);
+        $many = $this->queriesDuring(fn (): array => $this->listing());
+
+        self::assertCount(2, $few['result']);
+        self::assertCount(8, $many['result']);
+        self::assertSame(2, $few['count'], 'Deux requêtes pour 2 clients.');
+        self::assertSame(2, $many['count'], 'Deux requêtes pour 8 clients : pas de N+1.');
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function listing(): array
+    {
+        $provider = self::getContainer()->get(BackofficeMcpClientProvider::class);
+        $rows = $provider->provide(new GetCollection());
+        self::assertIsArray($rows);
+
+        return $rows;
+    }
+
+    private function addClientsWithOneConnectionEach(int $count, int $offset): void
+    {
+        // Relu à chaque appel : l'unité de travail est vidée en fin de méthode,
+        // une instance gardée d'un appel à l'autre serait détachée.
+        $account = $this->findAccount('jane');
+        for ($i = $offset; $i < $offset + $count; ++$i) {
+            $client = RegisteredMcpClient::of(\sprintf('https://client%d.example.test/metadata.json', $i), 'Client '.$i, ['https://client.example.test/callback']);
+            $this->clients()->add($client);
+            $this->connections()->add(McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable()));
+        }
+        // Les instances ajoutées restent dans l'unité de travail : la mesure
+        // doit relire la base, pas le cache d'identité.
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+    }
+
+    /**
+     * Exécute `$action` et compte les requêtes de la connexion DBAL du
+     * conteneur de test (`doctrine.debug_data_holder`, DBAL 4). Un relevé vide
+     * fait échouer le test plutôt que de laisser un zéro passer pour une preuve.
+     * Copie locale de McpConnectionRepositoryTest::queriesDuring() ; son
+     * extraction vers tests/Support est prévue à la Task 19.
+     *
+     * @template T
+     *
+     * @param callable(): T $action
+     *
+     * @return array{count: int, result: T}
+     */
+    private function queriesDuring(callable $action): array
+    {
+        $holder = self::getContainer()->get('doctrine.debug_data_holder');
+        $holder->reset();
+
+        $result = $action();
+
+        $count = \count($holder->getData()['default'] ?? []);
+        self::assertGreaterThan(0, $count, 'Le relevé des requêtes est vide : le profilage DBAL est inactif, le compteur ne prouverait rien.');
+
+        return ['count' => $count, 'result' => $result];
+    }
+
+    /**
+     * @param list<string> $roles
+     */
+    private function registerAccount(KernelBrowser $client, string $username, array $roles = []): CpgUser
+    {
+        $password = match ($username) {
+            self::SUPER_USERNAME => TestCredentials::superPassword(),
+            default => TestCredentials::plainPassword(),
+        };
+
+        return $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($username, $password, $roles);
+    }
+
+    private function findAccount(string $username): CpgUser
+    {
+        $account = self::getContainer()->get(EntityManagerInterface::class)->getRepository(CpgUser::class)->findOneBy(['username' => $username]);
+        self::assertInstanceOf(CpgUser::class, $account);
+
+        return $account;
+    }
+
+    private function clients(): McpClientRepositoryInterface
+    {
+        return self::getContainer()->get(McpClientRepositoryInterface::class);
+    }
+
+    private function connections(): McpConnectionRepositoryInterface
+    {
+        return self::getContainer()->get(McpConnectionRepositoryInterface::class);
+    }
+
+    private function loginAs(KernelBrowser $client, string $username, string $password): string
+    {
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => $username,
+            'password' => $password,
+        ]));
+        self::assertResponseIsSuccessful();
+
+        $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
+        self::assertNotNull($csrfCookie);
+
+        return $csrfCookie->getValue();
+    }
+
+    private function purge(): void
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
+        foreach (['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client', 'cpg_user'] as $table) {
+            $connection->executeStatement('DELETE FROM '.$table);
+        }
+    }
+}
