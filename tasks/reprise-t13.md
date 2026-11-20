@@ -268,8 +268,15 @@
     « Dix redirections au plus. » épinglé à `MAX_REDIRECT_URIS === 10`). Contrôlé : 15 tests OK. Écrit pour la PR :
     « Au moins une redirection est requise. » n'apparaît que sur une liste vide (toutes invalides → violations par
     index seulement) ; message ajouté « Chaque redirection doit être une chaîne de caractères. ».
-  - **Prochaine action** : **Task 15** (agent sonnet/high) ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
-    seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
+  - **Task 15 faite** : `d2660a65` (`exception_to_status` : `McpClientNotFoundException` 404,
+    `McpClientAlreadyRegisteredException` 409, `InvalidMcpClientRedirectsException` 422 avant les défauts rétablis ;
+    `log_level: info` des deux nouvelles ; `McpClientExceptionMappingTest`, 8 cas). Contrôlé : 43 tests OK (filtre des
+    trois classes). Écrit pour la PR : l'entrée 404 de `McpClientNotFoundException` double son `getStatus()` (404) —
+    « second source » au sens de `backoffice-api.md`, imposée par le plan, cohérence épinglée par le test.
+    La sortie PHPStan « Cannot cast mixed to int » (`LoopbackAwareAuthCodeGrant.php:125`) de `quality.txt` est
+    antérieure à `c3a9282b` : PHPStan relancé sur le fichier, `[OK] No errors`.
+  - **Prochaine action** : **relecture S4** `/code-review medium diff 5660113e...HEAD` (point fixe `5660113e`), sans
+    auditeur : S4 ne touche ni l'authentification, ni la session, ni le CSRF, ni les cookies.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
