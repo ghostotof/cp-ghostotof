@@ -423,8 +423,18 @@
     intacts). Contrôlé : repository + index 57 tests OK, arbre propre ; agent : 6633 OK, PHPStan/Rector/Psalm OK.
     Écrit pour la PR (faible, conf. haute) : le test N+1 (`testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries`)
     ne couvre que `findNotRevoked…` et `findTerminated…`, pas la lecture native `findExchangedExpired…`.
-  - **Prochaine action** : relecture de la série de corrections, `/code-review medium diff 6de1ba0e...HEAD`
-    (fil principal) ; noter `HEAD` comme point fixe suivant.
+  - **Relecture de la série de corrections A-C faite** (`/code-review medium diff 6de1ba0e...1ffa3aef`, 2026-11-20) :
+    7 constats, aucun critique, haut ni moyen → **boucle de la série close**. Tests de la relecture :
+    `ConnectionLifetimesTest|AdministeredMcpConnectionsTest` OK (100), `McpConnectionRepositoryTest|McpConnectionAdministrationIndexesTest`
+    OK (61). Constats écrits : section « Constats écrits non corrigés », « Relecture de la série A-C ».
+  - **Micro-série D lancée** (sonnet/high, faible à risque réel ; décision utilisateur « Déplacer ») :
+    (a) garde du nombre de requêtes sur `findExchangedExpiredForAdministration()` (test N+1 étendu ou dédié, rouge
+    vérifié) ; (b) déplacement du paragraphe « mois et années interdits dans `idle` » de `mcp-oauth-cycle-de-vie.md`
+    (49,8 Ko, près du plafond de 50 000 octets) vers `mcp-oauth-purge.md`, à côté de `endUpperBound()`, liens vérifiés,
+    `tools/check-claude-rules.sh` vert. Un commit chacune. **Point fixe de sa relecture** : le commit de cette reprise.
+  - **Prochaine action** : contrôler la preuve de la micro-série D, puis `/code-review medium diff <point fixe>...HEAD` ;
+    ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le compteur de requêtes vers
+    `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -598,6 +608,17 @@ Relecture de C3d (2026-11-20 ; **R1, R2, R3, R4, R6 → Task 19**, R5 → PR) :
 - (R5, faible, conf. basse) `is_int(expire_time)` rejette un float JSON : inatteignable avec league 9.4.1 (PR).
 - (R6, très faible, conf. moyenne) commentaire `McpClientAdministrator.php:88` : justification fausse du déplacement
   (`array_unique` ne lève rien).
+Relecture de la série A-C (2026-11-20, `6de1ba0e...1ffa3aef` ; (a) et (b) → micro-série D, le reste → PR) :
+- (faible, conf. moyenne) couplage DDD : `ConnectionLifetimes` (domaine) refuse mois et années dans `idle` pour
+  l'arrêt anticipé de la couche application ; alternative : marge dérivée de l'intervalle dans `endUpperBound()`.
+- (faible, conf. moyenne) le message de `InvalidConnectionLifetimeException::notMonotonicInActivity()` décrit
+  l'implémentation (« PHP déborde le mois », « l'arrêt anticipé… »).
+- (faible, conf. basse) collision théorique des alias de `COLUMN_RENAMING_INCREMENT` (`x1`+1 contre `x`+11), latente.
+- (très faible, conf. haute) `|| null === $revokedAt` mort dans `AdministeredMcpConnections::endedOf()`, docblock en désaccord.
+- (faible, conf. moyenne) le test de régression C1 (`ConnectionLifetimesTest`, l. 411) ne vérifie que le refus de
+  configuration, pas la ligne perdue au niveau d'`AdministeredMcpConnections` (recoupe C2 : pas de test de bord du majorant).
+- Toujours en attente, relectures antérieures : C2 (bord du majorant), C5 (`ConnectionNeverRevokedException` morte),
+  C6 (SQL natif contre la préférence QueryBuilder, justifié), C9 (`Version20261120120000Test::setUp()` recopie un `down()`).
 
 
 - Jamais lire `.env.local`, `.env.test.local` ni aucun fichier de secret.
