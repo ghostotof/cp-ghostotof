@@ -524,9 +524,18 @@
     F1-F7 (déjà noté) ; accord abandonné rendu `expired` sans cause = vue Task 13. **Task 19** : le docblock de
     `AdministeredMcpConnectionsInterface::list()` dit « trois requêtes », il y en a quatre (cf.
     `AdministeredMcpConnectionsTest::testListReadsInFourQueries`).
-  - **S5 implémentée** (Tasks 16-18). **Prochaine action** : relecture S5, `/code-review medium` sur
-    `diff 2dd76a7c...HEAD` + `agent-skills:security-auditor` opus/high sur le même diff ; point fixe de la relecture
-    suivante : le SHA de ce commit de reprise. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **S5 implémentée** (Tasks 16-18) et **relue** (2026-11-20, `diff 2dd76a7c...139169f0`, `/code-review medium` +
+    auditeur sécurité opus/high) : **aucun critique/haut/moyen**, critère d'arrêt atteint. **Décision de
+    l'utilisateur** : micro-série **F** sur quatre constats faibles :
+    - **F-a** (audit F1 / revue 8) : `POST` → **422** si `clientId` est une URL CIMD (`CimdClientId::tryFrom()`
+      réussit) dont l'hôte est dans `AllowedClientDomains` (sinon il masque le vrai client CIMD avant sa
+      première approbation et fausse le consentement) ;
+    - **F-b** : (revue 9) test `DELETE` d'un client **pré-enregistré** avec connexions (204, cascade, audits, bearer
+      refusé) ; (revue 2 / audit I5) pas de `countActiveOfClient` pour `PUT`/`DELETE` dans le Provider ; (revue 4)
+      Provider → `McpClientNotFoundException` au lieu de `null` (une seule forme de 404) ; (revue 3) `clientId` dans
+      le corps d'un `PUT` refusé (aujourd'hui ignoré, 200).
+  - **Prochaine action** : agent **F-a** (sonnet/high), puis **F-b** (sonnet/high), puis relecture F
+    (`/code-review medium` sur `diff 139169f0...HEAD`, + auditeur si F-a touche l'admission CIMD). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
@@ -712,6 +721,21 @@ Relecture de la série A-C (2026-11-20, `6de1ba0e...1ffa3aef` ; (a) et (b) → m
   configuration, pas la ligne perdue au niveau d'`AdministeredMcpConnections` (recoupe C2 : pas de test de bord du majorant).
 - Toujours en attente, relectures antérieures : C2 (bord du majorant), C5 (`ConnectionNeverRevokedException` morte),
   C6 (SQL natif contre la préférence QueryBuilder, justifié), C9 (`Version20261120120000Test::setUp()` recopie un `down()`).
+Relecture S5 (2026-11-20, `2dd76a7c...139169f0`, revue + audit ; F-a/F-b → micro-série F, le reste ci-dessous) :
+- **Task 19** (audit F2, faible, conf. haute, choix D-E) : dire dans `mcp-oauth-cycle-de-vie.md` (et l'UI F-tâches)
+  qu'un retrait de `redirectUri` par `PUT` n'est **pas** une révocation (jetons émis valides ; code refusé non consommé,
+  rééchangeable si la redirection revient sous 10 min) ; couper = `DELETE`.
+- **Task 19** (revue 5, faible, conf. haute) : `countActiveOfClient`/`countActiveByClient` lèvent
+  `UnexpectedRevocationRowException::forColumn('active')` sur un compte non entier : exception dédiée au décompte.
+- PR (revue 1, nit, conf. moyenne) : la réponse du `PUT` relit le décompte après le COMMIT de `revise()`, hors verrou :
+  un `DELETE` concurrent peut faire répondre 200 sur un client disparu (limite acceptée, décompte frais voulu).
+- PR (revue 6, nit) : `countActiveOfClient` en SQL natif (comme `countActiveByClient`, cf. C6).
+- PR (revue 7, faible, conf. basse) : Providers/Processor des clients lisent les dépôts directement (le Provider des
+  connexions passe par un service applicatif) — à justifier dans la PR (motif API Platform du backoffice).
+- PR (audit I1) pas de `security:` par opération, `access_control ^/api/backoffice` seul (cohérent backoffice) ;
+  (I2) `account` = username, `ROLE_SUPER` seul, ne pas le journaliser côté frontend ; (I3) liste non paginée (D-D) ;
+  (I4) le validateur parcourt toutes les `redirectUris` avant la borne de 10 (borné par le corps) ; (I6) `\assert`
+  retirés en prod (`input:` imposé).
 
 
 - Jamais lire `.env.local`, `.env.test.local` ni aucun fichier de secret.
