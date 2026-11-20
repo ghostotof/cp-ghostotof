@@ -68,8 +68,24 @@ interface McpClientRepositoryInterface
     public function all(): array;
 
     /**
+     * Le client désigné par sa clé UUID (jamais par son identifiant public :
+     * {@see self::findOneByClientId()}), en **lecture simple** : aucun verrou,
+     * aucune transaction exigée. C'est la lecture du détail du backoffice
+     * (#652), et de tout appelant qui se contente de **regarder** le client.
+     * Rend `null` si aucune ligne ne porte cette clé.
+     *
+     * Qui va **écrire** sur le client (révision, suppression) n'utilise pas
+     * celle-ci mais {@see self::findOneByIdForUpdate()}, dans sa transaction :
+     * une lecture simple suivie d'une écriture laisse la ligne changer ou
+     * disparaître entre les deux, et le verrou est aussi ce qui fixe l'ordre
+     * `mcp_client` avant `mcp_connection`.
+     */
+    public function findOneById(Uuid $id): ?McpClient;
+
+    /**
      * La ligne du client relue et verrouillée en écriture (`FOR UPDATE`), pour
      * le restant de la transaction de l'appelant — qui doit l'avoir ouverte.
+     * Pour une simple lecture, voir {@see self::findOneById()}.
      * Rend `null` si la ligne a disparu depuis qu'elle a été lue (l'instance
      * périmée est alors détachée). **Ordre des verrous** : `mcp_client` avant
      * `mcp_connection`, comme partout.

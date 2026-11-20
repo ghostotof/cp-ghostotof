@@ -458,6 +458,25 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * Un `COUNT(*)` filtré sur le client, servi comme `countActiveByClient()`
+     * par la colonne `mcp_client_id` ; le paramètre est typé `uuid`, comme la
+     * colonne.
+     */
+    public function countActiveOfClient(Uuid $client): int
+    {
+        $active = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM mcp_connection WHERE mcp_client_id = :client AND revoked_at IS NULL',
+            ['client' => $client],
+            ['client' => UuidType::NAME],
+        );
+        if (!\is_int($active)) {
+            throw UnexpectedRevocationRowException::forColumn('active');
+        }
+
+        return $active;
+    }
+
+    /**
      * La même instruction que {@see self::revokeActive()}, sur un couple au
      * lieu d'un identifiant : `RETURNING` rend chaque connexion remplacée, de
      * quoi l'auditer sans seconde requête. La recherche du couple actif est

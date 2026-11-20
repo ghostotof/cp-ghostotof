@@ -577,6 +577,39 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Le décompte du détail d'un client (#652) : les connexions actives **de ce
+     * client seul**, en une requête. Une révoquée ne compte pas, ni celle d'un
+     * autre client ; un client sans connexion active vaut 0 (l'entier, pas
+     * une clé absente : il n'y a pas de tableau à lire `?? 0`).
+     */
+    public function testCountActiveOfClientCountsOnlyTheActiveConnectionsOfThatClient(): void
+    {
+        $busy = $this->registerClient('https://client.example.test/busy.json');
+        $other = $this->registerClient('https://client.example.test/other.json');
+        $idle = $this->registerClient('https://client.example.test/idle.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $revoked = McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable());
+        foreach ([
+            McpConnection::grant($jane, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable()),
+            $revoked,
+            McpConnection::grant($jane, $other, self::SCOPE, new DateTimeImmutable()),
+        ] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $queries = $this->queriesDuring(fn (): int => $this->connections()->countActiveOfClient($busy->getId()));
+
+        self::assertSame(1, $queries['count'], 'Une seule requête.');
+        self::assertSame(2, $queries['result'], 'Deux actives ; la révoquée et celle de l\'autre client ne comptent pas.');
+        self::assertSame(1, $this->connections()->countActiveOfClient($other->getId()));
+        self::assertSame(0, $this->connections()->countActiveOfClient($idle->getId()), 'Aucune connexion : 0.');
+        self::assertSame(0, $this->connections()->countActiveOfClient(Uuid::v7()), 'Un client inconnu : 0 aussi, la lecture ne juge pas son existence.');
+    }
+
+    /**
      * Un nouvel accord remplace l'accord actif du même couple compte/client
      * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
      * instruction, toute autre connexion active de ce couple — et rien

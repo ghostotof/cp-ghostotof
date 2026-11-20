@@ -178,6 +178,36 @@ final class McpClientRepositoryTest extends KernelTestCase
         self::assertSame([], $this->repository()->all());
     }
 
+    /**
+     * La lecture simple d'un client (#652, le détail du backoffice) : par sa
+     * clé UUID, sans verrou et sans transaction — celle-ci n'est pas ouverte
+     * ici, et la lecture verrouillée l'aurait refusée. Le bon client est rendu
+     * parmi plusieurs, relu depuis la base (l'unité de travail est vidée).
+     */
+    public function testFindOneByIdReturnsTheClientWithoutATransaction(): void
+    {
+        $wanted = RegisteredMcpClient::of(self::PREREGISTERED_ID, 'Voulu', ['https://client.example.test/cb']);
+        $this->repository()->add($wanted);
+        $this->repository()->add(RegisteredMcpClient::of('https://other.example.test/metadata.json', 'Autre', ['https://other.example.test/cb']));
+        $this->em->clear();
+
+        self::assertFalse($this->em->getConnection()->isTransactionActive(), 'La lecture simple ne doit pas exiger de transaction.');
+        $found = $this->repository()->findOneById($wanted->getId());
+
+        self::assertInstanceOf(McpClient::class, $found);
+        self::assertTrue($wanted->getId()->equals($found->getId()));
+        self::assertSame('Voulu', $found->getName());
+    }
+
+    /** Un identifiant que la base ne porte pas : `null`, jamais une exception. */
+    public function testFindOneByIdReturnsNullForAnUnknownId(): void
+    {
+        $this->repository()->add(RegisteredMcpClient::of(self::PREREGISTERED_ID, 'Client', ['https://client.example.test/cb']));
+        $this->em->clear();
+
+        self::assertNull($this->repository()->findOneById(Uuid::v7()));
+    }
+
     /** Une ligne supprimée entre la lecture de l'administrateur et son verrou : rien, et l'instance périmée est détachée. */
     public function testFindOneByIdForUpdateReturnsNullForAVanishedRow(): void
     {

@@ -22,11 +22,11 @@ use Throwable;
  * `isDiscovered()` n'est vrai que pour un client déclaré ; `discoveryChecks`
  * compte les lectures de `isDiscovered()`.
  *
- * Les quatre méthodes de l'administration (#652) travaillent en mémoire, sur
+ * Les cinq méthodes de l'administration (#652) travaillent en mémoire, sur
  * ce que le fake connaît (`existing`, `added`, `discovered`), sans notion de
- * verrou : `all()` trie comme le dépôt réel, les deux lectures verrouillées
- * sont de simples lectures, `remove()` retire le client de ces trois sources
- * et le garde dans `removed`.
+ * verrou : `all()` trie comme le dépôt réel, la lecture simple par clé et les
+ * deux lectures verrouillées sont de simples lectures, `remove()` retire le
+ * client de ces trois sources et le garde dans `removed`.
  */
 final class McpClientRepositoryFake implements McpClientRepositoryInterface
 {
@@ -93,7 +93,7 @@ final class McpClientRepositoryFake implements McpClientRepositoryInterface
         return $clients;
     }
 
-    public function findOneByIdForUpdate(Uuid $id): ?McpClient
+    public function findOneById(Uuid $id): ?McpClient
     {
         foreach ($this->known() as $client) {
             if ($client->getId()->equals($id)) {
@@ -102,6 +102,11 @@ final class McpClientRepositoryFake implements McpClientRepositoryInterface
         }
 
         return null;
+    }
+
+    public function findOneByIdForUpdate(Uuid $id): ?McpClient
+    {
+        return $this->findOneById($id);
     }
 
     public function findOneByClientIdForShare(string $clientId): ?McpClient

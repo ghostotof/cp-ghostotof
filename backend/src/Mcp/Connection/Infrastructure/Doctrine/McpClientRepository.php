@@ -121,6 +121,25 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
     }
 
     /**
+     * Lecture simple par la clé : un `QueryBuilder` plutôt que `find()`.
+     * `find()` répond sans requête quand l'instance est déjà dans l'unité de
+     * travail, ce qui rendrait le coût de l'appelant dépendant de ce qui a été
+     * chargé avant lui — le détail du backoffice s'engage à deux requêtes, et
+     * le prouve. Le `QueryBuilder` est aussi le style du reste du dépôt. Le
+     * paramètre est typé comme la colonne (`uuid`). Aucun verrou, aucune
+     * transaction : la sœur verrouillée est {@see self::findOneByIdForUpdate()}.
+     */
+    public function findOneById(Uuid $id): ?McpClient
+    {
+        /** @var McpClient|null */
+        return $this->createQueryBuilder('client')
+            ->where('client.id = :id')
+            ->setParameter('id', $id, UuidType::NAME)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
      * La relecture sous verrou du projet ({@see RereadUnderLock::row()}) avec
      * `FOR UPDATE` : l'instance déjà gérée est rafraîchie sur place, une
      * ligne disparue rend `null` et détache l'instance périmée. Sans

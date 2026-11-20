@@ -283,6 +283,18 @@ interface McpConnectionRepositoryInterface
     public function countActiveByClient(): array;
 
     /**
+     * Le nombre de connexions **actives** d'**un seul** client, en une requête
+     * (#652, le détail du backoffice) : la même définition que
+     * {@see self::countActiveByClient()} — `revoked_at` nul, état de la ligne,
+     * une connexion échue que la purge n'a pas encore marquée compte encore —,
+     * sans lire les autres clients. Une lecture, sans verrou. Un client sans
+     * connexion active, ou inconnu, vaut `0` : la méthode ne juge pas de son
+     * existence. L'argument est la clé de la ligne `mcp_client`, comme
+     * {@see self::lockActiveOfClient()}.
+     */
+    public function countActiveOfClient(Uuid $client): int;
+
+    /**
      * Révoque toute **autre** connexion active du même couple compte/client
      * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
      * même compte, même client, autre identifiant, pas encore révoquée ; une
