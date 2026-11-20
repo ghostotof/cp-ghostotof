@@ -155,6 +155,15 @@ final class McpConnectionPurgerTest extends KernelTestCase
      * une connexion dont le code n'a jamais été échangé, octroyée une heure
      * avant l'instant jugé, est marquée ; une seconde plus tard non ; la même
      * dont le code a été échangé, non plus.
+     *
+     * **Il garde aussi l'arrêt anticipé de l'administration** (#652) :
+     * `AdministeredMcpConnections::list()` cesse de lire les expirées échangées dès
+     * que `revoked_at` passe sous la meilleure fin connue, ce qui suppose que la fin
+     * réelle d'une connexion marquée `expired` ne dépasse jamais son `revoked_at`
+     * (l'instant jugé). La purge juge en PHP par `isExpiredAt()`, jamais en SQL, où
+     * un jour de calendrier sur un changement d'heure ou un mois sur une fin de mois
+     * se compterait autrement : marquée ⇒ `deadline() <= revoked_at`, assertion
+     * posée ci-dessous.
      */
     public function testThePurgeAndIsExpiredAtAgreeAtTheBoundary(): void
     {
@@ -187,6 +196,11 @@ final class McpConnectionPurgerTest extends KernelTestCase
             self::assertSame($expectedExpired, $reread->isExpiredAt($this->now(), $lifetimes), $case.' : échéance attendue.');
             self::assertSame($reread->isExpiredAt($this->now(), $lifetimes), $marked, $case.' : la purge et isExpiredAt() divergent.');
             self::assertSame($marked, $reread->isRevoked(), $case.' : marquée ⇔ révoquée en base.');
+            if ($marked) {
+                // L'invariant de l'arrêt anticipé de l'administration : une marquée n'est jamais antérieure à son échéance.
+                self::assertNotNull($reread->revokedAt(), $case);
+                self::assertLessThanOrEqual($reread->revokedAt(), $reread->deadline($this->now()->getTimezone(), $lifetimes), $case.' : marquée avant son échéance.');
+            }
         }
     }
 

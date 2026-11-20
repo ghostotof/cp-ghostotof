@@ -102,3 +102,11 @@ paths:
   clock across the autumn change; `testThePurgeAndIsExpiredAtAgreeAtTheBoundary`: each threshold and one second after,
   marked ⇔ `isExpiredAt()` re-read — red when every candidate is revoked unjudged, measured),
   `PurgeMcpConnectionsCommandTest`.
+
+**The administration's early stop depends on the purge judging in PHP** (#652). `AdministeredMcpConnections::list()` reads the
+exchanged expired connections by `revoked_at` descending and stops once a page's `revoked_at` falls strictly under the 200th best
+real end it knows: that assumes **real end (`deadline()`) ≤ `revoked_at`** for every connection of cause `expired`. It holds because
+the purge only marks a candidate `isExpiredAt($now)` says is dead, and writes `revoked_at = $now` — never from the SQL
+pre-selection alone (PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently).
+`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins it (`deadline() <= revoked_at` for every marked
+connection). A purge that marked in SQL, or any other writer of cause `expired`, must keep it or the list loses rows silently.

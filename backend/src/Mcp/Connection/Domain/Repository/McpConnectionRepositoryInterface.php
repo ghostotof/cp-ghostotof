@@ -136,10 +136,12 @@ interface McpConnectionRepositoryInterface
      * première page). Leur fin réelle — la plus proche des échéances d'inactivité
      * et de plafond — ne se range pas en SQL (PHP et PostgreSQL ne comptent pas de
      * la même façon un jour sur un changement d'heure, ni un mois sur une fin de
-     * mois) : le service la calcule avec le domaine. Ce que SQL garantit, c'est que la fin réelle ne dépasse jamais
-     * `revoked_at` (la purge marque une connexion échue, jamais avant son échéance) :
-     * le service s'arrête dès que `revoked_at` passe sous la meilleure fin qu'il ne
-     * peut plus battre. Même jointure que {@see self::findNotRevokedForAdministration()}.
+     * mois) : le service la calcule avec le domaine. Ce qui borne la lecture, c'est
+     * que la fin réelle ne dépasse jamais `revoked_at` : la purge juge en PHP
+     * (`isExpiredAt()`) et ne marque qu'une connexion échue
+     * (`.claude/rules/mcp-oauth-purge.md`). Le service s'arrête dès que `revoked_at`
+     * passe sous la meilleure fin qu'il ne peut plus battre. Même jointure que
+     * {@see self::findNotRevokedForAdministration()}.
      *
      * @param positive-int $limit
      *
