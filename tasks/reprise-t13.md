@@ -334,8 +334,22 @@
     `revokedAt`), limite documentée en tête de classe ; deux tests à durées allongées (rouge 2 échecs pour la
     bonne raison). Contrôle fil principal : 13 tests OK. Annexe : bind-mount désynchronisé a donné un faux vert,
     résolu par `restart backend` (confiance haute, sévérité basse, outillage).
-  - **Série S4c close côté implémentation.** **Prochaine action** : relecture `/code-review medium diff c25e103b...HEAD`
-    (point fixe `c25e103b`), sans auditeur.
+  - **Série S4c close côté implémentation.**
+  - **Relecture S4c faite** (2026-11-20, `diff c25e103b...HEAD`, HEAD `f4cca85a`) : 8 constats.
+    1 (MOYEN, conf. moyenne) un lot de purge partage un même `revoked_at` : `nothingCanEnter()` (strict) ne peut
+    jamais arrêter dans le lot → lecture de toutes les pages ; 2 (faible) keyset en forme `OR`, coût quadratique ;
+    3 (faible) `endOf()` d'une jamais échangée devrait passer par `deadline()` ; 4 (faible, conf. haute) `expiresAt`
+    affiché non borné, échéance calculée deux fois ; 5 (faible) `expiredLiteral()` mal placé, docblock « deux
+    listes » ; 6 (faible, conf. haute) `mcp-oauth-purge.md:106` et docblock de l'interface contredisent
+    `nothingCanEnter()` ; 7 (faible, conf. faible) violation de type qui expose la forme interne, `?string clientId`
+    non initialisé → PR ; 8 faux positif (contrainte câblée en Task 15).
+  - **Décision** (2026-11-20) : constat 1 → **pages par activité** (règle aussi le 2) : lire les échangées expirées
+    par `COALESCE(last_used_at, granted_at) DESC, id DESC`, majorant de fin = `idleDeadline(activité)` en PHP + marge
+    d'un jour, arrêt quand le majorant < 200e fin ; index d'expression partiel (nouvelle migration, empreinte n° 43),
+    `idx_mcp_connection_admin_exchanged_expired` supprimé ; comparaison de lignes servie par l'index.
+  - **Prochaine action** : série S4d (étape 05, sonnet/high) — tâche 1 constats 1+2, tâche 2 constat 3, tâche 3
+    constat 4, tâche 4 constats 5+6 ; puis relecture `/code-review medium diff f4cca85a...HEAD` (point fixe
+    `f4cca85a`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
