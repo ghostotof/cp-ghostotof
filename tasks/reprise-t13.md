@@ -350,6 +350,13 @@
   - **Prochaine action** : série S4d (étape 05, sonnet/high) — tâche 1 constats 1+2, tâche 2 constat 3, tâche 3
     constat 4, tâche 4 constats 5+6 ; puis relecture `/code-review medium diff f4cca85a...HEAD` (point fixe
     `f4cca85a`), sans auditeur.
+  - **Découpage de la tâche 1** (budget de contexte de la zone Mcp, > 4 fichiers) : **1a** curseur par activité
+    (`ExchangedExpiredCursor` porte `COALESCE(lastUsedAt, grantedAt)` + id), requête du dépôt (tri par activité
+    `DESC, id DESC`, comparaison de lignes), migration n° 43 (index d'expression partiel, ancien supprimé), empreinte
+    dans `verify.sql`, déclaration d'index dans l'entité, tests dépôt/index/curseur, adaptation minimale du service
+    (arrêt inchangé sur le fond, juste pour compiler) ; **1b** condition d'arrêt du service (majorant
+    `idleDeadline(activité)` + 1 jour < 200e fin) et ses tests (dont durées allongées). Agent 1a lancé depuis
+    `2deb62e6`+1.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
