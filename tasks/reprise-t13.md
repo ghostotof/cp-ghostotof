@@ -414,6 +414,11 @@
     inactivité en mois hors cas refusés ; agent : 6633 OK, PHPStan/Rector OK. **Correction B lancée** (sonnet/high) :
     C7 (fin affichée portée par `EndedMcpConnection`), C8 (docblocks de la marge : calendrier PHP + garde de
     `fromConfiguration()`), C3 (ligne de règle sur le `DROP INDEX` généré par `make:migration`).
+  - **Correction B faite** : `b9bf765b` (`endedOf()` unique : fin de rangement + `displayedDeadline` portée par
+    `EndedMcpConnection`, `null` = `expiresAt()` ; docblocks de la marge = calendrier PHP + garde y/m ; règle purge :
+    marge et `DROP INDEX` des diffs). Contrôlé : 16 tests OK, un seul prédicat de cause, arbre propre ; agent : 6633 OK,
+    PHPStan/Rector OK. Annexes : DTO non testé en direct (sév. basse). **Correction C lancée** (sonnet/high) : C4,
+    `prefixedColumns()` → `ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
