@@ -254,7 +254,12 @@
     `findNotRevokedForAdministration(threshold)`, nouvelle `findAbandonedForAdministration(threshold, limit)`, tests
     59/61 min et échangée jamais filtrée) ; **13B** service `AdministeredMcpConnections` + vue + interface + test,
     fusion PHP, D-D du plan et docblocks.
-  - **Prochaine action** : **Task 13A** (agent sonnet/high), puis 13B, 14, 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+  - **Task 13A faite** : `e03e4284` (`ConnectionLifetimes::abandonedBefore(now)`, `findNotRevokedForAdministration(
+    abandonedBefore)`, `findAbandonedForAdministration(abandonedBefore, limit)`, borne incluse testée). Contrôlé :
+    125 tests OK (`McpConnectionRepositoryTest|ConnectionLifetimesTest`). `$limit` borné par `@param positive-int`
+    seulement (comme les terminées), le service passe une constante.
+  - **Prochaine action** : **Task 13B** (agent sonnet/high), puis D-D du plan (l. 106) par le fil principal, puis
+    14, 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
     seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
