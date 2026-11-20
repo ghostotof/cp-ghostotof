@@ -263,10 +263,11 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
     }
 
     /**
-     * La lecture s'arrête dès que le `revoked_at` de la page est plus ancien que la
-     * 200e meilleure fin connue : une expirée ne finit jamais après sa purge. Ici
-     * 450 expirées purgées il y a 20 jours face à 200 révocations d'il y a 10 jours,
-     * une seule page est lue.
+     * La lecture s'arrête dès que le majorant des lignes non lues (`idleDeadline` de
+     * l'activité du curseur, plus un jour) passe sous la 200e meilleure fin connue.
+     * Ici 450 expirées octroyées il y a 100 jours (majorant : J-69) face à 200
+     * révocations d'il y a 10 jours : une seule page est lue, la suivante n'est
+     * jamais demandée.
      */
     public function testTheKeysetReadingStopsOnceNothingCanEnterTheList(): void
     {
@@ -279,17 +280,20 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         [$views, $selects] = $this->listCountingSelects();
 
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
-        // S4d-1a : l'arrêt anticipé est suspendu (lecture par activité) ; S4d-1b rétablira 4 par le majorant.
-        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages (200, 200, 50) : la lecture est exhaustive en attendant le majorant.');
+        self::assertSame(4, $selects, 'Trois lectures fixes et une seule page : le majorant d\'activité passe sous la 200e fin.');
     }
 
-    /** À l'inverse, des purges récentes forcent la lecture de toutes les pages (200, 200, 50). */
+    /**
+     * À l'inverse, des activités récentes (octroi J-20 : majorant J+11) gardent le
+     * majorant au-dessus de la 200e fin et forcent la lecture de toutes les pages
+     * (200, 200, 50).
+     */
     public function testTheKeysetReadingCrossesEveryPageWhileARowCouldStillEnter(): void
     {
         $account = $this->persistAccount('jane');
         $client = $this->registerClient('https://client.example.test/metadata.json');
         $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
-        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P100D')), $this->now->sub(new DateInterval('P1D')), 450);
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P20D')), $this->now->sub(new DateInterval('P1D')), 450);
         $this->em->clear();
 
         [$views, $selects] = $this->listCountingSelects();
@@ -323,10 +327,12 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
     }
 
     /**
-     * L'arrêt anticipé reste exact avec des durées allongées : 450 expirées échangées
-     * dont l'échéance recalculée est future, mais dont le marquage (J-25) est plus
-     * ancien que les 200 révocations (J-10). Aucune n'entre dans la liste, et une seule
-     * page est lue : le `revoked_at` de la page passe sous la 200e meilleure fin.
+     * Le résultat reste celui de la lecture exhaustive avec des durées allongées : 450
+     * expirées échangées dont l'échéance recalculée est future, mais dont le marquage
+     * (J-25) est plus ancien que les 200 révocations (J-10). Aucune n'entre dans la
+     * liste. Le majorant, calculé avec les durées **en vigueur** (60 jours d'inactivité),
+     * monte à J+11 : il ne coupe pas la lecture, qui traverse les trois pages, et le
+     * `min` avec `revoked_at` écarte les 450 une à une.
      */
     public function testTheKeysetReadingStaysExactWhenLengthenedLifetimesPushDeadlinesPastTheMarking(): void
     {
@@ -351,8 +357,55 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
         $revoked = array_filter($views, static fn (AdministeredMcpConnectionView $view): bool => RevocationCause::Expired->value !== $view->revocationCause);
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $revoked, 'Que les 200 révocations : aucune expirée ne finit après J-25.');
-        // S4d-1a : l'arrêt anticipé est suspendu (lecture par activité) ; S4d-1b rétablira 4 par le majorant.
-        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages : la lecture est exhaustive en attendant le majorant.');
+        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages : le majorant allongé (J+11) ne coupe pas la lecture.');
+    }
+
+    /**
+     * Égalité : le majorant (activité du curseur + 30 jours d'inactivité + un jour) vaut
+     * exactement la 200e fin (la plus ancienne des 200 révocations). L'arrêt est
+     * **strict** : à égalité la lecture continue, une page vide la clôt (5 SELECT).
+     */
+    public function testTheKeysetReadingContinuesWhenTheUpperBoundEqualsTheLimitEnd(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $revokedBase = $this->now->sub(new DateInterval('P10D'));
+        $this->insertRevoked($account, $client, $revokedBase, AdministeredMcpConnections::TERMINATED_LIMIT);
+        // La 200e fin est la plus ancienne révocation : base + 1 minute.
+        $limitEnd = $revokedBase->add(new DateInterval('PT1M'));
+        // L'activité la plus ancienne de la page (octroi base + 1 minute) est celle dont
+        // idleDeadline + P1D tombe pile sur cette fin ; les lignes sont groupées par minute.
+        $oldestGrant = $limitEnd->sub(new DateInterval('P1D'))->sub(new DateInterval('P30D'));
+        $this->insertExchangedExpired($account, $client, $oldestGrant->sub(new DateInterval('PT1M')), $this->now->sub(new DateInterval('P1D')), AdministeredMcpConnections::EXCHANGED_PAGE_SIZE);
+        $this->em->clear();
+
+        [$views, $selects] = $this->listCountingSelects();
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
+        self::assertSame(5, $selects, 'Trois lectures fixes, la page pleine, puis la page vide : à égalité du majorant et de la 200e fin on continue.');
+    }
+
+    /**
+     * Exactitude : une expirée à activité **ancienne** (octroi J-40) dont la fin (J-10)
+     * entre dans les 200 n'est pas omise. La première page (activités récentes, fins
+     * bornées par un marquage à J-20) laisse un majorant haut : la lecture continue
+     * jusqu'à elle, qui évince une révocation (J-15).
+     */
+    public function testAnOldActivityExpiredConnectionWhoseEndEntersTheListIsNotOmitted(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P15D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P20D')), $this->now->sub(new DateInterval('P20D'))->add(new DateInterval('PT1H')), AdministeredMcpConnections::EXCHANGED_PAGE_SIZE);
+        $old = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P40D')), $this->now->sub(new DateInterval('P3D')));
+        $this->em->clear();
+
+        [$views, $selects] = $this->listCountingSelects();
+        $ids = array_map(static fn (AdministeredMcpConnectionView $view): string => $view->id->toRfc4122(), $views);
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $ids);
+        self::assertContains($old->getId()->toRfc4122(), $ids, 'Activité J-40, fin J-10 : plus récente que les révocations de J-15, elle doit entrer.');
+        self::assertSame(5, $selects, 'Trois lectures fixes, la page pleine, la page de la ligne ancienne.');
     }
 
     /** Un accord jamais échangé, expiré puis purgé, se classe à octroi + délai du code, pas à sa purge. */

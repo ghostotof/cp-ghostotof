@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Clock\ClockInterface;
@@ -37,14 +38,20 @@ use Psr\Clock\ClockInterface;
  *   d'inactivité et de plafond ({@see McpConnection::deadline()}), bornée par
  *   leur marquage `revoked_at` (la fin est `min(échéance, revoked_at)`), qu'on ne
  *   calcule **que** en PHP — jour de calendrier d'un changement d'heure, fin
- *   de mois : PostgreSQL et PHP divergent. SQL les rend par `revoked_at`
- *   décroissant, par pages à clé de reprise. La fin réelle ne dépasse jamais
- *   `revoked_at` **par construction** — la purge le garantit avec les durées en
- *   vigueur à son passage, le `min` avec toutes celles qui suivront (une durée
- *   `app.mcp.lifetime.*` allongée depuis repousserait l'échéance recalculée
- *   au-delà du marquage) : la lecture s'arrête dès que le `revoked_at` d'une
- *   page passe **strictement** sous la {@see self::TERMINATED_LIMIT}-ième
- *   meilleure fin connue : aucune ligne suivante ne peut plus l'égaler.
+ *   de mois : PostgreSQL et PHP divergent. SQL les rend par
+ *   activité décroissante (`COALESCE(last_used_at, granted_at)`), par pages à clé
+ *   de reprise. La fin réelle ne dépasse jamais l'échéance d'inactivité de
+ *   l'activité de la ligne (`min(échéance, revoked_at)`, l'échéance étant la plus
+ *   proche de l'inactivité et du plafond) : une ligne non lue a une activité au plus
+ *   égale à celle du curseur, donc une fin au plus égale au **majorant**
+ *   `idleDeadline(activité du curseur)` plus un jour (marge des jours de calendrier,
+ *   où PHP et PostgreSQL peuvent diverger). La lecture s'arrête dès que la
+ *   {@see self::TERMINATED_LIMIT}-ième meilleure fin connue est **strictement**
+ *   postérieure à ce majorant : aucune ligne suivante ne peut plus l'égaler. Le `min`
+ *   avec `revoked_at` garde l'arrêt exact quand une durée `app.mcp.lifetime.*` est
+ *   allongée après la purge (l'échéance recalculée dépasserait sinon le marquage) ;
+ *   le majorant suit les durées en vigueur : allongées, il monte et la lecture va
+ *   plus loin, jamais trop court.
  *
  * Les terminées se fusionnent sur leur fin réelle (l'identifiant décroissant
  * départageant deux fins égales) et les {@see self::TERMINATED_LIMIT} dernières
@@ -100,14 +107,15 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
 
     /**
      * Les {@see self::TERMINATED_LIMIT} dernières terminées à leur fin réelle, la
-     * plus récente d'abord : les deux lectures triées par SQL, puis **toutes** les
-     * pages des expirées échangées.
+     * plus récente d'abord : les deux lectures triées par SQL, puis les pages des
+     * expirées échangées, lues par activité décroissante.
      *
-     * Les pages se lisent par activité (S4d) : l'ancien arrêt anticipé comparait
-     * `revoked_at` à la 200e fin, ce que l'ordre par activité ne permet plus (la fin
-     * dépasse l'activité, l'arrêt serait trop précoce). L'arrêt par majorant
-     * `idleDeadline(activité)` + un jour vient à la tâche suivante (S4d-1b) ; d'ici
-     * là, la lecture est exhaustive, donc exacte.
+     * Arrêt anticipé exact : une ligne non lue a une activité au plus égale à celle
+     * du curseur, donc une fin (au plus son échéance d'inactivité) au plus égale au
+     * majorant `idleDeadline(activité du curseur)` + un jour. Quand on tient déjà
+     * {@see self::TERMINATED_LIMIT} fins et que le majorant est **strictement**
+     * antérieur à la dernière, aucune ligne suivante ne peut entrer ; à égalité, on
+     * continue de lire. Instants comparés, jamais des chaînes.
      *
      * @return list<EndedMcpConnection>
      */
@@ -126,9 +134,23 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
             }
             $terminated = $this->latestEndFirst([...$terminated, ...$this->endedAt($page, $zone)]);
             $after = ExchangedExpiredCursor::after($page[\count($page) - 1]);
+            if (self::TERMINATED_LIMIT === \count($terminated) && $this->endUpperBound($after, $zone) < $terminated[self::TERMINATED_LIMIT - 1]->endedAt) {
+                break;
+            }
         } while (self::EXCHANGED_PAGE_SIZE === \count($page));
 
         return $terminated;
+    }
+
+    /**
+     * Le majorant de la fin de toute expirée échangée non encore lue : l'échéance
+     * d'inactivité de l'activité du curseur, plus un jour de calendrier (jamais
+     * `modify()`). L'activité, hydratée avec un décalage fixe, est ramenée dans
+     * `$zone` avant l'ajout, pour que les jours soient ceux de PHP.
+     */
+    private function endUpperBound(ExchangedExpiredCursor $cursor, DateTimeZone $zone): DateTimeImmutable
+    {
+        return $this->lifetimes->idleDeadline($cursor->activity->setTimezone($zone))->add(new DateInterval('P1D'));
     }
 
     /**
