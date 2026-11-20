@@ -444,9 +444,13 @@
     vert, cause non établie (piste : `$em->getUnitOfWork()->isUninitializedObject()` sur client et compte, ou fetch
     EAGER / chargement par une autre voie) ; le test ne garde que la suppression des deux.
   - Pause demandée par l'utilisateur le 2026-11-20 (reboot) après D ; aucun agent ne tourne.
-  - **Prochaine action** : finir le contrôle de D (les trois relances ci-dessus), décider de la question de la
-    jointure isolée (micro-série ou écrit pour la PR), puis `/code-review medium diff 1c0c4470...HEAD` (point fixe
-    inchangé : `1c0c4470`) ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **Contrôle de D fini** (2026-11-20, après reboot) : `McpConnectionRepositoryTest` OK (52 tests, 470 assertions),
+    règles 49 422 / 14 011 octets, `check-claude-rules.sh` conforme. **Question de la jointure isolée close** par
+    expérience du fil principal (mutation puis `git checkout`) : retirer `k` seule → 3 requêtes (deux `SELECT … FROM
+    mcp_client` paresseux), retirer `u` seule → 3 requêtes ; le test garde **chacune** des deux jointures.
+    L'observation de l'agent était fausse (cause probable : bind-mount désynchronisé, mémoire du projet).
+  - **Prochaine action** : `/code-review medium diff 1c0c4470...HEAD` (point fixe `1c0c4470`), sans auditeur ;
+    ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
