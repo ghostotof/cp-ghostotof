@@ -33,6 +33,8 @@ final class ValidMcpClientFields extends Constraint
 
     public string $notAListMessage = 'Les redirections doivent former une liste.';
 
+    public string $verifiedDomainClientIdMessage = 'Cet identifiant est celui d\'un client CIMD d\'un domaine vérifié : il ne se pré-enregistre pas.';
+
     #[Override]
     public function getTargets(): string
     {

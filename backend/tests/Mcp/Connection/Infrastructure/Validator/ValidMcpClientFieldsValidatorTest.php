@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Infrastructure\Validator;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
@@ -28,7 +29,7 @@ final class ValidMcpClientFieldsValidatorTest extends ConstraintValidatorTestCas
 
     protected function createValidator(): ConstraintValidatorInterface
     {
-        return new ValidMcpClientFieldsValidator();
+        return new ValidMcpClientFieldsValidator(AllowedClientDomains::fromList(['claude.ai', 'chatgpt.com']));
     }
 
     /**
@@ -75,6 +76,59 @@ final class ValidMcpClientFieldsValidatorTest extends ConstraintValidatorTestCas
         $this->buildViolation('L\'identifiant du client doit compter 1 à 255 caractères parmi A-Z a-z 0-9 . _ : / -.')
             ->atPath('property.path.clientId')
             ->assertRaised();
+    }
+
+    public function testTheMetadataUrlOfAnAllowedDomainIsReportedAtClientIdWithAFixedMessage(): void
+    {
+        $this->validator->validate(
+            $this->input('https://claude.ai/oauth/claude-code-client-metadata', 'Mon client', $this->uris(1)),
+            new ValidMcpClientFields(),
+        );
+
+        // Texte fixe : la valeur saisie ne revient jamais dans la réponse.
+        $this->buildViolation('Cet identifiant est celui d\'un client CIMD d\'un domaine vérifié : il ne se pré-enregistre pas.')
+            ->atPath('property.path.clientId')
+            ->assertRaised();
+    }
+
+    public function testTheOtherAllowedDomainIsReportedToo(): void
+    {
+        $this->validator->validate(
+            $this->input('https://chatgpt.com/oauth/client.json', 'Mon client', $this->uris(1)),
+            new ValidMcpClientFields(),
+        );
+
+        $this->buildViolation('Cet identifiant est celui d\'un client CIMD d\'un domaine vérifié : il ne se pré-enregistre pas.')
+            ->atPath('property.path.clientId')
+            ->assertRaised();
+    }
+
+    /**
+     * Ce que {@see \App\Mcp\Connection\Domain\ValueObject\CimdClientId} ne reconnaît pas
+     * n'est pas un identifiant CIMD : l'admission ne le confondrait pas avec
+     * un client d'un domaine vérifié, rien à refuser ici.
+     */
+    #[DataProvider('clientIdsThatAreNotAnAllowedCimdIdentifier')]
+    public function testAnIdentifierThatIsNotAnAllowedCimdIdentifierRaisesNothing(string $clientId): void
+    {
+        $this->validator->validate($this->input($clientId, 'Mon client', $this->uris(1)), new ValidMcpClientFields());
+
+        $this->assertNoViolation();
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function clientIdsThatAreNotAnAllowedCimdIdentifier(): iterable
+    {
+        yield 'https URL of a domain that is not allowed' => ['https://client.example.test/metadata.json'];
+        yield 'subdomain of an allowed domain (no implicit subdomain)' => ['https://evil.claude.ai/metadata.json'];
+        yield 'allowed domain as a suffix of another' => ['https://notclaude.ai/metadata.json'];
+        yield 'allowed domain with a port' => ['https://claude.ai:443/metadata.json'];
+        yield 'allowed domain with a capitalised host' => ['https://Claude.ai/metadata.json'];
+        yield 'allowed domain over http' => ['http://claude.ai/metadata.json'];
+        yield 'allowed domain without path' => ['https://claude.ai'];
+        yield 'plain identifier' => ['claude-code-dev'];
     }
 
     public function testAnEmptyNameIsReportedAtName(): void

@@ -8,6 +8,8 @@ use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientNameException;
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
+use App\Mcp\Connection\Domain\ValueObject\CimdClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
@@ -32,9 +34,23 @@ use Symfony\Component\Validator\Exception\UnexpectedValueException;
  * adresse ne se confondent donc jamais en une), de une à
  * {@see McpClient::MAX_REDIRECT_URIS}. Les redirections forment une liste : un
  * tableau à clés est refusé d'un bloc, sans jamais citer la clé.
+ *
+ * Un identifiant qui est l'URL de métadonnées d'un domaine vérifié
+ * ({@see CimdClientId} dont l'hôte est dans {@see AllowedClientDomains}) est
+ * refusé : une ligne pré-enregistrée l'emporte sur CIMD (règle D-C de
+ * l'admission), si bien que l'enregistrer masquerait le vrai client avant sa
+ * première approbation, sous un nom et des redirections choisis ici. La règle
+ * suit exactement celle de l'admission (`CimdClientId::tryFrom()` puis
+ * `AllowedClientDomains::allows()`) : une URL d'un autre domaine, ou que
+ * `CimdClientId` ne reconnaît pas (port, `http://`, hôte en majuscules), reste
+ * un identifiant ordinaire.
  */
 final class ValidMcpClientFieldsValidator extends ConstraintValidator
 {
+    public function __construct(private readonly AllowedClientDomains $allowedClientDomains)
+    {
+    }
+
     #[Override]
     public function validate(mixed $value, Constraint $constraint): void
     {
@@ -66,7 +82,7 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
                 throw new UnexpectedValueException($value, 'object with ?string clientId');
             }
 
-            $this->validateClientId($clientId);
+            $this->validateClientId($clientId, $constraint);
         }
 
         $this->validateName($name);
@@ -91,12 +107,21 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
         return $reflection->getValue($value);
     }
 
-    private function validateClientId(string $clientId): void
+    private function validateClientId(string $clientId, ValidMcpClientFields $constraint): void
     {
         try {
             McpClientId::fromString($clientId);
         } catch (InvalidMcpClientIdException $exception) {
             $this->addViolationAt('clientId', $exception->getMessage());
+
+            return;
+        }
+
+        // Message fixe : l'URL saisie ne revient pas dans la réponse.
+        $cimdClientId = CimdClientId::tryFrom($clientId);
+
+        if (null !== $cimdClientId && $this->allowedClientDomains->allows($cimdClientId)) {
+            $this->addViolationAt('clientId', $constraint->verifiedDomainClientIdMessage);
         }
     }
 

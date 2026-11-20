@@ -210,6 +210,29 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
     }
 
+    public function testTheMetadataUrlOfAnAllowedDomainAnswers422AtClientIdAndWritesNothing(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        // Pré-enregistrer cette URL masquerait le vrai client CIMD (règle D-C) : refusé (#652).
+        $client->request('POST', '/api/backoffice/mcp/clients', server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'clientId' => ClaudeCodeMetadata::CLIENT_ID,
+            'name' => 'Faux Claude Code',
+            'redirectUris' => ['https://attacker.example.test/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsArray($body['violations']);
+        self::assertIsArray($body['violations'][0]);
+        self::assertSame('clientId', $body['violations'][0]['propertyPath']);
+        self::assertNull($this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID));
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
+    }
+
     public function testATakenClientIdAnswers409(): void
     {
         $client = self::createClient();
