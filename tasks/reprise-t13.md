@@ -367,6 +367,14 @@
     anticipé par majorant `idleDeadline(activité du curseur en zone) + P1D` strictement sous la 200e fin connue.
     **Agent 1b perdu au `/clear`** (2026-11-20, rien commité, arbre propre en `1be75f8c`) : **1b relancé** au même cran
     (sonnet/high, l'échec ne tient pas au modèle).
+  - **1b faite** : `a155c801` (majorant `idleDeadline(activité du curseur)` + P1D, arrêt strict sous la 200e fin ;
+    RED 6 SELECT au lieu de 4 ; mutations `<=` et retrait de P1D rouges). Contrôlé : 15 tests OK, arbre propre ;
+    `make back-test` 6625 OK et `make back-quality` vert (agent). Annexes (PR) : test d'égalité dépendant du calendrier
+    Europe/Paris (conf. moyenne, sév. basse) ; `verification-before-completion` non relancée après compactage de l'agent.
+  - **Tâches 2+3 de S4d réunies** (mêmes fichiers : service + test) : constat 3 (`endOf()` d'une jamais échangée par
+    `deadline()`) et constat 4 (échéance affichée d'une expirée échangée = fin bornée déjà calculée, sans recalcul).
+    Agent sonnet/high lancé. Puis **tâche 4** (constats 5+6 et règle `mcp-oauth-purge.md:106-112`, qui décrit encore
+    l'arrêt par `revoked_at`).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
