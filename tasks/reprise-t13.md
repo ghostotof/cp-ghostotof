@@ -516,8 +516,17 @@
     **Décisions de l'utilisateur (2026-11-20)** : la réponse du `PUT` **relit** `countActiveOfClient()` (une requête
     de plus, compte frais) ; **Task 19** : le fixture `tests/Mcp/Connection/Fixtures/remove-mcp-client.php` prend
     `McpClientAdministratorInterface` **au conteneur de test**, commentaire « aucune route ne le câble » corrigé.
-  - **Prochaine action** : agent **Task 18** (sonnet/high), puis relecture S5 (`/code-review medium` sur
-    `diff 2dd76a7c...HEAD` + `agent-skills:security-auditor` opus/high). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **Task 18 faite** (sonnet/high) : `7adc2966` (`BackofficeMcpConnectionResource` `fromView()`, 12 clés exactes,
+    `GetCollection` seule, `skip_null_values: false` ; Provider sur `AdministeredMcpConnectionsInterface::list()` ;
+    5 tests dont coût constant : 7 instructions = instantané (3) + 4 SELECT, à 2 et à 8 connexions ; mutation
+    `identifier: true` → rouge). Contrôlé après `restart backend` : 21 tests OK ; agent : `make back-test` 6665 OK,
+    qualité verte. Questions de l'agent : pagination → **déjà tranchée** (plan D-D) ; `expiresAt` d'une révoquée →
+    F1-F7 (déjà noté) ; accord abandonné rendu `expired` sans cause = vue Task 13. **Task 19** : le docblock de
+    `AdministeredMcpConnectionsInterface::list()` dit « trois requêtes », il y en a quatre (cf.
+    `AdministeredMcpConnectionsTest::testListReadsInFourQueries`).
+  - **S5 implémentée** (Tasks 16-18). **Prochaine action** : relecture S5, `/code-review medium` sur
+    `diff 2dd76a7c...HEAD` + `agent-skills:security-auditor` opus/high sur le même diff ; point fixe de la relecture
+    suivante : le SHA de ce commit de reprise. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
