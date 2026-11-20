@@ -330,8 +330,11 @@
   - **Décision** (2026-11-20) : min(échéance, marquage) **sur les seules échangées expirées** (seules soumises à
     l'arrêt anticipé) ; les jamais échangées gardent octroi + délai (tri SQL `granted_at` exact, sans omission) ;
     limite documentée : après allongement des durées, une abandonnée purgée est classée un peu trop haut.
-  - **Prochaine action** : **S4c-4 tâche 2** (même agent sonnet/high, repris) = fin min sur les échangées, en
-    cours ; puis relecture `/code-review medium diff c25e103b...HEAD`
+  - **S4c-4 tâche 2 faite** (2026-11-20, `afa707f8`) : `endOf()` d'une expirée échangée = min(`deadline()`,
+    `revokedAt`), limite documentée en tête de classe ; deux tests à durées allongées (rouge 2 échecs pour la
+    bonne raison). Contrôle fil principal : 13 tests OK. Annexe : bind-mount désynchronisé a donné un faux vert,
+    résolu par `restart backend` (confiance haute, sévérité basse, outillage).
+  - **Série S4c close côté implémentation.** **Prochaine action** : relecture `/code-review medium diff c25e103b...HEAD`
     (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
