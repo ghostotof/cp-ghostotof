@@ -286,8 +286,9 @@
     `findAbandonedForAdministration` ; (6) messages doublés de `InvalidMcpClientRedirectsException::none()/tooMany()` ;
     (7) 422 global de `InvalidMcpClientRedirectsException` aussi levée par CIMD, docblock périmé ; (8)
     `revocationCause` en `?string` dans la vue d'administration ; (10) messages français codés en dur.
-  - **Prochaine action** : **série S4c** (agent sonnet/high) : constats 1, 2, 3, 9 ; puis relecture
-    `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
+  - **Prochaine action** : **série S4c** (agent sonnet/high) en deux agents : S4c-1 = constat 1 (option A,
+    trois lectures exactes, voir Décisions), en cours ; puis S4c-2 = constats 2 (index sur les requêtes finales
+    de S4c-1), 3, 9 ; puis relecture `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -378,6 +379,12 @@
 - Relecture S4 (2026-11-20) : série S4c = **moyens + faibles réels** (1, 2, 3, 9) ; constat 1 : **échéance réelle
   pour la cause `Expired`** (fin calculée par le domaine, `revokedAt` pour les autres causes, pré-sélection SQL
   cohérente) ; constat 2 : **migration d'index partiels** (+ empreinte `verify.sql`, #611).
+- Constat 1, SQL non exact (2026-11-20) : l'échéance d'une échangée expirée diverge entre PHP et PostgreSQL (heure
+  répétée d'automne, `+P1M` en fin de mois) → **option A retenue** : (1) révocations hors `Expired` triées
+  `revoked_at DESC, id DESC` LIMIT 200 ; (2) jamais échangées (vivantes ou `Expired` à `code_exchanged_at IS NULL`)
+  triées `granted_at DESC, id DESC` LIMIT 200 ; (3) échangées expirées lues par pages keyset `(revoked_at, id)`,
+  fin calculée en PHP (`McpConnection::deadline()`), arrêt dès que `revoked_at` ≤ 200e fin connue ; filtres en
+  `IS DISTINCT FROM 'expired'`. Rejetées : colonne `ended_at` (migration + remplissage PHP), borne avec marge (inexacte).
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
   `app.mcp.cimd.allowed_domains`, pas une donnée du backoffice ; limite acceptée de l'ADR 0006 à
   documenter seulement) ; révocation d'une connexion par l'administrateur (ticket).
