@@ -135,6 +135,12 @@ framework:
         # erreur du client (une liste restée ouverte sur un client déjà supprimé).
         App\Mcp\Connection\Domain\Exception\McpClientNotFoundException:
             log_level: info
+        # Enregistrement d'un client MCP déjà enregistré (409) et redirections
+        # refusées par le domaine (422) (#652) : des erreurs du client.
+        App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException:
+            log_level: info
+        App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

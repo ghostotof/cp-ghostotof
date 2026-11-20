@@ -162,6 +162,18 @@ api_platform:
         # depuis l'issue #360. Elle reçoit aussi un `id` dans le corps d'un PUT
         # (`api_allow_update: false`, plus bas, issue #373).
         App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException: 400
+        # Administration des clients MCP (#652). Client inconnu : 404, comme
+        # une connexion ou un compte introuvable (même statut que son
+        # getStatus(), ProblemStatusMatchesExceptionToStatusTest les confronte).
+        App\Mcp\Connection\Domain\Exception\McpClientNotFoundException: 404
+        # Enregistrer un client déjà enregistré : un conflit avec l'état
+        # existant, 409 comme une collision d'adresse e-mail.
+        App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException: 409
+        # Redirections refusées par les règles du domaine : saisie invalide,
+        # que l'administrateur corrige lui-même, donc 422.
+        App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException: 422
+        # McpClientDeclaredByDocumentException n'a pas d'entrée ici, à dessein :
+        # elle porte son 409 typé par ProblemExceptionInterface::getStatus().
         # --- Défauts d'API Platform, rétablis (audit A15 / T5.1) ---
         # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
         # Conséquence mesurée : sur n'importe quel POST public, un corps qui
