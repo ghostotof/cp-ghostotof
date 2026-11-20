@@ -391,6 +391,24 @@
     de la même activité non démontré cas par cas de calendrier (conf. moyenne, sév. basse) ; commit `6d229019` attribué
     à Sonnet 5.5 (exact, modèle de l'agent). **Relecture de série S4d en cours** : `/code-review medium diff
     f4cca85a...HEAD`, sans auditeur (pas d'auth/session/CSRF/cookies).
+  - **Relecture S4d faite** (HEAD relu `6de1ba0e`, point fixe de la suivante). 9 constats, tri :
+    - **C1 moyen, confirmé** : marge P1D de `endUpperBound()` insuffisante si `connection_idle` est en mois/années
+      (P1M : activité 31/01 → 03/03 > 01/02 + P1M + P1D = 03/02), arrêt anticipé qui omet une ligne. Latent (P30D).
+      **Décision utilisateur (2026-11-20) : `fromConfiguration()` refuse y/m dans `connection_idle`** (comme pour
+      `unexchanged`), test rouge sur P1M/P1Y. → **correction A** (sonnet/high).
+    - **C8 faible, lié** : la doc justifie la marge par « PHP et PostgreSQL divergent » ; c'est la non-monotonie du
+      calendrier de PHP (changement d'heure) qu'elle couvre. → **correction B** (docblocks + règle purge).
+    - **C7 faible à risque réel** : `list()` répète le prédicat de `endOf()` (Expired + échangé) pour choisir
+      l'échéance affichée ; à porter par `EndedMcpConnection`. → **correction B**.
+    - **C3 rétrogradé faible, confirmé** (`schema:update --dump-sql` = `DROP INDEX
+      idx_mcp_connection_admin_exchanged_expired_activity`) : `make:migration` le générera ; garde existante
+      `McpConnectionAdministrationIndexesTest`. → une ligne de règle, **correction B**.
+    - **C4 faible, conf. haute** : `prefixedColumns()` refait `ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT`, ne
+      renomme pas les colonnes de jointure. → **correction C** (repository seul).
+    - Écrits (PR) : C2 pas de test de bord du majorant hors mutations 1b (sév. basse) ; C5 `ConnectionNeverRevokedException`
+      morte (déjà notée) ; C6 SQL natif contre la préférence QueryBuilder, justifié (constructeur de ligne) ;
+      C9 `Version20261120120000Test::setUp()` recopie le `down()` de la migration suivante (sév. basse).
+    - **Correction A lancée.** Ensuite B, C, puis relecture `/code-review medium diff 6de1ba0e...HEAD`.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
