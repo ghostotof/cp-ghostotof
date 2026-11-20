@@ -14,6 +14,7 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
@@ -21,6 +22,7 @@ use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionExcep
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
+use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -990,7 +992,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         self::assertSame(
             [$johnOnSecond->getId()->toRfc4122(), $janeOnFirst->getId()->toRfc4122()],
-            $this->idsOf($this->connections()->findNotRevokedForAdministration()),
+            $this->idsOf($this->connections()->findNotRevokedForAdministration($this->abandonedThreshold(new DateTimeImmutable('2026-09-01T00:00:00+02:00')))),
         );
         self::assertSame(
             [$johnRevoked->getId()->toRfc4122(), $janeRevoked->getId()->toRfc4122()],
@@ -1058,6 +1060,119 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Un accord abandonné (#652) quitte les non révoquées **en SQL**, à
+     * l'instant où le délai des non échangées est atteint : à 59 minutes il est
+     * encore vivant, à 61 il passe dans la requête bornée à part. Un accord dont
+     * le code a été échangé n'est jamais filtré par ce seuil, quel que soit son
+     * âge. Le seuil vient de {@see ConnectionLifetimes}, jamais d'une durée
+     * recopiée ici.
+     */
+    public function testAnAbandonedGrantLeavesTheNotRevokedAndTheExchangedOneNever(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $unit = $this->lifetimesFromContainer()->unexchanged();
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $young = McpConnection::grant($account, $client, self::SCOPE, $threshold->add(new DateInterval('PT1M')));
+        $abandoned = McpConnection::grant($account, $client, self::SCOPE, $threshold->sub(new DateInterval('PT1M')));
+        $exchangedOld = McpConnection::grant($account, $client, self::SCOPE, $now->sub($unit)->sub($unit)->sub($unit));
+        foreach ([$young, $abandoned, $exchangedOld] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->exchangeCodeOf($exchangedOld, $exchangedOld->grantedAt()->add(new DateInterval('PT1M')));
+        $this->em->clear();
+
+        $alive = $this->idsOf($this->connections()->findNotRevokedForAdministration($threshold));
+        $apart = $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10));
+
+        self::assertEqualsCanonicalizing([$young->getId()->toRfc4122(), $exchangedOld->getId()->toRfc4122()], $alive);
+        self::assertSame([$abandoned->getId()->toRfc4122()], $apart, 'Ni la jeune ni l\'échangée, même très ancienne.');
+    }
+
+    /** Le seuil est inclus : un octroi exactement à `maintenant − durée` est abandonné, comme `stateOf()` le dit. */
+    public function testAGrantExactlyAtTheThresholdIsAbandoned(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $connection = McpConnection::grant($this->persistAccount('jane'), $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, $threshold);
+        $this->connections()->add($connection);
+        $this->em->clear();
+
+        self::assertSame([], $this->connections()->findNotRevokedForAdministration($threshold));
+        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+    }
+
+    /** Un abandonné que la purge a marqué expiré n'est plus dans les abandonnées : il est dans les terminées. */
+    public function testAnAbandonedGrantMarkedExpiredMovesToTheTerminated(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $connection = McpConnection::grant($this->persistAccount('jane'), $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, $threshold->sub(new DateInterval('PT5M')));
+        $this->connections()->add($connection);
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Expired, $now);
+        $this->em->clear();
+
+        self::assertSame([], $this->connections()->findAbandonedForAdministration($threshold, 10));
+        self::assertSame([], $this->connections()->findNotRevokedForAdministration($threshold));
+        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findTerminatedForAdministration(10)));
+    }
+
+    /** Les abandonnées sont bornées par `$limit` et rendues par octroi décroissant : la fin vaut octroi + une durée constante. */
+    public function testAbandonedForAdministrationIsBoundedAndMostRecentlyGrantedFirst(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $abandoned = [];
+        foreach ([1, 3, 2] as $hours) {
+            $abandoned[$hours] = McpConnection::grant($account, $client, self::SCOPE, $threshold->sub(new DateInterval('PT'.$hours.'H')));
+            $this->connections()->add($abandoned[$hours]);
+        }
+        $this->em->clear();
+
+        self::assertSame(
+            [$abandoned[1]->getId()->toRfc4122(), $abandoned[2]->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 2)),
+        );
+    }
+
+    /** Deux octrois au même instant : l'identifiant décroissant les départage. */
+    public function testAbandonedForAdministrationBreaksTiesByDescendingId(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedAt = $threshold->sub(new DateInterval('PT1H'));
+        $first = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $second = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $this->connections()->add($first);
+        $this->connections()->add($second);
+        $this->em->clear();
+
+        $ids = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        rsort($ids);
+        self::assertSame($ids, $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+    }
+
+    private function abandonedThreshold(DateTimeImmutable $now): DateTimeImmutable
+    {
+        return $this->lifetimesFromContainer()->abandonedBefore($now);
+    }
+
+    private function lifetimesFromContainer(): ConnectionLifetimes
+    {
+        return self::getContainer()->get(ConnectionLifetimes::class);
+    }
+
+    /** Note l'échange du code de `$connection` à `$at`, par la voie de production. */
+    private function exchangeCodeOf(McpConnection $connection, DateTimeImmutable $at): void
+    {
+        $codeHash = hash('sha256', 'code-'.$connection->getId()->toRfc4122());
+        $this->authorizationCodes()->add(new McpAuthorizationCode($connection, $codeHash, $at->add(new DateInterval('PT10M'))));
+        $this->connections()->recordCodeExchangeOf($codeHash, $at);
+    }
+
+    /**
      * Le client et le compte arrivent avec chaque connexion, par jointure :
      * lire leur nom ensuite n'envoie aucune requête de plus que la lecture
      * elle-même (une seule), sur une identity map vidée — sans quoi un client
@@ -1076,7 +1191,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         $read = function (): array {
             $names = [];
-            foreach ([...$this->connections()->findNotRevokedForAdministration(), ...$this->connections()->findTerminatedForAdministration(10)] as $connection) {
+            foreach ([...$this->connections()->findNotRevokedForAdministration($this->abandonedThreshold(new DateTimeImmutable('2026-09-01T00:00:00+02:00'))), ...$this->connections()->findTerminatedForAdministration(10)] as $connection) {
                 $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
             }
 

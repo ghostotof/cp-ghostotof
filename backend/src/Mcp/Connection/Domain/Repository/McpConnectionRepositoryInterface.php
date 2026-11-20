@@ -70,20 +70,39 @@ interface McpConnectionRepositoryInterface
      * par jointure : lire leur nom n'envoie aucune requête de plus. Comme pour
      * {@see self::findNotRevokedOfAccount()}, « non révoquée » est l'état de la
      * ligne — une connexion échue que la purge n'a pas encore marquée en est —
-     * et la liste n'a **aucune borne de code** (ni limite ni pagination) : elle
-     * compte les connexions actives et les accords que ni le client ni la
-     * personne n'ont fait suivre d'un échange de code. Un compte de confiance
-     * peut en laisser, de l'ordre de 14 000 par jour, par adresse et par pod
-     * (constat de la relecture de la T13 : la zone nginx `oauth`, 10 requêtes
-     * par minute, est le seul plafond du consentement ; elle se multiplie par
-     * le nombre de pods et d'adresses de l'appelant) ; échus au
-     * bout d'une heure, ils restent non révoqués jusqu'à ce que la purge de
-     * nuit les marque. Un constat écrit, pas une garantie « par nature ». Une
-     * lecture, sans verrou.
+     * et la liste n'a **aucune borne de code** (ni limite ni pagination) : le
+     * volume non borné restant est celui des connexions **vivantes**. Les
+     * accords abandonnés — non révoqués, code jamais échangé, octroyés à
+     * `$abandonedBefore` ou avant (voir
+     * {@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::abandonedBefore()}) —
+     * en sortent, en SQL : un compte de confiance peut en laisser de l'ordre de
+     * 14 000 par jour, par adresse et par pod (constat de la relecture de la
+     * T13 : la zone nginx `oauth` est le seul plafond du consentement), et la
+     * purge de nuit ne les marque qu'à son passage. Ils sont lus à part,
+     * bornés, par {@see self::findAbandonedForAdministration()}. Un accord dont
+     * le code a été échangé n'est jamais écarté par ce seuil, quel que soit
+     * son âge. Une lecture, sans verrou.
      *
      * @return list<McpConnection>
      */
-    public function findNotRevokedForAdministration(): array;
+    public function findNotRevokedForAdministration(DateTimeImmutable $abandonedBefore): array;
+
+    /**
+     * Les `$limit` accords **abandonnés** (`revoked_at` nul, code jamais
+     * échangé, octroyés à `$abandonedBefore` ou avant), de tous les comptes et
+     * de tous les clients, le plus récemment octroyé d'abord (l'identifiant
+     * décroissant départage deux octrois égaux). L'ordre par octroi est ici
+     * l'ordre par instant de fin, puisque la fin vaut l'octroi plus une durée
+     * constante : le service fusionne ainsi sans erreur ces lignes avec les
+     * révoquées triées par `revoked_at`. Même jointure que
+     * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
+     * que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findAbandonedForAdministration(DateTimeImmutable $abandonedBefore, int $limit): array;
 
     /**
      * La seconde moitié de l'administration : les `$limit` connexions

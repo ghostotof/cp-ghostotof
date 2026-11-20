@@ -475,6 +475,35 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
+     * Le seuil des accords abandonnés (#652) : `maintenant − durée`, du temps
+     * écoulé et **sans marge** (celle de la purge n'a rien à faire dans une
+     * lecture qui doit répondre comme `McpConnectionStatus::stateOf()`).
+     * Équivalence épinglée à la seconde, bornes incluses : `octroi <= seuil`
+     * ⇔ `unexchangedDeadline(octroi) <= maintenant`, y compris autour du
+     * passage à l'heure d'hiver.
+     */
+    public function testTheAbandonedThresholdIsNowMinusTheLifetimeAndMatchesTheDeadlineRule(): void
+    {
+        $lifetimes = $this->lifetimes();
+        $paris = new DateTimeZone('Europe/Paris');
+
+        foreach (['2026-06-15 10:00:00+00:00', '2026-10-25 02:30:00+02:00', '2026-10-25 02:30:00+01:00', '2026-03-29 03:30:00+02:00'] as $instant) {
+            $now = new DateTimeImmutable($instant)->setTimezone($paris);
+            $threshold = $lifetimes->abandonedBefore($now);
+
+            self::assertSame($now->getTimestamp() - 3600, $threshold->getTimestamp(), 'Pas du temps écoulé, ou une marge : '.$instant);
+            $second = new DateInterval('PT1S');
+            foreach ([$threshold->sub($second), $threshold, $threshold->add($second)] as $grantedAt) {
+                self::assertSame(
+                    $lifetimes->unexchangedDeadline($grantedAt) <= $now,
+                    $grantedAt <= $threshold,
+                    'Le seuil ne répond pas à la règle de l\'échéance : '.$instant.' '.$grantedAt->format(DATE_ATOM),
+                );
+            }
+        }
+    }
+
+    /**
      * La troisième borne de la présélection (#730) : `maintenant − durée
      * + une minute`, en temps écoulé. **La marge est ce que la valeur épingle**
      * (mesurée : à zéro, la purge reste correcte — la borne est alors

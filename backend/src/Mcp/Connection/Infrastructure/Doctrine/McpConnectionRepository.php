@@ -101,17 +101,38 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * Sans limite ni pagination : le volume n'est borné ni par le code ni « par
-     * nature » (voir l'interface), seulement par ce que la zone nginx `oauth`
-     * laisse s'accumuler entre deux purges, par adresse et par pod.
+     * Sans limite ni pagination : ce qui reste non borné par le code, ce sont
+     * les connexions vivantes (voir l'interface). Les accords abandonnés — le
+     * volume que la zone nginx `oauth` laisse s'accumuler — sont exclus ici en
+     * SQL et lus à part, bornés, par {@see self::findAbandonedForAdministration()}.
      */
-    public function findNotRevokedForAdministration(): array
+    public function findNotRevokedForAdministration(DateTimeImmutable $abandonedBefore): array
     {
         /** @var list<McpConnection> */
         return $this->forAdministration()
             ->where('connection.revokedAt IS NULL')
+            // Un accord échangé n'est jamais abandonné, quel que soit son âge.
+            ->andWhere('(connection.codeExchangedAt IS NOT NULL OR connection.grantedAt > :abandonedBefore)')
+            ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
             ->orderBy('connection.grantedAt', 'DESC')
             ->addOrderBy('connection.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findAbandonedForAdministration(DateTimeImmutable $abandonedBefore, int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.revokedAt IS NULL')
+            ->andWhere('connection.codeExchangedAt IS NULL')
+            ->andWhere('connection.grantedAt <= :abandonedBefore')
+            ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
+            // L'octroi décide quelles abandonnées la limite garde : la fin vaut
+            // octroi + une durée constante, c'est donc l'ordre par instant de fin.
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
     }

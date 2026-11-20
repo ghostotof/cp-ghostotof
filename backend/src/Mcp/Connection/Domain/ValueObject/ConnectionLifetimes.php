@@ -312,6 +312,24 @@ final readonly class ConnectionLifetimes
     }
 
     /**
+     * Le seuil d'octroi des accords abandonnés à `$now` (#652) : `$now − durée
+     * des non échangées`, du temps écoulé et **sans marge** — la marge de
+     * {@see self::preselectionBoundsAt()} est faite pour la purge, qui
+     * présélectionne large ; une lecture doit répondre exactement comme
+     * `McpConnectionStatus::stateOf()`.
+     *
+     * Équivalence, borne incluse des deux côtés : `octroi <= seuil` ⇔
+     * `unexchangedDeadline(octroi) <= $now` ⇔ la règle `$now >= échéance` de
+     * `McpConnectionStatus::stateOf()`. Une connexion dont le code n'a jamais
+     * été échangé et dont l'octroi est à ce seuil ou avant est donc morte, que
+     * la purge l'ait marquée ou non.
+     */
+    public function abandonedBefore(DateTimeImmutable $now): DateTimeImmutable
+    {
+        return $now->sub($this->unexchanged);
+    }
+
+    /**
      * Les trois bornes de la présélection SQL de la purge à `$now` (#726,
      * #730) : `$now − durée + MINIMUM_CONNECTION_LIFETIME`, pour l'inactivité
      * puis pour la durée maximale, et `$now − durée des non échangées +
