@@ -243,8 +243,14 @@
     (aucun comportement d'authentification modifié). Aucun constat critique, haut ni moyen : **boucle close**. Six
     constats faibles (R1-R6), écrits dans « Constats écrits non corrigés » ; décision de l'utilisateur : R1, R2, R3,
     R4, R6 corrigés en **Task 19**, R5 dans la PR.
-  - **Prochaine action** : **S4**, Task 12 (agent sonnet/high, étape 05, brief ci-dessous), puis Tasks 13, 14, 15,
-    un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+  - **Task 12 faite** (2026-11-20) : `c791cf91` (`McpConnectionStatus`, `final readonly`, `ConnectionLifetimes` +
+    `ClockInterface`, `expiresAt()` / `stateOf()` ; `OwnMcpConnections` le reçoit). Contrôlé : 39 tests OK
+    (`McpConnectionStatusTest|OwnMcpConnectionsTest|OwnMcpConnectionsControllerTest`). Écart : l'échéance est
+    calculée deux fois par ligne dans `viewOf()` (`stateOf()` rappelle `expiresAt()`), régression de R5a (#650), et
+    le commentaire dit « même calcul ». Trailer `Co-Authored-By` de ce commit : Sonnet 5.5 (modèle réel de l'agent).
+  - **Prochaine action** : **Task 12'** (micro-correction, agent sonnet/high) : `stateOf(McpConnection, now,
+    DateTimeImmutable $deadline)`, l'appelant calcule `expiresAt()` une fois et le passe ; test qui le prouve ;
+    commentaire de `viewOf()` corrigé. Puis Tasks 13, 14, 15 (S4, la 13 consomme l'API corrigée), un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
     seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
@@ -325,6 +331,8 @@
   **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
 - Relecture de C3c (2026-11-19) : **micro-série C3d courte**, relue par `/code-review medium` seul ; F1 et le reste
   dans la PR.
+- Task 12 (2026-11-20) : double calcul de l'échéance → **micro-correction Task 12' avant la Task 13** ; fuseau :
+  **garder l'horloge injectée** dans `McpConnectionStatus` (le plan disait « fuseau déjà injecté », c'était `$now`).
 - Relecture de C3d (2026-11-20) : **écrire, corriger en Task 19** — R1, R2, R3, R4, R6 en Task 19, R5 dans la PR ;
   S4 démarre aussitôt.
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
