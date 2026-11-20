@@ -356,7 +356,10 @@
     dans `verify.sql`, déclaration d'index dans l'entité, tests dépôt/index/curseur, adaptation minimale du service
     (arrêt inchangé sur le fond, juste pour compiler) ; **1b** condition d'arrêt du service (majorant
     `idleDeadline(activité)` + 1 jour < 200e fin) et ses tests (dont durées allongées). Agent 1a lancé depuis
-    `2deb62e6`+1.
+    `2deb62e6`+1, **interrompu** (« Autocompact is thrashing », contexte saturé, rien commité) : travail
+    partiel dans l'arbre (10 fichiers + `Version20261120130000.php` écrite, déclaration d'index retirée de l'entité,
+    arrêt anticipé désactivé ; manquent l'empreinte n° 43, les tests lancés, le commit). **Agent 1a-bis** (`sonnet`,
+    `high`, même cran : l'échec tient au contexte, pas au modèle) lancé pour le terminer, brief économe en contexte.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
