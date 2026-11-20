@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
@@ -160,7 +161,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->getResult();
     }
 
-    public function findExchangedExpiredForAdministration(?McpConnection $after, int $limit): array
+    public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array
     {
         $query = $this->forAdministration()
             ->where('connection.revocationCause = :expired')
@@ -174,8 +175,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             // Clé de reprise sur `(revoked_at, id)`, typée comme les colonnes.
             $query
                 ->andWhere('(connection.revokedAt < :afterRevokedAt OR (connection.revokedAt = :afterRevokedAt AND connection.id < :afterId))')
-                ->setParameter('afterRevokedAt', $after->revokedAt(), Types::DATETIMETZ_IMMUTABLE)
-                ->setParameter('afterId', $after->getId(), UuidType::NAME);
+                ->setParameter('afterRevokedAt', $after->revokedAt, Types::DATETIMETZ_IMMUTABLE)
+                ->setParameter('afterId', $after->id, UuidType::NAME);
         }
 
         /** @var list<McpConnection> */

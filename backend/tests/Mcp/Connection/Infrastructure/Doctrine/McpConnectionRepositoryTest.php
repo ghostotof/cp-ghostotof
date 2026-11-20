@@ -16,6 +16,7 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
@@ -1175,8 +1176,8 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $this->em->clear();
 
         $first = $this->connections()->findExchangedExpiredForAdministration(null, 2);
-        $second = $this->connections()->findExchangedExpiredForAdministration($first[1], 2);
-        $third = $this->connections()->findExchangedExpiredForAdministration($second[1], 2);
+        $second = $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($first[1]), 2);
+        $third = $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($second[1]), 2);
         $tied = [$all[0]->getId()->toRfc4122(), $all[1]->getId()->toRfc4122()];
         rsort($tied);
 
@@ -1185,7 +1186,11 @@ final class McpConnectionRepositoryTest extends KernelTestCase
             [...$this->idsOf($first), ...$this->idsOf($second), ...$this->idsOf($third)],
         );
         self::assertCount(1, $third);
-        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration($third[0], 2));
+        // Le curseur porte l'instant (non nul) et l'identifiant de la dernière ligne lue.
+        $cursor = ExchangedExpiredCursor::after($first[1]);
+        self::assertSame($first[1]->revokedAt(), $cursor->revokedAt);
+        self::assertTrue($first[1]->getId()->equals($cursor->id));
+        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($third[0]), 2));
     }
 
     /** Les abandonnées sont bornées par `$limit` et rendues par octroi décroissant : la fin vaut octroi + une durée constante. */

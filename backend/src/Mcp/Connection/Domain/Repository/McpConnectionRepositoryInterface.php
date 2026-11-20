@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
@@ -131,11 +132,11 @@ interface McpConnectionRepositoryInterface
      * Les expirées dont le code **a été échangé**, par pages : `revoked_at`
      * décroissant, l'identifiant décroissant départageant deux purges au même
      * instant, **strictement après** `$after` (la dernière ligne de la page
-     * précédente ; `null` pour la première page). Leur fin réelle — la plus proche
-     * des échéances d'inactivité et de plafond — ne se range pas en SQL (PHP et
-     * PostgreSQL ne comptent pas de la même façon un jour sur un changement
-     * d'heure, ni un mois sur une fin de mois) : le service la calcule avec le
-     * domaine. Ce que SQL garantit, c'est que la fin réelle ne dépasse jamais
+     * précédente, rendue par {@see ExchangedExpiredCursor::after()} ; `null` pour la
+     * première page). Leur fin réelle — la plus proche des échéances d'inactivité
+     * et de plafond — ne se range pas en SQL (PHP et PostgreSQL ne comptent pas de
+     * la même façon un jour sur un changement d'heure, ni un mois sur une fin de
+     * mois) : le service la calcule avec le domaine. Ce que SQL garantit, c'est que la fin réelle ne dépasse jamais
      * `revoked_at` (la purge marque une connexion échue, jamais avant son échéance) :
      * le service s'arrête dès que `revoked_at` passe sous la meilleure fin qu'il ne
      * peut plus battre. Même jointure que {@see self::findNotRevokedForAdministration()}.
@@ -144,7 +145,7 @@ interface McpConnectionRepositoryInterface
      *
      * @return list<McpConnection>
      */
-    public function findExchangedExpiredForAdministration(?McpConnection $after, int $limit): array;
+    public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array;
 
     /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,

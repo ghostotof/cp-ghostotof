@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -109,7 +110,7 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
                 break;
             }
             $terminated = $this->latestEndFirst([...$terminated, ...$this->endedAt($page, $zone)]);
-            $after = $page[\count($page) - 1];
+            $after = ExchangedExpiredCursor::after($page[\count($page) - 1]);
         } while (self::EXCHANGED_PAGE_SIZE === \count($page) && !$this->nothingCanEnter($after, $terminated));
 
         return $terminated;
@@ -117,20 +118,18 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
 
     /**
      * Le `revoked_at` borne la fin réelle d'une expirée : si celui de la dernière
-     * ligne lue est strictement sous la meilleure fin que la liste pleine ne peut
-     * plus battre, toutes les suivantes (`revoked_at` décroissant) finissent plus tôt.
-     * Strict : à égalité, l'identifiant peut encore départager en leur faveur.
+     * ligne lue (le curseur) est strictement sous la meilleure fin que la liste
+     * pleine ne peut plus battre, toutes les suivantes (`revoked_at` décroissant)
+     * finissent plus tôt. Strict : à égalité, l'identifiant peut encore départager
+     * en leur faveur. L'invariant « fin réelle ≤ `revoked_at` » est celui de la
+     * purge, qui ne marque une connexion expirée qu'une fois son échéance passée.
      *
      * @param list<EndedMcpConnection> $terminated
      */
-    private function nothingCanEnter(McpConnection $lastRead, array $terminated): bool
+    private function nothingCanEnter(ExchangedExpiredCursor $cursor, array $terminated): bool
     {
-        if (\count($terminated) < self::TERMINATED_LIMIT) {
-            return false;
-        }
-        $revokedAt = $lastRead->revokedAt();
-
-        return null !== $revokedAt && $revokedAt < $terminated[self::TERMINATED_LIMIT - 1]->endedAt;
+        return self::TERMINATED_LIMIT <= \count($terminated)
+            && $cursor->revokedAt < $terminated[self::TERMINATED_LIMIT - 1]->endedAt;
     }
 
     /**
