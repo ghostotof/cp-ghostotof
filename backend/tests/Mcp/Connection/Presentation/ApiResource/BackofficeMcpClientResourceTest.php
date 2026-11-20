@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\ApiResource;
 
+use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProcessor;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
 use App\Mcp\Connection\Presentation\ApiResource\BackofficeMcpClientResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
@@ -29,11 +32,13 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * Couvre la lecture et l'enregistrement des clients MCP par le backoffice
- * (#652, spec 0007 T13) : GET /api/backoffice/mcp/clients, GET
+ * Couvre la lecture, l'enregistrement, la révision et la suppression des
+ * clients MCP par le backoffice (#652, spec 0007 T13) : GET
+ * /api/backoffice/mcp/clients, GET, PUT et DELETE
  * /api/backoffice/mcp/clients/{id} et POST /api/backoffice/mcp/clients,
  * réservés ROLE_SUPER par l'`access_control` `^/api/backoffice`, et la garde
- * des opérations de la ressource déjà déclarées.
+ * des opérations de la ressource. La suppression vue par le client MCP (son
+ * jeton cesse d'ouvrir) est dans {@see BackofficeMcpClientRemovalTest}.
  */
 final class BackofficeMcpClientResourceTest extends WebTestCase
 {
@@ -48,6 +53,12 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
     private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
 
     private const string PREREGISTERED_CLIENT_ID = 'https://client.example.test/metadata.json';
+
+    /** Le client que la garde des refus fait écrire, révisé ou supprimé : il doit sortir intact. */
+    private const string SEEDED_CLIENT_ID = 'https://seeded.example.test/metadata.json';
+
+    /** Le jeton, dans le chemin d'une opération d'élément, que le test remplace par l'identifiant du client semé. */
+    private const string ID_PLACEHOLDER = '{id}';
 
     protected function setUp(): void
     {
@@ -218,19 +229,229 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
     }
 
+    public function testSuperRevisesNameAndRedirects(): void
+    {
+        $client = self::createClient();
+        $super = $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $stored = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Ancien nom', ['https://client.example.test/callback']);
+        $this->clients()->add($stored);
+        $holder = $this->registerAccount($client, 'holder');
+        $this->connections()->add(McpConnection::grant($holder, $stored, self::SCOPE, new DateTimeImmutable()));
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/mcp/clients/'.$stored->getId()->toRfc4122(), server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Nouveau nom',
+            'redirectUris' => ['https://client.example.test/callback', 'http://localhost/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(200);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame($stored->getId()->toRfc4122(), $body['id']);
+        // L'identifiant public du client n'est jamais révisé.
+        self::assertSame(self::PREREGISTERED_CLIENT_ID, $body['clientId']);
+        self::assertSame('Nouveau nom', $body['name']);
+        self::assertSame(['https://client.example.test/callback', 'http://localhost/callback'], $body['redirectUris']);
+        self::assertSame('preregistered', $body['registration']);
+        // Réviser ne coupe aucune connexion (D-E) : la réponse compte toujours la connexion active.
+        self::assertSame(1, $body['activeConnections']);
+
+        $revised = $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID);
+        self::assertNotNull($revised);
+        self::assertSame('Nouveau nom', $revised->getName());
+        self::assertSame(['https://client.example.test/callback', 'http://localhost/callback'], $revised->redirectUris());
+        self::assertSame(1, $this->connections()->countActiveOfClient($stored->getId()));
+
+        // L'audit est celui d'une requête : l'acteur est celui du jeton, des nombres et jamais une URI.
+        $event = self::singleSecurityAuditEvent('mcp-client-revised');
+        self::assertSame(self::PREREGISTERED_CLIENT_ID, $event['clientId']);
+        self::assertSame(2, $event['redirectUriCount']);
+        self::assertSame(1, $event['addedRedirectCount']);
+        self::assertSame(0, $event['removedRedirectCount']);
+        self::assertSame($super->getId()->toRfc4122(), $event['actor']);
+        self::assertSame([], self::securityAuditEvents('mcp-connection-revoked'));
+    }
+
     /**
-     * `McpClientRegistrar` audite **après** son `flush` (COMMIT) : un Processor
-     * qui enveloppait l'appel dans une transaction ferait précéder le COMMIT
-     * par l'audit, et un échec du COMMIT laisserait un enregistrement audité
-     * que la base n'a pas. Le Processor n'ouvre donc aucune transaction, ne
-     * touche ni l'EntityManager ni la connexion : il assemble et délègue.
+     * Un client déclaré par son document CIMD n'est pas révisable : le document
+     * fait foi (D-E). 409 typé, la ligne est intacte et rien n'est audité.
      */
-    public function testTheProcessorOpensNoTransactionAroundTheRegistration(): void
+    public function testRevisingACimdClientIsRefusedWithATypedConflict(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $discovered = ClaudeCodeMetadata::storedRow();
+        $this->clients()->add($discovered);
+        $nameBefore = $discovered->getName();
+        $redirectsBefore = $discovered->redirectUris();
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/mcp/clients/'.$discovered->getId()->toRfc4122(), server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Nom imposé',
+            'redirectUris' => ['https://attacker.example.test/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(409);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsString($body['type']);
+        self::assertStringEndsWith('/errors/client-declared-by-document', $body['type']);
+        $stored = $this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($stored);
+        self::assertSame($nameBefore, $stored->getName());
+        self::assertSame($redirectsBefore, $stored->redirectUris());
+        self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
+    }
+
+    public function testAnInvalidRevisionAnswers422AtItsPath(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $stored = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Nom', ['https://client.example.test/callback']);
+        $this->clients()->add($stored);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/mcp/clients/'.$stored->getId()->toRfc4122(), server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Autre nom',
+            'redirectUris' => ['not a redirect uri'],
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsArray($body['violations']);
+        self::assertIsArray($body['violations'][0]);
+        self::assertSame('redirectUris[0]', $body['violations'][0]['propertyPath']);
+        // Un refus ne modifie rien et n'audite rien.
+        self::assertSame('Nom', $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID)?->getName());
+        self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
+    }
+
+    public function testRevisingAnUnknownClientIs404(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID, server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Nom',
+            'redirectUris' => ['https://client.example.test/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
+    }
+
+    public function testDeletingAnUnknownClientIs404(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('DELETE', '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID, server: ['HTTP_X_XSRF_TOKEN' => $csrf]);
+
+        self::assertResponseStatusCodeSame(404);
+        // Un refus ne coupe rien et n'audite rien.
+        self::assertSame([], self::securityAuditEvents('mcp-client-removed'));
+        self::assertSame([], self::securityAuditEvents('mcp-connection-revoked'));
+    }
+
+    /**
+     * Course : le client disparaît entre la lecture du Provider (404 évité) et
+     * l'écriture. L'administrateur relit sous verrou et lève
+     * `McpClientNotFoundException`, que `exception_to_status` rend en 404 : le
+     * Processor n'a rien à rattraper. Joué sans HTTP, le Provider étant ce qu'on
+     * contourne : le même 404 qu'un identifiant inconnu, pas un 500.
+     */
+    public function testAClientGoneBeforeTheWriteRaisesTheNotFoundException(): void
+    {
+        self::bootKernel();
+        $processor = self::getContainer()->get(BackofficeMcpClientProcessor::class);
+
+        try {
+            // Pour un Delete, API Platform passe la ressource lue par le Provider (ici
+            // celle qu'il avait vue avant la disparition) ; le trait n'en lit que l'`id` d'URI.
+            $seen = new BackofficeMcpClientResource(self::UNKNOWN_ID, 'gone', 'Gone', [], 'preregistered', '2026-01-01T00:00:00+00:00', 0);
+            $processor->process($seen, new Delete(), ['id' => self::UNKNOWN_ID]);
+            self::fail('Un client absent doit lever McpClientNotFoundException.');
+        } catch (McpClientNotFoundException $exception) {
+            self::assertSame(404, $exception->getStatus());
+        }
+    }
+
+    /**
+     * Un client CIMD se supprime (rien ne le ressaisit à la main) : la ligne
+     * disparaît avec ses connexions (cascade, D-A), une ligne d'audit par
+     * connexion coupée, de cause `client-removed`, puis `mcp-client-removed`.
+     * Une connexion déjà révoquée n'est pas recoupée ; celle d'un autre
+     * client est intacte.
+     */
+    public function testDeletingACimdClientCutsItsConnections(): void
+    {
+        $client = self::createClient();
+        $super = $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $discovered = ClaudeCodeMetadata::storedRow();
+        $other = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Autre client', ['https://client.example.test/callback']);
+        $this->clients()->add($discovered);
+        $this->clients()->add($other);
+
+        $jane = $this->registerAccount($client, 'jane');
+        $john = $this->registerAccount($client, 'john');
+        $revoked = $this->registerAccount($client, 'revoked');
+        $connections = $this->connections();
+        $cut = [
+            McpConnection::grant($jane, $discovered, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $discovered, self::SCOPE, new DateTimeImmutable()),
+        ];
+        $alreadyRevoked = McpConnection::grant($revoked, $discovered, self::SCOPE, new DateTimeImmutable());
+        $foreign = McpConnection::grant($jane, $other, self::SCOPE, new DateTimeImmutable());
+        foreach ([...$cut, $alreadyRevoked, $foreign] as $connection) {
+            $connections->add($connection);
+        }
+        $connections->revokeActive($alreadyRevoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('DELETE', '/api/backoffice/mcp/clients/'.$discovered->getId()->toRfc4122(), server: ['HTTP_X_XSRF_TOKEN' => $csrf]);
+
+        self::assertResponseStatusCodeSame(204);
+        self::assertSame('', (string) $client->getResponse()->getContent());
+        self::assertNull($this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID));
+        self::assertNotNull($this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID));
+        self::assertSame(0, $this->countConnectionRowsOf($discovered->getId()->toRfc4122()));
+        self::assertSame(1, $this->connections()->countActiveOfClient($other->getId()), 'La connexion d\'un autre client est intacte.');
+
+        $lines = self::securityAuditEvents('mcp-connection-revoked');
+        $connectionIds = array_map(static fn (array $line): mixed => $line['connectionId'] ?? null, $lines);
+        sort($connectionIds);
+        $expected = array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $cut);
+        sort($expected);
+        self::assertSame($expected, $connectionIds, 'Une ligne par connexion coupée, aucune pour la connexion déjà révoquée.');
+        foreach ($lines as $line) {
+            self::assertSame('client-removed', $line['cause'] ?? null);
+            self::assertSame($super->getId()->toRfc4122(), $line['actor'] ?? null);
+        }
+        $event = self::singleSecurityAuditEvent('mcp-client-removed');
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $event['clientId']);
+        self::assertSame('cimd', $event['registration']);
+        self::assertSame(2, $event['cutConnections']);
+        self::assertSame($super->getId()->toRfc4122(), $event['actor']);
+    }
+
+    /**
+     * `McpClientAdministrator` (enregistrement, révision, suppression) audite
+     * **après** son COMMIT : un Processor qui enveloppait l'appel dans une
+     * transaction ferait précéder le COMMIT par l'audit, et un échec du COMMIT
+     * laisserait une opération auditée que la base n'a pas. Le Processor
+     * n'ouvre donc aucune transaction, ne touche ni l'EntityManager ni la
+     * connexion : il assemble et délègue. Le source entier est lu, `create()`,
+     * `update()` et `delete()` compris.
+     */
+    public function testTheProcessorOpensNoTransactionAroundAnyWrite(): void
     {
         $source = RepositoryFiles::read(RepositoryFiles::backend('src/Mcp/Connection/Infrastructure/ApiPlatform/BackofficeMcpClientProcessor.php'));
 
         foreach (['beginTransaction', 'wrapInTransaction', 'TransactionInterface', 'Doctrine\\'] as $forbidden) {
-            self::assertStringNotContainsString($forbidden, $source, 'Le Processor ne porte aucune transaction : l\'audit suit le COMMIT du registrar.');
+            self::assertStringNotContainsString($forbidden, $source, 'Le Processor ne porte aucune transaction : l\'audit suit le COMMIT de l\'administrateur.');
         }
     }
 
@@ -248,12 +469,14 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
      * un anonyme 401 (403 pour une écriture : la garde CSRF, qui précède le
      * pare-feu, refuse d'abord une écriture sans cookie de session).
      *
-     * Seules les opérations déjà déclarées figurent ici : une route absente
-     * répond 404 à tout le monde, anonyme compris, car le routeur passe avant
-     * le pare-feu (constaté à la Task 16 sur Post, Put et Delete). Les
-     * opérations restantes entrent dans ce fournisseur avec leur route
-     * (Tasks 17B, 18). Le troisième élément est le corps d'une écriture : un
-     * corps valide, pour que seul le refus de l'accès puisse répondre.
+     * Chaque opération déclarée figure ici : une route absente répondrait 404 à
+     * tout le monde, anonyme compris, car le routeur passe avant le pare-feu
+     * (constaté à la Task 16 sur Post, Put et Delete), et le test ne prouverait
+     * rien. Les opérations de la Task 18 (connexions) entrent dans ce
+     * fournisseur avec leur route. Le troisième élément est le corps d'une
+     * écriture : un corps valide, pour que seul le refus de l'accès puisse
+     * répondre. Un chemin portant {@see self::ID_PLACEHOLDER} vise le client
+     * semé par le test, qui doit sortir de chaque refus intact.
      *
      * @return iterable<string, array{string, string, array<string, mixed>|null}>
      */
@@ -266,6 +489,11 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
             'name' => 'Client pré-enregistré',
             'redirectUris' => ['https://client.example.test/callback'],
         ]];
+        yield 'Put' => ['PUT', '/api/backoffice/mcp/clients/'.self::ID_PLACEHOLDER, [
+            'name' => 'Nom imposé',
+            'redirectUris' => ['https://attacker.example.test/callback'],
+        ]];
+        yield 'Delete' => ['DELETE', '/api/backoffice/mcp/clients/'.self::ID_PLACEHOLDER, null];
     }
 
     /**
@@ -276,11 +504,19 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
     {
         $content = null === $body ? null : self::jsonBody($body);
         $json = null === $body ? [] : ['CONTENT_TYPE' => 'application/json'];
+        // Une écriture (POST, PUT, DELETE) est refusée d'abord par la garde CSRF, avant le pare-feu.
+        $isWrite = 'GET' !== $method;
+
+        // Le client semé : une ligne, une connexion active. Chaque refus doit la laisser intacte.
+        $anonymous = self::createClient();
+        $seeded = RegisteredMcpClient::of(self::SEEDED_CLIENT_ID, 'Client semé', ['https://seeded.example.test/callback']);
+        $this->clients()->add($seeded);
+        $this->connections()->add(McpConnection::grant($this->registerAccount($anonymous, 'holder'), $seeded, self::SCOPE, new DateTimeImmutable()));
+        $path = str_replace(self::ID_PLACEHOLDER, $seeded->getId()->toRfc4122(), $path);
 
         // Anonyme : 401 (403 par la garde CSRF pour une écriture).
-        $anonymous = self::createClient();
         $anonymous->request($method, $path, server: $json, content: $content);
-        self::assertResponseStatusCodeSame(null === $body ? 401 : 403, 'Anonyme : '.$method.' '.$path);
+        self::assertResponseStatusCodeSame($isWrite ? 403 : 401, 'Anonyme : '.$method.' '.$path);
 
         // Compte de confiance sans ROLE_SUPER : 403.
         self::ensureKernelShutdown();
@@ -301,8 +537,16 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         $base->request($method, $path, server: [...$json, 'HTTP_X_XSRF_TOKEN' => $csrfCookie->getValue()], content: $content);
         self::assertResponseStatusCodeSame(403, 'Palier de base : '.$method.' '.$path);
 
-        // Un refus n'écrit rien : ni ligne, ni audit d'enregistrement.
+        // Un refus n'écrit, ne modifie, ne supprime ni ne révoque rien, et n'audite rien.
         self::assertNull($this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID));
+        $after = $this->clients()->findOneByClientId(self::SEEDED_CLIENT_ID);
+        self::assertNotNull($after, 'Le client semé a survécu au refus.');
+        self::assertSame('Client semé', $after->getName());
+        self::assertSame(['https://seeded.example.test/callback'], $after->redirectUris());
+        self::assertSame(1, $this->connections()->countActiveOfClient($seeded->getId()), 'Aucune connexion n\'a été coupée.');
+        foreach (['mcp-client-registered', 'mcp-client-revised', 'mcp-client-removed', 'mcp-connection-revoked'] as $event) {
+            self::assertSame([], self::securityAuditEvents($event), 'Un refus n\'audite pas : '.$event);
+        }
     }
 
     /**
@@ -464,6 +708,17 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertInstanceOf(CpgUser::class, $account);
 
         return $account;
+    }
+
+    private function countConnectionRowsOf(string $clientRowId): int
+    {
+        $count = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne(
+            'SELECT count(*) FROM mcp_connection WHERE mcp_client_id = :id',
+            ['id' => $clientRowId],
+        );
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     private function clients(): McpClientRepositoryInterface

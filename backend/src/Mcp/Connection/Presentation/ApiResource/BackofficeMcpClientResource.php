@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProcessor;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
@@ -15,8 +17,8 @@ use DateTimeInterface;
 use Symfony\Component\Routing\Requirement\Requirement;
 
 /**
- * Les clients MCP, vus du backoffice (#652, spec 0007 T13) : lecture et
- * enregistrement à cette tâche (révision et suppression : Task 17B), réservés
+ * Les clients MCP, vus du backoffice (#652, spec 0007 T13) : lecture,
+ * enregistrement, révision (nom et redirections) et suppression, réservés
  * ROLE_SUPER par l'`access_control` `^/api/backoffice` (aucune garde sur la
  * ressource elle-même : la garde est unique, voir
  * `.claude/rules/backoffice-api.md`).
@@ -47,6 +49,26 @@ use Symfony\Component\Routing\Requirement\Requirement;
             uriTemplate: '/backoffice/mcp/clients',
             status: 201,
             input: BackofficeMcpClientInput::class,
+            processor: BackofficeMcpClientProcessor::class,
+        ),
+        // `provider:` explicite : sans lui, API Platform ne trouve pas l'élément (404).
+        // Le Provider sert de lecture avant écriture (404 d'un client inconnu) ; la
+        // sérialisation des écritures est sous le verrou de l'administrateur.
+        // Le corps n'est pas la ressource : un `clientId` ne se révise pas.
+        new Put(
+            uriTemplate: '/backoffice/mcp/clients/{id}',
+            requirements: ['id' => Requirement::UUID],
+            status: 200,
+            input: BackofficeMcpClientRevisionInput::class,
+            provider: BackofficeMcpClientProvider::class,
+            processor: BackofficeMcpClientProcessor::class,
+        ),
+        // Supprime le client et coupe ses connexions (D-A) : 204, sans corps.
+        new Delete(
+            uriTemplate: '/backoffice/mcp/clients/{id}',
+            requirements: ['id' => Requirement::UUID],
+            status: 204,
+            provider: BackofficeMcpClientProvider::class,
             processor: BackofficeMcpClientProcessor::class,
         ),
     ],

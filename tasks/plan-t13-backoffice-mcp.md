@@ -624,16 +624,16 @@ Les tests de chaque tâche sont nommés dans la tâche. Ils vivent sous `backend
   - `Put /backoffice/mcp/clients/{id}` (`provider:` explicite, `input:` révision, 200) ;
   - `Delete /backoffice/mcp/clients/{id}` (`provider:` explicite, 204).
 
-- [ ] **Step 1 : tests rouges** :
+- [x] **Step 1 : tests rouges** :
   - `testSuperRevisesNameAndRedirects` ;
   - `testRevisingACimdClientIsRefusedWithATypedConflict` : 409, `type` se termine par `/errors/client-declared-by-document`, ligne inchangée en base ;
   - `testDeletingAnUnknownClientIs404` ;
   - `testAfterDeletionTheHeldBearerOpensNothing` : une connexion tenue par `holdMcpConnection()`. `DELETE` sur son client répond 204, puis `POST /api/mcp` avec `bearer()` répond 401.
   - `testDeletingACimdClientCutsItsConnections`.
-- [ ] **Step 2 : vérifier l'échec** — `Put`/`Delete` absents (405).
-- [ ] **Step 3 : implémenter** `update()` et `delete()` du Processor.
-- [ ] **Step 4 : vérifier** — `--filter 'BackofficeMcpClientResourceTest|ApiRouteExposureTest'` vert ; `debug:router | grep -i mcp` liste exactement cinq routes `backoffice/mcp/clients`.
-- [ ] **Step 5 : commit** — `feat(mcp): le backoffice révise et supprime un client MCP (#652)`.
+- [x] **Step 2 : vérifier l'échec** — `Put`/`Delete` absents (405).
+- [x] **Step 3 : implémenter** `update()` et `delete()` du Processor.
+- [x] **Step 4 : vérifier** — `--filter 'BackofficeMcpClientResourceTest|ApiRouteExposureTest'` vert ; `debug:router | grep -i mcp` liste exactement cinq routes `backoffice/mcp/clients`.
+- [x] **Step 5 : commit** — `feat(mcp): le backoffice révise et supprime un client MCP (#652)`.
 
 ### Task 18 : ressource des connexions, en lecture seule
 
