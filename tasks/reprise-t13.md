@@ -383,6 +383,14 @@
     `mcp-oauth-purge.md:106-112` (arrêt par majorant d'activité + P1D, plus par `revoked_at`), docblock « deux listes »
     du repository (l. 215-218). Le docblock de l'interface est déjà à jour (1b). Ensuite : relecture de série
     `/code-review medium diff f4cca85a...HEAD`.
+  - **Tâche 4 faite** : `6d229019` (docblock orphelin retiré, socle = 3 lectures DQL, la native des expirées échangées
+    hors socle ; règle `mcp-oauth-purge.md` réécrite sur l'arrêt par activité). Contrôlé : arbre propre ; agent :
+    6626 OK, PHPStan/Rector OK, `check-claude-rules.sh` OK. Correction du fil principal `0615d115` : la règle disait la
+    borne `revoked_at` toujours sans effet, faux après un allongement des durées. Annexes (PR) : borne `revoked_at`
+    sans effet tant que la purge est seule à écrire `expired` (conf. moyenne, sév. basse) ; `deadline() ≤ idleDeadline`
+    de la même activité non démontré cas par cas de calendrier (conf. moyenne, sév. basse) ; commit `6d229019` attribué
+    à Sonnet 5.5 (exact, modèle de l'agent). **Relecture de série S4d en cours** : `/code-review medium diff
+    f4cca85a...HEAD`, sans auditeur (pas d'auth/session/CSRF/cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
