@@ -69,6 +69,25 @@ final class InvalidConnectionLifetimeException extends InvalidArgumentException
     }
 
     /**
+     * La durée d'inactivité (#652) compte un mois ou une année. Les jours,
+     * eux, restent permis : une échéance en jours est croissante avec
+     * l'activité, une échéance en mois ne l'est pas (`P1M` : une activité au
+     * 31/01 donne le 03/03, une activité plus récente au 01/02 donne le
+     * 01/03, car PHP déborde le mois). L'arrêt anticipé de la liste
+     * d'administration (`AdministeredMcpConnections::endUpperBound()`)
+     * majore la fin d'une expirée par l'échéance de son activité plus un
+     * jour : il suppose cette croissance.
+     *
+     * Distincte de {@see self::notElapsedTime()}, qui refuse aussi les jours
+     * (la durée des connexions jamais échangées est du temps écoulé) : ici les
+     * jours sont admis, un seul message dirait le contraire de la règle.
+     */
+    public static function notMonotonicInActivity(string $parameter): self
+    {
+        return new self(\sprintf('La durée « %s » des connexions ne doit compter ni mois ni année : une échéance en mois n\'est pas croissante avec l\'activité (PHP déborde le mois), et l\'arrêt anticipé de la liste d\'administration en dépend. Utiliser des jours, des heures, des minutes ou des secondes.', $parameter));
+    }
+
+    /**
      * La durée d'une connexion jamais échangée (#730) ne dépasse pas la durée
      * d'un code plus deux fois la minute de jeu (#726, CR1) : la présélection
      * de la purge recule d'une minute, et la connexion d'un code encore

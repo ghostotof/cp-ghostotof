@@ -47,7 +47,12 @@ paths:
   2026-03-29, 2026-03-30 and 2026-10-26, replayed by `testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges`.
   The minute (`SECOND_TRUNCATION_AND_SKEW_MARGIN`): `granted_at` truncated to the second, league's `expire_time`
   computed after it and accepted up to 0.999 s past, clock skew between nodes. Judged per parameter, idle first,
-  after positivity and before the two orderings), an
+  after positivity and before the two orderings; **the idle duration carries no month nor year** (#652,
+  `notMonotonicInActivity`, judged right after positivity: days stay allowed): a month-based deadline is not monotone
+  in the activity (`P1M`: 31 January gives 3 March, the later 1 February gives 1 March, PHP overflows the month), and
+  the admin list's early stop (`AdministeredMcpConnections::endUpperBound()`, last activity's idle deadline plus a
+  day) assumes it is; `connection_maximum` has no such constraint, `deadline()` being `min(idle, maximum)` it never
+  exceeds the idle deadline), an
   idle delay beyond the maximum and an access token outliving its refresh token — compared on one fixed
   instant (`2026-01-01T00:00:00+00:00`), so the verdict never depends on the day the container is built. Each
   getter returns a **copy** (`DateInterval` is mutable). `AuthorizationServerFactory` reads league's three

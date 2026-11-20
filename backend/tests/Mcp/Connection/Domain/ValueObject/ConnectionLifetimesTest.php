@@ -387,6 +387,42 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
+     * L'inactivité (#652) : en jours et en temps écoulé seulement, jamais en
+     * mois ni en années. Une échéance en mois n'est pas monotone selon
+     * l'activité (`P1M` : une activité au 31/01 donne le 03/03, une activité
+     * plus récente au 01/02 donne le 01/03), et l'arrêt anticipé de la liste
+     * d'administration majore la fin d'une expirée par l'échéance de son
+     * activité plus un jour : il suppose une échéance croissante.
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function idleDurationsByKind(): iterable
+    {
+        yield 'trente jours' => ['P30D', true];
+        yield 'trente et un jours et deux heures' => ['P31DT2H', true];
+        yield 'quatre semaines' => ['P4W', true];
+        yield 'un mois' => ['P1M', false];
+        yield 'une année' => ['P1Y', false];
+        yield 'un mois et deux jours' => ['P1M2D', false];
+        yield 'une année, un mois et un jour' => ['P1Y1M1D', false];
+    }
+
+    #[DataProvider('idleDurationsByKind')]
+    public function testTheIdleLifetimeHasNoMonthNorYear(string $value, bool $accepted): void
+    {
+        if ($accepted) {
+            self::assertSame($this->seconds(new DateInterval($value)), $this->seconds($this->lifetimes(['idleLifetime' => $value, 'maximumLifetime' => 'P90D'])->idle()));
+
+            return;
+        }
+
+        $this->expectException(InvalidConnectionLifetimeException::class);
+        $this->expectExceptionMessage(InvalidConnectionLifetimeException::notMonotonicInActivity('idleLifetime')->getMessage());
+
+        $this->lifetimes(['idleLifetime' => $value, 'maximumLifetime' => 'P400D']);
+    }
+
+    /**
      * Le plancher de la durée des connexions jamais échangées (#730, CR1 de
      * #726 préservé) : la durée dépasse celle d'un code **plus deux fois la
      * minute de jeu**, exclu. La présélection recule d'une minute (candidate ⇒
