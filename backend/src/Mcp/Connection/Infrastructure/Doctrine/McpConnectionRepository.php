@@ -128,9 +128,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->where('connection.codeExchangedAt IS NULL')
             // Abandonnée non marquée, ou marquée expirée par la purge : dans les deux
             // cas la fin réelle est l'octroi + le délai du code non échangé.
-            ->andWhere('((connection.revokedAt IS NULL AND connection.grantedAt <= :abandonedBefore) OR connection.revocationCause = :expired)')
+            ->andWhere('((connection.revokedAt IS NULL AND connection.grantedAt <= :abandonedBefore) OR connection.revocationCause = '.$this->expiredLiteral().')')
             ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
-            ->setParameter('expired', RevocationCause::Expired)
             // L'octroi décide quelles lignes la limite garde : la fin vaut
             // octroi + une durée constante, c'est donc l'ordre par instant de fin.
             ->orderBy('connection.grantedAt', 'DESC')
@@ -148,8 +147,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             // `IS DISTINCT FROM 'expired'` : la cause est nullable au mapping (la
             // contrainte SQL la lie à `revoked_at`, mais une ligne sans cause ne doit
             // pas disparaître sur une comparaison inconnue).
-            ->andWhere('(connection.revocationCause IS NULL OR connection.revocationCause <> :expired)')
-            ->setParameter('expired', RevocationCause::Expired)
+            // La cause est un littéral, pas un paramètre : voir {@see expiredLiteral()}.
+            // Le texte reprend, mot pour mot, le prédicat de `idx_mcp_connection_admin_terminated`.
+            ->andWhere('(connection.revocationCause IS NULL OR connection.revocationCause <> '.$this->expiredLiteral().')')
             // L'instant de fin décide quelles terminées la limite garde (spec 0007,
             // S4) : trier par octroi chasserait une ancienne connexion qu'on vient
             // de révoquer au profit de terminées octroyées plus récemment. L'ordre
@@ -164,9 +164,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array
     {
         $query = $this->forAdministration()
-            ->where('connection.revocationCause = :expired')
+            ->where('connection.revocationCause = '.$this->expiredLiteral())
             ->andWhere('connection.codeExchangedAt IS NOT NULL')
-            ->setParameter('expired', RevocationCause::Expired)
             ->orderBy('connection.revokedAt', 'DESC')
             ->addOrderBy('connection.id', 'DESC')
             ->setMaxResults($limit);
@@ -191,6 +190,26 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * révoquées, l'instant de fin pour les terminées —, chaque appelant fixe donc
      * le sien (jamais `resetDQLPart()` pour défaire celui d'un socle).
      */
+    /**
+     * La cause `expired` écrite **en clair dans le SQL** des lectures de
+     * l'administration (#652, S4), au lieu d'un paramètre lié.
+     *
+     * Pourquoi : PostgreSQL ne retient un index partiel que s'il prouve que le
+     * `WHERE` de la requête implique le prédicat de l'index. Avec `= $1`, la
+     * preuve manque dans un plan **générique** (mesuré : `Sort` sur toute la
+     * table, l'index partiel ignoré), et un énoncé préparé passe au plan
+     * générique à sa sixième exécution — le cas d'un processus long, le worker.
+     * Un littéral rend la preuve valable dans les deux plans.
+     *
+     * Sûreté : la valeur vient de l'enum du domaine, jamais d'une entrée ; aucun
+     * caractère à échapper dans `expired`. `McpConnectionAdministrationIndexesTest`
+     * épingle le résultat (l'index est lu sous un plan générique).
+     */
+    private function expiredLiteral(): string
+    {
+        return "'".RevocationCause::Expired->value."'";
+    }
+
     private function forAdministration(): QueryBuilder
     {
         return $this->createQueryBuilder('connection')

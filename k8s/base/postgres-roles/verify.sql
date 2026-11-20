@@ -384,7 +384,8 @@ BEGIN
         ('DoctrineMigrations\Version20261028160000', 38, '4b36783563c4ab0b7ff3198df2644b57'),
         ('DoctrineMigrations\Version20261028180000', 39, '6e767b245ee496e433fcb33f79958f63'),
         ('DoctrineMigrations\Version20261028200000', 40, '0af1f8695948d4cd1778cb620dcd221b'),
-        ('DoctrineMigrations\Version20261113120000', 41, 'dd0d8ebe2d36d89748b6924c6d6840ed')
+        ('DoctrineMigrations\Version20261113120000', 41, 'dd0d8ebe2d36d89748b6924c6d6840ed'),
+        ('DoctrineMigrations\Version20261120120000', 42, 'bff86c90f6bec1dab3b66b4bcc7b8e5f')
     ) AS empreintes(v, n, e) WHERE v = derniere AND n = nombre;
     IF connues IS NULL THEN RAISE EXCEPTION '#611 : aucune empreinte de schéma connue pour ces migrations (% passées, empreinte %) : checkout en retard sur l''environnement, ou base antérieure aux empreintes', nombre, empreinte; END IF;
     IF NOT admise THEN RAISE EXCEPTION '#611 : le schéma de la base n''est pas celui des migrations (empreinte %)', empreinte; END IF;

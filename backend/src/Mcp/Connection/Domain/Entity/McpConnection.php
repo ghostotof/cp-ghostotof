@@ -61,6 +61,13 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity(repositoryClass: McpConnectionRepository::class)]
 #[ORM\Table(name: 'mcp_connection')]
 #[ORM\Index(name: 'idx_mcp_connection_active_pair', columns: ['account_id', 'mcp_client_id'], options: ['where' => '(revoked_at IS NULL)'])]
+// Les trois lectures bornées de la liste d'administration (#652, S4) : chacune lit son index
+// partiel dans l'ordre de son ORDER BY (parcours à l'envers), sans trier la table. Les
+// prédicats reprennent mot pour mot le WHERE des requêtes (McpConnectionRepository) : la
+// cause y est un littéral, faute de quoi PostgreSQL ne prouve pas l'implication.
+#[ORM\Index(name: 'idx_mcp_connection_admin_terminated', columns: ['revoked_at', 'id'], options: ['where' => "((revoked_at IS NOT NULL) AND ((revocation_cause IS NULL) OR ((revocation_cause)::text <> 'expired'::text)))"])]
+#[ORM\Index(name: 'idx_mcp_connection_admin_abandoned', columns: ['granted_at', 'id'], options: ['where' => '(code_exchanged_at IS NULL)'])]
+#[ORM\Index(name: 'idx_mcp_connection_admin_exchanged_expired', columns: ['revoked_at', 'id'], options: ['where' => "(((revocation_cause)::text = 'expired'::text) AND (code_exchanged_at IS NOT NULL))"])]
 class McpConnection implements McpConnectionReference
 {
     /**
