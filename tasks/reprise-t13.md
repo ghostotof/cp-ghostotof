@@ -492,7 +492,13 @@
     `McpClientAdministratorInterface` si l'autowiring ne suffit pas ; `POST` dans la garde ; acteur du jeton dans
     l'audit `mcp-client-registered`. **Brief 17B** : `PUT`/`DELETE` dans la garde ; fixture `remove-mcp-client.php`
     assemblé à la main → par le conteneur si câblé ; F10 (supprimer un CIMD ne le bannit pas) va au frontend.
-  - **Prochaine action** : agent **17A-1** (sonnet/high). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **17A-1 faite** (sonnet/high) : `f2a213d2` (`findOneById(Uuid)` en QueryBuilder, toujours une requête ;
+    `countActiveOfClient(Uuid): int` ; `McpClientRepositoryFake` à jour), `af73ea77` (le `Get` lit le seul client :
+    2 requêtes, 1 si inconnu, un seul `McpClient` géré). Contrôlé après `restart backend` : 94 tests OK (ressource, deux
+    dépôts, `ApiRouteExposureTest`) ; agent : `make back-test` 6645 OK, qualité verte. Écart accepté : rouge de
+    `findOneById` inobservable (méthode magique `EntityRepository::__call`), remplacé par deux rouges sur le `Get`
+    (8 clients gérés au lieu de 1 ; 2 requêtes au lieu de 1 pour un inconnu).
+  - **Prochaine action** : agent **17A-2** (sonnet/high), `POST` du plan. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
