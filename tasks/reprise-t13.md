@@ -300,9 +300,14 @@
     Questions rendues : curseur `?McpConnection` ou objet dédié ; documenter et figer par un test l'invariant
     « fin réelle ≤ `revoked_at` » de la purge. Annexes (à écrire dans la PR) : identity map Doctrine retient chaque
     page lue dans le pire cas (confiance moyenne, sévérité basse).
-  - **Prochaine action** : arbitrer les deux questions de S4c-1, puis **S4c-2** (agent sonnet/high) = constats 2
-    (index partiels sur le SQL ci-dessus), 3, 9 ; puis relecture `/code-review medium diff c25e103b...HEAD`
-    (point fixe `c25e103b`), sans auditeur.
+  - **Questions de S4c-1 tranchées** (2026-11-20) : curseur = **Value Object dédié** (`final readonly`,
+    `revokedAt` non nul + id, construit depuis la dernière connexion lue) ; invariant « fin réelle ≤ `revoked_at` »
+    = **test + ligne dans `mcp-oauth-purge.md`** (édition en sed).
+  - **Prochaine action** : trois agents sonnet/high successifs (budget zone Mcp : > 4 fichiers = découpe) :
+    **S4c-2** = curseur VO + invariant de purge, en cours (vérifier d'abord si la purge sélectionne en SQL ou en
+    PHP : en SQL, la divergence PHP/PostgreSQL peut marquer avant l'échéance PHP → question) ; **S4c-3** =
+    constat 2, migration d'index partiels sur le SQL ci-dessus (empreinte `verify.sql`) ; **S4c-4** = constats 3
+    et 9 (validateur) ; puis relecture `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
