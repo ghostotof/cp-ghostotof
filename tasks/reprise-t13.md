@@ -322,8 +322,16 @@
     (confiance moyenne, sévérité basse) ; pages suivantes du keyset en forme OR, index peut-être partiellement
     servi, comparaison de ligne non concluante (confiance moyenne, sévérité basse) ; test d'index sous
     `enable_seqscan/enable_sort = off` à cause des lignes mortes de la base de test (confiance haute, sévérité basse).
-  - **Prochaine action** : **S4c-4** (sonnet/high) = constats 3 et 9 (validateur) + fin min(échéance, marquage)
-    avec son test, en cours ; puis relecture `/code-review medium diff c25e103b...HEAD`
+  - **S4c-4 tâche 1 faite** (2026-11-20, `85d9944f`) : `readPublicProperty()` (ReflectionProperty publique +
+    initialisée, sinon `UnexpectedValueException`), `array_is_list()` + `notAListMessage` (texte fixe, messages de
+    la contrainte non traduits). Rouge 9 échecs pour la bonne raison ; contrôle fil principal : 25 tests OK.
+    Annexe à écrire dans la PR : appelants du validateur non vérifiés pour un `redirectUris` à clés (confiance
+    moyenne, sévérité basse ; une entrée JSON objet est désormais refusée, voulu).
+  - **Décision** (2026-11-20) : min(échéance, marquage) **sur les seules échangées expirées** (seules soumises à
+    l'arrêt anticipé) ; les jamais échangées gardent octroi + délai (tri SQL `granted_at` exact, sans omission) ;
+    limite documentée : après allongement des durées, une abandonnée purgée est classée un peu trop haut.
+  - **Prochaine action** : **S4c-4 tâche 2** (même agent sonnet/high, repris) = fin min sur les échangées, en
+    cours ; puis relecture `/code-review medium diff c25e103b...HEAD`
     (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
