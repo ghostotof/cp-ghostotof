@@ -112,6 +112,9 @@ expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exce
 longer assumes anything about the purge to stop. What still depends on it is the **displayed** end: on a connection the purge marked,
 `deadline() <= revoked_at` (the purge only writes `revoked_at = $now` for a candidate `isExpiredAt($now)` judged in PHP, never from
 the SQL pre-selection alone: PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently),
-so the `revoked_at` bound is a no-op and the list shows the real expiry, not the marking.
-`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins it. A purge that marked in SQL, or any other writer of
+under the durations in force when it marked, so the `revoked_at` bound is a no-op and the list shows the real expiry, not the
+marking. It bites when an `app.mcp.lifetime.*` duration is lengthened after the purge: the recomputed `deadline()` passes
+`revoked_at`, and the list shows the marking, the real end under the old durations
+(`AdministeredMcpConnectionsTest::testAnExpiredExchangedConnectionDisplaysItsBoundedEndWhenLifetimesWereLengthened`).
+`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins `deadline() <= revoked_at` at marking. A purge that marked in SQL, or any other writer of
 cause `expired`, makes the list show the marking instead of the expiry (the early stop stays exact).
