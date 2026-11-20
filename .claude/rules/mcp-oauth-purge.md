@@ -103,10 +103,15 @@ paths:
   marked ⇔ `isExpiredAt()` re-read — red when every candidate is revoked unjudged, measured),
   `PurgeMcpConnectionsCommandTest`.
 
-**The administration's early stop depends on the purge judging in PHP** (#652). `AdministeredMcpConnections::list()` reads the
-exchanged expired connections by `revoked_at` descending and stops once a page's `revoked_at` falls strictly under the 200th best
-real end it knows: that assumes **real end (`deadline()`) ≤ `revoked_at`** for every connection of cause `expired`. It holds because
-the purge only marks a candidate `isExpiredAt($now)` says is dead, and writes `revoked_at = $now` — never from the SQL
-pre-selection alone (PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently).
-`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins it (`deadline() <= revoked_at` for every marked
-connection). A purge that marked in SQL, or any other writer of cause `expired`, must keep it or the list loses rows silently.
+**The administration's early stop reads by activity, and the purge still fixes what the list displays** (#652). `AdministeredMcpConnections::readTerminated()`
+reads the exchanged expired connections by activity descending (`COALESCE(last_used_at, granted_at) DESC, id DESC`), in pages
+resumed by a key (`ExchangedExpiredCursor`), and stops once it holds 200 ends and `endUpperBound()` — `idleDeadline(the cursor's
+activity, brought back into PHP's zone)` plus one calendar day — is **strictly** earlier than the 200th end (on a tie it keeps
+reading). A row not read yet has an activity at most the cursor's, hence an end at most that bound: `endOf()` of an exchanged
+expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exceeds the idle deadline of that same activity. It no
+longer assumes anything about the purge to stop. What still depends on it is the **displayed** end: on a connection the purge marked,
+`deadline() <= revoked_at` (the purge only writes `revoked_at = $now` for a candidate `isExpiredAt($now)` judged in PHP, never from
+the SQL pre-selection alone: PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently),
+so the `revoked_at` bound is a no-op and the list shows the real expiry, not the marking.
+`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins it. A purge that marked in SQL, or any other writer of
+cause `expired`, makes the list show the marking instead of the expiry (the early stop stays exact).

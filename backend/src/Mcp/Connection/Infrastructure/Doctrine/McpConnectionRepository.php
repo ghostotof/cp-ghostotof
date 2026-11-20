@@ -212,14 +212,6 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * Le socle des deux listes de l'administration (#652) : le client **et** le
-     * compte joints et sélectionnés (jointures explicites, jamais une requête
-     * par ligne). **Sans ordre** : il décide *quelles* lignes une limite garde,
-     * et il n'est pas le même pour les deux listes — l'octroi pour les non
-     * révoquées, l'instant de fin pour les terminées —, chaque appelant fixe donc
-     * le sien (jamais `resetDQLPart()` pour défaire celui d'un socle).
-     */
-    /**
      * La cause `expired` écrite **en clair dans le SQL** des lectures de
      * l'administration (#652, S4), au lieu d'un paramètre lié.
      *
@@ -256,6 +248,19 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         return $columns;
     }
 
+    /**
+     * Le socle des lectures DQL de l'administration (#652) : le client **et** le
+     * compte joints et sélectionnés (jointures explicites, jamais une requête
+     * par ligne). Il sert les vivantes, les abandonnées et les terminées d'une
+     * autre cause que l'expiration ; la requête native des expirées échangées
+     * (`findExchangedExpiredForAdministration()`) ne l'utilise pas, DQL n'ayant
+     * pas de constructeur de ligne, mais reprend les mêmes jointures. **Sans
+     * ordre** : l'ordre décide *quelles* lignes une limite garde et diffère d'une
+     * lecture à l'autre (l'octroi pour les vivantes et les abandonnées, l'instant
+     * de fin pour les terminées, l'activité décroissante pour les expirées
+     * échangées) ; chaque appelant fixe donc le sien (jamais `resetDQLPart()`
+     * pour défaire celui d'un socle).
+     */
     private function forAdministration(): QueryBuilder
     {
         return $this->createQueryBuilder('connection')
