@@ -438,19 +438,27 @@
     `mcp-oauth-cycle-de-vie.md` (49 422 octets) vers `mcp-oauth-purge.md` (14 011 octets), renvoi à sa place.
     Preuve rendue par l'agent : RED en retirant les deux `addJoinedEntityFromClassMetadata` (« 3 is identical to 1 »),
     GREEN `OK (52 tests, 470 assertions)`, PHPStan/Rector OK, `check-claude-rules` conforme. **Contrôlé par le fil
-    principal** : `git log` (HEAD `bafb0a05`, arbre propre) et lecture du test ; **pas encore relancé** : PHPUnit du
-    fichier, `wc -c` des deux règles, `tools/check-claude-rules.sh`.
-    **Question ouverte (écrite, non tranchée)** : retirer **une seule** des deux jointures (`k` ou `u`) laisse le test
-    vert, cause non établie (piste : `$em->getUnitOfWork()->isUninitializedObject()` sur client et compte, ou fetch
-    EAGER / chargement par une autre voie) ; le test ne garde que la suppression des deux.
+    principal** : `git log` (HEAD `bafb0a05`, arbre propre) et lecture du test ; relances faites ensuite (voir
+    « Contrôle de D fini » ci-dessous). ~~Question de la jointure isolée~~ : **close**, l'observation de l'agent
+    était fausse (voir ci-dessous).
   - Pause demandée par l'utilisateur le 2026-11-20 (reboot) après D ; aucun agent ne tourne.
   - **Contrôle de D fini** (2026-11-20, après reboot) : `McpConnectionRepositoryTest` OK (52 tests, 470 assertions),
     règles 49 422 / 14 011 octets, `check-claude-rules.sh` conforme. **Question de la jointure isolée close** par
     expérience du fil principal (mutation puis `git checkout`) : retirer `k` seule → 3 requêtes (deux `SELECT … FROM
     mcp_client` paresseux), retirer `u` seule → 3 requêtes ; le test garde **chacune** des deux jointures.
     L'observation de l'agent était fausse (cause probable : bind-mount désynchronisé, mémoire du projet).
-  - **Prochaine action** : `/code-review medium diff 1c0c4470...HEAD` (point fixe `1c0c4470`), sans auditeur ;
-    ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **Relecture de D faite** (`/code-review medium diff 1c0c4470...HEAD`, HEAD relu `45feabed`, point fixe de la
+    suivante) : 5 constats faibles, **boucle close**. Décision de l'utilisateur (2026-11-20) : **micro-série E = 1+2**,
+    3+4 en **Task 19** ; 5 corrigé par le fil principal (entrée D ci-dessus).
+    - E1 : le test N+1 de la lecture native ne vérifie pas l'appariement ligne → client/compte (deux clients au même
+      nom « Client de test ») : noms distincts, `assertSame` de la liste attendue dans l'ordre d'activité.
+    - E2 : la garde N+1 ne couvre que la première page (`$after` nul) : rejouer avec un `ExchangedExpiredCursor` tiré
+      de la première page, une requête, aucun chargement paresseux.
+    - **Task 19** (avec R1-R6) : (D3) `mcp-oauth-purge.md` l. ~116, `notMonotonicInActivity()` jugée « right after
+      positivity, before the two floors and the two orderings » (code : `ConnectionLifetimes.php:177-206`) ; (D4)
+      `mcp-oauth-cycle-de-vie.md` l. ~51, renvoi « The administration's early stop… » à rendre greppable (citer
+      « The administration's early stop reads by activity » ou le texte gras exact).
+  - **Prochaine action** : micro-série E (sonnet/high), puis `/code-review medium diff 45feabed...HEAD` ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
