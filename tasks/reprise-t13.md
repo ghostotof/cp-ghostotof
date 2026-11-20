@@ -275,8 +275,19 @@
     « second source » au sens de `backoffice-api.md`, imposée par le plan, cohérence épinglée par le test.
     La sortie PHPStan « Cannot cast mixed to int » (`LoopbackAwareAuthCodeGrant.php:125`) de `quality.txt` est
     antérieure à `c3a9282b` : PHPStan relancé sur le fichier, `[OK] No errors`.
-  - **Prochaine action** : **relecture S4** `/code-review medium diff 5660113e...HEAD` (point fixe `5660113e`), sans
-    auditeur : S4 ne touche ni l'authentification, ni la session, ni le CSRF, ni les cookies.
+  - **Relecture S4 faite** (`/code-review medium diff 5660113e...HEAD`, HEAD relu `c25e103b`) : 10 constats.
+    Moyens confirmés : (1) `endOf()` prend `revokedAt`, que la purge pose à l'instant de la purge
+    (`McpConnectionPurger::revokeExpired($now)`) — une expirée/abandonnée purgée change de rang et occupe les
+    200 places du tri `revoked_at DESC` ; (2) aucun index sur `granted_at` / `revoked_at` pour les trois requêtes
+    d'administration (seuls `account_id`, `mcp_client_id`, `idx_mcp_connection_active_pair`). Faibles réels :
+    (3) `property_exists()` vrai pour une propriété non initialisée ou privée → `\Error`, 500 ;
+    (9) chemin `redirectUris[%s]` bâti sur une clé brute : un objet JSON renvoie la saisie dans `propertyPath`.
+    Écrits pour la PR : (4) `expiresAt()` relit l'horloge par ligne ; (5) docblock « une ligne de plus » de
+    `findAbandonedForAdministration` ; (6) messages doublés de `InvalidMcpClientRedirectsException::none()/tooMany()` ;
+    (7) 422 global de `InvalidMcpClientRedirectsException` aussi levée par CIMD, docblock périmé ; (8)
+    `revocationCause` en `?string` dans la vue d'administration ; (10) messages français codés en dur.
+  - **Prochaine action** : **série S4c** (agent sonnet/high) : constats 1, 2, 3, 9 ; puis relecture
+    `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
@@ -364,6 +375,9 @@
   **garder l'horloge injectée** dans `McpConnectionStatus` (le plan disait « fuseau déjà injecté », c'était `$now`).
 - Relecture de C3d (2026-11-20) : **écrire, corriger en Task 19** — R1, R2, R3, R4, R6 en Task 19, R5 dans la PR ;
   S4 démarre aussitôt.
+- Relecture S4 (2026-11-20) : série S4c = **moyens + faibles réels** (1, 2, 3, 9) ; constat 1 : **échéance réelle
+  pour la cause `Expired`** (fin calculée par le domaine, `revokedAt` pour les autres causes, pré-sélection SQL
+  cohérente) ; constat 2 : **migration d'index partiels** (+ empreinte `verify.sql`, #611).
 - Hors périmètre : retirer un domaine de la liste CIMD (paramètre versionné
   `app.mcp.cimd.allowed_domains`, pas une donnée du backoffice ; limite acceptée de l'ADR 0006 à
   documenter seulement) ; révocation d'une connexion par l'administrateur (ticket).
