@@ -286,9 +286,23 @@
     `findAbandonedForAdministration` ; (6) messages doublés de `InvalidMcpClientRedirectsException::none()/tooMany()` ;
     (7) 422 global de `InvalidMcpClientRedirectsException` aussi levée par CIMD, docblock périmé ; (8)
     `revocationCause` en `?string` dans la vue d'administration ; (10) messages français codés en dur.
-  - **Prochaine action** : **série S4c** (agent sonnet/high) en deux agents : S4c-1 = constat 1 (option A,
-    trois lectures exactes, voir Décisions), en cours ; puis S4c-2 = constats 2 (index sur les requêtes finales
-    de S4c-1), 3, 9 ; puis relecture `/code-review medium diff c25e103b...HEAD` (point fixe `c25e103b`), sans auditeur.
+  - **S4c-1 faite** (2026-11-20, `427bdef4`, `fix(mcp): fin réelle des connexions expirées dans l'administration`) :
+    option A livrée, `EndedMcpConnection` (fin calculée une fois), `findExchangedExpiredForAdministration(?McpConnection
+    $after, limit)` par pages de 200 à clé `(revoked_at, id)`, arrêt quand `revoked_at` < 200e fin (strict : à
+    égalité l'id départage encore). Rouge vérifié (7 échecs pour la bonne raison), vert contrôlé par le fil principal
+    (61 tests, 542 assertions) ; `tests/Mcp` 2177 OK, PHPStan, Rector, style OK selon l'agent.
+    SQL final pour S4c-2 (jointures `mcp_client`, `cpg_user` identiques) :
+    (1) `revoked_at IS NOT NULL AND (revocation_cause IS NULL OR revocation_cause <> 'expired') ORDER BY revoked_at
+    DESC, id DESC LIMIT 200` ; (2) `code_exchanged_at IS NULL AND ((revoked_at IS NULL AND granted_at <= :seuil) OR
+    revocation_cause = 'expired') ORDER BY granted_at DESC, id DESC LIMIT 200` ; (3) `revocation_cause = 'expired'
+    AND code_exchanged_at IS NOT NULL [AND (revoked_at < :r OR (revoked_at = :r AND id < :id))] ORDER BY revoked_at
+    DESC, id DESC LIMIT 200`. CHECK `chk_mcp_connection_revocation_cause` : cause NULL ⇔ `revoked_at` NULL.
+    Questions rendues : curseur `?McpConnection` ou objet dédié ; documenter et figer par un test l'invariant
+    « fin réelle ≤ `revoked_at` » de la purge. Annexes (à écrire dans la PR) : identity map Doctrine retient chaque
+    page lue dans le pire cas (confiance moyenne, sévérité basse).
+  - **Prochaine action** : arbitrer les deux questions de S4c-1, puis **S4c-2** (agent sonnet/high) = constats 2
+    (index partiels sur le SQL ci-dessus), 3, 9 ; puis relecture `/code-review medium diff c25e103b...HEAD`
+    (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
