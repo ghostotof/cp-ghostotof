@@ -263,7 +263,12 @@
     principal). Écrits pour la PR : `expiresAt` rendu même pour une révoquée (vue non nullable, comme le plan ; la
     vue de la personne le met à `null`) → à trancher à F1-F7 ; compteur de requêtes recopié du helper privé de
     `McpConnectionRepositoryTest` (à extraire vers `tests/Support` en Task 19).
-  - **Prochaine action** : **Task 14** (agent sonnet/high), puis 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+  - **Task 14 faite** : `ee46a332` (`#[ValidMcpClientFields]` + validateur, distinctes comptées sur
+    `(string) RedirectUri::fromString()` comme `distinctBounded()`, accord avec `McpClient::register` testé ; message
+    « Dix redirections au plus. » épinglé à `MAX_REDIRECT_URIS === 10`). Contrôlé : 15 tests OK. Écrit pour la PR :
+    « Au moins une redirection est requise. » n'apparaît que sur une liste vide (toutes invalides → violations par
+    index seulement) ; message ajouté « Chaque redirection doit être une chaîne de caractères. ».
+  - **Prochaine action** : **Task 15** (agent sonnet/high) ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
     seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
