@@ -1326,6 +1326,34 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La lecture des expirées échangées (SQL natif + `ResultSetMappingBuilder`)
+     * hydrate elle aussi le client et le compte par la même requête : une seule
+     * requête, puis aucune de plus en lisant leur nom, sur une identity map vidée
+     * (#652). Une jointure mal déclarée dans le mappage laisserait des proxys
+     * que la lecture du nom chargerait un à un.
+     */
+    public function testExchangedExpiredReadHydratesClientAndAccountWithoutFurtherQueries(): void
+    {
+        $first = $this->registerClient('https://client.example.test/metadata.json');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        $this->expiredExchanged($this->persistAccount('jane'), $first, '2026-09-01T10:00:00+02:00', null);
+        $this->expiredExchanged($this->persistAccount('john'), $second, '2026-09-02T10:00:00+02:00', null);
+        $this->em->clear();
+
+        $queries = $this->queriesDuring(function (): array {
+            $names = [];
+            foreach ($this->connections()->findExchangedExpiredForAdministration(null, 10) as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        });
+
+        self::assertSame(1, $queries['count'], 'Une requête pour la lecture, aucune de plus pour le client ni pour le compte.');
+        self::assertCount(2, $queries['result']);
+    }
+
+    /**
      * Exécute `$action` et compte les requêtes que la connexion DBAL du
      * conteneur de test a envoyées pendant ce temps : le service
      * `doctrine.debug_data_holder` de DoctrineBundle (le middleware de
