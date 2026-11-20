@@ -30,10 +30,11 @@ use Psr\Clock\ClockInterface;
  *   expirés) : la fin est l'octroi plus le délai du code non échangé
  *   ({@see ConnectionLifetimes::unexchangedDeadline()}), triés par octroi en SQL.
  *   Cette fin ne dépend que de l'octroi, **jamais du marquage** : c'est ce qui
- *   rend le tri SQL par octroi exact, sans arrêt anticipé. Limite acceptée : si
- *   `app.mcp.lifetime.connection_unexchanged` est allongée après la purge, une
- *   abandonnée déjà marquée est rangée sur une fin postérieure à son marquage,
- *   donc un peu trop haut ; aucune ligne n'est omise ;
+ *   rend le tri SQL par octroi exact, sans arrêt anticipé. Elle passe par
+ *   {@see McpConnection::deadline()}, la seule définition de l'échéance : la
+ *   configuration impose `connection_unexchanged` sous `connection_idle`, donc pour
+ *   une jamais échangée elle vaut `unexchangedDeadline()`, et chaque terme croît avec
+ *   l'octroi ;
  * - les **expirées échangées** : la fin est la plus proche des échéances
  *   d'inactivité et de plafond ({@see McpConnection::deadline()}), bornée par
  *   leur marquage `revoked_at` (la fin est `min(échéance, revoked_at)`), qu'on ne
@@ -96,13 +97,22 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
             'terminated' => $this->readTerminated($threshold, $now->getTimezone()),
         ]);
 
+        // La fin bornée déjà calculée des expirées échangées, par identifiant : la
+        // lecture l'a établie pour les ranger, l'affichage la reprend sans la recalculer.
+        $boundedEnds = [];
+        foreach ($reads['terminated'] as $ended) {
+            if (RevocationCause::Expired === $ended->connection->revocationCause() && null !== $ended->connection->codeExchangedAt()) {
+                $boundedEnds[$ended->connection->getId()->toRfc4122()] = $ended->endedAt;
+            }
+        }
+
         $connections = [
             ...$reads['alive'],
             ...array_map(static fn (EndedMcpConnection $ended): McpConnection => $ended->connection, $reads['terminated']),
         ];
         usort($connections, $this->newestGrantFirst(...));
 
-        return array_map(fn (McpConnection $connection): AdministeredMcpConnectionView => $this->viewOf($connection, $now), $connections);
+        return array_map(fn (McpConnection $connection): AdministeredMcpConnectionView => $this->viewOf($connection, $now, $boundedEnds[$connection->getId()->toRfc4122()] ?? null), $connections);
     }
 
     /**
@@ -168,13 +178,15 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
      * personne, le client, un rejeu ou une supplantation l'a posée ; sinon (marquée
      * expirée par la purge, ou abandonnée que la purge n'a pas vue) l'échéance que
      * le domaine calcule :
-     * - un accord jamais échangé : octroi plus le délai du code, **sans** borne par
-     *   le marquage — le tri SQL par octroi de sa lecture en dépend (limite acceptée
-     *   décrite en tête de classe : un peu trop haut après un allongement) ;
-     * - un accord échangé : la plus proche des échéances d'inactivité et de plafond,
-     *   **bornée par `revoked_at`** — une durée allongée depuis la purge ne peut
-     *   pas la repousser après le marquage, ce que l'arrêt anticipé de sa lecture
-     *   suppose.
+     * - un accord jamais échangé : {@see McpConnection::deadline()}, la seule définition
+     *   de l'échéance (la plus proche de l'inactivité, du plafond et du délai du code
+     *   non échangé), **sans** borne par le marquage : chacun de ces termes croît avec
+     *   l'octroi, donc le tri SQL par octroi de sa lecture reste exact. Une borne par
+     *   `revoked_at` le rendrait faux, le marquage ne suivant pas l'octroi ;
+     * - un accord échangé : la même échéance, **bornée par `revoked_at`** — une durée
+     *   allongée depuis la purge ne peut pas la repousser après le marquage, ce que
+     *   l'arrêt anticipé de sa lecture suppose. C'est cette fin bornée que la liste
+     *   affiche comme échéance de la ligne ({@see self::viewOf()}).
      */
     private function endOf(McpConnection $connection, DateTimeZone $zone): DateTimeImmutable
     {
@@ -183,11 +195,10 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
             return $revokedAt;
         }
 
-        if (null === $connection->codeExchangedAt()) {
-            return $this->lifetimes->unexchangedDeadline($connection->grantedAt()->setTimezone($zone));
-        }
-
         $deadline = $connection->deadline($zone, $this->lifetimes);
+        if (null === $connection->codeExchangedAt()) {
+            return $deadline;
+        }
 
         return null !== $revokedAt && $revokedAt < $deadline ? $revokedAt : $deadline;
     }
@@ -220,12 +231,19 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
         return 0 !== $byGrant ? $byGrant : strcmp($b->getId()->toRfc4122(), $a->getId()->toRfc4122());
     }
 
-    private function viewOf(McpConnection $connection, DateTimeImmutable $now): AdministeredMcpConnectionView
+    /**
+     * `$boundedEnd` : la fin bornée d'une expirée échangée (`min(échéance, revoked_at)`),
+     * déjà calculée par {@see self::endOf()} pour la ranger ; elle est alors l'échéance
+     * affichée, car l'échéance recalculée avec des durées allongées depuis la purge
+     * dépasserait le marquage. `null` pour toute autre ligne (vivante, abandonnée non
+     * marquée, révoquée par une autre cause) : elle garde `expiresAt()`.
+     */
+    private function viewOf(McpConnection $connection, DateTimeImmutable $now, ?DateTimeImmutable $boundedEnd): AdministeredMcpConnectionView
     {
         $zone = $now->getTimezone();
         // Une seule évaluation de l'échéance par ligne : celle qui est rendue
         // est celle qui juge l'état.
-        $deadline = $this->status->expiresAt($connection);
+        $deadline = $boundedEnd?->setTimezone($zone) ?? $this->status->expiresAt($connection);
         $state = $this->status->stateOf($connection, $now, $deadline);
 
         return new AdministeredMcpConnectionView(

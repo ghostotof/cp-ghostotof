@@ -327,6 +327,28 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
     }
 
     /**
+     * L'échéance **affichée** d'une expirée échangée est sa fin bornée, `min(échéance,
+     * revoked_at)`, la même que celle qui la range : après un allongement des durées
+     * depuis la purge, l'échéance recalculée (J+10) dépasserait son marquage (J-18), et
+     * la liste afficherait une expiration postérieure au marquage. L'état reste `Expired`.
+     */
+    public function testAnExpiredExchangedConnectionDisplaysItsBoundedEndWhenLifetimesWereLengthened(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $purgedAt = $this->now->sub(new DateInterval('P18D'));
+        $connection = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P50D')), $purgedAt);
+        $this->em->clear();
+
+        $views = $this->service($this->lengthenedLifetimes())->list();
+
+        self::assertCount(1, $views);
+        self::assertSame($connection->getId()->toRfc4122(), $views[0]->id->toRfc4122());
+        self::assertEquals($purgedAt->getTimestamp(), $views[0]->expiresAt->getTimestamp(), 'L\'échéance affichée est le marquage (la fin bornée), pas l\'échéance recalculée.');
+        self::assertSame(OwnMcpConnectionState::Expired, $views[0]->state);
+    }
+
+    /**
      * Le résultat reste celui de la lecture exhaustive avec des durées allongées : 450
      * expirées échangées dont l'échéance recalculée est future, mais dont le marquage
      * (J-25) est plus ancien que les 200 révocations (J-10). Aucune n'entre dans la
