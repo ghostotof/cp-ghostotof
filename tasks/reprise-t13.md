@@ -313,9 +313,17 @@
   - **Décision** (2026-11-20) : allonger `app.mcp.lifetime.*` après une purge pouvait rendre une échéance
     recalculée > `revoked_at` et fausser l'arrêt anticipé → **fin d'une expirée = min(`deadline()`, `revoked_at`)**,
     invariant vrai par construction ; ajouté à S4c-4.
-  - **Prochaine action** : **S4c-3** (sonnet/high) = constat 2, migration d'index partiels sur le SQL ci-dessus
-    (empreinte `verify.sql`), en cours ; puis **S4c-4** (sonnet/high) = constats 3 et 9 (validateur) + fin
-    min(échéance, marquage) avec son test ; puis relecture `/code-review medium diff c25e103b...HEAD`
+  - **S4c-3 faite** (2026-11-20, `b5b9ce4a`) : `Version20261120120000` (empreinte n° 42 dans `verify.sql`), trois
+    index partiels ascendants `idx_mcp_connection_admin_{terminated,abandoned,exchanged_expired}` (scan backward),
+    déclarés dans l'entité ; `'expired'` en **littéral** dans le DQL (`expiredLiteral()` depuis l'enum : un
+    paramètre lié n'est pas prouvable en plan générique) ; sans `CONCURRENTLY` (migrations transactionnelles,
+    table petite, `lock_timeout` 5 s). EXPLAIN : 4,5-5,6 ms → 0,2-0,27 ms. Contrôle fil principal : 84 tests OK,
+    `schema:validate` OK. Annexes à écrire dans la PR : `findNotRevokedForAdministration` sans index dédié
+    (confiance moyenne, sévérité basse) ; pages suivantes du keyset en forme OR, index peut-être partiellement
+    servi, comparaison de ligne non concluante (confiance moyenne, sévérité basse) ; test d'index sous
+    `enable_seqscan/enable_sort = off` à cause des lignes mortes de la base de test (confiance haute, sévérité basse).
+  - **Prochaine action** : **S4c-4** (sonnet/high) = constats 3 et 9 (validateur) + fin min(échéance, marquage)
+    avec son test, en cours ; puis relecture `/code-review medium diff c25e103b...HEAD`
     (point fixe `c25e103b`), sans auditeur.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
