@@ -88,13 +88,16 @@ interface McpConnectionRepositoryInterface
     public function findNotRevokedForAdministration(DateTimeImmutable $abandonedBefore): array;
 
     /**
-     * Les `$limit` accords **abandonnés** (`revoked_at` nul, code jamais
-     * échangé, octroyés à `$abandonedBefore` ou avant), de tous les comptes et
-     * de tous les clients, le plus récemment octroyé d'abord (l'identifiant
-     * décroissant départage deux octrois égaux). L'ordre par octroi est ici
-     * l'ordre par instant de fin, puisque la fin vaut l'octroi plus une durée
-     * constante : le service fusionne ainsi sans erreur ces lignes avec les
-     * révoquées triées par `revoked_at`. Même jointure que
+     * Les `$limit` accords **jamais échangés** (code jamais échangé) qui ont pris
+     * fin ou sont abandonnés, de tous les comptes et de tous les clients, le plus
+     * récemment octroyé d'abord (l'identifiant décroissant départage deux octrois
+     * égaux) : soit non révoqués et octroyés à `$abandonedBefore` ou avant (les
+     * abandonnés que la purge n'a pas encore marqués), soit **marqués expirés** par
+     * la purge. Pour les uns comme pour les autres la fin réelle vaut l'octroi plus
+     * une durée constante ({@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::unexchangedDeadline()}) :
+     * l'ordre par octroi est l'ordre par instant de fin, et la limite garde les
+     * bonnes lignes. Le `revoked_at` d'une expirée est l'instant de la **purge**,
+     * pas sa fin : il ne sert jamais à les classer. Même jointure que
      * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
      * que ce qu'on montre dit s'il y en a davantage.
      *
@@ -105,13 +108,15 @@ interface McpConnectionRepositoryInterface
     public function findAbandonedForAdministration(DateTimeImmutable $abandonedBefore, int $limit): array;
 
     /**
-     * La seconde moitié de l'administration : les `$limit` connexions
-     * **terminées** (`revoked_at` posé, quelle qu'en soit la cause), de tous les
-     * comptes et de tous les clients, **choisies par instant de fin** : les
-     * dernièrement terminées (`revoked_at` décroissant, l'identifiant décroissant
-     * départageant deux instants égaux), quelle que soit leur date d'octroi —
-     * sans quoi une ancienne connexion qu'on vient de révoquer serait chassée par
-     * des terminées octroyées plus récemment (spec 0007, S4). L'ordre d'affichage
+     * Les `$limit` connexions **terminées par une autre cause que l'expiration**
+     * (`revoked_at` posé, cause différente de `expired`), de tous les comptes et de
+     * tous les clients, **choisies par instant de fin** : pour elles la fin est
+     * `revoked_at` — la personne, le client, le rejeu ou la supplantation y ont mis
+     * fin. Les dernièrement terminées d'abord (l'identifiant décroissant départage
+     * deux instants égaux), quelle que soit leur date d'octroi (spec 0007, S4). Les
+     * expirées en sont exclues : leur `revoked_at` est celui de la purge, jamais
+     * leur fin ({@see self::findAbandonedForAdministration()} et
+     * {@see self::findExchangedExpiredForAdministration()}). L'ordre d'affichage
      * par octroi est laissé au service. Même jointure que
      * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
      * que ce qu'on montre dit s'il y en a davantage.
@@ -121,6 +126,25 @@ interface McpConnectionRepositoryInterface
      * @return list<McpConnection>
      */
     public function findTerminatedForAdministration(int $limit): array;
+
+    /**
+     * Les expirées dont le code **a été échangé**, par pages : `revoked_at`
+     * décroissant, l'identifiant décroissant départageant deux purges au même
+     * instant, **strictement après** `$after` (la dernière ligne de la page
+     * précédente ; `null` pour la première page). Leur fin réelle — la plus proche
+     * des échéances d'inactivité et de plafond — ne se range pas en SQL (PHP et
+     * PostgreSQL ne comptent pas de la même façon un jour sur un changement
+     * d'heure, ni un mois sur une fin de mois) : le service la calcule avec le
+     * domaine. Ce que SQL garantit, c'est que la fin réelle ne dépasse jamais
+     * `revoked_at` (la purge marque une connexion échue, jamais avant son échéance) :
+     * le service s'arrête dès que `revoked_at` passe sous la meilleure fin qu'il ne
+     * peut plus battre. Même jointure que {@see self::findNotRevokedForAdministration()}.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findExchangedExpiredForAdministration(?McpConnection $after, int $limit): array;
 
     /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,

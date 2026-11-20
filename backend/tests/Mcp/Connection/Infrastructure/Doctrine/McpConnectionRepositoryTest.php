@@ -1009,7 +1009,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         foreach (range(1, 3) as $day) {
             $terminated[$day] = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-10-%02dT10:00:00+02:00', $day)));
             $this->connections()->add($terminated[$day]);
-            $this->connections()->revokeActive($terminated[$day]->getId(), RevocationCause::Expired, new DateTimeImmutable(\sprintf('2026-10-25T10:%02d:00+02:00', $day)));
+            $this->connections()->revokeActive($terminated[$day]->getId(), RevocationCause::Client, new DateTimeImmutable(\sprintf('2026-10-25T10:%02d:00+02:00', $day)));
         }
         $this->em->clear();
 
@@ -1102,8 +1102,12 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
     }
 
-    /** Un abandonné que la purge a marqué expiré n'est plus dans les abandonnées : il est dans les terminées. */
-    public function testAnAbandonedGrantMarkedExpiredMovesToTheTerminated(): void
+    /**
+     * Un abandonné que la purge a marqué expiré reste dans les abandonnées, rangé à
+     * son octroi (sa fin vaut octroi + délai du code), jamais dans les terminées
+     * par une autre cause : son `revoked_at` est l'instant de la purge, pas sa fin.
+     */
+    public function testAnAbandonedGrantMarkedExpiredStaysWithTheNeverExchanged(): void
     {
         $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
         $threshold = $this->abandonedThreshold($now);
@@ -1112,9 +1116,76 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $this->connections()->revokeActive($connection->getId(), RevocationCause::Expired, $now);
         $this->em->clear();
 
-        self::assertSame([], $this->connections()->findAbandonedForAdministration($threshold, 10));
+        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
         self::assertSame([], $this->connections()->findNotRevokedForAdministration($threshold));
-        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findTerminatedForAdministration(10)));
+        self::assertSame([], $this->connections()->findTerminatedForAdministration(10));
+        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration(null, 10));
+    }
+
+    /**
+     * Les trois lectures de la liste terminée se partagent les lignes sans en
+     * perdre ni en doubler : révoquée par une personne (terminées), expirée
+     * jamais échangée (abandonnées), expirée échangée (pages), vivante échangée
+     * (ni l'une ni l'autre).
+     */
+    public function testTheThreeTerminatedReadsPartitionTheRows(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $person = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-01T10:00:00+02:00'));
+        $neverExchanged = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-02T10:00:00+02:00'));
+        $exchangedExpired = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-03T10:00:00+02:00'));
+        $alive = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-11-19T10:00:00+01:00'));
+        foreach ([$person, $neverExchanged, $exchangedExpired, $alive] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->exchangeCodeOf($exchangedExpired, $exchangedExpired->grantedAt()->add(new DateInterval('PT1M')));
+        $this->exchangeCodeOf($alive, $alive->grantedAt()->add(new DateInterval('PT1M')));
+        $this->connections()->revokeActive($person->getId(), RevocationCause::Person, new DateTimeImmutable('2026-10-05T10:00:00+02:00'));
+        $this->connections()->revokeExpired([$neverExchanged->getId(), $exchangedExpired->getId()], new DateTimeImmutable('2026-11-19T03:00:00+01:00'));
+        $this->em->clear();
+
+        self::assertSame([$person->getId()->toRfc4122()], $this->idsOf($this->connections()->findTerminatedForAdministration(10)));
+        self::assertSame([$neverExchanged->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+        self::assertSame([$exchangedExpired->getId()->toRfc4122()], $this->idsOf($this->connections()->findExchangedExpiredForAdministration(null, 10)));
+        self::assertSame([$alive->getId()->toRfc4122()], $this->idsOf($this->connections()->findNotRevokedForAdministration($threshold)));
+    }
+
+    /**
+     * Les expirées échangées se lisent par clé sur `(revoked_at, id)` décroissants :
+     * la page suivante reprend strictement après la dernière ligne de la précédente,
+     * l'identifiant décroissant départageant deux purges au même instant.
+     */
+    public function testExchangedExpiredForAdministrationPagesByKeyset(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $purgedAt = new DateTimeImmutable('2026-11-19T03:00:00+01:00');
+        $all = [];
+        foreach (range(1, 5) as $day) {
+            $connection = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-09-%02dT10:00:00+02:00', $day)));
+            $this->connections()->add($connection);
+            $this->exchangeCodeOf($connection, $connection->grantedAt()->add(new DateInterval('PT1M')));
+            // Deux purges au même instant (jours 1 et 2), les autres échelonnées.
+            $this->connections()->revokeExpired([$connection->getId()], $day <= 2 ? $purgedAt->sub(new DateInterval('P5D')) : $purgedAt->add(new DateInterval('PT'.$day.'M')));
+            $all[] = $connection;
+        }
+        $this->em->clear();
+
+        $first = $this->connections()->findExchangedExpiredForAdministration(null, 2);
+        $second = $this->connections()->findExchangedExpiredForAdministration($first[1], 2);
+        $third = $this->connections()->findExchangedExpiredForAdministration($second[1], 2);
+        $tied = [$all[0]->getId()->toRfc4122(), $all[1]->getId()->toRfc4122()];
+        rsort($tied);
+
+        self::assertSame(
+            [$all[4]->getId()->toRfc4122(), $all[3]->getId()->toRfc4122(), $all[2]->getId()->toRfc4122(), ...$tied],
+            [...$this->idsOf($first), ...$this->idsOf($second), ...$this->idsOf($third)],
+        );
+        self::assertCount(1, $third);
+        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration($third[0], 2));
     }
 
     /** Les abandonnées sont bornées par `$limit` et rendues par octroi décroissant : la fin vaut octroi + une durée constante. */

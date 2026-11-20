@@ -124,11 +124,13 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     {
         /** @var list<McpConnection> */
         return $this->forAdministration()
-            ->where('connection.revokedAt IS NULL')
-            ->andWhere('connection.codeExchangedAt IS NULL')
-            ->andWhere('connection.grantedAt <= :abandonedBefore')
+            ->where('connection.codeExchangedAt IS NULL')
+            // Abandonnée non marquée, ou marquée expirée par la purge : dans les deux
+            // cas la fin réelle est l'octroi + le délai du code non échangé.
+            ->andWhere('((connection.revokedAt IS NULL AND connection.grantedAt <= :abandonedBefore) OR connection.revocationCause = :expired)')
             ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
-            // L'octroi décide quelles abandonnées la limite garde : la fin vaut
+            ->setParameter('expired', RevocationCause::Expired)
+            // L'octroi décide quelles lignes la limite garde : la fin vaut
             // octroi + une durée constante, c'est donc l'ordre par instant de fin.
             ->orderBy('connection.grantedAt', 'DESC')
             ->addOrderBy('connection.id', 'DESC')
@@ -142,6 +144,11 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         /** @var list<McpConnection> */
         return $this->forAdministration()
             ->where('connection.revokedAt IS NOT NULL')
+            // `IS DISTINCT FROM 'expired'` : la cause est nullable au mapping (la
+            // contrainte SQL la lie à `revoked_at`, mais une ligne sans cause ne doit
+            // pas disparaître sur une comparaison inconnue).
+            ->andWhere('(connection.revocationCause IS NULL OR connection.revocationCause <> :expired)')
+            ->setParameter('expired', RevocationCause::Expired)
             // L'instant de fin décide quelles terminées la limite garde (spec 0007,
             // S4) : trier par octroi chasserait une ancienne connexion qu'on vient
             // de révoquer au profit de terminées octroyées plus récemment. L'ordre
@@ -151,6 +158,28 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
+    }
+
+    public function findExchangedExpiredForAdministration(?McpConnection $after, int $limit): array
+    {
+        $query = $this->forAdministration()
+            ->where('connection.revocationCause = :expired')
+            ->andWhere('connection.codeExchangedAt IS NOT NULL')
+            ->setParameter('expired', RevocationCause::Expired)
+            ->orderBy('connection.revokedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->setMaxResults($limit);
+
+        if (null !== $after) {
+            // Clé de reprise sur `(revoked_at, id)`, typée comme les colonnes.
+            $query
+                ->andWhere('(connection.revokedAt < :afterRevokedAt OR (connection.revokedAt = :afterRevokedAt AND connection.id < :afterId))')
+                ->setParameter('afterRevokedAt', $after->revokedAt(), Types::DATETIMETZ_IMMUTABLE)
+                ->setParameter('afterId', $after->getId(), UuidType::NAME);
+        }
+
+        /** @var list<McpConnection> */
+        return $query->getQuery()->getResult();
     }
 
     /**

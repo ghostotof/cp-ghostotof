@@ -172,8 +172,12 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         self::assertSame($base->getTimestamp() + 2 * 60, min($revokedAt), 'La révoquée de base + 1 minute a cédé sa place.');
     }
 
-    /** Trois lectures, une par moitié, jointures comprises : aucune requête paresseuse pour le compte ni le client. */
-    public function testListReadsInThreeQueries(): void
+    /**
+     * Quatre lectures sur une liste courte, jointures comprises : vivantes, terminées
+     * par une autre cause que l'expiration, accords jamais échangés, puis une seule
+     * page des expirées échangées. Aucune requête paresseuse pour le compte ni le client.
+     */
+    public function testListReadsInFourQueries(): void
     {
         $jane = $this->persistAccount('jane');
         $john = $this->persistAccount('john');
@@ -183,20 +187,196 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, $this->now->sub(new DateInterval('P2D')));
         $this->grant($john, $client, $this->now->sub(new DateInterval('PT3H')));
         $this->em->clear();
-        $service = $this->service();
 
+        [$views, $selects] = $this->listCountingSelects();
+
+        self::assertCount(3, $views);
+        self::assertSame(4, $selects, 'Vivantes, autres terminées, jamais échangées, une page d\'expirées échangées, rien de plus.');
+    }
+
+    /**
+     * S4 constat 1 : la purge marque une expirée avec **son propre instant**, qui
+     * n'est pas la fin réelle. Une expirée échangée, échue depuis 70 jours mais
+     * purgée hier, ne doit pas chasser une révocation de la personne d'il y a 10 jours.
+     */
+    public function testAPurgedExpiredConnectionIsRankedOnItsRealEndNotOnItsPurge(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $expired = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P100D')), $this->now->sub(new DateInterval('P1D')));
+        $this->em->clear();
+
+        $ids = $this->idsOfList();
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $ids);
+        self::assertNotContains($expired->getId()->toRfc4122(), $ids, 'Sa fin réelle (J-70) est plus ancienne que toutes les révocations gardées.');
+    }
+
+    /** Le rang d'une expirée ne dépend pas de l'instant où la purge est passée. */
+    public function testARankSurvivesThePurgeWhateverItsInstant(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P5D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        // Fin réelle J-20 ; la purge est passée il y a une heure.
+        $expired = $this->grantExchangedThenPurged($account, $client, $this->now->sub(new DateInterval('P50D')), $this->now->sub(new DateInterval('PT1H')));
+        $this->em->clear();
+        $withRecentPurge = $this->idsOfList();
+
+        // Même connexion, purge passée plus tôt (toujours après sa fin réelle).
+        $this->em->getConnection()->executeStatement(
+            'UPDATE mcp_connection SET revoked_at = CAST(:at AS timestamptz) WHERE id = :id',
+            ['at' => $this->now->sub(new DateInterval('P10D'))->format('Y-m-d\TH:i:sP'), 'id' => $expired->getId()->toRfc4122()],
+        );
+        $this->em->clear();
+        $withOlderPurge = $this->idsOfList();
+
+        self::assertSame($withOlderPurge, $withRecentPurge, 'Avant ou après un autre instant de purge, la liste est la même.');
+        self::assertNotContains($expired->getId()->toRfc4122(), $withRecentPurge);
+    }
+
+    /**
+     * Éviction : 201 expirées échangées à purge récente et fin réelle ancienne, face
+     * à une révocation de la personne plus récente que toutes leurs fins. La
+     * révocation reste, et la lecture passe par plus d'une page.
+     */
+    public function testRecentlyPurgedExpiredConnectionsDoNotEvictAMoreRecentRevocation(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P100D')), $this->now->sub(new DateInterval('P1D')), AdministeredMcpConnections::EXCHANGED_PAGE_SIZE + 1);
+        $person = $this->grant($account, $client, $this->now->sub(new DateInterval('P70D')));
+        $this->connections()->revokeActive($person->getId(), RevocationCause::Person, $this->now->sub(new DateInterval('P60D')));
+        $this->em->clear();
+
+        [$views, $selects] = $this->listCountingSelects();
+
+        $ids = array_map(static fn (AdministeredMcpConnectionView $view): string => $view->id->toRfc4122(), $views);
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
+        self::assertContains($person->getId()->toRfc4122(), $ids, 'La révocation (J-60) est plus récente que toutes les fins réelles (J-70).');
+        self::assertSame(5, $selects, 'Trois lectures fixes et deux pages d\'expirées échangées (200 puis 1).');
+        $grantedAt = array_map(static fn (AdministeredMcpConnectionView $view): int => $view->grantedAt->getTimestamp(), $views);
+        $sorted = $grantedAt;
+        rsort($sorted);
+        self::assertSame($sorted, $grantedAt, 'L\'ordre d\'affichage reste l\'octroi décroissant.');
+    }
+
+    /**
+     * La lecture s'arrête dès que le `revoked_at` de la page est plus ancien que la
+     * 200e meilleure fin connue : une expirée ne finit jamais après sa purge. Ici
+     * 450 expirées purgées il y a 20 jours face à 200 révocations d'il y a 10 jours,
+     * une seule page est lue.
+     */
+    public function testTheKeysetReadingStopsOnceNothingCanEnterTheList(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P100D')), $this->now->sub(new DateInterval('P20D')), 450);
+        $this->em->clear();
+
+        [$views, $selects] = $this->listCountingSelects();
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
+        self::assertSame(4, $selects, 'Une seule page d\'expirées échangées : la suivante ne pouvait rien apporter.');
+    }
+
+    /** À l'inverse, des purges récentes forcent la lecture de toutes les pages (200, 200, 50). */
+    public function testTheKeysetReadingCrossesEveryPageWhileARowCouldStillEnter(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P10D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $this->insertExchangedExpired($account, $client, $this->now->sub(new DateInterval('P100D')), $this->now->sub(new DateInterval('P1D')), 450);
+        $this->em->clear();
+
+        [$views, $selects] = $this->listCountingSelects();
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
+        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages d\'expirées échangées.');
+    }
+
+    /** Un accord jamais échangé, expiré puis purgé, se classe à octroi + délai du code, pas à sa purge. */
+    public function testANeverExchangedExpiredGrantIsRankedOnItsGrantPlusTheUnexchangedDelay(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $this->insertRevoked($account, $client, $this->now->sub(new DateInterval('P5D')), AdministeredMcpConnections::TERMINATED_LIMIT);
+        $unexchanged = $this->lifetimes()->unexchanged();
+        // Fin J-20, purgée il y a une heure : sortie.
+        $old = $this->grant($account, $client, $this->now->sub(new DateInterval('P20D'))->sub($unexchanged));
+        // Fin J-2, purgée hier : plus récente que toutes les révocations, elle entre.
+        $recent = $this->grant($account, $client, $this->now->sub(new DateInterval('P2D'))->sub($unexchanged));
+        $this->connections()->revokeExpired([$old->getId()], $this->now->sub(new DateInterval('PT1H')));
+        $this->connections()->revokeExpired([$recent->getId()], $this->now->sub(new DateInterval('P1D')));
+        $this->em->clear();
+
+        $ids = $this->idsOfList();
+
+        self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $ids);
+        self::assertContains($recent->getId()->toRfc4122(), $ids);
+        self::assertNotContains($old->getId()->toRfc4122(), $ids);
+    }
+
+    /** @return list<string> */
+    private function idsOfList(): array
+    {
+        return array_map(static fn (AdministeredMcpConnectionView $view): string => $view->id->toRfc4122(), $this->service()->list());
+    }
+
+    /**
+     * La liste et le nombre de SELECT qu'elle a envoyés.
+     *
+     * @return array{0: list<AdministeredMcpConnectionView>, 1: int}
+     */
+    private function listCountingSelects(): array
+    {
+        $service = $this->service();
         $holder = self::getContainer()->get('doctrine.debug_data_holder');
         $holder->reset();
         $views = $service->list();
-        $selects = [];
+        $selects = 0;
         foreach ($holder->getData()['default'] ?? [] as $query) {
             if (\is_string($query['sql'] ?? null) && str_starts_with(ltrim($query['sql']), 'SELECT')) {
-                $selects[] = $query['sql'];
+                ++$selects;
             }
         }
 
-        self::assertCount(3, $views);
-        self::assertCount(3, $selects, 'Une lecture par moitié (vivantes, révoquées, abandonnées), rien de plus.');
+        return [$views, $selects];
+    }
+
+    /** Octroie, échange le code, puis marque expirée à `$purgedAt` par la voie de la purge. */
+    private function grantExchangedThenPurged(CpgUser $account, McpClient $client, DateTimeImmutable $grantedAt, DateTimeImmutable $purgedAt): McpConnection
+    {
+        $connection = $this->grant($account, $client, $grantedAt);
+        $this->exchangeCodeOf($connection);
+        $this->connections()->revokeExpired([$connection->getId()], $purgedAt);
+
+        return $connection;
+    }
+
+    /**
+     * `$count` expirées dont le code a été échangé, en une instruction : la i-ème est
+     * octroyée à `$grantedBase` + i minutes et marquée expirée à `$purgedBase` + i minutes.
+     */
+    private function insertExchangedExpired(CpgUser $account, McpClient $client, DateTimeImmutable $grantedBase, DateTimeImmutable $purgedBase, int $count): void
+    {
+        $this->em->getConnection()->executeStatement(
+            'INSERT INTO mcp_connection (id, scope, granted_at, code_exchanged_at, revoked_at, revocation_cause, account_id, mcp_client_id) '
+            .'SELECT gen_random_uuid(), :scope, CAST(:granted AS timestamptz) + make_interval(mins => i), '
+            ."CAST(:granted AS timestamptz) + make_interval(mins => i) + interval '1 minute', "
+            ."CAST(:purged AS timestamptz) + make_interval(mins => i), 'expired', :account, :client "
+            .'FROM generate_series(1, :count) AS i',
+            [
+                'scope' => self::SCOPE,
+                'granted' => $grantedBase->format('Y-m-d\TH:i:sP'),
+                'purged' => $purgedBase->format('Y-m-d\TH:i:sP'),
+                'account' => $account->getId()->toRfc4122(),
+                'client' => $client->getId()->toRfc4122(),
+                'count' => $count,
+            ],
+        );
     }
 
     private function service(): AdministeredMcpConnections
