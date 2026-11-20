@@ -173,12 +173,15 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
         // Le client et le compte sont joints et hydratés par la même requête (pas de
         // N+1), comme dans `forAdministration()`.
-        $rsm = new ResultSetMappingBuilder($em);
-        // Chaque colonne est renommée par un préfixe d'alias : `id`, `created_at`…
-        // se retrouvent dans les trois tables, et le mappeur refuse deux colonnes de même nom.
-        $rsm->addRootEntityFromClassMetadata(McpConnection::class, 'c', $this->prefixedColumns(McpConnection::class, 'c'));
-        $rsm->addJoinedEntityFromClassMetadata(McpClient::class, 'k', 'c', 'client', $this->prefixedColumns(McpClient::class, 'k'));
-        $rsm->addJoinedEntityFromClassMetadata(CpgUser::class, 'u', 'c', 'account', $this->prefixedColumns(CpgUser::class, 'u'));
+        // `COLUMN_RENAMING_INCREMENT` renomme *toutes* les colonnes de chaque entité,
+        // champs **et** colonnes de jointure (`getColumnAliasMap()` de Doctrine) :
+        // `id`, `created_at`… se retrouvent dans les trois tables, et le mappeur
+        // refuse deux colonnes de même nom. Les alias (`id0`, `id1`…) ne valent que
+        // par `generateSelectClause()`, qui produit le SELECT correspondant.
+        $rsm = new ResultSetMappingBuilder($em, ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT);
+        $rsm->addRootEntityFromClassMetadata(McpConnection::class, 'c');
+        $rsm->addJoinedEntityFromClassMetadata(McpClient::class, 'k', 'c', 'client');
+        $rsm->addJoinedEntityFromClassMetadata(CpgUser::class, 'u', 'c', 'account');
 
         // SQL natif, parce que DQL n'a pas de constructeur de ligne : la reprise
         // `(activité, id) < (:activité, :id)` doit être une *Index Cond* de l'index
@@ -229,23 +232,6 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     private function expiredLiteral(): string
     {
         return "'".RevocationCause::Expired->value."'";
-    }
-
-    /**
-     * Les colonnes de l'entité, chacune renvoyée sous `<préfixe>_<colonne>`.
-     *
-     * @param class-string $class
-     *
-     * @return array<string, string>
-     */
-    private function prefixedColumns(string $class, string $prefix): array
-    {
-        $columns = [];
-        foreach ($this->getEntityManager()->getClassMetadata($class)->getColumnNames() as $column) {
-            $columns[$column] = $prefix.'_'.$column;
-        }
-
-        return $columns;
     }
 
     /**
