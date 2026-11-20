@@ -12,6 +12,7 @@ use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use Override;
+use ReflectionProperty;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
@@ -29,7 +30,8 @@ use Symfony\Component\Validator\Exception\UnexpectedValueException;
  * redirections admises, dédupliquées sur leur forme écrite (le domaine refuse
  * une forme non normalisée au lieu de la normaliser, deux écritures d'une même
  * adresse ne se confondent donc jamais en une), de une à
- * {@see McpClient::MAX_REDIRECT_URIS}.
+ * {@see McpClient::MAX_REDIRECT_URIS}. Les redirections forment une liste : un
+ * tableau à clés est refusé d'un bloc, sans jamais citer la clé.
  */
 final class ValidMcpClientFieldsValidator extends ConstraintValidator
 {
@@ -40,19 +42,24 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
             throw new UnexpectedTypeException($constraint, ValidMcpClientFields::class);
         }
 
-        if (!\is_object($value) || !property_exists($value, 'name') || !property_exists($value, 'redirectUris')) {
+        if (!\is_object($value)) {
             throw new UnexpectedValueException($value, 'object with public name and redirectUris');
         }
 
-        $name = $value->name;
-        $redirectUris = $value->redirectUris;
+        // Lecture par réflexion : property_exists() est vrai d'une propriété
+        // privée, protégée ou typée non initialisée, que `$value->name` ferait
+        // échouer en \Error (un 500) au lieu de la refuser proprement.
+        $name = $this->readPublicProperty($value, 'name');
+        $redirectUris = $this->readPublicProperty($value, 'redirectUris');
 
         if (!\is_string($name) || !\is_array($redirectUris)) {
             throw new UnexpectedValueException($value, 'object with string name and array redirectUris');
         }
 
         // Absent (révision) ou null : l'identifiant est immuable, rien à juger.
-        $clientId = property_exists($value, 'clientId') ? $value->clientId : null;
+        // Absent n'est pas illisible : une propriété déclarée mais privée ou non
+        // initialisée est une forme inattendue, refusée par readPublicProperty().
+        $clientId = property_exists($value, 'clientId') ? $this->readPublicProperty($value, 'clientId') : null;
 
         if (null !== $clientId) {
             if (!\is_string($clientId)) {
@@ -64,6 +71,24 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
 
         $this->validateName($name);
         $this->validateRedirects($redirectUris, $constraint);
+    }
+
+    /**
+     * Lit une propriété publique et initialisée, sinon refuse la forme.
+     */
+    private function readPublicProperty(object $value, string $property): mixed
+    {
+        if (!property_exists($value, $property)) {
+            throw new UnexpectedValueException($value, 'object with public name and redirectUris');
+        }
+
+        $reflection = new ReflectionProperty($value, $property);
+
+        if (!$reflection->isPublic() || !$reflection->isInitialized($value)) {
+            throw new UnexpectedValueException($value, \sprintf('object with a public, initialized %s', $property));
+        }
+
+        return $reflection->getValue($value);
     }
 
     private function validateClientId(string $clientId): void
@@ -91,6 +116,14 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
     {
         if ([] === $redirectUris) {
             $this->addViolationAt('redirectUris', $constraint->noRedirectMessage);
+
+            return;
+        }
+
+        // Une liste, ou rien : une clé d'appelant (`redirectUris[evil]`) irait
+        // sinon dans le chemin de la violation, renvoyé tel quel dans la réponse.
+        if (!array_is_list($redirectUris)) {
+            $this->addViolationAt('redirectUris', $constraint->notAListMessage);
 
             return;
         }

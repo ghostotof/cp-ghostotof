@@ -11,6 +11,7 @@ use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use App\Mcp\Connection\Infrastructure\Validator\ValidMcpClientFields;
 use App\Mcp\Connection\Infrastructure\Validator\ValidMcpClientFieldsValidator;
 use DateTimeImmutable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClassConstant;
 use stdClass;
 use Symfony\Component\Validator\ConstraintValidatorInterface;
@@ -31,13 +32,13 @@ final class ValidMcpClientFieldsValidatorTest extends ConstraintValidatorTestCas
     }
 
     /**
-     * @param list<mixed> $redirectUris
+     * @param array<array-key, mixed> $redirectUris
      */
     private function input(?string $clientId, string $name, array $redirectUris, bool $withClientId = true): object
     {
         if (!$withClientId) {
             return new class($name, $redirectUris) {
-                /** @param list<mixed> $redirectUris */
+                /** @param array<array-key, mixed> $redirectUris */
                 public function __construct(public string $name, public array $redirectUris)
                 {
                 }
@@ -45,7 +46,7 @@ final class ValidMcpClientFieldsValidatorTest extends ConstraintValidatorTestCas
         }
 
         return new class($clientId, $name, $redirectUris) {
-            /** @param list<mixed> $redirectUris */
+            /** @param array<array-key, mixed> $redirectUris */
             public function __construct(public ?string $clientId, public string $name, public array $redirectUris)
             {
             }
@@ -196,6 +197,141 @@ final class ValidMcpClientFieldsValidatorTest extends ConstraintValidatorTestCas
         $this->expectException(UnexpectedValueException::class);
 
         $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAPrivateNameIsRefusedWithAnUnexpectedValueExceptionNotAnError(): void
+    {
+        // property_exists() est vrai d'une propriété privée : la lecture
+        // directe lèverait une \Error (un 500), pas une exception du validateur.
+        $object = new class {
+            /** @var list<string> */
+            public array $redirectUris = ['https://app.example/cb'];
+            private string $name = 'Mon client';
+
+            public function name(): string
+            {
+                return $this->name;
+            }
+        };
+        self::assertSame('Mon client', $object->name());
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAProtectedRedirectUrisIsRefusedWithAnUnexpectedValueException(): void
+    {
+        $object = new class {
+            public string $name = 'Mon client';
+            /** @var list<string> */
+            protected array $redirectUris = ['https://app.example/cb'];
+
+            /** @return list<string> */
+            public function redirectUris(): array
+            {
+                return $this->redirectUris;
+            }
+        };
+        self::assertCount(1, $object->redirectUris());
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAnUninitializedTypedNameIsRefusedWithAnUnexpectedValueException(): void
+    {
+        $object = new class {
+            public string $name;
+            /** @var list<string> */
+            public array $redirectUris = ['https://app.example/cb'];
+        };
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAnUninitializedTypedRedirectUrisIsRefusedWithAnUnexpectedValueException(): void
+    {
+        $object = new class {
+            public string $name = 'Mon client';
+            /** @var list<string> */
+            public array $redirectUris;
+        };
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAnUninitializedTypedClientIdIsRefusedWithAnUnexpectedValueException(): void
+    {
+        // Présente mais illisible : ce n'est pas une révision (propriété
+        // absente), c'est une forme inattendue.
+        $object = new class {
+            public ?string $clientId;
+            public string $name = 'Mon client';
+            /** @var list<string> */
+            public array $redirectUris = ['https://app.example/cb'];
+        };
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAPrivateClientIdIsRefusedWithAnUnexpectedValueException(): void
+    {
+        $object = new class {
+            public string $name = 'Mon client';
+            /** @var list<string> */
+            public array $redirectUris = ['https://app.example/cb'];
+            private string $clientId = 'mon-client';
+
+            public function clientId(): string
+            {
+                return $this->clientId;
+            }
+        };
+        self::assertSame('mon-client', $object->clientId());
+
+        $this->expectException(UnexpectedValueException::class);
+
+        $this->validator->validate($object, new ValidMcpClientFields());
+    }
+
+    public function testAnAbsentClientIdStaysAcceptedForARevision(): void
+    {
+        // Garde-fou du correctif : « absente » reste distincte de « illisible ».
+        $this->validator->validate($this->input(null, 'Mon client', $this->uris(1), false), new ValidMcpClientFields());
+
+        $this->assertNoViolation();
+    }
+
+    /**
+     * @param array<array-key, mixed> $redirectUris
+     */
+    #[DataProvider('redirectsThatAreNotAList')]
+    public function testRedirectsThatAreNotAListGiveOneViolationAtRedirectUrisAndNeverQuoteTheKey(array $redirectUris): void
+    {
+        $this->validator->validate($this->input('mon-client', 'Mon client', $redirectUris), new ValidMcpClientFields());
+
+        // Une seule violation, au chemin du champ, sans la clé de l'appelant.
+        $this->buildViolation('Les redirections doivent former une liste.')
+            ->atPath('property.path.redirectUris')
+            ->assertRaised();
+    }
+
+    /**
+     * @return iterable<string, array{array<array-key, mixed>}>
+     */
+    public static function redirectsThatAreNotAList(): iterable
+    {
+        yield 'clé textuelle' => [['evil' => 'https://app.example/cb']];
+        yield 'clés non séquentielles' => [[1 => 'https://app.example/cb', 3 => 'https://app.example/cb2']];
+        yield 'clé textuelle et valeur invalide' => [['evil' => 'http://evil.example']];
     }
 
     public function testTheBoundMessageStaysInSyncWithTheDomainConstant(): void

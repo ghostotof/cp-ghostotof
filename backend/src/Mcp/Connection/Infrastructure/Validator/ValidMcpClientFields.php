@@ -31,6 +31,8 @@ final class ValidMcpClientFields extends Constraint
 
     public string $notAStringMessage = 'Chaque redirection doit être une chaîne de caractères.';
 
+    public string $notAListMessage = 'Les redirections doivent former une liste.';
+
     #[Override]
     public function getTargets(): string
     {
