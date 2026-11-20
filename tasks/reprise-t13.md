@@ -365,6 +365,8 @@
     ouvertes pour la PR : `ConnectionNeverRevokedException` inutilisée mais conservée ; `schema:validate` en écart attendu
     (index d'expression absent du mapping). **Agent 1b** (`sonnet`, `high`, cran par défaut de l'étape 05) lancé : arrêt
     anticipé par majorant `idleDeadline(activité du curseur en zone) + P1D` strictement sous la 200e fin connue.
+    **Agent 1b perdu au `/clear`** (2026-11-20, rien commité, arbre propre en `1be75f8c`) : **1b relancé** au même cran
+    (sonnet/high, l'échec ne tient pas au modèle).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
