@@ -107,8 +107,18 @@ paths:
 reads the exchanged expired connections by activity descending (`COALESCE(last_used_at, granted_at) DESC, id DESC`), in pages
 resumed by a key (`ExchangedExpiredCursor`), and stops once it holds 200 ends and `endUpperBound()` — `idleDeadline(the cursor's
 activity, brought back into PHP's zone)` plus one calendar day — is **strictly** earlier than the 200th end (on a tie it keeps
-reading). A row not read yet has an activity at most the cursor's, hence an end at most that bound: `endOf()` of an exchanged
-expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exceeds the idle deadline of that same activity. It no
+reading). A row not read yet has an activity at most the cursor's, hence an end at most that bound: the end of an exchanged
+expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exceeds the idle deadline of that same activity.
+**The day's margin is not a PHP/PostgreSQL margin** (the comparison is PHP against PHP; PostgreSQL only orders absolute instants):
+it covers the non-monotonicity of PHP's own calendar, a day added across a clock change (missing or repeated wall time). The
+invariant is, for two activities `a <= b`, `idleDeadline(a) <= idleDeadline(b) + P1D`; it holds because
+`ConnectionLifetimes::fromConfiguration()` refuses years and months in the idle duration (`notMonotonicInActivity()`: 31 January
++ `P1M` is 3 March, later than 1 March for 1 February, by several days). One method, `endedOf()`, decides each terminated row's end
+and its displayed deadline (`EndedMcpConnection::$displayedDeadline`, `null` = `McpConnectionStatus::expiresAt()`); `list()` holds
+no predicate on the cause. **A generated migration proposes `DROP INDEX idx_mcp_connection_admin_exchanged_expired_activity`**
+(`doctrine:schema:update --dump-sql`, `make:migration`, `doctrine:migrations:diff`): that expression index can only be declared in the
+migration, not on the entity, so remove that line from every generated migration; `McpConnectionAdministrationIndexesTest` turns red
+if the index disappears (its plan no longer scans it). It no
 longer assumes anything about the purge to stop. What still depends on it is the **displayed** end: on a connection the purge marked,
 `deadline() <= revoked_at` (the purge only writes `revoked_at = $now` for a candidate `isExpiredAt($now)` judged in PHP, never from
 the SQL pre-selection alone: PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently),
