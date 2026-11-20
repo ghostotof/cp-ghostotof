@@ -419,6 +419,12 @@
     marge et `DROP INDEX` des diffs). Contrôlé : 16 tests OK, un seul prédicat de cause, arbre propre ; agent : 6633 OK,
     PHPStan/Rector OK. Annexes : DTO non testé en direct (sév. basse). **Correction C lancée** (sonnet/high) : C4,
     `prefixedColumns()` → `ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT`.
+  - **Correction C faite** : `f5985b0b` (`COLUMN_RENAMING_INCREMENT`, `prefixedColumns()` supprimée, WHERE/ORDER BY
+    intacts). Contrôlé : repository + index 57 tests OK, arbre propre ; agent : 6633 OK, PHPStan/Rector/Psalm OK.
+    Écrit pour la PR (faible, conf. haute) : le test N+1 (`testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries`)
+    ne couvre que `findNotRevoked…` et `findTerminated…`, pas la lecture native `findExchangedExpired…`.
+  - **Prochaine action** : relecture de la série de corrections, `/code-review medium diff 6de1ba0e...HEAD`
+    (fil principal) ; noter `HEAD` comme point fixe suivant.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
