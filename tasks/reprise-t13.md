@@ -248,9 +248,13 @@
     (`McpConnectionStatusTest|OwnMcpConnectionsTest|OwnMcpConnectionsControllerTest`). Écart : l'échéance est
     calculée deux fois par ligne dans `viewOf()` (`stateOf()` rappelle `expiresAt()`), régression de R5a (#650), et
     le commentaire dit « même calcul ». Trailer `Co-Authored-By` de ce commit : Sonnet 5.5 (modèle réel de l'agent).
-  - **Prochaine action** : **Task 12'** (micro-correction, agent sonnet/high) : `stateOf(McpConnection, now,
-    DateTimeImmutable $deadline)`, l'appelant calcule `expiresAt()` une fois et le passe ; test qui le prouve ;
-    commentaire de `viewOf()` corrigé. Puis Tasks 13, 14, 15 (S4, la 13 consomme l'API corrigée), un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+  - **Task 12' faite** : `8a49d3c7` (`stateOf(connection, now, deadline)`, `viewOf()` n'évalue l'échéance qu'une
+    fois, test `testStateOfJudgesOnTheReceivedDeadlineNotOnARecomputation` rouge puis vert). Contrôlé : 40 tests OK.
+  - **Task 13 découpée** (8 fichiers > 4) : **13A** dépôt (seuil des non échangées dans
+    `findNotRevokedForAdministration(threshold)`, nouvelle `findAbandonedForAdministration(threshold, limit)`, tests
+    59/61 min et échangée jamais filtrée) ; **13B** service `AdministeredMcpConnections` + vue + interface + test,
+    fusion PHP, D-D du plan et docblocks.
+  - **Prochaine action** : **Task 13A** (agent sonnet/high), puis 13B, 14, 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
     seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
@@ -331,6 +335,10 @@
   **revérifier à l'échange** (Task 11), les connexions ouvertes restent actives.
 - Relecture de C3c (2026-11-19) : **micro-série C3d courte**, relue par `/code-review medium` seul ; F1 et le reste
   dans la PR.
+- Task 13 (2026-11-20) : accords abandonnés dans les terminées bornées → **deux requêtes bornées, fusion PHP** :
+  révoquées `LIMIT 200` par `revokedAt DESC, id DESC`, abandonnées (`revokedAt IS NULL`, `codeExchangedAt IS NULL`,
+  `grantedAt <= now − unexchanged`) `LIMIT 200` par `grantedAt DESC, id DESC`, dans le même instantané ; le service
+  trie par vraie fin (`revokedAt` ou `unexchangedDeadline(grantedAt)`), garde 200, retrie par octroi.
 - Task 12 (2026-11-20) : double calcul de l'échéance → **micro-correction Task 12' avant la Task 13** ; fuseau :
   **garder l'horloge injectée** dans `McpConnectionStatus` (le plan disait « fuseau déjà injecté », c'était `$now`).
 - Relecture de C3d (2026-11-20) : **écrire, corriger en Task 19** — R1, R2, R3, R4, R6 en Task 19, R5 dans la PR ;
