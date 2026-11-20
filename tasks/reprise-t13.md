@@ -458,7 +458,15 @@
       positivity, before the two floors and the two orderings » (code : `ConnectionLifetimes.php:177-206`) ; (D4)
       `mcp-oauth-cycle-de-vie.md` l. ~51, renvoi « The administration's early stop… » à rendre greppable (citer
       « The administration's early stop reads by activity » ou le texte gras exact).
-  - **Prochaine action** : micro-série E (sonnet/high), puis `/code-review medium diff 45feabed...HEAD` ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **Micro-série E faite** (2026-11-20, sonnet/high) : `8a3a3a8c` — `registerClient($clientId, $name = …)`, E1
+    `assertSame(['Client John/john', 'Client Jane/jane'])`, E2 test séparé
+    `testExchangedExpiredResumedPageHydratesClientAndAccountWithoutFurtherQueries` (curseur `after()` d'une page de 1).
+    Mutations rouges (agent) : jointure client vers un id fixe (E1 seul rouge), jointures client puis compte faussées
+    seulement si `$after` (E2 seul rouge), `k` non déclarée seulement si `$after` (2 requêtes au lieu de 1). Contrôlé
+    par le fil principal après `restart backend` : 53 tests, 478 assertions OK, arbre propre. Annexe (PR, outillage,
+    conf. haute, sév. basse) : `sed -i` / `git checkout --` changent l'inode et désynchronisent le bind-mount ; l'agent
+    a muté par `cat copie > fichier`.
+  - **Prochaine action** : `/code-review medium diff 45feabed...HEAD` (relecture de E) ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
