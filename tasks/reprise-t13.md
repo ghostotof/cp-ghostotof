@@ -258,8 +258,12 @@
     abandonedBefore)`, `findAbandonedForAdministration(abandonedBefore, limit)`, borne incluse testée). Contrôlé :
     125 tests OK (`McpConnectionRepositoryTest|ConnectionLifetimesTest`). `$limit` borné par `@param positive-int`
     seulement (comme les terminées), le service passe une constante.
-  - **Prochaine action** : **Task 13B** (agent sonnet/high), puis D-D du plan (l. 106) par le fil principal, puis
-    14, 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
+  - **Task 13B faite** : `993d4b49` (`AdministeredMcpConnections[Interface]`, `AdministeredMcpConnectionView`, fusion
+    PHP, 3 `SELECT` prouvés). Contrôlé : 22 tests OK ; suite complète 6566 OK (agent). D-D du plan corrigé (fil
+    principal). Écrits pour la PR : `expiresAt` rendu même pour une révoquée (vue non nullable, comme le plan ; la
+    vue de la personne le met à `null`) → à trancher à F1-F7 ; compteur de requêtes recopié du helper privé de
+    `McpConnectionRepositoryTest` (à extraire vers `tests/Support` en Task 19).
+  - **Prochaine action** : **Task 14** (agent sonnet/high), puis 15, un agent à la fois ; puis `/code-review medium diff <point fixe S4>...HEAD` (auditeur à demander à l'utilisateur
     seulement si la série touche l'authentification, la session, le CSRF ou les cookies).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
