@@ -466,7 +466,17 @@
     par le fil principal après `restart backend` : 53 tests, 478 assertions OK, arbre propre. Annexe (PR, outillage,
     conf. haute, sév. basse) : `sed -i` / `git checkout --` changent l'inode et désynchronisent le bind-mount ; l'agent
     a muté par `cat copie > fichier`.
-  - **Prochaine action** : `/code-review medium diff 45feabed...HEAD` (relecture de E) ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **Relecture de E faite** (`/code-review medium diff 45feabed...HEAD`, HEAD relu `3ccc05e7`) : 4 constats faibles,
+    **boucle close**. Décision de l'utilisateur (2026-11-20) : **tout en Task 19**, dans `McpConnectionRepositoryTest`
+    avec l'extraction du compteur vers `tests/Support` :
+    - E-1 : page reprise lue en `LIMIT 1` avec une seule ligne restante → semer trois connexions, page suivante de
+      limite ≥ 2, `assertSame` des paires (une jointure qui multiplie les lignes passerait selon le plan).
+    - E-2 : vérifier que `$firstPage[0]` est John avant `ExchangedExpiredCursor::after()`.
+    - E-3 (préexistant) : `testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries` (l. ~1304, lectures
+      DQL `forAdministration()`) : noms de clients distincts et `assertSame` des paires, comme E1.
+    - E-4 : mise en place et closure de lecture recopiées entre les deux tests de la lecture native → helpers privés.
+  - **Prochaine action** : **S5** (Tasks 16-18 du plan, étape 05, sonnet/high, un agent par tâche), relue avec
+    l'auditeur sécurité ; point fixe de la relecture S5 : le commit de cette reprise (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
