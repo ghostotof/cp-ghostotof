@@ -360,6 +360,11 @@
     partiel dans l'arbre (10 fichiers + `Version20261120130000.php` écrite, déclaration d'index retirée de l'entité,
     arrêt anticipé désactivé ; manquent l'empreinte n° 43, les tests lancés, le commit). **Agent 1a-bis** (`sonnet`,
     `high`, même cran : l'échec tient au contexte, pas au modèle) lancé pour le terminer, brief économe en contexte.
+    **1a close** : `a4321644`, `make back-test` vert (6623 tests, 125688 assertions), `make back-quality` rc=0 (rapport
+    agent), voie SQL native (`ResultSetMappingBuilder`), preuve rouge avec `ORDER BY revoked_at` (2 échecs). Questions
+    ouvertes pour la PR : `ConnectionNeverRevokedException` inutilisée mais conservée ; `schema:validate` en écart attendu
+    (index d'expression absent du mapping). **Agent 1b** (`sonnet`, `high`, cran par défaut de l'étape 05) lancé : arrêt
+    anticipé par majorant `idleDeadline(activité du curseur en zone) + P1D` strictement sous la 200e fin connue.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
