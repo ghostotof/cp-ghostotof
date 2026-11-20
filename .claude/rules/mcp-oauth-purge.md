@@ -112,8 +112,10 @@ expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exce
 **The day's margin is not a PHP/PostgreSQL margin** (the comparison is PHP against PHP; PostgreSQL only orders absolute instants):
 it covers the non-monotonicity of PHP's own calendar, a day added across a clock change (missing or repeated wall time). The
 invariant is, for two activities `a <= b`, `idleDeadline(a) <= idleDeadline(b) + P1D`; it holds because
-`ConnectionLifetimes::fromConfiguration()` refuses years and months in the idle duration (`notMonotonicInActivity()`: 31 January
-+ `P1M` is 3 March, later than 1 March for 1 February, by several days). One method, `endedOf()`, decides each terminated row's end
+`ConnectionLifetimes::fromConfiguration()` refuses years and months in the idle duration (`notMonotonicInActivity()`, judged right
+after positivity, before the two orderings: 31 January + `P1M` is 3 March, later than 1 March for 1 February, by several days, PHP
+overflowing the month). Days stay allowed. `connection_maximum` has no such constraint: `deadline()` being `min(idle, maximum)`, it
+never exceeds the idle deadline. One method, `endedOf()`, decides each terminated row's end
 and its displayed deadline (`EndedMcpConnection::$displayedDeadline`, `null` = `McpConnectionStatus::expiresAt()`); `list()` holds
 no predicate on the cause. **A generated migration proposes `DROP INDEX idx_mcp_connection_admin_exchanged_expired_activity`**
 (`doctrine:schema:update --dump-sql`, `make:migration`, `doctrine:migrations:diff`): that expression index can only be declared in the
