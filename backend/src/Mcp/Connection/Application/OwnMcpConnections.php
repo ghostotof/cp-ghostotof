@@ -118,9 +118,11 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
     private function viewOf(McpConnection $connection, DateTimeImmutable $now): OwnMcpConnectionView
     {
         $zone = $now->getTimezone();
-        // L'échéance affichée et celle qui juge l'état viennent du même calcul,
-        // McpConnectionStatus (#652, T12) : jamais deux règles qui se séparent.
-        $state = $this->status->stateOf($connection, $now);
+        // Une seule évaluation de l'échéance par ligne (#650, R5a), faite par
+        // McpConnectionStatus (#652, T12) : l'échéance affichée est celle qui
+        // juge l'état.
+        $deadline = $this->status->expiresAt($connection);
+        $state = $this->status->stateOf($connection, $now, $deadline);
 
         return new OwnMcpConnectionView(
             $connection->getId(),
@@ -133,7 +135,7 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
             // serait une date qui n'arrivera à aucun effet, et l'API dit ce qui
             // est vrai plutôt que de laisser la page décider de la taire (#650, R5a).
             // Une `expired` la garde : c'est elle qui l'a fait expirer.
-            OwnMcpConnectionState::Revoked === $state ? null : $this->status->expiresAt($connection),
+            OwnMcpConnectionState::Revoked === $state ? null : $deadline,
             $state,
             $connection->revokedAt()?->setTimezone($zone),
             $connection->revocationCause(),

@@ -38,14 +38,26 @@ final readonly class McpConnectionStatus
         return $connection->deadline($this->clock->now()->getTimezone(), $this->lifetimes);
     }
 
-    public function stateOf(McpConnection $connection, DateTimeImmutable $now): OwnMcpConnectionState
+    /**
+     * L'état de la connexion à l'instant `$now`, jugé sur l'échéance `$deadline`.
+     *
+     * - `Revoked` : révoquée pour une autre cause que `expired` ;
+     * - `Expired` : cause `expired`, ou `$now >= $deadline` (borne incluse) ;
+     * - `Active` : sinon. Une connexion révoquée puis échue reste `Revoked`.
+     *
+     * `$deadline` doit venir de {@see self::expiresAt()} sur cette même
+     * connexion : l'échéance n'est évaluée qu'une fois par ligne, celle qui
+     * est affichée est celle qui juge l'état (#650, R5a). Elle n'est jamais
+     * recalculée ici.
+     */
+    public function stateOf(McpConnection $connection, DateTimeImmutable $now, DateTimeImmutable $deadline): OwnMcpConnectionState
     {
         $cause = $connection->revocationCause();
         if ($connection->isRevoked() && RevocationCause::Expired !== $cause) {
             return OwnMcpConnectionState::Revoked;
         }
 
-        if (RevocationCause::Expired === $cause || $now >= $this->expiresAt($connection)) {
+        if (RevocationCause::Expired === $cause || $now >= $deadline) {
             return OwnMcpConnectionState::Expired;
         }
 

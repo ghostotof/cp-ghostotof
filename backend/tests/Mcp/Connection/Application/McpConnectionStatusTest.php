@@ -60,7 +60,34 @@ final class McpConnectionStatusTest extends TestCase
             new ReflectionProperty(McpConnection::class, 'revocationCause')->setValue($connection, $cause);
         }
 
-        self::assertSame($expected, $this->connectionStatus()->stateOf($connection, new DateTimeImmutable($now)));
+        $status = $this->connectionStatus();
+
+        self::assertSame($expected, $status->stateOf($connection, new DateTimeImmutable($now), $status->expiresAt($connection)));
+    }
+
+    /**
+     * L'état se juge sur l'échéance reçue, jamais sur un recalcul : une seule
+     * évaluation par ligne (#650, R5a ; #652, T12).
+     */
+    public function testStateOfJudgesOnTheReceivedDeadlineNotOnARecomputation(): void
+    {
+        $granted = new DateTimeImmutable(self::GRANTED);
+        $connection = McpConnection::grant(
+            new CpgUser('jane', 'hashed-password'),
+            RegisteredMcpClient::of('client-1', 'Client de test', ['https://client.example.test/callback']),
+            'nominative:read',
+            $granted,
+        );
+        $connection->recordCodeExchangeAt($granted);
+        $status = $this->connectionStatus();
+        $now = new DateTimeImmutable('2026-11-15T10:00:00+01:00');
+
+        // La vraie échéance (2026-12-01) est postérieure à $now : recalculée, la connexion serait active.
+        self::assertGreaterThan($now, $status->expiresAt($connection));
+        self::assertSame(
+            OwnMcpConnectionState::Expired,
+            $status->stateOf($connection, $now, $now->modify('-1 second')),
+        );
     }
 
     public function testExpiresAtIsTheConnectionDeadline(): void
