@@ -475,8 +475,24 @@
     - E-3 (préexistant) : `testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries` (l. ~1304, lectures
       DQL `forAdministration()`) : noms de clients distincts et `assertSame` des paires, comme E1.
     - E-4 : mise en place et closure de lecture recopiées entre les deux tests de la lecture native → helpers privés.
-  - **Prochaine action** : **S5** (Tasks 16-18 du plan, étape 05, sonnet/high, un agent par tâche), relue avec
-    l'auditeur sécurité ; point fixe de la relecture S5 : le commit de cette reprise (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **S5 lancée**, point fixe de sa relecture : **`2dd76a7c`** (relue avec l'auditeur sécurité).
+  - **Task 16 faite** (sonnet/high) : `55221253` (`BackofficeMcpClientResource` `final readonly` + `fromClient()`,
+    `BackofficeMcpClientProvider` `GetCollection`/`Get`, test 4 méthodes). Contrôlé après `restart backend` :
+    `BackofficeMcpClientResourceTest|ApiRouteExposureTest|RouterScopeTest` OK (21) ; agent : `make back-test` 6640 OK,
+    qualité verte (lsp:check : 6 avertissements `ai.yaml` connus). Écarts :
+    1. **accepté** : la garde ne couvre que `GetCollection`/`Get` ; le plan se trompait (une route absente répond
+       **404**, le routeur passe avant le pare-feu). Chaque opération d'écriture entre dans le fournisseur de
+       `testEveryOperationRefusesAnAccountWithoutSuper` avec sa tâche (17A-2 : `POST` ; 17B : `PUT`, `DELETE`).
+    2. **Décision de l'utilisateur (2026-11-20)** : le `Get` lisait `all()` puis filtrait → **`findOneById(Uuid):
+       ?McpClient`** (lecture sans verrou) + comptage des actives **pour ce seul client**, réutilisés par `PUT`/`DELETE`
+       en 17B. Découpe (budget Mcp) : **17A-1** lecture d'item ; **17A-2** `POST` du plan.
+    3. **accepté** : `id` du DTO = UUID de la ligne `mcp_client` (pas le `client_id` public), comme `BackofficeUserResource`.
+    4. compteur `queriesDuring()` recopié dans le test (extraction en Task 19).
+  - **Brief 17A-2** (rappels) : ne pas envelopper `register()` dans une transaction (audit après COMMIT) ; câbler
+    `McpClientAdministratorInterface` si l'autowiring ne suffit pas ; `POST` dans la garde ; acteur du jeton dans
+    l'audit `mcp-client-registered`. **Brief 17B** : `PUT`/`DELETE` dans la garde ; fixture `remove-mcp-client.php`
+    assemblé à la main → par le conteneur si câblé ; F10 (supprimer un CIMD ne le bannit pas) va au frontend.
+  - **Prochaine action** : agent **17A-1** (sonnet/high). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
