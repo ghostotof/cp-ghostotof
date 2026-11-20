@@ -432,9 +432,22 @@
     vérifié) ; (b) déplacement du paragraphe « mois et années interdits dans `idle` » de `mcp-oauth-cycle-de-vie.md`
     (49,8 Ko, près du plafond de 50 000 octets) vers `mcp-oauth-purge.md`, à côté de `endUpperBound()`, liens vérifiés,
     `tools/check-claude-rules.sh` vert. Un commit chacune. **Point fixe de sa relecture** : le commit de cette reprise.
-  - **Prochaine action** : contrôler la preuve de la micro-série D, puis `/code-review medium diff <point fixe>...HEAD` ;
-    ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le compteur de requêtes vers
-    `tests/Support`), relecture complète, étape 08.
+  - **Micro-série D faite** (2026-11-20) : `19bbad43` — (a) `testExchangedExpiredReadHydratesClientAndAccountWithoutFurtherQueries`
+    (`McpConnectionRepositoryTest`, l. 1335 : deux expirées échangées, `em->clear()`, une seule requête en touchant
+    client et compte) ; `bafb0a05` — (b) paragraphe « mois et années interdits dans `idle` » déplacé de
+    `mcp-oauth-cycle-de-vie.md` (49 422 octets) vers `mcp-oauth-purge.md` (14 011 octets), renvoi à sa place.
+    Preuve rendue par l'agent : RED en retirant les deux `addJoinedEntityFromClassMetadata` (« 3 is identical to 1 »),
+    GREEN `OK (52 tests, 470 assertions)`, PHPStan/Rector OK, `check-claude-rules` conforme. **Contrôlé par le fil
+    principal** : `git log` (HEAD `bafb0a05`, arbre propre) et lecture du test ; **pas encore relancé** : PHPUnit du
+    fichier, `wc -c` des deux règles, `tools/check-claude-rules.sh`.
+    **Question ouverte (écrite, non tranchée)** : retirer **une seule** des deux jointures (`k` ou `u`) laisse le test
+    vert, cause non établie (piste : `$em->getUnitOfWork()->isUninitializedObject()` sur client et compte, ou fetch
+    EAGER / chargement par une autre voie) ; le test ne garde que la suppression des deux.
+  - Pause demandée par l'utilisateur le 2026-11-20 (reboot) après D ; aucun agent ne tourne.
+  - **Prochaine action** : finir le contrôle de D (les trois relances ci-dessus), décider de la question de la
+    jointure isolée (micro-série ou écrit pour la PR), puis `/code-review medium diff 1c0c4470...HEAD` (point fixe
+    inchangé : `1c0c4470`) ; ensuite S5 (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+    compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
