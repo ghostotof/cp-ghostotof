@@ -498,7 +498,16 @@
     dépôts, `ApiRouteExposureTest`) ; agent : `make back-test` 6645 OK, qualité verte. Écart accepté : rouge de
     `findOneById` inobservable (méthode magique `EntityRepository::__call`), remplacé par deux rouges sur le `Get`
     (8 clients gérés au lieu de 1 ; 2 requêtes au lieu de 1 pour un inconnu).
-  - **Prochaine action** : agent **17A-2** (sonnet/high), `POST` du plan. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **17A-2 faite** (sonnet/high) : `4d7f0617` (`BackofficeMcpClientInput`, `BackofficeMcpClientProcessor` sans
+    transaction → `McpClientAdministratorInterface::register()` (autowiré), acteur lu dans le jeton ; `POST` 201 ;
+    garde étendue au `POST` ; garde-fou source « pas de transaction » validé par mutation). Contrôlé après `restart
+    backend` : 32 tests OK ; agent : `make back-test` 6650 OK, qualité verte. **Écarts acceptés par l'utilisateur
+    (2026-11-20)** : (1) anonyme sur le `POST` → **403** (garde CSRF avant le pare-feu, comme l'invitation) ;
+    (2) `@use`/`@implements` sur l'union `Input|Resource` + `\assert` dans `create()` — la 17B y ajoute
+    `BackofficeMcpClientRevisionInput` ; (3) `rector.php` : `withSkip` provisoire de
+    `RemoveUnusedPrivateMethodParameterRector` et `ReturnNeverTypeRector` sur ce seul Processor — **la 17B le
+    retire** (obligatoire).
+  - **Prochaine action** : agent **17B** (sonnet/high, sensible : révocation ; pas de `-hme`). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
