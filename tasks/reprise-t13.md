@@ -409,6 +409,11 @@
       morte (déjà notée) ; C6 SQL natif contre la préférence QueryBuilder, justifié (constructeur de ligne) ;
       C9 `Version20261120120000Test::setUp()` recopie le `down()` de la migration suivante (sév. basse).
     - **Correction A lancée.** Ensuite B, C, puis relecture `/code-review medium diff 6de1ba0e...HEAD`.
+  - **Correction A faite** : `a51a472d` (`notMonotonicInActivity('idleLifetime')`, garde après la positivité ; RED
+    4 échecs P1M/P1Y/P1M2D/P1Y1M1D ; règle cycle-de-vie complétée). Contrôlé : 84 tests OK, arbre propre, aucune
+    inactivité en mois hors cas refusés ; agent : 6633 OK, PHPStan/Rector OK. **Correction B lancée** (sonnet/high) :
+    C7 (fin affichée portée par `EndedMcpConnection`), C8 (docblocks de la marge : calendrier PHP + garde de
+    `fromConfiguration()`), C3 (ligne de règle sur le `DROP INDEX` généré par `make:migration`).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
