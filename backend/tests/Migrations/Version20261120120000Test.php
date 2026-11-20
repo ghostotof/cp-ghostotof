@@ -35,6 +35,11 @@ final class Version20261120120000Test extends KernelTestCase
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         self::assertFalse($this->connection->isTransactionActive(), 'Une transaction est déjà ouverte avant le test.');
         $this->connection->beginTransaction();
+        // `Version20261120130000` (S4d) a remplacé le troisième index par un index
+        // d'expression : on rejoue ici, dans la transaction annulée, l'état que cette
+        // migration a trouvé (son `down()`), celui que `Version20261120120000` décrit.
+        $this->connection->executeStatement('DROP INDEX idx_mcp_connection_admin_exchanged_expired_activity');
+        $this->connection->executeStatement("CREATE INDEX idx_mcp_connection_admin_exchanged_expired ON mcp_connection (revoked_at, id) WHERE (((revocation_cause)::text = 'expired'::text) AND (code_exchanged_at IS NOT NULL))");
     }
 
     protected function tearDown(): void

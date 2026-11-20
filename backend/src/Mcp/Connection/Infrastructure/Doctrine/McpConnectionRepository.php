@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
@@ -11,11 +12,13 @@ use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query\ResultSetMappingBuilder;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -163,23 +166,49 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
     public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array
     {
-        $query = $this->forAdministration()
-            ->where('connection.revocationCause = '.$this->expiredLiteral())
-            ->andWhere('connection.codeExchangedAt IS NOT NULL')
-            ->orderBy('connection.revokedAt', 'DESC')
-            ->addOrderBy('connection.id', 'DESC')
-            ->setMaxResults($limit);
+        $em = $this->getEntityManager();
+        $connections = $em->getClassMetadata(McpConnection::class)->getTableName();
+        $clients = $em->getClassMetadata(McpClient::class)->getTableName();
+        $accounts = $em->getClassMetadata(CpgUser::class)->getTableName();
 
+        // Le client et le compte sont joints et hydratés par la même requête (pas de
+        // N+1), comme dans `forAdministration()`.
+        $rsm = new ResultSetMappingBuilder($em);
+        // Chaque colonne est renommée par un préfixe d'alias : `id`, `created_at`…
+        // se retrouvent dans les trois tables, et le mappeur refuse deux colonnes de même nom.
+        $rsm->addRootEntityFromClassMetadata(McpConnection::class, 'c', $this->prefixedColumns(McpConnection::class, 'c'));
+        $rsm->addJoinedEntityFromClassMetadata(McpClient::class, 'k', 'c', 'client', $this->prefixedColumns(McpClient::class, 'k'));
+        $rsm->addJoinedEntityFromClassMetadata(CpgUser::class, 'u', 'c', 'account', $this->prefixedColumns(CpgUser::class, 'u'));
+
+        // SQL natif, parce que DQL n'a pas de constructeur de ligne : la reprise
+        // `(activité, id) < (:activité, :id)` doit être une *Index Cond* de l'index
+        // d'expression partiel, là où la forme `a < x OR (a = x AND id < y)` se lit
+        // en filtre et coûte un balayage quadratique. Les trois termes (cause en
+        // littéral, `code_exchanged_at IS NOT NULL`, expression `COALESCE`) reprennent
+        // mot pour mot le prédicat et l'expression de l'index.
+        $sql = \sprintf(
+            'SELECT %s FROM %s c INNER JOIN %s k ON k.id = c.mcp_client_id INNER JOIN %s u ON u.id = c.account_id '
+            .'WHERE c.revocation_cause = %s AND c.code_exchanged_at IS NOT NULL%s '
+            .'ORDER BY COALESCE(c.last_used_at, c.granted_at) DESC, c.id DESC LIMIT %d',
+            $rsm->generateSelectClause(['c' => 'c', 'k' => 'k', 'u' => 'u']),
+            $connections,
+            $clients,
+            $accounts,
+            $this->expiredLiteral(),
+            null === $after ? '' : ' AND (COALESCE(c.last_used_at, c.granted_at), c.id) < (:afterActivity, :afterId)',
+            $limit,
+        );
+
+        $query = $em->createNativeQuery($sql, $rsm);
         if (null !== $after) {
-            // Clé de reprise sur `(revoked_at, id)`, typée comme les colonnes.
+            // Typés comme les colonnes : un instant sans type serait lu dans le fuseau de la session.
             $query
-                ->andWhere('(connection.revokedAt < :afterRevokedAt OR (connection.revokedAt = :afterRevokedAt AND connection.id < :afterId))')
-                ->setParameter('afterRevokedAt', $after->revokedAt, Types::DATETIMETZ_IMMUTABLE)
+                ->setParameter('afterActivity', $after->activity, Types::DATETIMETZ_IMMUTABLE)
                 ->setParameter('afterId', $after->id, UuidType::NAME);
         }
 
         /** @var list<McpConnection> */
-        return $query->getQuery()->getResult();
+        return $query->getResult();
     }
 
     /**
@@ -208,6 +237,23 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     private function expiredLiteral(): string
     {
         return "'".RevocationCause::Expired->value."'";
+    }
+
+    /**
+     * Les colonnes de l'entité, chacune renvoyée sous `<préfixe>_<colonne>`.
+     *
+     * @param class-string $class
+     *
+     * @return array<string, string>
+     */
+    private function prefixedColumns(string $class, string $prefix): array
+    {
+        $columns = [];
+        foreach ($this->getEntityManager()->getClassMetadata($class)->getColumnNames() as $column) {
+            $columns[$column] = $prefix.'_'.$column;
+        }
+
+        return $columns;
     }
 
     private function forAdministration(): QueryBuilder

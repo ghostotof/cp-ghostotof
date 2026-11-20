@@ -100,8 +100,14 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
 
     /**
      * Les {@see self::TERMINATED_LIMIT} dernières terminées à leur fin réelle, la
-     * plus récente d'abord : les deux lectures triées par SQL, puis les pages des
-     * expirées échangées tant qu'une ligne peut encore y entrer.
+     * plus récente d'abord : les deux lectures triées par SQL, puis **toutes** les
+     * pages des expirées échangées.
+     *
+     * Les pages se lisent par activité (S4d) : l'ancien arrêt anticipé comparait
+     * `revoked_at` à la 200e fin, ce que l'ordre par activité ne permet plus (la fin
+     * dépasse l'activité, l'arrêt serait trop précoce). L'arrêt par majorant
+     * `idleDeadline(activité)` + un jour vient à la tâche suivante (S4d-1b) ; d'ici
+     * là, la lecture est exhaustive, donc exacte.
      *
      * @return list<EndedMcpConnection>
      */
@@ -120,27 +126,9 @@ final readonly class AdministeredMcpConnections implements AdministeredMcpConnec
             }
             $terminated = $this->latestEndFirst([...$terminated, ...$this->endedAt($page, $zone)]);
             $after = ExchangedExpiredCursor::after($page[\count($page) - 1]);
-        } while (self::EXCHANGED_PAGE_SIZE === \count($page) && !$this->nothingCanEnter($after, $terminated));
+        } while (self::EXCHANGED_PAGE_SIZE === \count($page));
 
         return $terminated;
-    }
-
-    /**
-     * Le `revoked_at` borne la fin réelle d'une expirée : si celui de la dernière
-     * ligne lue (le curseur) est strictement sous la meilleure fin que la liste
-     * pleine ne peut plus battre, toutes les suivantes (`revoked_at` décroissant)
-     * finissent plus tôt. Strict : à égalité, l'identifiant peut encore départager
-     * en leur faveur. L'invariant « fin réelle ≤ `revoked_at` » est vrai **par
-     * construction** pour ces lignes ({@see self::endOf()} borne la fin d'une
-     * expirée échangée par son marquage), quelles que soient les durées
-     * configurées aujourd'hui : il ne repose plus sur celles de la purge.
-     *
-     * @param list<EndedMcpConnection> $terminated
-     */
-    private function nothingCanEnter(ExchangedExpiredCursor $cursor, array $terminated): bool
-    {
-        return self::TERMINATED_LIMIT <= \count($terminated)
-            && $cursor->revokedAt < $terminated[self::TERMINATED_LIMIT - 1]->endedAt;
     }
 
     /**

@@ -279,7 +279,8 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         [$views, $selects] = $this->listCountingSelects();
 
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
-        self::assertSame(4, $selects, 'Une seule page d\'expirées échangées : la suivante ne pouvait rien apporter.');
+        // S4d-1a : l'arrêt anticipé est suspendu (lecture par activité) ; S4d-1b rétablira 4 par le majorant.
+        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages (200, 200, 50) : la lecture est exhaustive en attendant le majorant.');
     }
 
     /** À l'inverse, des purges récentes forcent la lecture de toutes les pages (200, 200, 50). */
@@ -350,7 +351,8 @@ final class AdministeredMcpConnectionsTest extends KernelTestCase
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $views);
         $revoked = array_filter($views, static fn (AdministeredMcpConnectionView $view): bool => RevocationCause::Expired->value !== $view->revocationCause);
         self::assertCount(AdministeredMcpConnections::TERMINATED_LIMIT, $revoked, 'Que les 200 révocations : aucune expirée ne finit après J-25.');
-        self::assertSame(4, $selects, 'Une seule page d\'expirées échangées : les suivantes ne pouvaient rien apporter.');
+        // S4d-1a : l'arrêt anticipé est suspendu (lecture par activité) ; S4d-1b rétablira 4 par le majorant.
+        self::assertSame(6, $selects, 'Trois lectures fixes et trois pages : la lecture est exhaustive en attendant le majorant.');
     }
 
     /** Un accord jamais échangé, expiré puis purgé, se classe à octroi + délai du code, pas à sa purge. */

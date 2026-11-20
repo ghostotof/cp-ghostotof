@@ -129,19 +129,18 @@ interface McpConnectionRepositoryInterface
     public function findTerminatedForAdministration(int $limit): array;
 
     /**
-     * Les expirées dont le code **a été échangé**, par pages : `revoked_at`
-     * décroissant, l'identifiant décroissant départageant deux purges au même
-     * instant, **strictement après** `$after` (la dernière ligne de la page
-     * précédente, rendue par {@see ExchangedExpiredCursor::after()} ; `null` pour la
-     * première page). Leur fin réelle — la plus proche des échéances d'inactivité
-     * et de plafond — ne se range pas en SQL (PHP et PostgreSQL ne comptent pas de
-     * la même façon un jour sur un changement d'heure, ni un mois sur une fin de
-     * mois) : le service la calcule avec le domaine. Ce qui borne la lecture, c'est
-     * que la fin réelle ne dépasse jamais `revoked_at` : la purge juge en PHP
-     * (`isExpiredAt()`) et ne marque qu'une connexion échue
-     * (`.claude/rules/mcp-oauth-purge.md`). Le service s'arrête dès que `revoked_at`
-     * passe sous la meilleure fin qu'il ne peut plus battre. Même jointure que
-     * {@see self::findNotRevokedForAdministration()}.
+     * Les expirées dont le code **a été échangé**, par pages : activité
+     * décroissante — `last_used_at`, à défaut `granted_at` —, l'identifiant
+     * décroissant départageant deux activités au même instant, **strictement après**
+     * `$after` (la dernière ligne de la page précédente, rendue par
+     * {@see ExchangedExpiredCursor::after()} ; `null` pour la première page). Leur
+     * fin réelle — la plus proche des échéances d'inactivité et de plafond — ne se
+     * range pas en SQL (PHP et PostgreSQL ne comptent pas de la même façon un jour
+     * sur un changement d'heure, ni un mois sur une fin de mois) : le service la
+     * calcule avec le domaine. L'ordre par activité, plutôt que par `revoked_at`
+     * (que la purge pose identique sur tout un lot), est celui que le service sait
+     * borner : la fin réelle ne dépasse jamais l'échéance d'inactivité de
+     * l'activité. Même jointure que {@see self::findNotRevokedForAdministration()}.
      *
      * @param positive-int $limit
      *

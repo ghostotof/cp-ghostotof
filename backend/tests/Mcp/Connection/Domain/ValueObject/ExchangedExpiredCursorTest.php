@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Domain\ValueObject;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
-use App\Mcp\Connection\Domain\Exception\ConnectionNeverRevokedException;
 use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
@@ -15,39 +14,49 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Le curseur de la lecture par pages des expirées échangées (#652) : la clé de
- * reprise `(revoked_at, id)` de la dernière ligne lue. Une connexion sans
- * `revoked_at` n'a pas de place dans cet ordre : la fabrique le refuse par une
- * exception métier, au lieu de laisser un `null` devenir un paramètre de requête
- * (la page suivante serait alors vide, silencieusement).
- *
- * La construction depuis une connexion révoquée se prouve dans
- * `McpConnectionRepositoryTest` : le modèle n'a aucun mutateur de `revokedAt`,
- * seul le dépôt la pose.
+ * reprise `(COALESCE(last_used_at, granted_at), id)` de la dernière ligne lue,
+ * soit l'activité de la connexion et son identifiant.
  */
 final class ExchangedExpiredCursorTest extends TestCase
 {
-    public function testACursorCannotBeBuiltFromAConnectionThatWasNeverRevoked(): void
+    public function testTheActivityOfAConnectionNeverUsedIsItsGrant(): void
     {
-        $connection = McpConnection::grant(
-            new CpgUser('jane', 'hashed-password'),
-            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', ['https://client.example.test/callback']),
-            McpConnection::SCOPE_NOMINATIVE_READ,
-            new DateTimeImmutable('2026-11-20T10:00:00+01:00'),
-        );
+        $grantedAt = new DateTimeImmutable('2026-11-20T10:00:00+01:00');
+        $connection = $this->grantedAt($grantedAt);
 
-        $this->expectException(ConnectionNeverRevokedException::class);
+        $cursor = ExchangedExpiredCursor::after($connection);
 
-        ExchangedExpiredCursor::after($connection);
+        self::assertEquals($grantedAt, $cursor->activity);
+        self::assertTrue($connection->getId()->equals($cursor->id));
+    }
+
+    public function testTheActivityOfAConnectionUsedIsItsLastUse(): void
+    {
+        $connection = $this->grantedAt(new DateTimeImmutable('2026-11-20T10:00:00+01:00'));
+        $usedAt = new DateTimeImmutable('2026-11-21T09:00:00+01:00');
+        $connection->recordUseAt($usedAt);
+
+        self::assertEquals($usedAt, ExchangedExpiredCursor::after($connection)->activity);
     }
 
     public function testTheCursorKeepsTheInstantAndTheIdItWasGiven(): void
     {
-        $revokedAt = new DateTimeImmutable('2026-11-19T03:00:00+01:00');
+        $activity = new DateTimeImmutable('2026-11-19T03:00:00+01:00');
         $id = Uuid::v7();
 
-        $cursor = new ExchangedExpiredCursor($revokedAt, $id);
+        $cursor = new ExchangedExpiredCursor($activity, $id);
 
-        self::assertSame($revokedAt, $cursor->revokedAt);
+        self::assertSame($activity, $cursor->activity);
         self::assertSame($id, $cursor->id);
+    }
+
+    private function grantedAt(DateTimeImmutable $grantedAt): McpConnection
+    {
+        return McpConnection::grant(
+            new CpgUser('jane', 'hashed-password'),
+            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', ['https://client.example.test/callback']),
+            McpConnection::SCOPE_NOMINATIVE_READ,
+            $grantedAt,
+        );
     }
 }

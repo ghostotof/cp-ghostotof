@@ -27,6 +27,7 @@ use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -1155,42 +1156,66 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
-     * Les expirées échangées se lisent par clé sur `(revoked_at, id)` décroissants :
-     * la page suivante reprend strictement après la dernière ligne de la précédente,
-     * l'identifiant décroissant départageant deux purges au même instant.
+     * Les expirées échangées se lisent par activité décroissante : `last_used_at`,
+     * à défaut `granted_at`, quel que soit l'instant de la purge (#652, S4d). Une
+     * connexion jamais rafraîchie prend son octroi ; l'ordre de purge n'y est pour rien.
      */
-    public function testExchangedExpiredForAdministrationPagesByKeyset(): void
+    public function testExchangedExpiredForAdministrationIsOrderedByActivity(): void
     {
         $account = $this->persistAccount('jane');
         $client = $this->registerClient('https://client.example.test/metadata.json');
-        $purgedAt = new DateTimeImmutable('2026-11-19T03:00:00+01:00');
-        $all = [];
-        foreach (range(1, 5) as $day) {
-            $connection = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-09-%02dT10:00:00+02:00', $day)));
-            $this->connections()->add($connection);
-            $this->exchangeCodeOf($connection, $connection->grantedAt()->add(new DateInterval('PT1M')));
-            // Deux purges au même instant (jours 1 et 2), les autres échelonnées.
-            $this->connections()->revokeExpired([$connection->getId()], $day <= 2 ? $purgedAt->sub(new DateInterval('P5D')) : $purgedAt->add(new DateInterval('PT'.$day.'M')));
-            $all[] = $connection;
-        }
+        // Octroi le plus ancien mais utilisée le 10 ; jamais utilisée octroyée le 5 ; utilisée le 4, octroyée le 3.
+        $usedLate = $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', '2026-09-10T10:00:00+02:00');
+        $neverUsed = $this->expiredExchanged($account, $client, '2026-09-05T10:00:00+02:00', null);
+        $usedEarly = $this->expiredExchanged($account, $client, '2026-09-03T10:00:00+02:00', '2026-09-04T10:00:00+02:00');
         $this->em->clear();
 
-        $first = $this->connections()->findExchangedExpiredForAdministration(null, 2);
-        $second = $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($first[1]), 2);
-        $third = $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($second[1]), 2);
-        $tied = [$all[0]->getId()->toRfc4122(), $all[1]->getId()->toRfc4122()];
-        rsort($tied);
+        $ids = $this->idsOf($this->connections()->findExchangedExpiredForAdministration(null, 10));
 
-        self::assertSame(
-            [$all[4]->getId()->toRfc4122(), $all[3]->getId()->toRfc4122(), $all[2]->getId()->toRfc4122(), ...$tied],
-            [...$this->idsOf($first), ...$this->idsOf($second), ...$this->idsOf($third)],
-        );
-        self::assertCount(1, $third);
-        // Le curseur porte l'instant (non nul) et l'identifiant de la dernière ligne lue.
-        $cursor = ExchangedExpiredCursor::after($first[1]);
-        self::assertSame($first[1]->revokedAt(), $cursor->revokedAt);
-        self::assertTrue($first[1]->getId()->equals($cursor->id));
-        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration(ExchangedExpiredCursor::after($third[0]), 2));
+        self::assertSame([$usedLate->getId()->toRfc4122(), $neverUsed->getId()->toRfc4122(), $usedEarly->getId()->toRfc4122()], $ids);
+    }
+
+    /**
+     * Reprise stricte sur `(activité, id)` : aucune ligne omise ni doublée, y
+     * compris quand un lot de lignes de même activité (une jamais utilisée
+     * octroyée à l'instant où une autre a été utilisée) chevauche la limite de page.
+     */
+    public function testExchangedExpiredForAdministrationResumesExactlyAcrossTiedActivities(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $x = '2026-09-10T10:00:00+02:00';
+        $y = '2026-09-08T10:00:00+02:00';
+        $created = [
+            $this->expiredExchanged($account, $client, $x, null),
+            $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', $x),
+            $this->expiredExchanged($account, $client, $x, null),
+            $this->expiredExchanged($account, $client, $y, null),
+            $this->expiredExchanged($account, $client, '2026-09-02T10:00:00+02:00', $y),
+            $this->expiredExchanged($account, $client, '2026-09-06T10:00:00+02:00', null),
+            $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', $x),
+        ];
+        $this->em->clear();
+
+        // Attendu : activité décroissante, puis identifiant décroissant.
+        $expected = array_map(static fn (McpConnection $c): array => [($c->lastUsedAt() ?? $c->grantedAt())->getTimestamp(), $c->getId()->toRfc4122()], $created);
+        usort($expected, static fn (array $a, array $b): int => [$b[0], $b[1]] <=> [$a[0], $a[1]]);
+        $expectedIds = array_column($expected, 1);
+
+        $read = [];
+        $cursor = null;
+        $pages = 0;
+        do {
+            $page = $this->connections()->findExchangedExpiredForAdministration($cursor, 2);
+            $read = [...$read, ...$this->idsOf($page)];
+            $cursor = [] === $page ? null : ExchangedExpiredCursor::after($page[\count($page) - 1]);
+            ++$pages;
+        } while ([] !== $page && $pages < 10);
+
+        // Quatre pages pleines ou partielles, puis une vide.
+        self::assertSame($expectedIds, $read);
+        self::assertCount(\count($created), array_unique($read));
+        self::assertSame(5, $pages);
     }
 
     /** Les abandonnées sont bornées par `$limit` et rendues par octroi décroissant : la fin vaut octroi + une durée constante. */
@@ -1238,6 +1263,26 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     private function lifetimesFromContainer(): ConnectionLifetimes
     {
         return self::getContainer()->get(ConnectionLifetimes::class);
+    }
+
+    /** Une connexion échangée puis marquée expirée par la purge, d'octroi et de dernier usage donnés. */
+    private function expiredExchanged(CpgUser $account, McpClient $client, string $grantedAt, ?string $lastUsedAt): McpConnection
+    {
+        $connection = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable($grantedAt));
+        $this->connections()->add($connection);
+        $this->exchangeCodeOf($connection, $connection->grantedAt()->add(new DateInterval('PT1M')));
+        if (null !== $lastUsedAt) {
+            $this->em->getConnection()->executeStatement(
+                'UPDATE mcp_connection SET last_used_at = :at WHERE id = :id',
+                ['at' => new DateTimeImmutable($lastUsedAt), 'id' => $connection->getId()],
+                ['at' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+            );
+        }
+        // Un même instant de purge pour toutes : l'ordre ne doit pas en dépendre.
+        $this->connections()->revokeExpired([$connection->getId()], new DateTimeImmutable('2026-11-19T03:00:00+01:00'));
+        $this->em->refresh($connection);
+
+        return $connection;
     }
 
     /** Note l'échange du code de `$connection` à `$at`, par la voie de production. */

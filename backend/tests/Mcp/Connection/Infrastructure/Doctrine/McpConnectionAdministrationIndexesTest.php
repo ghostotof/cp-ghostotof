@@ -12,6 +12,7 @@ use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -45,7 +46,7 @@ final class McpConnectionAdministrationIndexesTest extends KernelTestCase
 {
     private const string TERMINATED = 'idx_mcp_connection_admin_terminated';
     private const string ABANDONED = 'idx_mcp_connection_admin_abandoned';
-    private const string EXCHANGED_EXPIRED = 'idx_mcp_connection_admin_exchanged_expired';
+    private const string EXCHANGED_EXPIRED = 'idx_mcp_connection_admin_exchanged_expired_activity';
 
     /** Le volume semé : assez pour que les statistiques ne soient pas celles d'une table vide. */
     private const int ROWS_PER_KIND = 300;
@@ -114,6 +115,41 @@ final class McpConnectionAdministrationIndexesTest extends KernelTestCase
         );
 
         $this->assertScanned(self::EXCHANGED_EXPIRED, $before, $this->scans());
+    }
+
+    /**
+     * Le tri `COALESCE(last_used_at, granted_at) DESC, id DESC` ET la reprise par
+     * comparaison de lignes sont servis par l'index d'expression : la clé de reprise
+     * est une condition d'index (`Index Cond`), pas un filtre, et aucun nœud `Sort`
+     * n'apparaît — en plan générique comme en plan personnalisé.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function planModes(): iterable
+    {
+        yield 'plan générique' => ['force_generic_plan'];
+        yield 'plan personnalisé' => ['force_custom_plan'];
+    }
+
+    #[DataProvider('planModes')]
+    public function testExchangedExpiredResumeIsAnIndexConditionWithoutSort(string $mode): void
+    {
+        $this->seedConnections();
+        $this->inGenericPlanTransaction();
+        $this->db->executeStatement('SET LOCAL plan_cache_mode = '.$mode);
+        $this->db->executeStatement(
+            'PREPARE resume(timestamptz, uuid) AS SELECT c.id FROM mcp_connection c'
+            ." WHERE c.revocation_cause = 'expired' AND c.code_exchanged_at IS NOT NULL"
+            .' AND (COALESCE(c.last_used_at, c.granted_at), c.id) < ($1, $2)'
+            .' ORDER BY COALESCE(c.last_used_at, c.granted_at) DESC, c.id DESC LIMIT 200',
+        );
+
+        $plan = implode("\n", array_map(static fn (mixed $row): string => \is_string($row) ? $row : "", $this->db->fetchFirstColumn("EXPLAIN EXECUTE resume('2026-10-15 00:00:00+02', '".Uuid::v7()->toRfc4122()."')")));
+
+        self::assertStringContainsString(self::EXCHANGED_EXPIRED, $plan, $plan);
+        // Générique : `ROW(…) < ROW($1, $2)` ; personnalisé : les valeurs en clair. Dans les deux cas, une Index Cond.
+        self::assertMatchesRegularExpression('/Index Cond: \(ROW\(COALESCE\(last_used_at, granted_at\), id\) < ROW\(/', $plan, $plan);
+        self::assertStringNotContainsString('Sort', $plan, $plan);
     }
 
     /**

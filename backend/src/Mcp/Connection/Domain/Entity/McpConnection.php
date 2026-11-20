@@ -62,12 +62,17 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'mcp_connection')]
 #[ORM\Index(name: 'idx_mcp_connection_active_pair', columns: ['account_id', 'mcp_client_id'], options: ['where' => '(revoked_at IS NULL)'])]
 // Les trois lectures bornées de la liste d'administration (#652, S4) : chacune lit son index
-// partiel dans l'ordre de son ORDER BY (parcours à l'envers), sans trier la table. Les
-// prédicats reprennent mot pour mot le WHERE des requêtes (McpConnectionRepository) : la
-// cause y est un littéral, faute de quoi PostgreSQL ne prouve pas l'implication.
+// partiel dans l'ordre de son ORDER BY, sans trier la table. Les prédicats reprennent mot
+// pour mot le WHERE des requêtes (McpConnectionRepository) : la cause y est un littéral,
+// faute de quoi PostgreSQL ne prouve pas l'implication. Deux seulement sont déclarés ici.
+// Le troisième, `idx_mcp_connection_admin_exchanged_expired_activity` (expirées échangées,
+// `((COALESCE(last_used_at, granted_at)) DESC, id DESC)`, S4d), est un index d'EXPRESSION :
+// l'ORM ne sait pas le déclarer (`columns` exige de vrais noms de colonne, `schema:update` lève
+// ColumnDoesNotExist) et DBAL ne le sait pas lire. Il ne vit donc que dans `Version20261120130000`,
+// et `doctrine:schema:update --dump-sql` voudrait le supprimer : ne jamais l'appliquer (aucune CI
+// ne compare le schéma, le garde est McpConnectionAdministrationIndexesTest, qui prouve son usage).
 #[ORM\Index(name: 'idx_mcp_connection_admin_terminated', columns: ['revoked_at', 'id'], options: ['where' => "((revoked_at IS NOT NULL) AND ((revocation_cause IS NULL) OR ((revocation_cause)::text <> 'expired'::text)))"])]
 #[ORM\Index(name: 'idx_mcp_connection_admin_abandoned', columns: ['granted_at', 'id'], options: ['where' => '(code_exchanged_at IS NULL)'])]
-#[ORM\Index(name: 'idx_mcp_connection_admin_exchanged_expired', columns: ['revoked_at', 'id'], options: ['where' => "(((revocation_cause)::text = 'expired'::text) AND (code_exchanged_at IS NOT NULL))"])]
 class McpConnection implements McpConnectionReference
 {
     /**
