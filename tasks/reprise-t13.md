@@ -534,8 +534,21 @@
       refusé) ; (revue 2 / audit I5) pas de `countActiveOfClient` pour `PUT`/`DELETE` dans le Provider ; (revue 4)
       Provider → `McpClientNotFoundException` au lieu de `null` (une seule forme de 404) ; (revue 3) `clientId` dans
       le corps d'un `PUT` refusé (aujourd'hui ignoré, 200).
-  - **Prochaine action** : agent **F-a** (sonnet/high), puis **F-b** (sonnet/high), puis relecture F
-    (`/code-review medium` sur `diff 139169f0...HEAD`, + auditeur si F-a touche l'admission CIMD). (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
+  - **F-a faite** (`f3260eba`, contrôlée : filtre `ValidMcpClientFields|BackofficeMcpClientResourceTest` 57 verts après
+    restart ; agent : `make back-test` 6676 verts, `make back-quality` propre). Refus dans `ValidMcpClientFieldsValidator`
+    (message fixe `ValidMcpClientFields::$verifiedDomainClientIdMessage`) ; sous-domaine, port, `http://`, majuscules,
+    domaine non listé restent ordinaires (règle exacte de `CimdClientId`/`AllowedClientDomains`).
+  - **Décisions de l'utilisateur (2026-11-20, après F-a)** :
+    - **F-c** (avant F-b) : même refus dans `McpClientRegistrar::register()` (exception métier typée), pour couvrir le
+      CLI `app:mcp:client:register` (`RegisterMcpClientCommand.php:81`) ; le validateur garde son 422 au chemin `clientId`.
+    - **Task 19 + PR** : requête de contrôle en lecture seule à lancer en préprod/prod avant la release (ligne
+      `registration = preregistered` dont le `client_id` est une URL `https://claude.ai/…` ou `https://chatgpt.com/…`) ;
+      une ligne trouvée se supprime par `DELETE` du backoffice. Pas de migration.
+    - Texte proposé par l'agent F-a pour `.claude/rules/mcp-oauth-cimd.md` : à reprendre en Task 19 (en retirant la
+      mention « CLI non couvert » une fois F-c faite).
+  - **Prochaine action** : agent **F-c** (sonnet/high), puis **F-b** (sonnet/high), puis relecture F
+    (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
+    l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
