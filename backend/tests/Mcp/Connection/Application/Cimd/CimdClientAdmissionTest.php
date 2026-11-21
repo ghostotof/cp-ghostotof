@@ -48,15 +48,45 @@ final class CimdClientAdmissionTest extends TestCase
         self::assertNull($admitted, 'Un identifiant qui n\'est pas une URL CIMD reste jugé par les lignes en base.');
     }
 
-    public function testAPreregisteredRowWinsWithoutAnyFetch(): void
+    /**
+     * Règle D-C : la ligne pré-enregistrée d'un domaine que la liste n'admet pas
+     * reste jugée par league, sans récupération ni audit.
+     */
+    public function testAPreregisteredRowOfADomainOutsideTheListWinsWithoutAnyFetch(): void
     {
         $row = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Claude Code', ['http://localhost/callback']);
         $resolver = $this->createMock(CimdClientResolverInterface::class);
         $resolver->expects(self::never())->method('resolve');
 
-        $admitted = $this->admission(new McpClientRepositoryFake($row, null), $resolver, $this->neverAudited())->admit(ClaudeCodeMetadata::CLIENT_ID);
+        $admitted = $this->admission(
+            new McpClientRepositoryFake($row, null),
+            $resolver,
+            $this->neverAudited(),
+            AllowedClientDomains::fromList(['chatgpt.com']),
+        )->admit(ClaudeCodeMetadata::CLIENT_ID);
 
-        self::assertNull($admitted, 'Une ligne pré-enregistrée prime : aucune récupération, league la juge.');
+        self::assertNull($admitted, 'Une ligne pré-enregistrée d\'un domaine non admis prime : aucune récupération, league la juge.');
+    }
+
+    /**
+     * Le trou de la règle D-C (#652) : une ligne pré-enregistrée écrite avant que
+     * son domaine entre dans la liste masquerait le vrai client CIMD (nom et
+     * redirections libres). Refus définitif, audité (hôte et cause), avant toute
+     * récupération.
+     */
+    public function testAPreregisteredRowOfAVerifiedDomainIsRefusedAndAuditedWithoutAnyFetch(): void
+    {
+        $row = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Claude Code', ['http://localhost/callback']);
+        $resolver = $this->createMock(CimdClientResolverInterface::class);
+        $resolver->expects(self::never())->method('resolve');
+        $audit = $this->createMock(SecurityAuditLoggerInterface::class);
+        $audit->expects(self::once())->method('mcpClientMetadataRefused')
+            ->with('claude.ai', ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain->value);
+
+        $refusal = $this->refusalOf($this->admission(new McpClientRepositoryFake($row, null), $resolver, $audit));
+
+        self::assertSame(ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain, $refusal->refusal);
+        self::assertFalse($refusal->refusal->isTransient(), 'Réessayer ne change rien tant que la ligne existe.');
     }
 
     public function testADomainOutsideTheListIsRefusedWithoutAnyFetchNorAudit(): void

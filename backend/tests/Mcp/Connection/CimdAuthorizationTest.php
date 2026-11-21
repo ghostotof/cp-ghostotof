@@ -384,6 +384,34 @@ final class CimdAuthorizationTest extends WebTestCase
     }
 
     /**
+     * Le trou de la règle D-C (#652) : une ligne pré-enregistrée écrite avant que
+     * son domaine entre dans la liste (insérée ici par le dépôt, la création la
+     * refuse désormais) masquerait le vrai client CIMD. Le point d'autorisation
+     * la refuse comme un client inconnu : aucune redirection, aucun code émis,
+     * aucune requête sortante, aucune résolution DNS ; l'audit porte l'hôte seul
+     * et la cause.
+     */
+    public function testAPreregisteredRowOfAVerifiedDomainIsRefusedAndAudited(): void
+    {
+        $this->serve(static fn (): never => self::fail('Aucune requête sortante : la ligne est refusée avant la récupération.'));
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(
+            RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', [self::CIMD_REDIRECT]),
+        );
+
+        $response = $this->authorize($this->cimdParameters());
+
+        $this->assertInvalidClient($response);
+        self::assertStringNotContainsString('code=', (string) $response->headers->get('Location'), 'Aucun code d\'autorisation n\'est émis.');
+        self::assertSame(0, $this->outboundRequests);
+        self::assertSame([], $this->resolver()->resolvedHosts());
+        $audited = self::securityAuditEvents('mcp-client-metadata-refused');
+        self::assertCount(1, $audited);
+        self::assertSame('claude.ai', $audited[0]['clientHost']);
+        self::assertSame('preregistered-row-shadows-verified-domain', $audited[0]['cause']);
+        self::assertStringNotContainsString(ClaudeCodeMetadata::CLIENT_ID, (string) json_encode($audited), 'L\'audit ne porte jamais l\'URL du client_id.');
+    }
+
+    /**
      * Remplace le client HTTP de la récupération par un `MockHttpClient`
      * entouré du filet de `services.yaml`.
      *

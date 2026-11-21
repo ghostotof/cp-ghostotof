@@ -36,9 +36,18 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
   `preregistered`, migration `Version20261113120000`). `McpClient::discovered()` builds the in-memory client
   of a document; `McpClient::cimdHost()` also answers for a *pre-registered* row whose id has the shape of
   a CIMD URL, so **every caller filters on `registration()`** first.
-- **A pre-registered row always wins** (D-C). `CimdClientAdmission::admit()`, in its real order:
+- **A pre-registered row wins, unless its domain is in the allowed list** (D-C, amended by #652).
+  `CimdClientAdmission::admit()`, in its real order:
   1. `CimdClientId::tryFrom()`: not a CIMD URL → `null`, league judges by the rows.
-  2. A row exists in mode `preregistered` → `null`: league judges it, **nothing is fetched**.
+  2. A row exists in mode `preregistered`: if its domain is **not** admitted → `null`, league judges it,
+     **nothing is fetched**. **If its domain is admitted (`allowed->allows()`), the row is refused**:
+     `ClientMetadataRefusedException::because(PreregisteredRowShadowsVerifiedDomain)`
+     (`preregistered-row-shadows-verified-domain`, definitive, so `invalid_client`), **audited**
+     (`mcp-client-metadata-refused`, host and cause, through `FailSafeAudit`) **before any outbound request**.
+     **Such a row would hide the real CIMD client of a verified domain behind a name and redirect URIs the
+     document never declared**: it is written before the domain entered the list (a domain added later, a list
+     emptied then restored), since creation refuses it (below). Its way out is **deleting it** (`DELETE` stays
+     allowed). A `cimd` row is unchanged (step 5).
   3. The host is not in the allowed list → `ClientMetadataRefusedException::because(DomainNotAllowed)`, **before
      any fetch and without audit**. Since the list is read before anything else, **removing a domain stops
      new authorizations of its clients at once, even those with a `cimd` row** (it stops nothing granted:
@@ -46,6 +55,12 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
   4. `CimdClientResolverInterface::resolve()`; a refusal other than `DomainNotAllowed` is audited
      (`mcp-client-metadata-refused`, through `FailSafeAudit`) then rethrown unchanged.
   5. Returns `McpClient::discovered($document, $clock->now())`.
+- **Creation refuses the same shadow** (#652, F-a and F-c): `AllowedClientDomains::isVerifiedClientId()`
+  (`CimdClientId::tryFrom()` then `allows()`, the admission's own rule) is checked at **two sites**, the
+  backoffice's `ValidMcpClientFieldsValidator` (422 on `clientId`) and `McpClientRegistrar::register()` (the
+  CLI `app:mcp:client:register` does not go through the validator), the latter raising
+  `McpClientIdOfVerifiedDomainException` **before any read or write**, so nothing is written nor audited.
+  Creation cannot cover a row that predates the list: that is what the admission's refusal is for.
 - **The validator hands the discovered client to league through a request attribute** (D-B), PSR-7 only:
   `CimdClientAdmissionInterface::REQUEST_ATTRIBUTE` (`mcp.cimd.discovered_client`), read by
   `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()`. The grant honours it **only if it is an
@@ -173,7 +188,8 @@ real document that needs it.
   controller reads `Retry-After` there); **the cause is never rendered to the client**.
 - `ClientMetadataRefusal` (the causes): `domain-not-allowed`, `throttled`, `unresolvable`, `address-blocked`,
   `unreachable`, `redirected`, `unexpected-status`, `upstream-error`, `unexpected-content-type`, `too-large`,
-  `invalid-document`. **Transient** (`isTransient()`): `throttled`, `unresolvable`, `unreachable`,
+  `invalid-document`, `preregistered-row-shadows-verified-domain` (#652, raised by the admission itself, never
+  by the resolver). **Transient** (`isTransient()`): `throttled`, `unresolvable`, `unreachable`,
   `upstream-error`.
 - **Audit** `mcp-client-metadata-refused` (`SecurityAuditLogger::mcpClientMetadataRefused($clientHost,
   $cause)`, `.claude/rules/security-authentication-audit.md`): **the host only**, never the URL, the

@@ -22,7 +22,10 @@ use Psr\Clock\ClockInterface;
  *     base (`null`) ;
  *  2. une ligne PRÉ-ENREGISTRÉE prime : elle est jugée par league, sans aucune
  *     récupération (un client déclaré à la main ne dépend jamais d'un hôte
- *     tiers) ;
+ *     tiers) — sauf si son domaine est admis par la liste : elle masquerait
+ *     le vrai client CIMD, elle est refusée (cause
+ *     {@see ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain}) et
+ *     tracée avant toute récupération (#652) ;
  *  3. un hôte hors de la liste est refusé AVANT toute récupération et sans
  *     audit ;
  *  4. le résolveur rend le document, ou un refus, tracé avec l'hôte et la
@@ -69,6 +72,17 @@ final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
 
         $row = $this->clients->findOneByClientId($clientId);
         if (null !== $row && ClientRegistration::Preregistered === $row->registration()) {
+            // D-C : la ligne déclarée à la main prime, SAUF si son domaine est
+            // admis. Écrite avant que le domaine entre dans la liste, elle
+            // masquerait le vrai client CIMD (nom et redirections libres) :
+            // refusée, tracée, avant toute récupération ; la sortie est sa
+            // suppression.
+            if ($this->allowed->allows($id)) {
+                $this->auditRefusal($id, ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain);
+
+                throw ClientMetadataRefusedException::because(ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain);
+            }
+
             return null;
         }
 
@@ -80,17 +94,25 @@ final readonly class CimdClientAdmission implements CimdClientAdmissionInterface
             $document = $this->resolver->resolve($id);
         } catch (ClientMetadataRefusedException $refused) {
             if (ClientMetadataRefusal::DomainNotAllowed !== $refused->refusal) {
-                // L'audit ne change jamais l'issue : sa panne ne doit pas
-                // remplacer le refus (l'appelant n'attrape que celui-ci).
-                $this->failSafeAudit->attempt(
-                    fn () => $this->audit->mcpClientMetadataRefused($id->host(), $refused->refusal->value),
-                    self::METADATA_REFUSAL_NOT_AUDITED,
-                );
+                $this->auditRefusal($id, $refused->refusal);
             }
 
             throw $refused;
         }
 
         return McpClient::discovered($document, $this->clock->now());
+    }
+
+    /**
+     * L'audit ne change jamais l'issue : sa panne ne doit pas remplacer le
+     * refus (l'appelant n'attrape que celui-ci). Seul un hôte déjà admis par la
+     * liste arrive ici (contrat de `mcpClientMetadataRefused()`).
+     */
+    private function auditRefusal(CimdClientId $id, ClientMetadataRefusal $refusal): void
+    {
+        $this->failSafeAudit->attempt(
+            fn () => $this->audit->mcpClientMetadataRefused($id->host(), $refusal->value),
+            self::METADATA_REFUSAL_NOT_AUDITED,
+        );
     }
 }
