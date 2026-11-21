@@ -138,7 +138,7 @@ paths:
   `isShadowedBy()`). That order also keeps a `client_id` that is not `McpClientId`-shaped (`%FF%FE`, a NUL) away from
   PostgreSQL, which used to reject it for an authentic code and end in the `critical` « Grant refusal not audited. »
   (`testAMalformedClientIdNeverReachesTheDatabase`, `MasqueradingPreregisteredRowTokenTest::testAMalformedClientIdWithAnAuthenticCodeIsRefusedWithoutAnAuditFailure`):
-  never call `isShadowingRow()` without that guard. **Every other** 4xx refusal of a known client carrying a grant costs
+  `isShadowingRow()` repeats that guard itself, so no future caller has to know it. **Every other** 4xx refusal of a known client carrying a grant costs
   one decryption more than league's, authentic or not (decrypting is how it is told), and one query for an authentic
   one — save the unproven replay, which decrypts nothing more (its query, the connection's reference, stays: the line
   names the account and the client). Every body parameter is read through
