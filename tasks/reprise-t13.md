@@ -800,7 +800,18 @@
     d'entrée de map ») n'est plus vrai en général.
   - **F1b-2 lancée** (opus/xhigh, même brief anti-saturation) : champ `shadowsVerifiedDomain` (ressource, Provider,
     Processor `POST`/`PUT`, test fonctionnel), HEAD `032511cb` au lancement. Puis F1c, puis F2.
-  - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
+  - **F1b-2 faite** (`a4f1d7dd`, 4 fichiers, +98/−9). **L'agent a échoué** (« Autocompact is thrashing ») **après**
+    avoir écrit le code et le test ; le fil principal a repris la vérification : `fromClient(McpClient, int,
+    AllowedClientDomains)` calcule `shadowsVerifiedDomain` par `isShadowedBy()` (en mémoire), Provider (liste,
+    détail) et Processor (`POST` toujours faux, la ligne masquante étant refusée en 422 ; `PUT`) injectent
+    `AllowedClientDomains` ; nouveau test `testARowShadowingAVerifiedDomainIsFlaggedInTheListAndTheDetail`.
+    Preuve : test ciblé `OK (34 tests, 438 assertions)` ; rouge vérifié en retirant les sources (`git apply -R`,
+    4 échecs « array has the key 'shadowsVerifiedDomain' ») ; `make back-quality` rc 0 ; `make back-test`
+    `OK (6755 tests, 128092 assertions)`. **Leçon** : dans la zone `Mcp`, même un agent bridé sature à la fin ;
+    pour F2+ (frontend), le risque tombe (règles frontend, pas `mcp*.md`).
+  - **Prochaine action** : **F1c** (frontend : `shadowsVerifiedDomain: boolean` dans `AdminMcpClient`, raison
+    dédiée au 422 `client-id-of-verified-domain` dans `AdminMcpErrorReason`), agent opus/xhigh ; puis F2…F7.
+    Point fixe de la relecture S6 : `4b07cdd9`. Puis **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
   - **C2, contenu** :
