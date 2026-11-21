@@ -12,6 +12,7 @@ use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Presentation\ApiResource\BackofficeMcpClientResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\Uid\Uuid;
@@ -23,6 +24,8 @@ use Symfony\Component\Uid\Uuid;
  * décompte de ses seules connexions actives. `Put` et `Delete` passent aussi
  * par le Provider d'item, mais n'en veulent que le client (une requête) : leur
  * écriture relit sous verrou, et le `PUT` recompte lui-même après sa révision.
+ * Le masquage d'un domaine vérifié (`shadowsVerifiedDomain`) n'ajoute aucune
+ * requête : il se juge en mémoire, sur la liste fermée des domaines.
  *
  * @implements ProviderInterface<BackofficeMcpClientResource>
  */
@@ -33,6 +36,7 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
     public function __construct(
         private McpClientRepositoryInterface $clients,
         private McpConnectionRepositoryInterface $connections,
+        private AllowedClientDomains $domains,
     ) {
     }
 
@@ -59,11 +63,14 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
     private function collection(): array
     {
         $counts = $this->connections->countActiveByClient();
+        // Une variable locale, capturée par la fonction fléchée : celle-ci reste `static`.
+        $domains = $this->domains;
 
         return array_map(
             static fn (McpClient $client): BackofficeMcpClientResource => BackofficeMcpClientResource::fromClient(
                 $client,
                 $counts[$client->getId()->toRfc4122()] ?? 0,
+                $domains,
             ),
             $this->clients->all(),
         );
@@ -84,6 +91,10 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
     {
         $client = $this->clients->findOneById($id) ?? throw McpClientNotFoundException::forTheCaller();
 
-        return BackofficeMcpClientResource::fromClient($client, $withActiveConnections ? $this->connections->countActiveOfClient($id) : 0);
+        return BackofficeMcpClientResource::fromClient(
+            $client,
+            $withActiveConnections ? $this->connections->countActiveOfClient($id) : 0,
+            $this->domains,
+        );
     }
 }

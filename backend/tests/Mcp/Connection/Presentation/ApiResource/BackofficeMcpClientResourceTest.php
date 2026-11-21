@@ -122,10 +122,16 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame('preregistered', $pre['registration']);
         self::assertSame($preregistered->registeredAt()->format(\DATE_ATOM), $pre['registeredAt']);
         self::assertSame(2, $pre['activeConnections']);
+        // Hors des domaines vérifiés : la ligne pré-enregistrée ne masque rien.
+        self::assertArrayHasKey('shadowsVerifiedDomain', $pre);
+        self::assertFalse($pre['shadowsVerifiedDomain']);
 
         $cimd = $byClientId[ClaudeCodeMetadata::CLIENT_ID];
         self::assertSame('cimd', $cimd['registration']);
         self::assertSame(0, $cimd['activeConnections']);
+        // Une ligne `cimd` est le client que son document décrit, jamais un masque.
+        self::assertArrayHasKey('shadowsVerifiedDomain', $cimd);
+        self::assertFalse($cimd['shadowsVerifiedDomain']);
     }
 
     public function testGetReturnsOneClientAndUnknownIdIs404(): void
@@ -157,6 +163,49 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    /**
+     * Une ligne `preregistered` dont le `client_id` relève d'un domaine vérifié
+     * masque ce domaine : c'est elle que le serveur OAuth sert, à la place du
+     * document CIMD. Le backoffice la signale (`shadowsVerifiedDomain`), dans la
+     * liste comme dans le détail ; une ligne pré-enregistrée hors de ces domaines
+     * ne masque rien. L'API refuse d'en écrire une depuis F1b-1 (422) : la ligne
+     * est posée directement en base, comme l'aurait laissée le code d'avant.
+     */
+    public function testARowShadowingAVerifiedDomainIsFlaggedInTheListAndTheDetail(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $shadow = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['https://client.example.test/callback']);
+        $this->clients()->add($shadow);
+        $this->clients()->add(RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Client pré-enregistré', ['https://client.example.test/callback']));
+
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->request('GET', '/api/backoffice/mcp/clients');
+
+        self::assertResponseIsSuccessful();
+        $rows = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($rows);
+        $shadows = [];
+        foreach ($rows as $row) {
+            self::assertIsArray($row);
+            self::assertIsString($row['clientId']);
+            self::assertArrayHasKey('shadowsVerifiedDomain', $row);
+            $shadows[$row['clientId']] = $row['shadowsVerifiedDomain'];
+        }
+
+        self::assertCount(2, $shadows);
+        self::assertTrue($shadows[ClaudeCodeMetadata::CLIENT_ID]);
+        self::assertFalse($shadows[self::PREREGISTERED_CLIENT_ID]);
+
+        $client->request('GET', '/api/backoffice/mcp/clients/'.$shadow->getId()->toRfc4122());
+
+        self::assertResponseIsSuccessful();
+        $detail = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($detail);
+        self::assertArrayHasKey('shadowsVerifiedDomain', $detail);
+        self::assertTrue($detail['shadowsVerifiedDomain']);
+    }
+
     public function testSuperRegistersAPreregisteredClient(): void
     {
         $client = self::createClient();
@@ -181,6 +230,9 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame('preregistered', $body['registration']);
         self::assertSame($stored->registeredAt()->format(\DATE_ATOM), $body['registeredAt']);
         self::assertSame(0, $body['activeConnections']);
+        // L'enregistrement d'une ligne masquante est refusé (422) : celle-ci ne masque rien.
+        self::assertArrayHasKey('shadowsVerifiedDomain', $body);
+        self::assertFalse($body['shadowsVerifiedDomain']);
 
         // L'audit est celui d'une requête : l'acteur est celui du jeton, jamais `console`.
         $event = self::singleSecurityAuditEvent('mcp-client-registered');
@@ -325,6 +377,9 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame('preregistered', $body['registration']);
         // Réviser ne coupe aucune connexion (D-E) : la réponse compte toujours la connexion active.
         self::assertSame(1, $body['activeConnections']);
+        // La révision d'une ligne masquante est refusée (422) : celle-ci ne masque rien.
+        self::assertArrayHasKey('shadowsVerifiedDomain', $body);
+        self::assertFalse($body['shadowsVerifiedDomain']);
 
         $revised = $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID);
         self::assertNotNull($revised);
@@ -523,7 +578,7 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         try {
             // Pour un Delete, API Platform passe la ressource lue par le Provider (ici
             // celle qu'il avait vue avant la disparition) ; le trait n'en lit que l'`id` d'URI.
-            $seen = new BackofficeMcpClientResource(self::UNKNOWN_ID, 'gone', 'Gone', [], 'preregistered', '2026-01-01T00:00:00+00:00', 0);
+            $seen = new BackofficeMcpClientResource(self::UNKNOWN_ID, 'gone', 'Gone', [], 'preregistered', '2026-01-01T00:00:00+00:00', 0, false);
             $processor->process($seen, new Delete(), ['id' => self::UNKNOWN_ID]);
             self::fail('Un client absent doit lever McpClientNotFoundException.');
         } catch (McpClientNotFoundException $exception) {

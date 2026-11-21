@@ -11,6 +11,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProcessor;
 use App\Mcp\Connection\Infrastructure\ApiPlatform\BackofficeMcpClientProvider;
 use DateTimeInterface;
@@ -86,6 +87,14 @@ final readonly class BackofficeMcpClientResource
     /**
      * @param list<string>           $redirectUris
      * @param 'preregistered'|'cimd' $registration
+     * @param bool                   $shadowsVerifiedDomain la ligne est `preregistered` et son
+     *                                                      `client_id` relève d'un domaine vérifié
+     *                                                      CIMD : elle masque ce domaine, le serveur
+     *                                                      OAuth sert le client à partir d'elle et
+     *                                                      jamais de son document de métadonnées
+     *                                                      (#651). Le backoffice la signale pour
+     *                                                      qu'elle soit supprimée ; une ligne `cimd`
+     *                                                      ne masque rien, par construction
      */
     public function __construct(
         public string $id,
@@ -95,15 +104,20 @@ final readonly class BackofficeMcpClientResource
         public string $registration,
         public string $registeredAt,
         public int $activeConnections,
+        public bool $shadowsVerifiedDomain,
     ) {
     }
 
     /**
-     * Fabrique unique du DTO. Le nombre de connexions actives est reçu de
-     * l'appelant (une requête `GROUP BY` pour tous les clients, jamais une par
-     * client) : l'entité ne le connaît pas.
+     * Fabrique unique du DTO, partagée par le Provider et le Processor. Le
+     * nombre de connexions actives est reçu de l'appelant (une requête
+     * `GROUP BY` pour tous les clients, jamais une par client) : l'entité ne le
+     * connaît pas. Le masquage d'un domaine vérifié est calculé ici, une seule
+     * fois pour toutes les opérations, par la règle même qu'appliquent
+     * `ClientRepository` et le point de jeton ({@see AllowedClientDomains::isShadowedBy()}) :
+     * en mémoire, sur la liste fermée des domaines, sans aucune requête.
      */
-    public static function fromClient(McpClient $client, int $activeConnections): self
+    public static function fromClient(McpClient $client, int $activeConnections, AllowedClientDomains $domains): self
     {
         return new self(
             id: $client->getId()->toRfc4122(),
@@ -113,6 +127,7 @@ final readonly class BackofficeMcpClientResource
             registration: $client->registration()->value,
             registeredAt: $client->registeredAt()->format(DateTimeInterface::ATOM),
             activeConnections: $activeConnections,
+            shadowsVerifiedDomain: $domains->isShadowedBy($client->registration(), $client->getClientId()),
         );
     }
 }

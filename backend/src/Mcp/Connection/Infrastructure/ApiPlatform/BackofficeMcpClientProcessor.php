@@ -8,6 +8,7 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Mcp\Connection\Application\McpClientAdministratorInterface;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
@@ -46,6 +47,7 @@ final readonly class BackofficeMcpClientProcessor implements ProcessorInterface
     public function __construct(
         private McpClientAdministratorInterface $clients,
         private McpConnectionRepositoryInterface $connections,
+        private AllowedClientDomains $domains,
     ) {
     }
 
@@ -67,8 +69,10 @@ final readonly class BackofficeMcpClientProcessor implements ProcessorInterface
             $this->redirectUris($data->redirectUris),
         );
 
-        // Un client neuf n'a aucune connexion : 0, sans relire la base.
-        return BackofficeMcpClientResource::fromClient($client, 0);
+        // Un client neuf n'a aucune connexion : 0, sans relire la base. Son masquage est
+        // jugé comme à la lecture (toujours faux : l'enregistrement d'une ligne masquante
+        // est refusé en 422 avant ce point), pour que la réponse dise la même chose qu'un GET.
+        return BackofficeMcpClientResource::fromClient($client, 0, $this->domains);
     }
 
     /**
@@ -90,7 +94,11 @@ final readonly class BackofficeMcpClientProcessor implements ProcessorInterface
 
         // Réviser ne touche pas aux connexions : leur nombre est relu (une requête) pour
         // que la réponse dise l'état courant, pas celui que le Provider a lu avant.
-        return BackofficeMcpClientResource::fromClient($client, $this->connections->countActiveOfClient($client->getId()));
+        return BackofficeMcpClientResource::fromClient(
+            $client,
+            $this->connections->countActiveOfClient($client->getId()),
+            $this->domains,
+        );
     }
 
     private function delete(Uuid $id): void
