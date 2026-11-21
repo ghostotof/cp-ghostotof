@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Presentation\ApiResource\BackofficeMcpClientResource;
@@ -36,9 +37,11 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
     }
 
     /**
-     * @return BackofficeMcpClientResource|list<BackofficeMcpClientResource>|null
+     * @return BackofficeMcpClientResource|list<BackofficeMcpClientResource>
+     *
+     * @throws McpClientNotFoundException le client de l'URI n'existe pas (404 typé)
      */
-    public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeMcpClientResource|array|null
+    public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeMcpClientResource|array
     {
         if ($operation instanceof GetCollection) {
             return $this->collection();
@@ -68,18 +71,18 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
 
     /**
      * Une vraie lecture d'item : le client, puis — pour un `Get` seulement — ses
-     * seules connexions actives. Un client inconnu rend `null` (404) **avant**
-     * tout décompte. Pour une écriture, `activeConnections` vaut 0 sans avoir
+     * seules connexions actives. Un client inconnu lève
+     * {@see McpClientNotFoundException} **avant** tout décompte : le même 404 typé
+     * que la course où le client disparaît entre ce Provider et l'écriture
+     * (`McpClientAdministrator`), plutôt que le 404 générique d'API Platform
+     * qu'un `null` produirait. Le message est fixe, sans l'identifiant demandé. Pour une écriture, `activeConnections` vaut 0 sans avoir
      * été lu : la ressource ne sert qu'à prouver l'existence du client, aucune
      * réponse d'écriture ne la sérialise (le `PUT` rend la ressource du
      * Processor, le `DELETE` aucun corps).
      */
-    private function item(Uuid $id, bool $withActiveConnections): ?BackofficeMcpClientResource
+    private function item(Uuid $id, bool $withActiveConnections): BackofficeMcpClientResource
     {
-        $client = $this->clients->findOneById($id);
-        if (!$client instanceof McpClient) {
-            return null;
-        }
+        $client = $this->clients->findOneById($id) ?? throw McpClientNotFoundException::forTheCaller();
 
         return BackofficeMcpClientResource::fromClient($client, $withActiveConnections ? $this->connections->countActiveOfClient($id) : 0);
     }

@@ -629,17 +629,65 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertCount(1, $loaded, 'Le détail ne lit que le client demandé, pas toute la liste.');
     }
 
-    /** Un identifiant inconnu : `null` (le 404), après la seule lecture du client — sans décompte à faire. */
-    public function testDetailOfAnUnknownClientIsNullAfterOneQuery(): void
+    /**
+     * Un identifiant inconnu : le Provider lève `McpClientNotFoundException`
+     * (la même que l'administrateur dans la course), après la seule lecture du
+     * client — sans décompte à faire.
+     */
+    public function testDetailOfAnUnknownClientRaisesTheNotFoundExceptionAfterOneQuery(): void
     {
         self::bootKernel();
         self::getContainer()->get(CpgUserRegistrarInterface::class)->register('jane', TestCredentials::plainPassword());
         $this->addClientsWithOneConnectionEach(2, 0);
 
-        $read = $this->queriesDuring(fn (): mixed => $this->provider()->provide(new Get(), ['id' => self::UNKNOWN_ID]));
+        $queries = $this->queriesDuring(function (): bool {
+            try {
+                $this->provider()->provide(new Get(), ['id' => self::UNKNOWN_ID]);
+            } catch (McpClientNotFoundException) {
+                return true;
+            }
 
-        self::assertNull($read['result']);
-        self::assertSame(1, $read['count'], 'Un client absent coûte une requête : pas de décompte pour rien.');
+            return false;
+        });
+
+        self::assertTrue($queries['result'], 'Un client absent lève McpClientNotFoundException (404 typé), il ne rend pas null.');
+        self::assertSame(1, $queries['count'], 'Un client absent coûte une requête : pas de décompte pour rien.');
+    }
+
+    /**
+     * Une seule forme de 404 pour un client absent : l'identifiant d'URI inconnu
+     * (Provider) et la course (administrateur) lèvent la même exception, donc
+     * le même problème typé — et non le 404 générique d'API Platform, d'un autre
+     * `type` et d'un autre `detail`. Le message est fixe : il ne recopie jamais
+     * l'identifiant demandé.
+     */
+    #[DataProvider('operationsOnAnUnknownClient')]
+    public function testAnUnknownClientAnswersTheSameTypedProblemWhateverTheOperation(string $method, ?array $body): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request($method, '/api/backoffice/mcp/clients/'.self::UNKNOWN_ID, server: $this->jsonWrite($csrf), content: null === $body ? null : self::jsonBody($body));
+
+        self::assertResponseStatusCodeSame(404);
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        $raised = McpClientNotFoundException::forTheCaller();
+        self::assertIsString($problem['type'] ?? null);
+        self::assertStringEndsWith('/errors/mcp-client-not-found', $problem['type']);
+        self::assertSame($raised->getDetail(), $problem['detail'] ?? null);
+        self::assertStringNotContainsString(self::UNKNOWN_ID, (string) $client->getResponse()->getContent(), 'Le corps ne recopie pas l\'identifiant demandé.');
+    }
+
+    /**
+     * @return iterable<string, array{string, array<string, mixed>|null}>
+     */
+    public static function operationsOnAnUnknownClient(): iterable
+    {
+        yield 'Get' => ['GET', null];
+        yield 'Put' => ['PUT', ['name' => 'Nom', 'redirectUris' => ['https://client.example.test/callback']]];
+        yield 'Delete' => ['DELETE', null];
     }
 
     /**
