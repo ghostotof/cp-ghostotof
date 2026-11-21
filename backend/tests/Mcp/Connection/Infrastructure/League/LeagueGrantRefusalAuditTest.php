@@ -226,28 +226,37 @@ final class LeagueGrantRefusalAuditTest extends TestCase
     }
 
     /**
-     * Un `client_id` hors domaine vérifié (inconnu, ou ligne ordinaire) est
-     * tranché en mémoire (#652) : league ne déchiffre rien sur `invalid_client`
-     * et l'audit non plus. Le lecteur de charge porte ici une clé que son
-     * secret vide rend inutilisable — tout déchiffrement lèverait
-     * EmptyApplicationSecretException —, et le fake compte les lectures SQL.
+     * Un `client_id` hors domaine vérifié est tranché en mémoire (#652) :
+     * league ne déchiffre rien sur `invalid_client` et l'audit non plus. Le
+     * second élément dit si le dépôt porte une ligne pour cet identifiant :
+     * une ligne ordinaire enregistrée, ou aucune ligne du tout (un identifiant
+     * inconnu, y compris de la forme d'une URL de métadonnées). Le lecteur de
+     * charge porte ici une clé que son secret vide rend inutilisable — tout
+     * déchiffrement lèverait EmptyApplicationSecretException —, et le fake
+     * compte les lectures SQL.
      *
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string, bool}>
      */
     public static function clientIdsOutsideAVerifiedDomain(): iterable
     {
-        yield 'URL de métadonnées d\'un hôte non vérifié, ligne ordinaire enregistrée' => ['https://client.example.test/unknown.json'];
-        yield 'domaine non vérifié' => [self::CLIENT_ID];
-        yield 'identifiant ordinaire' => ['plain-client'];
-        yield 'port, que CimdClientId ne reconnaît pas' => ['https://claude.ai:443/oauth/claude-code-client-metadata'];
+        yield 'URL de métadonnées d\'un hôte non vérifié, ligne ordinaire enregistrée' => ['https://client.example.test/unknown.json', true];
+        yield 'domaine non vérifié, ligne ordinaire enregistrée' => [self::CLIENT_ID, true];
+        yield 'identifiant ordinaire, ligne enregistrée' => ['plain-client', true];
+        yield 'port, que CimdClientId ne reconnaît pas, ligne enregistrée' => ['https://claude.ai:443/oauth/claude-code-client-metadata', true];
+        yield 'identifiant inconnu, aucune ligne' => ['unknown-client', false];
+        yield 'URL de métadonnées d\'un hôte non vérifié, aucune ligne' => ['https://client.example.test/unknown.json', false];
+        yield 'domaine non vérifié, aucune ligne' => [self::CLIENT_ID, false];
     }
 
     #[DataProvider('clientIdsOutsideAVerifiedDomain')]
-    public function testAClientOutsideAVerifiedDomainDecryptsNothingAndReadsNoRow(string $presentedClientId): void
+    public function testAClientOutsideAVerifiedDomainDecryptsNothingAndReadsNoRow(string $presentedClientId, bool $registered): void
     {
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::never())->method('mcpGrantRefused');
-        $clients = new McpClientRepositoryFake(RegisteredMcpClient::of($presentedClientId, 'Client ordinaire', ['http://localhost/callback']), null);
+        $clients = new McpClientRepositoryFake(
+            $registered ? RegisteredMcpClient::of($presentedClientId, 'Client ordinaire', ['http://localhost/callback']) : null,
+            null,
+        );
 
         $request = $this->exchangePresentedBy($presentedClientId);
         // Un secret vide : tout déchiffrement lèverait EmptyApplicationSecretException.

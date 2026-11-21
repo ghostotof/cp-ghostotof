@@ -148,14 +148,20 @@ paths:
   months after a revocation), and N addresses multiply the bound — the access token's decision; an application dedup
   was rejected (state to keep in a DBAL pool, ADR 0005, a query more per refusal, an attack burst shrunk to one line).
   **Revisited with CIMD (#651, #652), nothing to add**: for a client known by its metadata URL,
-  `presentingClientId` is an URL, but never a free string. For any refusal but `invalid_client`, a line is written only
-  for a client league itself served: `AuthCodeGrant` and `RefreshTokenGrant` (league 9.4.1) run `validateClient()`
-  before reading any artifact, and it asks `ClientRepository::getClientEntity()`, which goes through
-  `McpClientId::fromString()` (so ≤ 255 characters of `[A-Za-z0-9._:/-]` — no `%`, no blank, no control character)
-  and serves only a client that exists and is not a masking row. On `invalid_client` the masking row's id has first
-  passed `isVerifiedClientId()`, in `record()` and again in `isShadowingRow()`. `TokenEndpoint::isKnownClient()`
-  plays no part in it: it only decides the `invalid_target` that `TokenEndpoint` itself raises for a foreign
-  `resource`, and `isVerifiedClientId()` serves the `invalid_client` audit alone. Its volume is the same as any other client's: one line per refused request, bounded by the
+  `presentingClientId` is an URL, but never a free string. At the token endpoint, every audited refusal carries an id
+  of known shape, by one of three guards depending on the path. A refusal league raises (other than `invalid_client`)
+  comes from a client league itself served: `AuthCodeGrant` and `RefreshTokenGrant` (league 9.4.1) run the grant's
+  `validateClient()` before reading any artifact — for the code, the order is held by
+  `LoopbackAwareAuthCodeGrant::respondToAccessTokenRequest()`, which overrides league's — and it asks
+  `ClientRepository::getClientEntity()`, which goes through `McpClientId::fromString()` (so ≤ 255 characters of
+  `[A-Za-z0-9._:/-]` — no `%`, no blank, no control character) and serves only a client that exists and is not a
+  masking row. The `invalid_target` that `TokenEndpoint` raises itself for a foreign `resource`, before league runs,
+  is bounded by `TokenEndpoint::isKnownClient()` alone, which mirrors `getClientEntity()` (same shape check, same
+  lookup, same `isShadowedBy()`): the two must stay in agreement, and loosening `isKnownClient()` would let a free
+  string into a `foreign-resource` line
+  (`MasqueradingPreregisteredRowTokenTest::testAMalformedClientIdWithAForeignResourceIsRefusedAsInvalidClientAndNotAudited`).
+  On `invalid_client` the masking row's id has first passed `isVerifiedClientId()`, in `record()` and again in
+  `isShadowingRow()`. Its volume is the same as any other client's: one line per refused request, bounded by the
   nginx `oauth` zone, whatever the client's registration. `GrantRefusalAuditTest` produces each cause
   through the real league (forged payloads re-encrypted under the server's key for the expiries and a vanished
   connection, SQL alterations for every death under the lock) and, through `assertAudited()`, reads the exact keys and

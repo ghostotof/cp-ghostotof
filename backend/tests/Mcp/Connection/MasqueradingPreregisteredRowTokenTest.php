@@ -15,6 +15,7 @@ use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
@@ -239,6 +240,44 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
     }
 
     /**
+     * Le contrôle de la ressource se fait avant league : le `invalid_target`
+     * d'une ressource étrangère ne passe donc pas par `validateClient()`, et
+     * seul `TokenEndpoint::isKnownClient()` borne alors le `client_id`. Un
+     * identifiant mal formé n'est pas un client connu : `invalid_client`, sans
+     * ligne d'audit (une chaîne libre n'entre pas dans une ligne
+     * `foreign-resource`) et sans panne d'audit (rien n'atteint PostgreSQL).
+     */
+    #[DataProvider('malformedClientIds')]
+    public function testAMalformedClientIdWithAForeignResourceIsRefusedAsInvalidClientAndNotAudited(string $clientId): void
+    {
+        $code = $this->grantedCode();
+
+        $this->assertOAuthError(
+            $this->exchange($code, ['client_id' => $clientId, 'resource' => self::FOREIGN_RESOURCE]),
+            Response::HTTP_UNAUTHORIZED,
+            'invalid_client',
+        );
+
+        self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+        $failures = array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+        );
+        self::assertSame([], array_values($failures), 'Un client_id mal formé a atteint l\'audit : le refus est tombé en panne.');
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function malformedClientIds(): iterable
+    {
+        yield 'pourcentage littéral' => ['%FF%FE'];
+        yield 'octets non UTF-8' => ["\xFF\xFE"];
+        yield 'octet nul' => ["client\0id"];
+        yield 'plus de 255 caractères' => [str_repeat('a', 256)];
+    }
+
+    /**
      * Le client masquant mais un code qui n'est pas authentique : personne à désigner.
      */
     public function testAForgedCodeIsNotAudited(): void
@@ -296,6 +335,8 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
         self::assertSame('preregistered-row-shadows-verified-domain', $line['cause']);
         self::assertSame($grantType, $line['grantType']);
         self::assertSame(self::CLIENT_ID, $line['clientId'], 'clientId est celui de la connexion (A).');
+        // La ligne désigne la connexion que l'artefact présenté ouvre, celle du client A : pas une autre.
+        self::assertSame($this->connectionIdsOf(self::CLIENT_ID), [$line['connectionId']]);
         self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['presentingClientId'], 'presentingClientId est celui de la ligne masquante (B).');
         self::assertStringNotContainsString($presented, (string) json_encode($line));
     }
@@ -322,7 +363,12 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
     private function connectionIdsOf(string $clientId): array
     {
         return array_map(
-            static fn (mixed $id): string => \is_string($id) ? $id : '',
+            static function (mixed $id): string {
+                // Un identifiant qui n'est pas une chaîne ne doit pas devenir '' en silence.
+                self::assertIsString($id);
+
+                return $id;
+            },
             $this->mcpRows()->fetchFirstColumn('SELECT c.id FROM mcp_connection c JOIN mcp_client k ON k.id = c.mcp_client_id WHERE k.client_id = :clientId', ['clientId' => $clientId]),
         );
     }
