@@ -654,7 +654,11 @@
     `ClientRepository::getClientEntity()`), **F-f2b2** côté jeton (`LeagueGrantRefusalAudit`,
     `GrantRefusalAuditInterface::record()`, `GrantRefusal`, `LeagueGrantRefusals`/`CAUSE_OF_HINT`) ; puis **F-f2c**
     (`mcp-oauth-audits.md`, `mcp-oauth-cimd.md`, `security-authentication-audit.md`, `docs/rgpd/registre-traitements.md`).
-  - **Prochaine action** : F-f2b1 (étape 05, sonnet/high), F-f2b2, F-f2c, puis relecture `/code-review medium diff
+  - **F-f2b1 faite** (`f573a4fc`, 4 fichiers, commentaires seuls — contrôlé par diff) ; agent : back-quality,
+    back-test 6727 verts. Signalé hors périmètre, **écrit pour la Task 19** (faible, doc) : docblock de
+    `CimdClientAdmission` (~l.20, « refus du document ») et de `AuthorizationRequestValidator::admitted()` (« refus du
+    document » incomplet pour la cause masquante).
+  - **Prochaine action** : F-f2b2 (étape 05, sonnet/high), F-f2c, puis relecture `/code-review medium diff
     f749878d...HEAD` + `agent-skills:security-auditor` opus/high (point de jeton OAuth). Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
