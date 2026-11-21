@@ -46,6 +46,7 @@ use App\Mcp\Connection\Application\RevokedConnectionAudit;
 use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Application\DeadlockRetryInterface;
 use App\Tests\Support\ChildPhpProcess;
@@ -77,9 +78,11 @@ $clients = TestServiceLocator::locate(McpClientRepositoryInterface::class);
 $connections = TestServiceLocator::locate(McpConnectionRepositoryInterface::class);
 $transaction = TestServiceLocator::locate(TransactionInterface::class);
 $deadlockRetry = TestServiceLocator::locate(DeadlockRetryInterface::class);
+$allowedClientDomains = TestServiceLocator::locate(AllowedClientDomains::class);
 if (!$entityManager instanceof EntityManagerInterface || !$auditLogger instanceof Logger || !$securityAudit instanceof SecurityAuditLoggerInterface
     || !$logger instanceof LoggerInterface || !$registrar instanceof McpClientRegistrarInterface || !$clients instanceof McpClientRepositoryInterface
-    || !$connections instanceof McpConnectionRepositoryInterface || !$transaction instanceof TransactionInterface || !$deadlockRetry instanceof DeadlockRetryInterface) {
+    || !$connections instanceof McpConnectionRepositoryInterface || !$transaction instanceof TransactionInterface || !$deadlockRetry instanceof DeadlockRetryInterface
+    || !$allowedClientDomains instanceof AllowedClientDomains) {
     fwrite(\STDERR, "Services introuvables dans le conteneur de test.\n");
     exit(ChildPhpProcess::SETUP_FAILED);
 }
@@ -114,6 +117,7 @@ $administrator = new McpClientAdministrator(
     new RevokedConnectionAudit($securityAudit, new FailSafeAudit($logger)),
     new FailSafeAudit($logger),
     $securityAudit,
+    $allowedClientDomains,
 );
 
 $connection = $entityManager->getConnection();

@@ -47,7 +47,7 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
      **Such a row would hide the real CIMD client of a verified domain behind a name and redirect URIs the
      document never declared**: it is written before the domain entered the list (a domain added later, a list
      emptied then restored), since creation refuses it (below). Its way out is **deleting it** (`DELETE` stays
-     allowed). A `cimd` row is unchanged (step 5).
+     allowed; `PUT` is refused, below). A `cimd` row is unchanged (step 5).
   3. The host is not in the allowed list → `ClientMetadataRefusedException::because(DomainNotAllowed)`, **before
      any fetch and without audit**. Since the list is read before anything else, **removing a domain stops
      new authorizations of its clients at once, even those with a `cimd` row** (it stops nothing granted:
@@ -61,6 +61,11 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
   CLI `app:mcp:client:register` does not go through the validator), the latter raising
   `McpClientIdOfVerifiedDomainException` **before any read or write**, so nothing is written nor audited.
   Creation cannot cover a row that predates the list: that is what the admission's refusal is for.
+  **Revision refuses it too**: `McpClientAdministrator::revise()` (which receives `AllowedClientDomains`, not the
+  entity: the entity stays free of configuration) throws `McpClientIdOfVerifiedDomainException::cannotBeRevised()`
+  (422, fixed message without the URL, **no write, no `mcp-client-revised` audit**) for a `preregistered` row
+  whose id passes `isVerifiedClientId()`, checked under the `FOR UPDATE` lock. A `cimd` row keeps the entity's
+  own 409 (`McpClientDeclaredByDocumentException`). **`DELETE` stays allowed: it is the way out.**
 - **The validator hands the discovered client to league through a request attribute** (D-B), PSR-7 only:
   `CimdClientAdmissionInterface::REQUEST_ATTRIBUTE` (`mcp.cimd.discovered_client`), read by
   `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()`. The grant honours it **only if it is an

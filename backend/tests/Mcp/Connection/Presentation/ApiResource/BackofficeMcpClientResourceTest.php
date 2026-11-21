@@ -373,6 +373,40 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
     }
 
+    /**
+     * Une ligne pré-enregistrée d'un domaine vérifié (insérée par le dépôt : la
+     * création la refuse) masque le client CIMD. Sa révision est refusée en 422
+     * (#652), sans écriture ni audit ; sa suppression, la sortie voulue, reste
+     * permise (204).
+     */
+    public function testRevisingARowShadowingAVerifiedDomainIsRefusedButItsDeletionIsAllowed(): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $shadow = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['https://client.example.test/callback']);
+        $this->clients()->add($shadow);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $url = '/api/backoffice/mcp/clients/'.$shadow->getId()->toRfc4122();
+
+        $client->request('PUT', $url, server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Nom imposé',
+            'redirectUris' => ['https://attacker.example.test/callback'],
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringNotContainsString(ClaudeCodeMetadata::CLIENT_ID, (string) $client->getResponse()->getContent(), 'Le refus ne répète pas l\'URL.');
+        $stored = $this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($stored);
+        self::assertSame('Faux Claude Code', $stored->getName());
+        self::assertSame(['https://client.example.test/callback'], $stored->redirectUris());
+        self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
+
+        $client->request('DELETE', $url, server: ['HTTP_X_XSRF_TOKEN' => $csrf]);
+
+        self::assertResponseStatusCodeSame(204);
+        self::assertNull($this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID));
+    }
+
     public function testAnInvalidRevisionAnswers422AtItsPath(): void
     {
         $client = self::createClient();

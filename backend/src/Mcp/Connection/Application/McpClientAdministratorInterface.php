@@ -8,6 +8,7 @@ use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
@@ -40,9 +41,10 @@ interface McpClientAdministratorInterface
      *
      * @param non-empty-list<RedirectUri> $redirectUris
      *
-     * @throws McpClientNotFoundException           le client n'existe pas
-     * @throws McpClientDeclaredByDocumentException le client est déclaré par son document
-     * @throws InvalidMcpClientRedirectsException   les redirections distinctes sont hors de la borne de l'entité
+     * @throws McpClientNotFoundException            le client n'existe pas
+     * @throws McpClientDeclaredByDocumentException  le client est déclaré par son document
+     * @throws McpClientIdOfVerifiedDomainException  la ligne masque le client CIMD d'un domaine vérifié : elle se supprime, elle ne se révise pas (#652)
+     * @throws InvalidMcpClientRedirectsException    les redirections distinctes sont hors de la borne de l'entité
      */
     public function revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient;
 

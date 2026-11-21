@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
@@ -63,6 +65,7 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
         private RevokedConnectionAudit $revokedConnectionAudit,
         private FailSafeAudit $failSafeAudit,
         private SecurityAuditLoggerInterface $auditLogger,
+        private AllowedClientDomains $allowedClientDomains,
     ) {
     }
 
@@ -76,6 +79,15 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
      * un consentement concurrent (`FOR SHARE`) lit l'état d'avant ou d'après,
      * jamais entre les deux. Un client déclaré par son document est refusé
      * par l'entité avant toute écriture : rien n'est écrit, rien n'est audité.
+     *
+     * Une ligne PRÉ-ENREGISTRÉE dont l'identifiant est celui d'un domaine vérifié
+     * ({@see AllowedClientDomains::isVerifiedClientId()}) est refusée de la même
+     * façon (#652) : écrite avant que son domaine entre dans la liste, elle masque
+     * déjà le vrai client CIMD, et ses redirections ne doivent pas être
+     * entretenues ; elle se supprime. Le contrôle vit ici et non dans l'entité,
+     * qui ne dépend pas de la configuration.
+     *
+     * @throws McpClientIdOfVerifiedDomainException la ligne masque le client CIMD d'un domaine vérifié
      *
      * L'audit compte les redirections **écrites** (dédupliquées par l'entité), puis
      * celles ajoutées et retirées par rapport à l'état d'avant (des nombres, jamais
@@ -91,6 +103,12 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
         // l'écriture).
         [$client, $before, $after] = $this->transaction->run(function () use ($id, $name, $redirectUris): array {
             $locked = $this->clients->findOneByIdForUpdate($id) ?? throw McpClientNotFoundException::forTheCaller();
+            // Seule une ligne pré-enregistrée masque : une ligne `cimd` garde le
+            // refus de l'entité (le document fait foi), plus précis.
+            if (ClientRegistration::Preregistered === $locked->registration() && $this->allowedClientDomains->isVerifiedClientId($locked->getClientId())) {
+                throw McpClientIdOfVerifiedDomainException::cannotBeRevised();
+            }
+
             $before = $locked->redirectUris();
             $locked->revise($name, $redirectUris);
 

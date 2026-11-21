@@ -12,9 +12,11 @@ use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
@@ -355,6 +357,34 @@ final class McpClientAdministratorTest extends KernelTestCase
         self::assertSame($nameBefore, self::getContainer()->get(McpClientRepositoryInterface::class)->findOneByClientId($client->getClientId())?->getName());
     }
 
+    /**
+     * Une ligne pré-enregistrée dont l'identifiant est celui d'un domaine vérifié
+     * (écrite avant que le domaine entre dans la liste) masque le client CIMD : sa
+     * révision est refusée, sans écriture ni audit. Le message est fixe, sans l'URL.
+     */
+    public function testRevisingAPreregisteredRowOfAVerifiedDomainIsRefusedAndAuditsNothing(): void
+    {
+        $shadow = RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['https://client.example.test/callback']);
+        $repository = self::getContainer()->get(McpClientRepositoryInterface::class);
+        $repository->add($shadow);
+        $this->em->clear();
+
+        try {
+            $this->administrator()->revise($shadow->getId(), McpClientName::fromString('Autre nom'), [RedirectUri::fromString('https://attacker.example.test/callback')]);
+            self::fail('Une ligne qui masque un domaine vérifié ne se révise pas.');
+        } catch (McpClientIdOfVerifiedDomainException $refused) {
+            self::assertSame(McpClientIdOfVerifiedDomainException::cannotBeRevised()->getMessage(), $refused->getMessage());
+            self::assertStringNotContainsString(ClaudeCodeMetadata::CLIENT_ID, $refused->getMessage());
+        }
+
+        self::assertSame([], self::securityAuditRecords());
+        $this->em->clear();
+        $stored = $repository->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID);
+        self::assertNotNull($stored);
+        self::assertSame('Faux Claude Code', $stored->getName());
+        self::assertSame(['https://client.example.test/callback'], $stored->redirectUris());
+    }
+
     /** Depuis le backoffice, l'enregistrement est celui d'une requête : l'acteur n'est jamais `console`. */
     public function testRegisteringAuditsARequestOrigin(): void
     {
@@ -392,6 +422,7 @@ final class McpClientAdministratorTest extends KernelTestCase
             new RevokedConnectionAudit($auditLogger, $failSafeAudit),
             $failSafeAudit,
             $auditLogger,
+            $container->get(AllowedClientDomains::class),
         );
     }
 
