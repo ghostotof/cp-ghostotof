@@ -55,8 +55,11 @@ enum ClientMetadataRefusal: string
      * des domaines admis (#652, règle D-C) : elle masquerait le vrai client de ce
      * domaine, sous un nom et des redirections que le document ne dit pas. Écrite
      * avant que le domaine entre dans la liste (le backoffice et la CLI la
-     * refusent désormais à la création), elle est refusée au point d'autorisation
-     * jusqu'à sa suppression. Définitive : réessayer ne change rien tant que la
+     * refusent désormais à la création), elle est refusée au point d'autorisation,
+     * et revalidée au consentement (lecture et décision, par le même validateur),
+     * jusqu'à sa suppression. Le point de jeton refuse aussi cette ligne, sans
+     * passer par cette cause : voir la cause homonyme de {@see GrantRefusal}.
+     * Définitive : réessayer ne change rien tant que la
      * ligne existe.
      */
     case PreregisteredRowShadowsVerifiedDomain = 'preregistered-row-shadows-verified-domain';

@@ -87,13 +87,13 @@ final readonly class McpClientAdministrator implements McpClientAdministratorInt
      * entretenues ; elle se supprime. Le contrôle vit ici et non dans l'entité,
      * qui ne dépend pas de la configuration.
      *
-     * @throws McpClientIdOfVerifiedDomainException la ligne masque le client CIMD d'un domaine vérifié
-     *
      * L'audit compte les redirections **écrites** (dédupliquées par l'entité), puis
      * celles ajoutées et retirées par rapport à l'état d'avant (des nombres, jamais
      * une URI), et
      * suit le COMMIT ; sa panne ne fait pas croire que la révision a échoué
      * ({@see FailSafeAudit}).
+     *
+     * @throws McpClientIdOfVerifiedDomainException la ligne masque le client CIMD d'un domaine vérifié
      */
     public function revise(Uuid $id, McpClientName $name, array $redirectUris): McpClient
     {

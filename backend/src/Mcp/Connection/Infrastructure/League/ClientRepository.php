@@ -38,7 +38,10 @@ final readonly class ClientRepository implements ClientRepositoryInterface
      * foi, jamais une ligne saisie) n'est **pas** servie : `null`, donc
      * `invalid_client` de league. C'est le refus à la source pour le point de
      * jeton, l'échange du code et le renouvellement — une connexion née d'une
-     * telle ligne ne se renouvelle plus, un code en vol ne s'échange plus. Le
+     * telle ligne ne se renouvelle plus, un code en vol ne s'échange plus. Ce
+     * refus alimente aussi une ligne d'audit `mcp-grant-refused`, écrite par
+     * LeagueGrantRefusalAudit (même prédicat, `isShadowedBy()`) et seulement
+     * quand le grant présenté est authentique. Le
      * refus à l'autorisation et au consentement reste celui de
      * CimdClientAdmission.
      */

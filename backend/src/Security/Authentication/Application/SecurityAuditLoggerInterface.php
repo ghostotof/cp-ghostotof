@@ -116,7 +116,10 @@ interface SecurityAuditLoggerInterface
 
     /**
      * Issue #651 : le document de métadonnées d'un client MCP (CIMD) n'a pas été
-     * récupéré ou a été refusé. Aucun compte n'est en cause : l'acteur est
+     * récupéré ou a été refusé. Même événement, sans document (#652, règle D-C) :
+     * une ligne pré-enregistrée masque le client d'un domaine vérifié (cause
+     * `preregistered-row-shadows-verified-domain`), refusée à l'étape 2 de
+     * l'admission, avant toute requête sortante. Aucun compte n'est en cause : l'acteur est
      * anonyme par défaut. Le contexte porte l'hôte, tel que
      * `CimdClientId::host()` le rend (alphabet `[a-z0-9.-]`), et la cause, un
      * slug fixe ; ni l'URL, ni le `client_id`, ni le corps reçu n'y entrent.
@@ -133,6 +136,9 @@ interface SecurityAuditLoggerInterface
      * quota écrit lui aussi une ligne par requête (cause `throttled`), bornée
      * par nginx seul, comme tout quota anonyme du site (`contactThrottled()`,
      * `baseAccessThrottled()`) ; mais sa valeur ne sort jamais de la liste.
+     * La cause masquante n'a pas même ce quota par adresse : les limiteurs
+     * `mcp_client_metadata*` ne se consomment qu'à l'étape 4 (récupération),
+     * elle n'est bornée que par la zone nginx `oauth`.
      * Cette méthode ne vérifie rien : la garde est chez l'appelant.
      *
      * L'appelant (`CimdClientAdmission`) l'invoque au travers de
