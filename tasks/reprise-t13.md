@@ -598,7 +598,23 @@
     `AuthorizationRequestValidator` (aussi utilisé par `ConsentService`). Écrits : connexions déjà accordées à une
     ligne masquante non coupées (seule l'autorisation suivante est refusée) ; niveau d'audit `info` non relevé ; cause
     absente de `security-authentication-audit.md` (~l.83) et `docs/rgpd/registre-traitements.md` (l.178) → Task 19.
-  - **Prochaine action** : relecture F-e : `/code-review medium` sur `diff a0d0e611...HEAD` + auditeur (opus/high)
+  - **Relecture F-e faite** (point fixe `a0d0e611`, HEAD relu `f749878d`) : `/code-review medium` → 2 importants
+    (moyen : connexions/codes d'une ligne masquante toujours servis au point de jeton — refresh, échange de code ;
+    conf. basse : lignes masquantes déjà en préprod/prod au déploiement → requête de contrôle Task 19 déjà prévue)
+    + 6 nits ; auditeur opus/high → 0 critique/haut/moyen, 4 faibles (résidu jeton, oracle temporel déjà existant,
+    audit avant quota borné par nginx seul, doc périmée), positifs : consentement GET/POST fermé, B contrôle la
+    ligne verrouillée, enum complet. Question auditeur n° 4 (`McpClientRegistrar`/CLI) : déjà fermée par F-c.
+  - **Décisions de l'utilisateur (2026-11-21, tri F-e)** : résidu jeton → **micro-série F-f : refus au point de
+    jeton** (`ClientRepository::getClientEntity()` rend `null` → `invalid_client` pour une ligne `preregistered`
+    dont `isVerifiedClientId()` ; coupe échange de code et refresh) ; audit avant quota → **accepté, borne réelle
+    écrite** (zone nginx `oauth`) dans la règle et le registre RGPD ; doc et tests faibles → **dans F-f** (cause dans
+    `security-authentication-audit.md` et `docs/rgpd/registre-traitements.md`, borne fausse du registre, docblocks
+    `mcpClientMetadataRefused` et du cas d'enum, `@throws` de `revise()` en fin de docblock, assertion vide « aucun
+    code émis » de `CimdAuthorizationTest` ~l.398, cause exclue du provider `refusalsAfterTheList`, limites
+    acceptées dans `mcp-oauth-cimd.md` : consentement revalidé, oracle temporel, audit borné par nginx) ;
+    indicateur backoffice `shadowsVerifiedDomain` → **Task 19 / S6**.
+  - **Prochaine action** : micro-série F-f (étape 05, sonnet/high), puis relecture `diff f749878d...HEAD`
+    (+ auditeur opus/high : point de jeton OAuth).
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
