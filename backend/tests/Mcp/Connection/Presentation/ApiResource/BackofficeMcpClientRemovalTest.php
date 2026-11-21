@@ -78,6 +78,58 @@ final class BackofficeMcpClientRemovalTest extends WebTestCase
         self::assertSame(0, $this->countRows('SELECT count(*) FROM mcp_connection WHERE id = :id', ['id' => $held->connectionId]));
     }
 
+    /**
+     * Le cas courant du backoffice : un client **pré-enregistré** (le parcours
+     * OAuth complet enregistre le sien par `McpClient::register()`), détenu par
+     * une vraie connexion. Le `DELETE` répond 204 et supprime, **par cascade**,
+     * la ligne du client, celle de la connexion, ses codes d'autorisation, ses
+     * jetons d'accès et de rafraîchissement : aucune ligne ne survit à son
+     * client. Le journal dit la cause (`client-removed`) et l'acteur, et le
+     * jeton détenu n'ouvre plus rien. Test de caractérisation : il fixe un
+     * comportement déjà en place, que le test CIMD ci-dessus ne couvrait ni
+     * pour les codes ni pour les jetons.
+     */
+    public function testDeletingAPreregisteredClientRemovesItsRowAndEveryRowOfItsConnections(): void
+    {
+        $held = $this->holdMcpConnection();
+        $clientRowId = $this->rowIdOfHeldClient($held->clientId);
+        $byConnection = ['id' => $held->connectionId];
+        $tables = ['mcp_connection' => 'id', 'mcp_authorization_code' => 'connection_id', 'mcp_access_token' => 'connection_id', 'mcp_refresh_token' => 'connection_id'];
+
+        // Avant : chaque table porte au moins une ligne de la connexion, sans quoi la cascade ne prouverait rien.
+        foreach ($tables as $table => $column) {
+            self::assertGreaterThan(0, $this->countRows(\sprintf('SELECT count(*) FROM %s WHERE %s = :id', $table, $column), $byConnection), $table.' : une ligne avant la suppression.');
+        }
+
+        $adminId = $this->loginAs(self::ADMIN_USERNAME, [CpgUser::ROLE_SUPER]);
+        $this->client->request('DELETE', '/api/backoffice/mcp/clients/'.$clientRowId, server: [
+            'HTTP_X_XSRF_TOKEN' => $this->xsrfToken(),
+        ]);
+
+        self::assertResponseStatusCodeSame(Response::HTTP_NO_CONTENT);
+        self::assertSame('', (string) $this->client->getResponse()->getContent());
+        // Le journal se lit tout de suite : la requête suivante redémarre le noyau, et son relevé avec lui.
+        $revoked = self::singleSecurityAuditEvent('mcp-connection-revoked');
+        self::assertSame($held->connectionId, $revoked['connectionId']);
+        self::assertSame('client-removed', $revoked['cause']);
+        self::assertSame($adminId, $revoked['actor']);
+        $removed = self::singleSecurityAuditEvent('mcp-client-removed');
+        self::assertSame($held->clientId, $removed['clientId']);
+        self::assertSame('preregistered', $removed['registration']);
+        self::assertSame(1, $removed['cutConnections']);
+        self::assertSame($adminId, $removed['actor']);
+
+        self::assertSame(0, $this->countRows('SELECT count(*) FROM mcp_client WHERE id = :id', ['id' => $clientRowId]), 'La ligne du client est supprimée.');
+        foreach ($tables as $table => $column) {
+            self::assertSame(0, $this->countRows(\sprintf('SELECT count(*) FROM %s WHERE %s = :id', $table, $column), $byConnection), $table.' : cascade.');
+        }
+
+        // Le client MCP ne porte que son jeton : il n'ouvre plus rien.
+        $this->client->getCookieJar()->clear();
+        $this->postMcpInitialize($this->client, ['name' => 'phpunit', 'version' => '1.0.0'], self::bearer($held->accessToken));
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $this->client->getResponse()->getStatusCode());
+    }
+
     private function rowIdOfHeldClient(string $clientId): string
     {
         $id = $this->mcpRows()->fetchOne('SELECT id FROM mcp_client WHERE client_id = :clientId', ['clientId' => $clientId]);
