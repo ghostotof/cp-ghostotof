@@ -745,8 +745,12 @@
     corrigé — **PR/Task 19** : seconde garde de `isShadowingRow()` = mutant équivalent (défense en profondeur, non
     figée ; commit `bd0568ea` nommé `fix` alors que c'est du durcissement) ; test fonctionnel à deux connexions du
     même client (couvert strictement par l'unitaire).
-  - **Prochaine action** : F-i (agent sonnet/high, 2 fichiers : règle + `MasqueradingPreregisteredRowTokenTest.php`,
-    + `LeagueGrantRefusalAuditTest.php` pour (4)), puis relecture `diff 0f536f77...HEAD`. Ensuite S6 (F1-F7),
+  - **F-i faite** (`5991464d`, 3 fichiers, `backend/src` intact, contrôlé ; ordre `validateClient()` l.123 avant
+    `payloadOfTheCode()` l.124 vérifié). Test `testAMalformedClientIdWithAForeignResourceIsRefusedAsInvalidClientAndNotAudited`
+    (4 jeux) ; mutations rouges puis vertes ; back-test 6753 verts. Limite notée : la mutation de `isKnownClient()`
+    échoue sur le statut (400 vs 401) avant l'assertion « aucune ligne ». **Décision utilisateur : relecture de F-i par
+    `/code-review medium` seul** (doc + tests, pas d'audit sécu).
+  - **Prochaine action** : `/code-review medium diff 0f536f77...HEAD`, tri au critère d'arrêt. Ensuite S6 (F1-F7),
     Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
