@@ -727,10 +727,14 @@
     `cimd` découverte 400 / absente 401 (identifiants publics) ; identifiants proches d'un vérifié
     (`:443`, majuscules) préenregistrables — à décider ; question : test fonctionnel du `client_id` mal formé vu
     rouge sur `25bdc951` ? (à confirmer depuis le rapport F-g1).
-  - **Prochaine action** : F-h (agent sonnet/high, 4 fichiers : `mcp-oauth-audits.md`,
-    `LeagueGrantRefusalAudit.php`, `LeagueGrantRefusalAuditTest.php`, `MasqueradingPreregisteredRowTokenTest.php`),
-    puis relecture `/code-review medium diff 1ace7177...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7),
-    Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
+  - **F-h faite** (`bd0568ea`, 4 fichiers, contrôlé ; + `beb4eead` fil principal : phrase « never call
+    `isShadowingRow()` without that guard » (`mcp-oauth-audits.md:141`) devenue fausse, réécrite). Écart accepté :
+    `isShadowingRow()` garde `isShadowedBy()` (définition unique de la règle) derrière son propre
+    `isVerifiedClientId()`. Mutations rendues : autre connexion → 8 rouges ; garde de `record()` retiré → la garde de
+    `isShadowingRow()` suffit seule à protéger PostgreSQL. back-quality vert, back-test 6746 verts.
+  - **Prochaine action** : relecture de F-h — `/code-review medium diff 1ace7177...HEAD` + security-auditor
+    opus/high. Ensuite S6 (F1-F7), Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`),
+    relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
