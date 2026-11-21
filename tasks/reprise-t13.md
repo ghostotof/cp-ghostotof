@@ -613,11 +613,23 @@
     code émis » de `CimdAuthorizationTest` ~l.398, cause exclue du provider `refusalsAfterTheList`, limites
     acceptées dans `mcp-oauth-cimd.md` : consentement revalidé, oracle temporel, audit borné par nginx) ;
     indicateur backoffice `shadowsVerifiedDomain` → **Task 19 / S6**.
-  - **Prochaine action** : micro-série F-f (étape 05, sonnet/high), puis relecture `diff f749878d...HEAD`
-    (+ auditeur opus/high : point de jeton OAuth).
-    (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
-    l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
-    compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
+  - **F-f1 faite** (`b27f4fbe`, agent sonnet/high) : `ClientRepository::getClientEntity()` rend `null` pour une ligne
+    `preregistered` d'un domaine vérifié (`AllowedClientDomains` injecté) → `invalid_client` à l'échange de code et au
+    refresh ; `MasqueradingPreregisteredRowTokenTest` (7 tests, rouge vérifié : 4 échecs « 200 is identical to 401 »),
+    `LeagueRepositoriesTest` adapté. **Contrôlé par le fil principal** : `git log` (1 commit, 3 fichiers, arbre
+    propre), 4 fichiers de test du parcours relancés `OK (69 tests, 1169 assertions)` ; suite complète 6723 verts et
+    `back-quality` 0 selon l'agent. Mesures rendues : (a) `/api/oauth/revoke` d'une ligne masquante → 401
+    `invalid_client`, rien révoqué ; (b) aucun audit du refus au point de jeton (client « inconnu ») ; (c) jeton
+    d'accès déjà émis accepté à `/api/mcp` ≤ 1 h.
+  - **Décisions de l'utilisateur (2026-11-21, tri F-f1)** : (a) révocation refusée → **acceptée, documentée** (F-f2,
+    limites de `mcp-oauth-cimd.md`) ; (b) refus non audité → **micro-série F-f1b : auditer** (nouvelle cause
+    `GrantRefusal`, hôte seul, comme à l'autorisation ; tient l'invariant de `mcp-oauth-audits.md` « tout refus d'un
+    grant authentique au point de jeton est audité ») ; (c) jeton d'accès ≤ 1 h → **accepté, documenté** (F-f2 ;
+    lignes héritées seules, contrôlées par la requête des notes de release).
+  - **Prochaine action** : F-f1b (étape 05, sonnet/high), puis F-f2 (doc + tests faibles listés ci-dessus, + (a), (c),
+    la nouvelle cause d'audit dans la règle et le registre RGPD), puis relecture `/code-review medium diff
+    f749878d...HEAD` + `agent-skills:security-auditor` opus/high (point de jeton OAuth). Ensuite S6 (F1-F7), Task 19
+    (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
