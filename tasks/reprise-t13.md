@@ -785,7 +785,10 @@
     puis F1c, puis F2.
   - **F1b découpée** (> 4 fichiers) : **F1b-1** type de problème du 422 `cannotBeRevised()` (exception + tests) ;
     **F1b-2** champ `shadowsVerifiedDomain` (ressource, Provider, Processor, test fonctionnel). Agents en
-    **opus/xhigh** (demande de l'utilisateur). **F1b-1 lancée.**
+    **opus/xhigh** (demande de l'utilisateur). **F1b-1 lancée, échouée** (« Autocompact is thrashing » : contexte
+    saturé par les règles de la zone `Mcp`, rien d'écrit, arbre propre en `2ce9ac88`). **F1b-1 relancée** au même
+    cran (l'échec tient au contexte, pas au modèle), brief qui donne tous les faits d'avance : aucun `Read` dans
+    `backend/src/Mcp/` ni `backend/tests/Mcp/`, seulement `sed -n` / `grep -n` à sortie coupée.
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
