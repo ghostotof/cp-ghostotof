@@ -395,6 +395,11 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(422);
         self::assertStringNotContainsString(ClaudeCodeMetadata::CLIENT_ID, (string) $client->getResponse()->getContent(), 'Le refus ne répète pas l\'URL.');
+        // Un type propre : le frontend distingue ce refus d'un 422 de validation.
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertIsString($body['type']);
+        self::assertStringEndsWith('/errors/client-id-of-verified-domain', $body['type']);
         $stored = $this->clients()->findOneByClientId(ClaudeCodeMetadata::CLIENT_ID);
         self::assertNotNull($stored);
         self::assertSame('Faux Claude Code', $stored->getName());

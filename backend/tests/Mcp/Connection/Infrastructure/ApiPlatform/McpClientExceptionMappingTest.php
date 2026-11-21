@@ -73,6 +73,22 @@ final class McpClientExceptionMappingTest extends KernelTestCase
     }
 
     /**
+     * Les deux fabriques partagent un type problem+json, distinct d'un 422 de
+     * validation, et un statut qui concorde avec leur entrée de
+     * `exception_to_status`.
+     */
+    public function testTheVerifiedDomainRefusalCarriesItsOwnType(): void
+    {
+        foreach ([
+            McpClientIdOfVerifiedDomainException::cannotBePreregistered(),
+            McpClientIdOfVerifiedDomainException::cannotBeRevised(),
+        ] as $refusal) {
+            self::assertSame('/errors/client-id-of-verified-domain', $refusal->getType());
+            self::assertSame(422, $refusal->getStatus());
+        }
+    }
+
+    /**
      * @param class-string $class
      */
     #[DataProvider('loggedClasses')]
