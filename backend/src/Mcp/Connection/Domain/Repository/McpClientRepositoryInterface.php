@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use Symfony\Component\Uid\Uuid;
 
@@ -103,6 +104,16 @@ interface McpClientRepositoryInterface
      * elle ce qu'il avait validé plus tôt, la redirection demandée en tête.
      */
     public function findOneByClientIdForShare(string $clientId): ?McpClient;
+
+    /**
+     * La nature de l'enregistrement du client désigné par son identifiant
+     * public, par une instruction SQL hors de l'unité de travail : valable
+     * après une transaction annulée qui a fermé l'EntityManager (l'audit d'un
+     * refus au point de jeton, #652).
+     *
+     * @return ClientRegistration|null `null` si aucun client n'a cet identifiant
+     */
+    public function registrationOf(string $clientId): ?ClientRegistration;
 
     /**
      * Supprime le client **pour de bon** : les clés étrangères portent

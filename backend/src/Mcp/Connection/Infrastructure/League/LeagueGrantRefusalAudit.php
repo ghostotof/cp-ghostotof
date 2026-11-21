@@ -7,7 +7,9 @@ namespace App\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Application\FormEncodedRequest;
 use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
 use App\Mcp\Connection\Application\OAuthProfile;
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -68,15 +70,18 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
     public function __construct(
         private GrantPayloadReader $payloadReader,
         private McpConnectionRepositoryInterface $connections,
+        private McpClientRepositoryInterface $clients,
+        private AllowedClientDomains $allowedDomains,
         private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
     public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
-        if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT || 'invalid_client' === $refusal->getErrorType()) {
+        if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT) {
             return;
         }
+        $clientRefused = 'invalid_client' === $refusal->getErrorType();
 
         $grantType = FormEncodedRequest::stringParameter($request, 'grant_type');
         $parameter = null !== $grantType ? (self::ARTIFACT_PARAMETER[$grantType] ?? null) : null;
@@ -97,7 +102,31 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
             return;
         }
 
+        if ($clientRefused) {
+            // Le client n'a pas été authentifié : seul le refus d'une ligne
+            // pré-enregistrée masquante (règle D-C, #652) désigne la
+            // connexion de l'artefact authentique ; tout autre `invalid_client`
+            // (client inconnu) ne désigne rien.
+            if (!$this->isShadowingRow($presentingClientId)) {
+                return;
+            }
+            $this->write($connectionId, $grantType, GrantRefusal::PreregisteredRowShadowsVerifiedDomain, $presentingClientId);
+
+            return;
+        }
+
         $this->write($connectionId, $grantType, LeagueGrantRefusals::causeOf($refusal), $presentingClientId);
+    }
+
+    /**
+     * La ligne du client présenté masque-t-elle le client CIMD d'un domaine
+     * vérifié ? Une requête SQL native : l'EntityManager est fermé.
+     */
+    private function isShadowingRow(string $presentingClientId): bool
+    {
+        $registration = $this->clients->registrationOf($presentingClientId);
+
+        return null !== $registration && $this->allowedDomains->isShadowedBy($registration, $presentingClientId);
     }
 
     /**

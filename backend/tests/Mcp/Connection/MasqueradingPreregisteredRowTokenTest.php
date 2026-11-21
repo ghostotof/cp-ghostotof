@@ -120,16 +120,66 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
     }
 
     /**
-     * Mesure (b) : le refus au point de jeton laisse-t-il une ligne mcp-grant-refused ?
+     * Le refus au point de jeton laisse une ligne mcp-grant-refused, une
+     * seule, de même forme que les autres refus d'un artefact authentique.
      */
-    public function testTheTokenRefusalOfAMasqueradingRowLeavesNoGrantRefusedLine(): void
+    public function testTheCodeExchangeOfAMasqueradingRowIsAudited(): void
     {
         $code = $this->cimdCode();
         $this->masquerade();
 
         $this->assertOAuthError($this->exchange($code, $this->cimdOverrides()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
 
+        $this->assertAuditedOnce('authorization_code', $code);
+    }
+
+    public function testTheRefreshOfAMasqueradingRowIsAudited(): void
+    {
+        $tokens = $this->json($this->exchange($this->cimdCode(), $this->cimdOverrides()));
+        self::assertIsString($tokens['refresh_token']);
+        $this->masquerade();
+
+        $this->assertOAuthError($this->refresh($tokens['refresh_token'], $this->cimdClient()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
+        $this->assertAuditedOnce('refresh_token', $tokens['refresh_token']);
+    }
+
+    /**
+     * Un identifiant inconnu ne désigne aucune ligne masquante : pas de ligne.
+     */
+    public function testAnUnknownClientIsNotAudited(): void
+    {
+        $code = $this->cimdCode();
+        $this->masquerade();
+
+        $this->assertOAuthError($this->exchange($code, ['client_id' => 'https://claude.ai/unknown.json', 'redirect_uri' => self::CIMD_REDIRECT]), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
         self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+    }
+
+    /**
+     * Le client masquant mais un code qui n'est pas authentique : personne à désigner.
+     */
+    public function testAForgedCodeIsNotAudited(): void
+    {
+        $this->cimdCode();
+        $this->masquerade();
+
+        $this->assertOAuthError($this->exchange('forged-code', $this->cimdOverrides()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
+        self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+    }
+
+    private function assertAuditedOnce(string $grantType, string $presented): void
+    {
+        $line = self::singleSecurityAuditEvent('mcp-grant-refused');
+
+        self::assertEqualsCanonicalizing(['event', 'userId', 'connectionId', 'clientId', 'cause', 'grantType', 'presentingClientId', 'actor', 'ip', 'path'], array_keys($line));
+        self::assertSame('preregistered-row-shadows-verified-domain', $line['cause']);
+        self::assertSame($grantType, $line['grantType']);
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['clientId']);
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['presentingClientId']);
+        self::assertStringNotContainsString($presented, (string) json_encode($line));
     }
 
     /**

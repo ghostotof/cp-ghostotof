@@ -53,6 +53,11 @@ final class McpClientRepositoryFake implements McpClientRepositoryInterface
         return $this->existing;
     }
 
+    public function registrationOf(string $clientId): ?ClientRegistration
+    {
+        return null !== $this->existing && $clientId === $this->existing->getClientId() ? $this->existing->registration() : null;
+    }
+
     public function add(McpClient $client): void
     {
         if (null !== $this->failure) {

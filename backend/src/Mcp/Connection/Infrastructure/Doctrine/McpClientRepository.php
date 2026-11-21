@@ -39,6 +39,16 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
             ->getOneOrNullResult();
     }
 
+    public function registrationOf(string $clientId): ?ClientRegistration
+    {
+        $registration = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT registration FROM mcp_client WHERE client_id = :clientId',
+            ['clientId' => $clientId],
+        );
+
+        return \is_string($registration) ? ClientRegistration::tryFrom($registration) : null;
+    }
+
     public function add(McpClient $client): void
     {
         $this->getEntityManager()->persist($client);

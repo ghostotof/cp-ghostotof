@@ -63,4 +63,15 @@ final readonly class AllowedClientDomains
 
         return null !== $cimdClientId && $this->allows($cimdClientId);
     }
+
+    /**
+     * Une ligne de cette nature, portant cet identifiant, masque-t-elle le
+     * client CIMD d'un domaine vérifié (règle D-C, #652) ? Écrite une fois :
+     * le refus à la source (`ClientRepository`) et l'audit du refus au point
+     * de jeton la posent de la même façon.
+     */
+    public function isShadowedBy(ClientRegistration $registration, string $clientId): bool
+    {
+        return ClientRegistration::Preregistered === $registration && $this->isVerifiedClientId($clientId);
+    }
 }

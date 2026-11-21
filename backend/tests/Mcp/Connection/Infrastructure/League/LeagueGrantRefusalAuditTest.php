@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Infrastructure\League\GrantPayloadReader;
 use App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusalAudit;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Tests\Mcp\Connection\Application\McpClientRepositoryFake;
 use App\Tests\Support\TestKeys;
 use Defuse\Crypto\Crypto;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -163,7 +165,7 @@ final class LeagueGrantRefusalAuditTest extends TestCase
 
     private function auditWith(McpConnectionRepositoryInterface $connections, SecurityAuditLoggerInterface $auditLogger): LeagueGrantRefusalAudit
     {
-        return new LeagueGrantRefusalAudit(new GrantPayloadReader(new OAuthEncryptionKey(TestKeys::material())), $connections, $auditLogger);
+        return new LeagueGrantRefusalAudit(new GrantPayloadReader(new OAuthEncryptionKey(TestKeys::material())), $connections, new McpClientRepositoryFake(null, null), AllowedClientDomains::fromList(['claude.ai']), $auditLogger);
     }
 
     private function exchangeOfAnAuthenticCode(): ServerRequest

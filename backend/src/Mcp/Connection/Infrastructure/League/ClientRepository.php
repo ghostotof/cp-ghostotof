@@ -8,7 +8,6 @@ use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
-use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use SensitiveParameter;
@@ -57,8 +56,7 @@ final readonly class ClientRepository implements ClientRepositoryInterface
             return null;
         }
 
-        if (ClientRegistration::Preregistered === $client->registration()
-            && $this->allowedDomains->isVerifiedClientId($client->getClientId())) {
+        if ($this->allowedDomains->isShadowedBy($client->registration(), $client->getClientId())) {
             return null;
         }
 

@@ -102,6 +102,14 @@ enum GrantRefusal: string
     case ForeignResource = 'foreign-resource';
 
     /**
+     * Le client présenté est une ligne pré-enregistrée qui porte l'identifiant
+     * d'un domaine vérifié et masque le client CIMD (règle D-C, #652) :
+     * `ClientRepository` ne le rend plus, league répond `invalid_client`.
+     * Même valeur que la cause de `ClientMetadataRefusal`, au point de jeton.
+     */
+    case PreregisteredRowShadowsVerifiedDomain = 'preregistered-row-shadows-verified-domain';
+
+    /**
      * Tout autre refus de league : aucun refus d'un artefact authentique ne
      * se perd. Un libellé de league changé à sa montée de version y tombe, et
      * le test de sa cause rougit.
