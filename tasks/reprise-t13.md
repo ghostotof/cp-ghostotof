@@ -783,6 +783,9 @@
     `shadowsVerifiedDomain: boolean` dans `AdminMcpClient` et raison d'erreur dédiée dans `AdminMcpErrorReason`.
   - **Prochaine action** : agent **F1b** (backend, zone `Mcp` : budget de contexte, ≤ 4 fichiers sinon découper),
     puis F1c, puis F2.
+  - **F1b découpée** (> 4 fichiers) : **F1b-1** type de problème du 422 `cannotBeRevised()` (exception + tests) ;
+    **F1b-2** champ `shadowsVerifiedDomain` (ressource, Provider, Processor, test fonctionnel). Agents en
+    **opus/xhigh** (demande de l'utilisateur). **F1b-1 lancée.**
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
