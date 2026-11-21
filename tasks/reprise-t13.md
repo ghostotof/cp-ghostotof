@@ -697,7 +697,10 @@
     Piège pour les docblocks et règles : `CommentedClassNamesExistTest` lit `\A…\z` comme un nom de classe.
   - **Décision Q4 (utilisateur, 2026-11-21)** : unifier — micro-série F-g1b, `isKnownClient()` applique
     `isShadowedBy()` comme `ClientRepository` (`invalid_client` + cause dédiée).
-  - **Prochaine action** : F-g1b (étape 05, sonnet/high), puis F-g2 (doc, sonnet/high), puis relecture
+  - **F-g1b faite** (`6148d69b`, 2 fichiers ; contrôlé : 16 tests verts, suite complète 6745 OK selon l'agent).
+    `TokenEndpoint::isKnownClient()` applique `isShadowedBy()` ; rouge vérifié (`invalid_target` 400 au lieu de
+    401) ; un client CIMD non masqué avec `resource` étranger garde `invalid_target`.
+  - **Prochaine action** : F-g2 (doc, sonnet/high), puis relecture
     `/code-review medium diff 25bdc951...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
