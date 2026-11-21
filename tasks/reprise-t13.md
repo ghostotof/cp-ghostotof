@@ -765,6 +765,15 @@
     du cran par défaut sonnet/high). **Point fixe de la relecture S6** : le commit de cette reprise. Questions à rendre
     par F1 (non tranchées) : `expiresAt` d'une révoquée (nullable ou non, la vue d'administration le rend toujours) ;
     indicateur `shadowsVerifiedDomain` (champ backend absent, S6 ou Task 19).
+  - **F1 faite** (`d09b9ad6`, opus/xhigh, 4 fichiers ; contrôlé par le fil principal : arbre propre, `make front-lint`
+    et `make front-build` rc=0 ; agent : `make front-test` 2786 verts). Types confrontés aux DTO backend par script
+    (rouge puis vert, mutation rouge). Écarts : listes fermées `as const` (gardes en F2) ; types locaux, sans réutiliser
+    `domain/mcp`. Pour F2 : 409 `McpClientAlreadyRegisteredException` non typé (tester `client-declared-by-document`
+    par `hasProblemType`, sinon `client-id-taken`) ; `POST` rend `activeConnections: 0`. **Constat moyen** :
+    `cannotBeRevised()` sort en 422 sans type ni `violations` → classé `validation`, message trompeur. Faible :
+    `AdminMcpError` sans détail par champ (comme les autres tranches). Questions à l'utilisateur : Q1 `expiresAt`
+    (recommandé : non nullable, libellé « échéance prévue » en F5) ; Q2 `shadowsVerifiedDomain` (recommandé :
+    micro-tâche backend en S6 avant F2, avec le type du 422).
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
