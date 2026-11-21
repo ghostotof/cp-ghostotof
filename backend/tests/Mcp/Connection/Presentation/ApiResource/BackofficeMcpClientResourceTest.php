@@ -254,6 +254,51 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
     }
 
+    /**
+     * Même règle que pour le `PUT` : un attribut que l'entrée ne porte pas est un
+     * corps mal formé, pas un champ « ignoré avec un 201 ». `registration` (que
+     * l'API calcule, jamais l'appelant : un client `cimd` ne se pré-enregistre
+     * pas) et la faute de frappe sur un nom de champ créaient un client en
+     * silence. `allow_extra_attributes: false` sur l'opération les refuse
+     * (`MalformedRequestBodyException`, 400, message fixe). Le refus précède toute
+     * écriture : aucune ligne `mcp_client`, aucun audit, et ni le nom ni la valeur
+     * de l'attribut ne sont recopiés dans la réponse.
+     */
+    #[DataProvider('registrationBodiesWithAnAttributeTheInputDoesNotTake')]
+    public function testARegistrationBodyWithAnUnknownAttributeIsRefusedAsMalformed(string $attribute, string $value): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/mcp/clients', server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'clientId' => self::PREREGISTERED_CLIENT_ID,
+            'name' => 'Client pré-enregistré',
+            'redirectUris' => ['https://client.example.test/callback'],
+            $attribute => $value,
+        ]));
+
+        self::assertResponseStatusCodeSame(400);
+        $content = (string) $client->getResponse()->getContent();
+        $body = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame('Le corps de la requête n\'est pas un document JSON exploitable.', $body['detail'] ?? null, 'Le message est fixe.');
+        self::assertStringNotContainsString($attribute, $content, 'Le nom de l\'attribut n\'est jamais recopié dans la réponse.');
+        self::assertStringNotContainsString($value, $content, 'La valeur saisie n\'est jamais recopiée dans la réponse.');
+        self::assertSame(0, $this->countClientRows(), 'Un corps refusé n\'écrit aucune ligne mcp_client.');
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function registrationBodiesWithAnAttributeTheInputDoesNotTake(): iterable
+    {
+        yield 'registration (calculé par l\'API)' => ['registration', 'cimd'];
+        yield 'faute de frappe sur un nom de champ' => ['redirectUri', 'https://typo.example.test/callback'];
+        yield 'attribut inconnu' => ['colour', 'turquoise-value'];
+    }
+
     public function testSuperRevisesNameAndRedirects(): void
     {
         $client = self::createClient();
@@ -856,6 +901,14 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertInstanceOf(CpgUser::class, $account);
 
         return $account;
+    }
+
+    private function countClientRows(): int
+    {
+        $count = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT count(*) FROM mcp_client');
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     private function countConnectionRowsOf(string $clientRowId): int

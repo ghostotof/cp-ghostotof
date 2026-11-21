@@ -45,9 +45,13 @@ use Symfony\Component\Routing\Requirement\Requirement;
             requirements: ['id' => Requirement::UUID],
             provider: BackofficeMcpClientProvider::class,
         ),
+        // Un attribut que l'entrée ne porte pas (`registration`, une faute de frappe
+        // sur un nom de champ…) est refusé (400, MalformedRequestBodyException) au
+        // lieu d'être ignoré avec un 201 : même règle que le `Put`.
         new Post(
             uriTemplate: '/backoffice/mcp/clients',
             status: 201,
+            denormalizationContext: ['allow_extra_attributes' => false],
             input: BackofficeMcpClientInput::class,
             processor: BackofficeMcpClientProcessor::class,
         ),
