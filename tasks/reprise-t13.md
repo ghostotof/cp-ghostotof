@@ -695,7 +695,9 @@
     (`findOneByClientId()`, sans masquage) tient une ligne masquante pour connue → `resource` étranger =
     `invalid_target`, ligne d'audit ordinaire, pas la cause dédiée — **arbitrage posé à l'utilisateur**.
     Piège pour les docblocks et règles : `CommentedClassNamesExistTest` lit `\A…\z` comme un nom de classe.
-  - **Prochaine action** : selon l'arbitrage Q4 (F-g1b éventuelle), puis F-g2 (doc, sonnet/high), puis relecture
+  - **Décision Q4 (utilisateur, 2026-11-21)** : unifier — micro-série F-g1b, `isKnownClient()` applique
+    `isShadowedBy()` comme `ClientRepository` (`invalid_client` + cause dédiée).
+  - **Prochaine action** : F-g1b (étape 05, sonnet/high), puis F-g2 (doc, sonnet/high), puis relecture
     `/code-review medium diff 25bdc951...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
