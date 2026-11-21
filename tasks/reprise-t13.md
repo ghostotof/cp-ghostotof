@@ -546,7 +546,15 @@
       une ligne trouvée se supprime par `DELETE` du backoffice. Pas de migration.
     - Texte proposé par l'agent F-a pour `.claude/rules/mcp-oauth-cimd.md` : à reprendre en Task 19 (en retirant la
       mention « CLI non couvert » une fois F-c faite).
-  - **Prochaine action** : agent **F-c** (sonnet/high), puis **F-b** (sonnet/high), puis relecture F
+  - **F-c faite** (`0beaedd7`, contrôlée : filtre registrar/CLI/validateur/backoffice/`AllowedClientDomains`/mapping
+    132 verts après restart ; agent : `make back-test` 6698 verts, `make back-quality` propre). Règle unique
+    `AllowedClientDomains::isVerifiedClientId()` (validateur + `McpClientRegistrar`, avant la pré-lecture, sans écriture
+    ni audit) ; `McpClientIdOfVerifiedDomainException` → 422 / `info` ; CLI : `FAILURE` + message. `CimdClientAdmission`
+    non factorisée (ordre `tryFrom` → ligne preregistered → `allows`). Texte de règle `mcp-oauth-cimd.md` proposé par
+    l'agent F-c (remplace celui de F-a) : à reprendre en Task 19.
+    - Constat écrit (Task 19/PR, faible, conf. moyenne) : une future porte d'écriture `preregistered` hors registrar
+      contournerait le refus ; garde possible dans `McpClient::register()` ou test d'architecture.
+  - **Prochaine action** : agent **F-b** (sonnet/high), puis relecture F
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
