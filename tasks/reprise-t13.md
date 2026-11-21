@@ -761,6 +761,10 @@
     pas l'absence de ligne `foreign-resource` quel que soit le statut ; drapeau `registered` du fournisseur sans
     pouvoir discriminant (cas redondants) ; `connectionIdsOf()` suppose une seule connexion du client (comparer à la
     connexion de l'artefact).
+  - **S6 démarrée** (2026-11-21) : **agent F1 lancé en `opus`/`xhigh`** (demande explicite de l'utilisateur, au-dessus
+    du cran par défaut sonnet/high). **Point fixe de la relecture S6** : le commit de cette reprise. Questions à rendre
+    par F1 (non tranchées) : `expiresAt` d'une révoquée (nullable ou non, la vue d'administration le rend toujours) ;
+    indicateur `shadowsVerifiedDomain` (champ backend absent, S6 ou Task 19).
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
