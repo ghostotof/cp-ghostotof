@@ -69,10 +69,20 @@ paths:
   `LeagueGrantRefusalAuditTest` pins the line on the passed connection, that an unreadable code changes nothing there
   (while `record()` writes nothing for it), and `record()`'s classification unchanged); `foreign-client`, `redirect-mismatch`, `redirect-no-longer-registered` (#652: a code whose redirection a revision removed from its client, refused `invalid_grant` by `LoopbackAwareAuthCodeGrant::respondToAccessTokenRequest()` on the client re-read at the exchange, through `McpClient::allowsRedirect()`), `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
   or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
-  grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost. **Not audited, and
+  grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost; and
+  `preregistered-row-shadows-verified-domain` (#652, D-C at the token point): the presented `client_id` is a
+  `preregistered` row whose id is on a domain of `app.mcp.cimd.allowed_domains` (a « masking row »), which
+  `ClientRepository::getClientEntity()` does not serve (`AllowedClientDomains::isShadowedBy()`), so league answers
+  `invalid_client` (401) at the code exchange and at the refresh and nothing is written. It is the one
+  `invalid_client` that is audited, and **only when the presented artifact is authentic** (it decrypts and names an
+  existing connection): `LeagueGrantRefusalAudit::record()` classes it by the nature of the presented row
+  (`isShadowingRow()`, same predicate, one native SQL read), not by league's hint, and writes it with the same keys
+  and level as the other causes; an unknown client or a forged grant writes no line. **Crossed client**: the
+  authentic code of client A presented with the `client_id` of a masking row B reads this cause, `clientId` = A (the
+  connection's), `presentingClientId` = B. **Not audited, and
   why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection
   exists yet, nothing to designate, and any caller can produce them); an unknown client (`invalid_client`, refused for
-  itself before the grant); an unreadable grant or one without a connection UUID; a connection no longer in the
+  itself before the grant; the masking row, above, is the only `invalid_client` audited); an unreadable grant or one without a connection UUID; a connection no longer in the
   database (nobody to designate); a grant type carrying no artifact; a **5xx** (`LeagueGrantRefusalAudit::SERVER_FAULT`:
   league failing, sometimes *after* validating the grant — a unique-identifier collision, a `server_error` — where a
   line would accuse a legitimate account of a valid code); and **a compromise** — reuse and proven replay already

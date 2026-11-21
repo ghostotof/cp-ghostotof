@@ -66,6 +66,14 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
   (422, fixed message without the URL, **no write, no `mcp-client-revised` audit**) for a `preregistered` row
   whose id passes `isVerifiedClientId()`, checked under the `FOR UPDATE` lock. A `cimd` row keeps the entity's
   own 409 (`McpClientDeclaredByDocumentException`). **`DELETE` stays allowed: it is the way out.**
+- **The token point refuses it too** (#652, F-f1 and F-f1b): `ClientRepository::getClientEntity()` returns `null`
+  for a `preregistered` row that `AllowedClientDomains::isShadowedBy()` says is shadowing (the same predicate as the
+  admission), so league answers `invalid_client` (401) at the code exchange and at the refresh, **nothing written**:
+  a connection born of such a row no longer renews, a code in flight no longer exchanges. It makes **no outbound
+  call** (the rule of « Who judges what »). The refusal is **audited** `mcp-grant-refused`, cause
+  `GrantRefusal::PreregisteredRowShadowsVerifiedDomain`, **only if the presented artifact is authentic**; the
+  details (an unknown client or a forged grant writes nothing, the crossed client) are in
+  `.claude/rules/mcp-oauth-audits.md`.
 - **The validator hands the discovered client to league through a request attribute** (D-B), PSR-7 only:
   `CimdClientAdmissionInterface::REQUEST_ATTRIBUTE` (`mcp.cimd.discovered_client`), read by
   `LoopbackAwareAuthCodeGrant::getClientEntityOrFail()`. The grant honours it **only if it is an
@@ -257,3 +265,19 @@ reasoning, not as curl's behaviour. **`NativeHostAddressResolver` has no test**:
   carries the document's URL, which an anonymous caller chose, and the kernel logs the consent's 503
   (`ConsentRevalidationUnavailableException`) at `warning` with its whole chain. `ClientMetadataTransportFailedException`
   (constant message, the class only) stands in for it; the audit record never carried it (`clientHost` only).
+- **Masking row (#652), five limits accepted**:
+  1. `POST /api/oauth/revoke` presented with a masking row's `client_id` answers `invalid_client` (401) and revokes
+     nothing (`LeagueRevocationEndpoint` reads the client through `getClientEntity()`, which refuses it). The
+     refresh being refused too, only an access token (at most one hour) stays usable; the person can revoke the
+     connection from « Mes connexions MCP ».
+  2. An access token already issued for a masking row stays accepted at `/api/mcp` until it expires (one hour):
+     the authenticator judges neither the registration nor the domain. Only a **legacy** row can be in that
+     case (its creation is refused); a read-only check query in the release notes lists them.
+  3. The step-2 refusal is bounded **only by the nginx `oauth` zone** (`k8s/base/backend-nginx.conf`: 10 requests a
+     minute, `burst=10`, per IP and per pod), **not** by the `mcp_client_metadata*` limiters, which are consumed from
+     step 4 on: an anonymous caller can write one `mcp-client-metadata-refused` line per request within that bound.
+  4. A timing difference: the step-2 refusal answers without any outbound request, so faster than an admission that
+     fetches the document (a cache miss, up to 3 s). It tells a caller that a masking row exists for an id on the
+     allowed list; the difference of the same kind (cached or not, F7 above) existed before #652.
+  5. The consent is revalidated at the `GET` and at the `POST` (`ConsentService::validated()`, the same
+     validator): a row that became masking between the authorization and the consent is refused at the consent.
