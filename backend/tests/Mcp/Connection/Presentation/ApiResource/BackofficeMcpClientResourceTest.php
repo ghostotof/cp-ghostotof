@@ -7,6 +7,8 @@ namespace App\Tests\Mcp\Connection\Presentation\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Operation;
+use ApiPlatform\Metadata\Put;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
@@ -638,6 +640,36 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
 
         self::assertNull($read['result']);
         self::assertSame(1, $read['count'], 'Un client absent coûte une requête : pas de décompte pour rien.');
+    }
+
+    /**
+     * `PUT` et `DELETE` passent aussi par le Provider d'item, mais il ne leur
+     * sert que de preuve d'existence : leur écriture relit sous verrou, et la
+     * réponse du `PUT` recompte elle-même les connexions après la révision. Le
+     * décompte des connexions actives est un `GET` : une requête, celle du client.
+     */
+    #[DataProvider('writesReadingAnExistingClient')]
+    public function testAWriteOnlyReadsTheClientWithoutCountingItsConnections(Operation $operation): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register('jane', TestCredentials::plainPassword());
+        $this->addClientsWithOneConnectionEach(2, 0);
+        $id = $this->idOfDetailedClient();
+
+        $read = $this->queriesDuring(fn (): mixed => $this->provider()->provide($operation, ['id' => $id]));
+
+        self::assertInstanceOf(BackofficeMcpClientResource::class, $read['result']);
+        self::assertSame($id, $read['result']->id, 'Le client lu est celui de l\'URI.');
+        self::assertSame(1, $read['count'], 'Une écriture ne lit que le client : le décompte des connexions n\'est pas le sien.');
+    }
+
+    /**
+     * @return iterable<string, array{Operation}>
+     */
+    public static function writesReadingAnExistingClient(): iterable
+    {
+        yield 'Put' => [new Put()];
+        yield 'Delete' => [new Delete()];
     }
 
     /**

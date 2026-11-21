@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\ApiPlatform;
 
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
@@ -15,10 +16,12 @@ use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Lit les clients MCP pour le backoffice, en deux requêtes dans les deux cas :
- * la liste lit les clients puis les connexions actives de tous en un `GROUP BY`
- * (quel que soit leur nombre) ; le détail lit un client par sa clé, puis le
- * décompte de ses seules connexions actives.
+ * Lit les clients MCP pour le backoffice. La liste coûte deux requêtes : les
+ * clients, puis les connexions actives de tous en un `GROUP BY` (quel que soit
+ * leur nombre). Le détail (`Get`) en coûte deux : un client par sa clé, puis le
+ * décompte de ses seules connexions actives. `Put` et `Delete` passent aussi
+ * par le Provider d'item, mais n'en veulent que le client (une requête) : leur
+ * écriture relit sous verrou, et le `PUT` recompte lui-même après sa révision.
  *
  * @implements ProviderInterface<BackofficeMcpClientResource>
  */
@@ -41,7 +44,8 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
             return $this->collection();
         }
 
-        return $this->item($this->uriVariableUuid($uriVariables));
+        // Le décompte n'est lu que pour répondre : `Put` et `Delete` ne s'en servent pas.
+        return $this->item($this->uriVariableUuid($uriVariables), $operation instanceof Get);
     }
 
     /**
@@ -63,16 +67,20 @@ final readonly class BackofficeMcpClientProvider implements ProviderInterface
     }
 
     /**
-     * Une vraie lecture d'item : le client, puis ses seules connexions
-     * actives. Un client inconnu rend `null` (404) **avant** tout décompte.
+     * Une vraie lecture d'item : le client, puis — pour un `Get` seulement — ses
+     * seules connexions actives. Un client inconnu rend `null` (404) **avant**
+     * tout décompte. Pour une écriture, `activeConnections` vaut 0 sans avoir
+     * été lu : la ressource ne sert qu'à prouver l'existence du client, aucune
+     * réponse d'écriture ne la sérialise (le `PUT` rend la ressource du
+     * Processor, le `DELETE` aucun corps).
      */
-    private function item(Uuid $id): ?BackofficeMcpClientResource
+    private function item(Uuid $id, bool $withActiveConnections): ?BackofficeMcpClientResource
     {
         $client = $this->clients->findOneById($id);
         if (!$client instanceof McpClient) {
             return null;
         }
 
-        return BackofficeMcpClientResource::fromClient($client, $this->connections->countActiveOfClient($id));
+        return BackofficeMcpClientResource::fromClient($client, $withActiveConnections ? $this->connections->countActiveOfClient($id) : 0);
     }
 }
