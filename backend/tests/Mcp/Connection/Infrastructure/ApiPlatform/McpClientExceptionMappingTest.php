@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Infrastructure\ApiPlatform;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Exception\McpClientNotFoundException;
 use App\Tests\Support\CompiledExceptionConfig;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -32,6 +33,7 @@ final class McpClientExceptionMappingTest extends KernelTestCase
         yield 'client inconnu' => [McpClientNotFoundException::class, 404];
         yield 'client déjà enregistré' => [McpClientAlreadyRegisteredException::class, 409];
         yield 'redirections invalides' => [InvalidMcpClientRedirectsException::class, 422];
+        yield 'identifiant d\'un domaine vérifié' => [McpClientIdOfVerifiedDomainException::class, 422];
     }
 
     /**
@@ -42,6 +44,7 @@ final class McpClientExceptionMappingTest extends KernelTestCase
         yield 'client inconnu' => [McpClientNotFoundException::class];
         yield 'client déjà enregistré' => [McpClientAlreadyRegisteredException::class];
         yield 'redirections invalides' => [InvalidMcpClientRedirectsException::class];
+        yield 'identifiant d\'un domaine vérifié' => [McpClientIdOfVerifiedDomainException::class];
         yield 'client déclaré par son document' => [McpClientDeclaredByDocumentException::class];
     }
 

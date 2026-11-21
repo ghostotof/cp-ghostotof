@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestDatabase;
@@ -254,6 +255,32 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertStringContainsString(InvalidMcpClientRedirectsException::tooMany()->getMessage(), $tester->getDisplay());
         self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
         self::assertSame(0, $this->clientCount());
+    }
+
+    /**
+     * Le CLI n'a pas le validateur du backoffice : le refus vient du
+     * registrar. Un échec propre, un message qui ne cite pas l'URL, rien
+     * d'écrit et rien d'audité.
+     */
+    public function testTheMetadataUrlOfAVerifiedDomainIsRefusedWithoutQuotingIt(): void
+    {
+        $clientId = 'https://claude.ai/oauth/claude-code-client-metadata';
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => $clientId,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertStringContainsString('[ERROR]', $tester->getDisplay());
+        // L'encadré de SymfonyStyle replie le message sur plusieurs lignes : on compare blancs réduits.
+        self::assertStringContainsString(McpClientIdOfVerifiedDomainException::cannotBePreregistered()->getMessage(), (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertStringNotContainsString($clientId, $tester->getDisplay());
+        self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
+        self::assertSame(0, $this->clientCount());
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
     }
 
     private function commandTester(): CommandTester

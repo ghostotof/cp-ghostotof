@@ -48,4 +48,19 @@ final readonly class AllowedClientDomains
     {
         return \in_array($clientId->host(), $this->domains, true);
     }
+
+    /**
+     * Cet identifiant public est-il l'URL de métadonnées d'un client CIMD d'un
+     * domaine vérifié ? `CimdClientId::tryFrom()` puis {@see self::allows()} :
+     * la règle de l'admission, que le pré-enregistrement refuse d'usurper
+     * (registrar et validateur du backoffice). Ce que `CimdClientId` ne
+     * reconnaît pas (port, `http://`, hôte en majuscules) est un identifiant
+     * ordinaire.
+     */
+    public function isVerifiedClientId(string $clientId): bool
+    {
+        $cimdClientId = CimdClientId::tryFrom($clientId);
+
+        return null !== $cimdClientId && $this->allows($cimdClientId);
+    }
 }

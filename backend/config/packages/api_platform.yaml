@@ -172,6 +172,10 @@ api_platform:
         # Redirections refusées par les règles du domaine : saisie invalide,
         # que l'administrateur corrige lui-même, donc 422.
         App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException: 422
+        # Identifiant d'un client CIMD d'un domaine vérifié : le validateur du
+        # backoffice le refuse déjà en 422 au chemin `clientId` ; cette entrée
+        # est défensive (le CLI, seul à passer sans lui), jamais un 500.
+        App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException: 422
         # McpClientDeclaredByDocumentException n'a pas d'entrée ici, à dessein :
         # elle porte son 409 typé par ProblemExceptionInterface::getStatus().
         # --- Défauts d'API Platform, rétablis (audit A15 / T5.1) ---

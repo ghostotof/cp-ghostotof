@@ -8,7 +8,9 @@ use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\McpClientRegistrar;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
@@ -42,7 +44,7 @@ final class McpClientRegistrarTest extends TestCase
         $repository = $this->repository();
         $clock = new MockClock(new DateTimeImmutable('2026-10-25T02:30:00+02:00'));
 
-        $client = new McpClientRegistrar($repository, $clock, self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [new TestHandler()])))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
+        $client = new McpClientRegistrar($repository, $clock, self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [new TestHandler()])), $this->allowedDomains())->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
             RedirectUri::fromString('http://localhost/callback'),
             RedirectUri::fromString('https://app.example/cb'),
         ], AuditOrigin::Console);
@@ -120,6 +122,83 @@ final class McpClientRegistrarTest extends TestCase
         $this->register($repository, $logger);
     }
 
+    /**
+     * Une ligne pré-enregistrée l'emporte sur CIMD (règle D-C de l'admission) :
+     * enregistrer l'URL de métadonnées d'un domaine vérifié masquerait son vrai
+     * client. Le refus est celui du domaine, donc aussi celui du CLI, qui
+     * n'a pas le validateur du backoffice. Rien n'est écrit, rien n'est audité.
+     */
+    #[DataProvider('metadataUrlsOfAVerifiedDomain')]
+    public function testTheMetadataUrlOfAVerifiedDomainIsRefusedWithoutWritingNorAuditing(string $clientId): void
+    {
+        $repository = $this->repository();
+        $logger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $logger->expects(self::never())->method('mcpClientRegistered');
+
+        try {
+            new McpClientRegistrar($repository, new MockClock(), $logger, new FailSafeAudit(new Logger('app', [new TestHandler()])), $this->allowedDomains())
+                ->register(McpClientId::fromString($clientId), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+            self::fail('L\'enregistrement aurait dû être refusé.');
+        } catch (McpClientIdOfVerifiedDomainException $exception) {
+            self::assertSame(McpClientIdOfVerifiedDomainException::cannotBePreregistered()->getMessage(), $exception->getMessage());
+            self::assertStringNotContainsString($clientId, $exception->getMessage());
+        }
+
+        self::assertSame([], $repository->added);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function metadataUrlsOfAVerifiedDomain(): iterable
+    {
+        yield 'premier domaine vérifié' => ['https://claude.ai/oauth/claude-code-client-metadata'];
+        yield 'second domaine vérifié' => ['https://chatgpt.com/oauth/client.json'];
+    }
+
+    /**
+     * Le contrôle passe avant la pré-lecture : même pris, l'identifiant d'un
+     * domaine vérifié est refusé pour ce qu'il est, pas pour un conflit.
+     */
+    public function testTheVerifiedDomainRefusalComesBeforeTheAlreadyTakenRead(): void
+    {
+        $clientId = 'https://claude.ai/oauth/claude-code-client-metadata';
+        $repository = $this->repository(existing: RegisteredMcpClient::of($clientId, 'Premier', ['http://localhost/callback']));
+
+        $this->expectException(McpClientIdOfVerifiedDomainException::class);
+
+        new McpClientRegistrar($repository, new MockClock(), self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [new TestHandler()])), $this->allowedDomains())
+            ->register(McpClientId::fromString($clientId), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+    }
+
+    /**
+     * Ce que l'admission ne confondrait pas avec un client d'un domaine
+     * vérifié reste un identifiant ordinaire.
+     */
+    #[DataProvider('clientIdsThatAreNotAVerifiedDomainClient')]
+    public function testAnIdentifierThatIsNotOfAVerifiedDomainIsStillRegistered(string $clientId): void
+    {
+        $repository = $this->repository();
+
+        $client = new McpClientRegistrar($repository, new MockClock(), self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [new TestHandler()])), $this->allowedDomains())
+            ->register(McpClientId::fromString($clientId), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+
+        self::assertSame([$client], $repository->added);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function clientIdsThatAreNotAVerifiedDomainClient(): iterable
+    {
+        yield 'domaine non listé' => ['https://client.example.test/metadata.json'];
+        yield 'sous-domaine d\'un domaine listé' => ['https://evil.claude.ai/metadata.json'];
+        yield 'domaine listé avec un port' => ['https://claude.ai:443/metadata.json'];
+        yield 'domaine listé en http' => ['http://claude.ai/metadata.json'];
+        yield 'domaine listé en majuscules' => ['https://Claude.ai/metadata.json'];
+        yield 'identifiant ordinaire' => [self::CLIENT_ID];
+    }
+
     public function testAClientIdAlreadyRegisteredIsRefusedBeforeAnyWrite(): void
     {
         $repository = $this->repository(existing: RegisteredMcpClient::of(self::CLIENT_ID, 'Premier', ['http://localhost/callback']));
@@ -193,7 +272,13 @@ final class McpClientRegistrarTest extends TestCase
 
     private function register(McpClientRepositoryInterface $repository, ?SecurityAuditLoggerInterface $logger = null, ?TestHandler $mainChannel = null): McpClient
     {
-        return new McpClientRegistrar($repository, new MockClock(), $logger ?? self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [$mainChannel ?? new TestHandler()])))->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+        return new McpClientRegistrar($repository, new MockClock(), $logger ?? self::createStub(SecurityAuditLoggerInterface::class), new FailSafeAudit(new Logger('app', [$mainChannel ?? new TestHandler()])), $this->allowedDomains())->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')], AuditOrigin::Console);
+    }
+
+    /** Les domaines de `app.mcp.cimd.allowed_domains`, tels que la configuration les déclare. */
+    private function allowedDomains(): AllowedClientDomains
+    {
+        return AllowedClientDomains::fromList(['claude.ai', 'chatgpt.com']);
     }
 
     private static function english(string $index, string $column, string $value): string

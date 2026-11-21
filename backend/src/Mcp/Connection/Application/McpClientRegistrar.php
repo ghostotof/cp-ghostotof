@@ -6,7 +6,9 @@ namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
@@ -26,11 +28,21 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private FailSafeAudit $failSafeAudit,
+        private AllowedClientDomains $allowedClientDomains,
     ) {
     }
 
     public function register(McpClientId $clientId, McpClientName $name, array $redirectUris, AuditOrigin $origin): McpClient
     {
+        // Avant la pré-lecture et toute écriture : une ligne pré-enregistrée
+        // l'emporte sur CIMD (règle D-C de l'admission), l'enregistrer
+        // masquerait le vrai client d'un domaine vérifié. Le refus n'écrit et
+        // n'audite rien, et vaut pour le CLI, qui ne passe pas par le
+        // validateur du backoffice.
+        if ($this->allowedClientDomains->isVerifiedClientId((string) $clientId)) {
+            throw McpClientIdOfVerifiedDomainException::cannotBePreregistered();
+        }
+
         if (null !== $this->clients->findOneByClientId((string) $clientId)) {
             throw McpClientAlreadyRegisteredException::alreadyTaken();
         }

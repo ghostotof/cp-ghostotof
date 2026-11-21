@@ -40,8 +40,9 @@ use Symfony\Component\Validator\Exception\UnexpectedValueException;
  * refusé : une ligne pré-enregistrée l'emporte sur CIMD (règle D-C de
  * l'admission), si bien que l'enregistrer masquerait le vrai client avant sa
  * première approbation, sous un nom et des redirections choisis ici. La règle
- * suit exactement celle de l'admission (`CimdClientId::tryFrom()` puis
- * `AllowedClientDomains::allows()`) : une URL d'un autre domaine, ou que
+ * suit exactement celle de l'admission, portée par
+ * `AllowedClientDomains::isVerifiedClientId()` (`CimdClientId::tryFrom()` puis
+ * `allows()`), que le registrar applique aussi pour le CLI : une URL d'un autre domaine, ou que
  * `CimdClientId` ne reconnaît pas (port, `http://`, hôte en majuscules), reste
  * un identifiant ordinaire.
  */
@@ -118,9 +119,7 @@ final class ValidMcpClientFieldsValidator extends ConstraintValidator
         }
 
         // Message fixe : l'URL saisie ne revient pas dans la réponse.
-        $cimdClientId = CimdClientId::tryFrom($clientId);
-
-        if (null !== $cimdClientId && $this->allowedClientDomains->allows($cimdClientId)) {
+        if ($this->allowedClientDomains->isVerifiedClientId($clientId)) {
             $this->addViolationAt('clientId', $constraint->verifiedDomainClientIdMessage);
         }
     }

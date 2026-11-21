@@ -62,6 +62,42 @@ final class AllowedClientDomainsTest extends TestCase
     }
 
     /**
+     * Le point unique de la règle « identifiant d'un client CIMD d'un domaine
+     * vérifié » : `CimdClientId::tryFrom()` puis `allows()`, que le
+     * pré-enregistrement (registrar, validateur du backoffice) applique.
+     */
+    #[DataProvider('listedHosts')]
+    public function testTheMetadataUrlOfAListedHostIsAVerifiedClientId(string $url): void
+    {
+        self::assertTrue(AllowedClientDomains::fromList(['claude.ai', 'chatgpt.com'])->isVerifiedClientId($url));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function notVerifiedClientIds(): iterable
+    {
+        yield 'domaine non listé' => ['https://client.example.test/metadata.json'];
+        yield 'sous-domaine d\'un domaine listé' => ['https://evil.claude.ai/x'];
+        yield 'domaine listé avec un port' => ['https://claude.ai:443/metadata.json'];
+        yield 'domaine listé en http' => ['http://claude.ai/metadata.json'];
+        yield 'domaine listé en majuscules' => ['https://Claude.ai/metadata.json'];
+        yield 'domaine listé sans chemin' => ['https://claude.ai'];
+        yield 'identifiant ordinaire' => ['claude-code-dev'];
+    }
+
+    #[DataProvider('notVerifiedClientIds')]
+    public function testAnythingElseIsNotAVerifiedClientId(string $clientId): void
+    {
+        self::assertFalse(AllowedClientDomains::fromList(['claude.ai', 'chatgpt.com'])->isVerifiedClientId($clientId));
+    }
+
+    public function testAnEmptyListVerifiesNoClientId(): void
+    {
+        self::assertFalse(AllowedClientDomains::fromList([])->isVerifiedClientId('https://claude.ai/oauth/claude-code-client-metadata'));
+    }
+
+    /**
      * @return iterable<string, array{string}>
      */
     public static function malformedEntries(): iterable
