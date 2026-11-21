@@ -666,8 +666,29 @@
     couverte par un nouveau paragraphe) ; « To revisit with CIMD (#651) » de `mcp-oauth-audits.md` peut-être périmé ;
     historique en tête du registre RGPD sans entrée #652. La micro-série F-f est close (F-f1, F-f1b, F-f2a, F-f2b1,
     F-f2b2, F-f2c).
-  - **Prochaine action** : relecture de F-f — `/code-review medium diff f749878d...HEAD` + `agent-skills:security-auditor`
-    opus/high (point de jeton OAuth, audit), en parallèle ; tri au critère d'arrêt. Ensuite S6 (F1-F7), Task 19
+  - **Relecture de F-f faite** (point fixe relu `25bdc951` ; `/code-review medium` + security-auditor opus/high) :
+    0 critique/haut/moyen à l'audit ; 1 « important » au code-review = limites acceptées (a)+(c) combinées
+    (révocation refusée, jeton d'accès accepté 1 h ; recul face à RFC 7009) → **PR**, rien à corriger.
+    Faibles à risque réel → **micro-série F-g** :
+    - F-g1 (code, ≤ 3 fichiers) : dans `LeagueGrantRefusalAudit::record()`, sur `invalid_client`, trancher
+      `isVerifiedClientId($presentingClientId)` en mémoire AVANT le déchiffrement et AVANT `registrationOf()`
+      (un `client_id` mal formé `%FF%FE` + artefact authentique fait aujourd'hui échouer la requête SQL →
+      `critical` « Grant refusal not audited » à volonté ; un anonyme déclenche 1 déchiffrement par requête) ;
+      tests unitaires de la branche `invalid_client` (masquante, croisé, préregistered hors domaine, `cimd`,
+      inconnu sans déchiffrement, mal formé sans SQL) ; docblock « Coût » (F6). Vérifier et rendre : questions
+      Q2 (collation de `mcp_client.client_id`) et Q4 (`invalid_client` émis par `TokenEndpoint` avant league,
+      `resource` étranger).
+    - F-g2 (doc) : `mcp-oauth-audits.md` (phrase « Coût » l.126-127, lecture du client croisé `clientId` ≠
+      `presentingClientId`, « To revisit with CIMD (#651) » à jour ?) ; `mcp-oauth-cimd.md` « Who judges what »
+      l.31 (exception masquante) ; en-tête d'historique du registre RGPD (#652) si la convention le veut.
+    Écrit pour la **Task 19** : prédicat D-C recopié dans `CimdClientAdmission.php:74-80` et
+    `McpClientAdministrator.php:108` au lieu de `isShadowedBy()` (docblock « écrit une fois » faux) ;
+    `registrationOf()` en SQL brut plutôt qu'en QueryBuilder DBAL ; borne de longueur de l'artefact avant tout
+    déchiffrement (défense en profondeur, profite à league). Pour la **PR** : Q5 (fermer un jour la limite (c)
+    dans l'authentificateur de `/api/mcp`), Q1/Q3 de l'audit (connexion DBAL après rollback, valeur brute vs
+    validée).
+  - **Prochaine action** : F-g1 (étape 05, sonnet/high), puis F-g2 (sonnet/high), puis relecture
+    `/code-review medium diff 25bdc951...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
