@@ -572,8 +572,21 @@
     6709 verts, `make back-quality` propre. Constat : 400 (désérialisation) passe avant 422 (validation), non testé.
     Écrits pour la Task 19 : aligner le test du `Put` (asserter le `detail`, une ligne) ; en S6, le corps envoyé par le
     frontend en POST/PUT doit coller exactement à `BackofficeMcpClientInput` / `…RevisionInput` (sinon 400).
-  - **Prochaine action** : relecture de la série F : `/code-review medium` sur `diff 139169f0...HEAD` + auditeur
-    sécurité (opus/high, F-a/F-c touchent l'admission CIMD), puis tri au critère d'arrêt
+  - **Relecture F faite** (point fixe `139169f0`, HEAD relu `7af12310`) : `/code-review medium` 1 préexistant + 4 nits ;
+    auditeur (opus/high) 0 critique/haut/moyen, 2 faibles, 9 infos. **Critère d'arrêt atteint.**
+    - Faible n° 1 (= préexistant de la revue) : le refus ne vaut qu'à l'écriture ; une ligne `preregistered` écrite avant
+      que son domaine n'entre dans `allowed_domains` (ou liste vidée puis rétablie) masque le vrai client CIMD, et le
+      `PUT` peut encore la réviser. Pistes : (A) admission fermée si ligne `preregistered` et `allows($id)` (amende D-C),
+      (B) `revise()` refusé sur un identifiant vérifié, contrôle au déploiement.
+    - Faible n° 2 : l'invariant vit dans le registrar, pas dans `McpClient::register()` ni la valeur par défaut SQL.
+      Piste : test d'architecture (`McpClient::register(` appelé seulement depuis `McpClientRegistrar`).
+    - Écrits (Task 19 / PR) : `@throws McpClientIdOfVerifiedDomainException` sur `McpClientAdministratorInterface` ;
+      message de refus en une constante unique ; `instanceof Get` à inverser (Put/Delete) ; commentaire
+      `api_platform.yaml` (« le CLI » faux) ; tentative refusée non auditée (info 5, arbitrage) ; sosies d'URL (info 3) ;
+      nom d'attribut journalisé via `previous` (info 6, niveau `info` en prod à vérifier) ; garde
+      `collect_extra_attributes_errors` (info 7) ; trois assertions de test (info 10 : message 422 sans URL, `detail`
+      du PUT, ordre 404 avant 400) ; frontend S6 : corps exact, jamais de spread de la ressource lue.
+  - **Prochaine action** : tri des faibles n° 1 et 2 avec l'utilisateur
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
