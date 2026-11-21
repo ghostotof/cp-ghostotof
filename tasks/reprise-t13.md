@@ -687,7 +687,15 @@
     déchiffrement (défense en profondeur, profite à league). Pour la **PR** : Q5 (fermer un jour la limite (c)
     dans l'authentificateur de `/api/mcp`), Q1/Q3 de l'audit (connexion DBAL après rollback, valeur brute vs
     validée).
-  - **Prochaine action** : F-g1 (étape 05, sonnet/high), puis F-g2 (sonnet/high), puis relecture
+  - **F-g1 faite** (`348e0eda`, 4 fichiers ; contrôlé : 35 tests ciblés verts, suite complète 6742 OK,
+    back-quality vert selon l'agent). Rouge vérifié : déchiffrement tenté hors domaine, `registrationReads` = 1
+    pour `\xFF\xFE`, `critical` « Grant refusal not audited » en intégration. Tout `client_id` qui passe
+    `isVerifiedClientId()` a la forme de `McpClientId` (motif ASCII ancré) : sûr pour PostgreSQL. Q2 : aucune
+    collation explicite dans les migrations (défaut de la base). Q4 : `TokenEndpoint::isKnownClient()`
+    (`findOneByClientId()`, sans masquage) tient une ligne masquante pour connue → `resource` étranger =
+    `invalid_target`, ligne d'audit ordinaire, pas la cause dédiée — **arbitrage posé à l'utilisateur**.
+    Piège pour les docblocks et règles : `CommentedClassNamesExistTest` lit `\A…\z` comme un nom de classe.
+  - **Prochaine action** : selon l'arbitrage Q4 (F-g1b éventuelle), puis F-g2 (doc, sonnet/high), puis relecture
     `/code-review medium diff 25bdc951...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
