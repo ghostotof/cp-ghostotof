@@ -590,8 +590,15 @@
     sur une ligne `preregistered` d'un domaine admis, cause dédiée auditée, amendement D-C de `mcp-oauth-cimd.md` ;
     `PUT` refusé sur un identifiant vérifié) ; faible n° 2 → **test d'architecture en Task 19** ; info n° 5 (audit
     d'une tentative refusée) → **Task 19, à instruire**.
-  - **Prochaine action** : agent **F-e** (sonnet/high), puis relecture F-e (`diff 05ed78e7...HEAD` + auditeur, admission
-    CIMD)
+  - **F-e faite** (`91789511` A : admission fermée, cause `preregistered-row-shadows-verified-domain`, auditée au niveau
+    `info` comme tout audit, 401 `invalid_client` au point d'autorisation, règle D-C amendée ; `3d9ff343` B :
+    `McpClientAdministrator::revise()` reçoit `AllowedClientDomains`, `cannotBeRevised()` 422 sous `FOR UPDATE`, DELETE
+    permis). Contrôlée : filtre `Cimd|BackofficeMcp|McpClient|AllowedClientDomains|ApiRouteExposure|RouterScope` 568
+    verts après restart ; agent : `make back-test` 6715 verts, `make back-quality` propre. Seul appelant de `admit()` :
+    `AuthorizationRequestValidator` (aussi utilisé par `ConsentService`). Écrits : connexions déjà accordées à une
+    ligne masquante non coupées (seule l'autorisation suivante est refusée) ; niveau d'audit `info` non relevé ; cause
+    absente de `security-authentication-audit.md` (~l.83) et `docs/rgpd/registre-traitements.md` (l.178) → Task 19.
+  - **Prochaine action** : relecture F-e : `/code-review medium` sur `diff a0d0e611...HEAD` + auditeur (opus/high)
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
