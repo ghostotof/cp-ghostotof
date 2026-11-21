@@ -21,6 +21,11 @@ namespace App\Mcp\Connection\Domain\ValueObject;
  * compromission (réutilisation d'un jeton remplacé, rejeu d'un code prouvé)
  * n'en est pas une : elle révoque la connexion, cause RevocationCause.
  *
+ * Une troisième origine : PreregisteredRowShadowsVerifiedDomain, un
+ * `invalid_client` de league — le client n'a pas été authentifié — que
+ * l'audit ne classe pas par l'indication mais par la nature de la ligne
+ * présentée (#652).
+ *
  * La valeur est un mot stable (kebab), sans rien de l'artefact : elle peut
  * entrer dans une ligne de journal telle quelle.
  */
@@ -105,7 +110,11 @@ enum GrantRefusal: string
      * Le client présenté est une ligne pré-enregistrée qui porte l'identifiant
      * d'un domaine vérifié et masque le client CIMD (règle D-C, #652) :
      * `ClientRepository` ne le rend plus, league répond `invalid_client`.
-     * Même valeur que la cause de `ClientMetadataRefusal`, au point de jeton.
+     * Écrite seulement pour un code ou un jeton de rafraîchissement
+     * authentique dont la connexion existe encore, jamais pour un client
+     * inconnu ; nommée par l'audit, pas par LeagueGrantRefusals.
+     * Même valeur que la cause homonyme de {@see ClientMetadataRefusal},
+     * qui dit le même refus au point d'autorisation et au consentement.
      */
     case PreregisteredRowShadowsVerifiedDomain = 'preregistered-row-shadows-verified-domain';
 

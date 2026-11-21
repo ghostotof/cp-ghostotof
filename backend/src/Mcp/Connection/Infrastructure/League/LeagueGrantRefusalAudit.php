@@ -35,7 +35,9 @@ use Symfony\Component\Uid\Uuid;
  *   l'artefact, il ne désigne rien. TokenEndpoint refuse aussi ainsi un
  *   client absent du corps, et FormEncodedRequest une valeur entourée de
  *   blancs : le `presentingClientId` d'une ligne écrite est donc toujours le
- *   `client_id` d'un client enregistré, tel que league l'a lu ;
+ *   `client_id` d'un client enregistré (#652). `invalid_client` n'est tracé
+ *   que dans un cas : le refus d'une ligne pré-enregistrée masquante
+ *   (règle D-C, ClientRepository), pour un artefact authentique ;
  * - un artefact illisible, ou dont la charge ne porte pas un UUID de
  *   connexion ;
  * - une connexion qui n'est plus en base (supprimée avec son compte, purgée) :
@@ -43,11 +45,23 @@ use Symfony\Component\Uid\Uuid;
  * - un autre grant que `authorization_code` et `refresh_token`, qui ne porte
  *   aucun artefact (league le refuse `unsupported_grant_type`).
  *
+ * Ligne masquante (#652) : une ligne `preregistered` dont le `client_id` est
+ * celui d'un domaine vérifié (AllowedClientDomains::isShadowedBy()) n'est pas
+ * servie par ClientRepository, league répond `invalid_client` sans avoir
+ * authentifié personne. Si l'artefact présenté est authentique et que le
+ * `client_id` présenté est une telle ligne, la ligne porte la cause
+ * GrantRefusal::PreregisteredRowShadowsVerifiedDomain, qui ne passe pas par
+ * LeagueGrantRefusals::causeOf() : elle ne dépend pas de l'indication de
+ * league. Client croisé : l'artefact peut être celui d'un autre client A que
+ * la ligne masquante B présentée ; `clientId` est alors celui de la connexion
+ * (A, ce que l'artefact désigne) et `presentingClientId` celui de B.
+ *
  * Coût : un déchiffrement de plus que celui de league sur **tout** refus 4xx
- * d'un client connu qui porte un artefact, authentique ou non — il faut
- * déchiffrer pour le savoir ; une requête SQL native en plus pour un artefact
- * authentique seulement, l'EntityManager étant fermé par la transaction
- * annulée. Le rejeu non prouvé (recordUnprovenReplay(), #726) ne déchiffre
+ * qui porte un artefact, authentique ou non — il faut déchiffrer pour le
+ * savoir, `invalid_client` compris ; une requête SQL native en plus pour un
+ * artefact authentique seulement (la nature du client présenté sur un
+ * `invalid_client`, puis la référence de la connexion), l'EntityManager étant
+ * fermé par la transaction annulée. Le rejeu non prouvé (recordUnprovenReplay(), #726) ne déchiffre
  * rien : sa connexion est celle de la compromission ; sa requête reste.
  */
 final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterface
@@ -76,6 +90,12 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
     ) {
     }
 
+    /**
+     * Sauf une faute serveur, un grant sans artefact ou un artefact
+     * inauthentique, écrit la ligne du refus : cause classée par
+     * LeagueGrantRefusals, ou, sur `invalid_client`, seulement la cause de la
+     * ligne masquante — tout autre `invalid_client` ne laisse rien.
+     */
     public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
         if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT) {
@@ -120,7 +140,9 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
 
     /**
      * La ligne du client présenté masque-t-elle le client CIMD d'un domaine
-     * vérifié ? Une requête SQL native : l'EntityManager est fermé.
+     * vérifié ? `McpClientRepositoryInterface::registrationOf()` passe par
+     * DBAL (SQL natif) et non par l'ORM : la transaction annulée a fermé
+     * l'EntityManager. Un client inconnu (aucune ligne) ne masque rien.
      */
     private function isShadowingRow(string $presentingClientId): bool
     {
