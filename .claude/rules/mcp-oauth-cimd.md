@@ -28,7 +28,11 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
 
 - **The authorization endpoint judges the document.** `AuthorizationRequestValidator::admitted()` asks
   `CimdClientAdmissionInterface::admit()`; the answer is a client built from the document, never from a row.
-- **`/token`, the refresh and `/revoke` judge the row** written at the approval (`registration = 'cimd'`).
+- **`/token`, the refresh and `/revoke` judge the row** written at the approval (`registration = 'cimd'`) —
+  **save a masking row** (a `preregistered` row on a verified domain, `AllowedClientDomains::isShadowedBy()`), which
+  they refuse as no client at all: `invalid_client` at the code exchange, at the refresh and with a foreign `resource`
+  (`ClientRepository::getClientEntity()` and `TokenEndpoint::isKnownClient()`, « The token point refuses it too »
+  below), and a 401 with no effect at `/revoke` (accepted limit 1, « Masking row », below).
   They make **no outbound call**, ever: a token endpoint that fetched a URL on behalf of whoever posts to it
   would be an SSRF and a latency oracle. A document that is later removed or changed therefore stops
   nothing already granted (accepted, see the limits below).
@@ -68,7 +72,8 @@ URIs. The server fetches it, **at the authorization point only**, and judges the
   own 409 (`McpClientDeclaredByDocumentException`). **`DELETE` stays allowed: it is the way out.**
 - **The token point refuses it too** (#652, F-f1 and F-f1b): `ClientRepository::getClientEntity()` returns `null`
   for a `preregistered` row that `AllowedClientDomains::isShadowedBy()` says is shadowing (the same predicate as the
-  admission), so league answers `invalid_client` (401) at the code exchange and at the refresh, **nothing written**:
+  admission), so league answers `invalid_client` (401) at the code exchange and at the refresh — and `TokenEndpoint::isKnownClient()`
+  at a foreign `resource`, where an unknown client never gets `invalid_target` — **nothing written**:
   a connection born of such a row no longer renews, a code in flight no longer exchanges. It makes **no outbound
   call** (the rule of « Who judges what »). The refusal is **audited** `mcp-grant-refused`, cause
   `GrantRefusal::PreregisteredRowShadowsVerifiedDomain`, **only if the presented artifact is authentic**; the

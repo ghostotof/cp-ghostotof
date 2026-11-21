@@ -69,17 +69,24 @@ paths:
   `LeagueGrantRefusalAuditTest` pins the line on the passed connection, that an unreadable code changes nothing there
   (while `record()` writes nothing for it), and `record()`'s classification unchanged); `foreign-client`, `redirect-mismatch`, `redirect-no-longer-registered` (#652: a code whose redirection a revision removed from its client, refused `invalid_grant` by `LoopbackAwareAuthCodeGrant::respondToAccessTokenRequest()` on the client re-read at the exchange, through `McpClient::allowsRedirect()`), `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
   or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
-  grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost; and
+  grant — **not** from a masking row, below), and `unrecognised` for any other league refusal of an authentic grant, so none is lost; and
   `preregistered-row-shadows-verified-domain` (#652, D-C at the token point): the presented `client_id` is a
   `preregistered` row whose id is on a domain of `app.mcp.cimd.allowed_domains` (a « masking row »), which
   `ClientRepository::getClientEntity()` does not serve (`AllowedClientDomains::isShadowedBy()`), so league answers
-  `invalid_client` (401) at the code exchange and at the refresh and nothing is written. It is the one
+  `invalid_client` (401) at the code exchange and at the refresh and nothing is written; **a foreign `resource` does not
+  change it** (#652): `TokenEndpoint::isKnownClient()`, behind `refuseForeignResource()`, judges the row as
+  `ClientRepository` does (`isShadowedBy()`), so a masking row is no known client, the answer is `invalid_client`, never
+  `invalid_target`, and the line carries this cause, not `foreign-resource` (`MasqueradingPreregisteredRowTokenTest`,
+  `testTheCodeExchangeOfAMasqueradingRowWithAForeignResourceIsRefusedAsInvalidClientAndAudited` and its refresh twin;
+  a non-masked CIMD client keeps `invalid_target`, `testACimdClientWithAForeignResourceStillGetsInvalidTarget`). It is the one
   `invalid_client` that is audited, and **only when the presented artifact is authentic** (it decrypts and names an
   existing connection): `LeagueGrantRefusalAudit::record()` classes it by the nature of the presented row
   (`isShadowingRow()`, same predicate, one native SQL read), not by league's hint, and writes it with the same keys
   and level as the other causes; an unknown client or a forged grant writes no line. **Crossed client**: the
   authentic code of client A presented with the `client_id` of a masking row B reads this cause, `clientId` = A (the
-  connection's), `presentingClientId` = B. **Not audited, and
+  connection's), `presentingClientId` = B. **Reading it**: when `clientId` differs from `presentingClientId`, the line
+  says an artifact of A's connection was presented by another client, the masking row — never a connection born of
+  that row; only `clientId` = `presentingClientId` can mean the row's own connection (`testACrossedClientIsAuditedWithBothClients`). **Not audited, and
   why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection
   exists yet, nothing to designate, and any caller can produce them); an unknown client (`invalid_client`, refused for
   itself before the grant; the masking row, above, is the only `invalid_client` audited); an unreadable grant or one without a connection UUID; a connection no longer in the
@@ -123,17 +130,29 @@ paths:
   its case turns red. **Hook, decided**: `TokenEndpoint`, after the ROLLBACK, through
   `Application/GrantRefusalAuditInterface` (`Infrastructure/League/LeagueGrantRefusalAudit`) — rejected: league's events
   (only `client.authentication.failed` and `refresh_token.client.failed`, nothing for PKCE, expiry or redirect) and a
-  witness filled by the repositories (blind to the refusals league makes before them). **Cost**: one decryption more
-  than league's on **every** 4xx refusal of a known client carrying a grant, authentic or not (decrypting is how it is
-  told), and one query for an authentic one — save the unproven replay, which decrypts nothing more (its query, the
-  connection's reference, stays: the line names the account and the client). Every body parameter is read through
+  witness filled by the repositories (blind to the refusals league makes before them). **Cost**: an `invalid_client`
+  outside a verified domain costs **neither a decryption nor a query** (#652): `LeagueGrantRefusalAudit::record()` settles
+  `AllowedClientDomains::isVerifiedClientId($presentingClientId)` in memory first, as league, which decrypts nothing on
+  that refusal (`testAClientOutsideAVerifiedDomainDecryptsNothingAndReadsNoRow`). A `client_id` of a verified domain
+  costs one decryption, then, for an authentic artifact only, one native query (`registrationOf()`, then
+  `isShadowedBy()`). That order also keeps a `client_id` that is not `McpClientId`-shaped (`%FF%FE`, a NUL) away from
+  PostgreSQL, which used to reject it for an authentic code and end in the `critical` « Grant refusal not audited. »
+  (`testAMalformedClientIdNeverReachesTheDatabase`, `MasqueradingPreregisteredRowTokenTest::testAMalformedClientIdWithAnAuthenticCodeIsRefusedWithoutAnAuditFailure`):
+  never call `isShadowingRow()` without that guard. **Every other** 4xx refusal of a known client carrying a grant costs
+  one decryption more than league's, authentic or not (decrypting is how it is told), and one query for an authentic
+  one — save the unproven replay, which decrypts nothing more (its query, the connection's reference, stays: the line
+  names the account and the client). Every body parameter is read through
   `FormEncodedRequest::stringParameter()` (#726, CR7). **Volume, decided**: one line per refused request, bounded by the nginx
   `oauth` zone alone — 10 a minute per IP **and per pod**, `burst=10 nodelay`, so with production's two replicas up to
   40 the first minute, then 20 a minute per IP; a grant stays « authentic » as long as its connection row lives (six
   months after a revocation), and N addresses multiply the bound — the access token's decision; an application dedup
   was rejected (state to keep in a DBAL pool, ADR 0005, a query more per refusal, an attack burst shrunk to one line).
-  **To revisit with CIMD (#651)**: a client known by its metadata URL makes `presentingClientId` an URL the caller
-  chose (≤ 255 characters of `McpClientId`'s alphabet), and its own volume. `GrantRefusalAuditTest` produces each cause
+  **Revisited with CIMD (#651, #652), nothing to add**: for a client known by its metadata URL,
+  `presentingClientId` is an URL, but never a free string: a line is written only for a registered client
+  (`TokenEndpoint::isKnownClient()` goes through `McpClientId::fromString()`, so ≤ 255 characters of `[A-Za-z0-9._:/-]`
+  — no `%`, no blank, no control character), and on `invalid_client` the masking row's id has first passed
+  `isVerifiedClientId()`. Its volume is the same as any other client's: one line per refused request, bounded by the
+  nginx `oauth` zone, whatever the client's registration. `GrantRefusalAuditTest` produces each cause
   through the real league (forged payloads re-encrypted under the server's key for the expiries and a vanished
   connection, SQL alterations for every death under the lock) and, through `assertAudited()`, reads the exact keys and
   finds no grant, verifier nor hash in the journal; the unknown client, the compromise, the blank-wrapped code and the
