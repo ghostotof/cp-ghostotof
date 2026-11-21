@@ -309,7 +309,22 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
         self::assertSame($grantType, $line['grantType']);
         self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['clientId']);
         self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['presentingClientId']);
+        // La ligne désigne la connexion que l'artefact présenté ouvre, la seule du client : pas une autre.
+        self::assertSame($this->connectionIdsOf(ClaudeCodeMetadata::CLIENT_ID), [$line['connectionId']]);
         self::assertStringNotContainsString($presented, (string) json_encode($line));
+    }
+
+    /**
+     * Les identifiants (RFC 4122) des connexions d'un client, lus en base.
+     *
+     * @return list<string>
+     */
+    private function connectionIdsOf(string $clientId): array
+    {
+        return array_map(
+            static fn (mixed $id): string => \is_string($id) ? $id : '',
+            $this->mcpRows()->fetchFirstColumn('SELECT c.id FROM mcp_connection c JOIN mcp_client k ON k.id = c.mcp_client_id WHERE k.client_id = :clientId', ['clientId' => $clientId]),
+        );
     }
 
     /**

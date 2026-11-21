@@ -133,8 +133,8 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
         // refusé ne désigne rien. Premier critère, en mémoire, sans E/S :
         // un `client_id` qui n'est pas celui d'un domaine vérifié sort ici,
         // avant tout déchiffrement et toute requête — comme league, qui ne
-        // déchiffre rien sur `invalid_client`. Il garantit aussi la forme du
-        // `client_id` envoyé ensuite à PostgreSQL (voir isShadowingRow()).
+        // déchiffre rien sur `invalid_client`. isShadowingRow() refait ce
+        // test elle-même, pour la forme du `client_id` envoyé à PostgreSQL.
         if ($clientRefused && !$this->allowedDomains->isVerifiedClientId($presentingClientId)) {
             return;
         }
@@ -165,15 +165,22 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
      * DBAL (SQL natif) et non par l'ORM : la transaction annulée a fermé
      * l'EntityManager. Un client inconnu (aucune ligne) ne masque rien.
      *
-     * L'appelant a déjà vérifié `isVerifiedClientId()` : le `client_id` a donc
-     * la forme de McpClientId (`CimdClientId::tryFrom()` commence par
+     * La méthode porte elle-même la protection de PostgreSQL : le `client_id`
+     * n'est envoyé qu'après `isVerifiedClientId()`, donc avec la forme de
+     * McpClientId (`CimdClientId::tryFrom()` commence par
      * `McpClientId::fromString()`, un motif ASCII entièrement ancré), jamais un
      * UTF-8 invalide ni un octet nul que PostgreSQL rejetterait — ce qui
      * ferait tomber l'audit en `critical` pour un client_id choisi par
-     * l'appelant. Ne pas appeler sans ce garde-fou.
+     * l'appelant. Ce test refait, en mémoire, celui que record() a déjà fait
+     * pour éviter le déchiffrement : un appel de plus, sans E/S, pour qu'un
+     * futur appelant n'ait aucun garde-fou à connaître.
      */
     private function isShadowingRow(string $presentingClientId): bool
     {
+        if (!$this->allowedDomains->isVerifiedClientId($presentingClientId)) {
+            return false;
+        }
+
         $registration = $this->clients->registrationOf($presentingClientId);
 
         return null !== $registration && $this->allowedDomains->isShadowedBy($registration, $presentingClientId);

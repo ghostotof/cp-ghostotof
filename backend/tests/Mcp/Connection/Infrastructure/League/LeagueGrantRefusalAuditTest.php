@@ -165,10 +165,12 @@ final class LeagueGrantRefusalAuditTest extends TestCase
      */
     public function testAShadowingPreregisteredRowIsAuditedOnTheConnectionOfTheArtifact(): void
     {
+        // La connexion que l'artefact désigne : la ligne doit porter celle-là, pas une autre.
+        $connectionId = Uuid::v7();
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('mcpGrantRefused')
             ->with(
-                self::callback(static fn (ConnectionReference $connection): bool => ClaudeCodeMetadata::CLIENT_ID === $connection->clientId()),
+                self::callback(static fn (ConnectionReference $connection): bool => ClaudeCodeMetadata::CLIENT_ID === $connection->clientId() && $connection->connectionId()->equals($connectionId)),
                 'authorization_code',
                 'preregistered-row-shadows-verified-domain',
                 ClaudeCodeMetadata::CLIENT_ID,
@@ -176,18 +178,19 @@ final class LeagueGrantRefusalAuditTest extends TestCase
         $clients = new McpClientRepositoryFake(RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['http://localhost/callback']), null);
 
         // L'artefact est celui d'une connexion du client masquant lui-même.
-        $request = $this->exchangePresentedBy(ClaudeCodeMetadata::CLIENT_ID);
+        $request = $this->exchangePresentedBy(ClaudeCodeMetadata::CLIENT_ID, $connectionId);
         $this->auditOfClients($clients, $auditLogger, connectionClientId: ClaudeCodeMetadata::CLIENT_ID)->record($request, OAuthServerException::invalidClient($request));
     }
 
     /** Client croisé : l'artefact est celui du client A, la ligne masquante présentée est B ; `clientId` est A, `presentingClientId` B. */
     public function testACrossedClientIsAuditedWithBothClients(): void
     {
+        $connectionId = Uuid::v7();
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('mcpGrantRefused')
             ->with(
                 // La connexion est celle de l'artefact, le client A.
-                self::callback(static fn (ConnectionReference $connection): bool => self::CLIENT_ID === $connection->clientId()),
+                self::callback(static fn (ConnectionReference $connection): bool => self::CLIENT_ID === $connection->clientId() && $connection->connectionId()->equals($connectionId)),
                 'authorization_code',
                 'preregistered-row-shadows-verified-domain',
                 // Le client présenté est la ligne masquante B.
@@ -195,7 +198,7 @@ final class LeagueGrantRefusalAuditTest extends TestCase
             );
         $clients = new McpClientRepositoryFake(RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['http://localhost/callback']), null);
 
-        $request = $this->exchangePresentedBy(ClaudeCodeMetadata::CLIENT_ID);
+        $request = $this->exchangePresentedBy(ClaudeCodeMetadata::CLIENT_ID, $connectionId);
         $this->auditOfClients($clients, $auditLogger, connectionClientId: self::CLIENT_ID)->record($request, OAuthServerException::invalidClient($request));
     }
 
@@ -233,7 +236,7 @@ final class LeagueGrantRefusalAuditTest extends TestCase
      */
     public static function clientIdsOutsideAVerifiedDomain(): iterable
     {
-        yield 'client inconnu' => ['https://client.example.test/unknown.json'];
+        yield 'URL de métadonnées d\'un hôte non vérifié, ligne ordinaire enregistrée' => ['https://client.example.test/unknown.json'];
         yield 'domaine non vérifié' => [self::CLIENT_ID];
         yield 'identifiant ordinaire' => ['plain-client'];
         yield 'port, que CimdClientId ne reconnaît pas' => ['https://claude.ai:443/oauth/claude-code-client-metadata'];
@@ -292,6 +295,24 @@ final class LeagueGrantRefusalAuditTest extends TestCase
         self::assertSame(0, $clients->registrationReads);
     }
 
+    /**
+     * Un identifiant d'un domaine vérifié, sans aucune ligne, avec un artefact
+     * authentique : le client est refusé par league (`invalid_client`), mais
+     * aucune ligne ne le masque. La nature du client est lue une fois, rien
+     * n'est audité.
+     */
+    public function testAVerifiedDomainClientWithoutARowIsReadOnceAndNotAudited(): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('mcpGrantRefused');
+        $clients = new McpClientRepositoryFake(null, null);
+
+        $request = $this->exchangePresentedBy(ClaudeCodeMetadata::CLIENT_ID);
+        $this->auditOfClients($clients, $auditLogger)->record($request, OAuthServerException::invalidClient($request));
+
+        self::assertSame(1, $clients->registrationReads, 'Le client est d\'un domaine vérifié et l\'artefact authentique : la ligne est lue, une fois.');
+    }
+
     /** Une faute serveur reste exclue en tête, même sur une ligne masquante : aucune lecture. */
     public function testAServerFaultOnAShadowingRowReadsNothing(): void
     {
@@ -304,7 +325,7 @@ final class LeagueGrantRefusalAuditTest extends TestCase
         self::assertSame(0, $clients->registrationReads);
     }
 
-    /** Un artefact inauthentique sur une ligne masquante : la ligne est lue (le client est vérifié), aucune connexion n'est désignée. */
+    /** Un artefact forgé sur une ligne masquante : le client passe le garde en mémoire, mais l'artefact, qui ne se déchiffre pas, arrête tout avant la lecture de la ligne — aucune connexion n'est désignée. */
     public function testAForgedArtifactOnAShadowingRowIsNotAudited(): void
     {
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -343,21 +364,21 @@ final class LeagueGrantRefusalAuditTest extends TestCase
         return new LeagueGrantRefusalAudit(new GrantPayloadReader($key ?? new OAuthEncryptionKey(TestKeys::material())), $connections, $clients, AllowedClientDomains::fromList(['claude.ai']), $auditLogger);
     }
 
-    /** Le code authentique du client A (CLIENT_ID), présenté par `$presentedClientId`. */
-    private function exchangePresentedBy(string $presentedClientId): ServerRequest
+    /** Le code authentique du client A (CLIENT_ID), présenté par `$presentedClientId` ; `$connectionId` est celle qu'il désigne (neuve par défaut). */
+    private function exchangePresentedBy(string $presentedClientId, ?Uuid $connectionId = null): ServerRequest
     {
         return $this->exchangeOfAnAuthenticCode()->withParsedBody([
             'grant_type' => 'authorization_code',
-            'code' => $this->authenticCode(),
+            'code' => $this->authenticCode($connectionId),
             'client_id' => $presentedClientId,
         ]);
     }
 
-    /** Un code chiffré sous la clé du serveur : authentique, pour une connexion au `user_id` neuf. */
-    private function authenticCode(): string
+    /** Un code chiffré sous la clé du serveur : authentique, pour la connexion donnée, ou une connexion au `user_id` neuf. */
+    private function authenticCode(?Uuid $connectionId = null): string
     {
         return Crypto::encrypt(
-            json_encode(['auth_code_id' => 'abc', 'user_id' => Uuid::v7()->toRfc4122(), 'client_id' => self::CLIENT_ID], \JSON_THROW_ON_ERROR),
+            json_encode(['auth_code_id' => 'abc', 'user_id' => ($connectionId ?? Uuid::v7())->toRfc4122(), 'client_id' => self::CLIENT_ID], \JSON_THROW_ON_ERROR),
             OAuthEncryptionKey::fromSecret(TestKeys::material()),
         );
     }
