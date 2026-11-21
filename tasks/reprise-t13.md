@@ -732,9 +732,22 @@
     `isShadowingRow()` garde `isShadowedBy()` (définition unique de la règle) derrière son propre
     `isVerifiedClientId()`. Mutations rendues : autre connexion → 8 rouges ; garde de `record()` retiré → la garde de
     `isShadowingRow()` suffit seule à protéger PostgreSQL. back-quality vert, back-test 6746 verts.
-  - **Prochaine action** : relecture de F-h — `/code-review medium diff 1ace7177...HEAD` + security-auditor
-    opus/high. Ensuite S6 (F1-F7), Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`),
-    relecture complète, étape 08.
+  - **Relecture de F-h faite** (point fixe relu `1ace7177`, HEAD relu `0f536f77` = **point fixe suivant**) :
+    `/code-review medium` → **1 important** (doc) + 5 nits ; audit opus/high → 0 critique/haut/moyen, 4 faibles,
+    2 info ; ordre league 9.4.1 vérifié exact (validateClient avant l'artefact). L'important : la règle
+    `mcp-oauth-audits.md:151-158` dit « `isKnownClient()` plays no part » — faux, l'`invalid_target` est levé par
+    `TokenEndpoint` avant league et seule `isKnownClient()` borne son `presentingClientId` (sur-correction de F-h).
+    Critère d'arrêt → **série de correction F-i** : (1) paragraphe réécrit, deux sources selon le chemin, « au point
+    de jeton », ordre tenu par `LoopbackAwareAuthCodeGrant::respondToAccessTokenRequest()` ; (2) test fonctionnel
+    `client_id` mal formé + `resource` étrangère + code authentique → `invalid_client`, aucune ligne (fige
+    `isKnownClient()`) ; (3) `assertAuditedAsCrossed()` épingle `connectionId` ; (4) docblock du fournisseur
+    « (inconnu, ou ligne ordinaire) » ; (5) `connectionIdsOf()` : `assertIsString` au lieu de `''`. Écrit, non
+    corrigé — **PR/Task 19** : seconde garde de `isShadowingRow()` = mutant équivalent (défense en profondeur, non
+    figée ; commit `bd0568ea` nommé `fix` alors que c'est du durcissement) ; test fonctionnel à deux connexions du
+    même client (couvert strictement par l'unitaire).
+  - **Prochaine action** : F-i (agent sonnet/high, 2 fichiers : règle + `MasqueradingPreregisteredRowTokenTest.php`,
+    + `LeagueGrantRefusalAuditTest.php` pour (4)), puis relecture `diff 0f536f77...HEAD`. Ensuite S6 (F1-F7),
+    Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
