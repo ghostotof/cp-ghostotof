@@ -774,6 +774,15 @@
     `AdminMcpError` sans détail par champ (comme les autres tranches). Questions à l'utilisateur : Q1 `expiresAt`
     (recommandé : non nullable, libellé « échéance prévue » en F5) ; Q2 `shadowsVerifiedDomain` (recommandé :
     micro-tâche backend en S6 avant F2, avec le type du 422).
+  - **Décisions de l'utilisateur (2026-11-21, après F1)** : Q1 → **`expiresAt` non nullable**, backend inchangé ; en F5,
+    une ligne révoquée l'affiche en « Échéance prévue » à côté de `revokedAt`. Q2 → **micro-tâche backend F1b en S6,
+    avant F2** : champ `shadowsVerifiedDomain` dans `BackofficeMcpClientResource` (prédicat
+    `AllowedClientDomains::isShadowedBy()`, en mémoire, sans requête), calculé par le Provider et le Processor
+    (`POST`/`PUT`), testé ; type de problème sur le 422 de `McpClientIdOfVerifiedDomainException::cannotBeRevised()`
+    (par `HasProblemType`, comme `client-declared-by-document`), testé. Puis **F1c** (frontend) : champ
+    `shadowsVerifiedDomain: boolean` dans `AdminMcpClient` et raison d'erreur dédiée dans `AdminMcpErrorReason`.
+  - **Prochaine action** : agent **F1b** (backend, zone `Mcp` : budget de contexte, ≤ 4 fichiers sinon découper),
+    puis F1c, puis F2.
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
