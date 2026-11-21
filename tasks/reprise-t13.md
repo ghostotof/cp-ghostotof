@@ -566,7 +566,14 @@
   - **Décisions de l'utilisateur (2026-11-21, après F-b)** : le `activeConnections = 0` non lu de la ressource rendue
     par le Provider à `PUT`/`DELETE` est **accepté, documenté** ; **F-d** avant la relecture : `allow_extra_attributes:
     false` aussi sur le `Post` (400, rien d'écrit).
-  - **Prochaine action** : agent **F-d** (sonnet/high), puis relecture F
+  - **F-d faite** (`658e6337` : `Post` en `allow_extra_attributes: false` → 400 `MalformedRequestBodyException`, detail
+    fixe, aucune ligne ni audit ; cas `registration`, `redirectUri`, `colour`). Contrôlée : filtre
+    `BackofficeMcp|MalformedRequestBody|ApiRouteExposure|RouterScope` 115 verts après restart ; agent : `make back-test`
+    6709 verts, `make back-quality` propre. Constat : 400 (désérialisation) passe avant 422 (validation), non testé.
+    Écrits pour la Task 19 : aligner le test du `Put` (asserter le `detail`, une ligne) ; en S6, le corps envoyé par le
+    frontend en POST/PUT doit coller exactement à `BackofficeMcpClientInput` / `…RevisionInput` (sinon 400).
+  - **Prochaine action** : relecture de la série F : `/code-review medium` sur `diff 139169f0...HEAD` + auditeur
+    sécurité (opus/high, F-a/F-c touchent l'admission CIMD), puis tri au critère d'arrêt
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
