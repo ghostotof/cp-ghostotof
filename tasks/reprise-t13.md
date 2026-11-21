@@ -660,9 +660,14 @@
     document » incomplet pour la cause masquante).
   - **F-f2b2 faite** (`ffc614ba`, 4 fichiers, commentaires seuls — contrôlé par diff ; `CAUSE_OF_HINT` inchangée) ;
     agent : back-quality, back-test 6727 verts.
-  - **Prochaine action** : F-f2c (étape 05, sonnet/high : `mcp-oauth-audits.md`, `mcp-oauth-cimd.md`,
-    `security-authentication-audit.md`, `docs/rgpd/registre-traitements.md`), puis relecture `/code-review medium diff
-    f749878d...HEAD` + `agent-skills:security-auditor` opus/high (point de jeton OAuth). Ensuite S6 (F1-F7), Task 19
+  - **F-f2c faite** (`c3bc3866`, 4 fichiers doc, `tools/check-claude-rules.sh` conforme — contrôlé ; règles sous
+    50 000 o : audits 15205, cimd 24087, security-audit 30044). Signalé hors périmètre, à trier à la relecture :
+    « Who judges what » de `mcp-oauth-cimd.md` (/token, refresh, /revoke « judge the row » sans l'exception masquante,
+    couverte par un nouveau paragraphe) ; « To revisit with CIMD (#651) » de `mcp-oauth-audits.md` peut-être périmé ;
+    historique en tête du registre RGPD sans entrée #652. La micro-série F-f est close (F-f1, F-f1b, F-f2a, F-f2b1,
+    F-f2b2, F-f2c).
+  - **Prochaine action** : relecture de F-f — `/code-review medium diff f749878d...HEAD` + `agent-skills:security-auditor`
+    opus/high (point de jeton OAuth, audit), en parallèle ; tri au critère d'arrêt. Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
