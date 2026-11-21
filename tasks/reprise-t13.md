@@ -626,8 +626,25 @@
     `GrantRefusal`, hôte seul, comme à l'autorisation ; tient l'invariant de `mcp-oauth-audits.md` « tout refus d'un
     grant authentique au point de jeton est audité ») ; (c) jeton d'accès ≤ 1 h → **accepté, documenté** (F-f2 ;
     lignes héritées seules, contrôlées par la requête des notes de release).
-  - **Prochaine action** : F-f1b (étape 05, sonnet/high), puis F-f2 (doc + tests faibles listés ci-dessus, + (a), (c),
-    la nouvelle cause d'audit dans la règle et le registre RGPD), puis relecture `/code-review medium diff
+  - **F-f1b faite** (`00ee6104`, agent sonnet/high) : cause `GrantRefusal::PreregisteredRowShadowsVerifiedDomain`
+    (`preregistered-row-shadows-verified-domain`) ; échange de code et refresh d'une ligne masquante → une ligne
+    `mcp-grant-refused` (mêmes clés/niveau que les autres causes) ; `client_id` inconnu ou grant forgé → aucune ligne ;
+    prédicat unique `AllowedClientDomains::isShadowedBy()` ; `McpClientRepositoryInterface::registrationOf()` (DBAL
+    natif, EM fermé après rollback) ; `LeagueGrantRefusalAudit::record()` ne sort plus sur `invalid_client` mais
+    exige artefact authentique + ligne masquante. Rouge vérifié (2 échecs « actual size 0 matches expected size 1 »).
+    **Contrôlé par le fil principal** : 1 commit, 9 fichiers, arbre propre ; `make back-quality` relancé en entier
+    (PHPStan/Rector/Psalm OK, lsp 0 blocking) ; `tests/Mcp/Connection` `OK (1691 tests)` ; suite complète 6726 verts
+    selon l'agent.
+  - **Décision de l'utilisateur (2026-11-21, tri F-f1b)** : code authentique d'un client A présenté avec le
+    `client_id` d'une ligne masquante B (cause masquante, `clientId` = A, `presentingClientId` = B) → **figer par un
+    test dans F-f2**, et l'écrire dans `mcp-oauth-audits.md`.
+  - **Liste F-f2 (doc + tests faibles)** : celle du tri F-e ci-dessus, plus (a) révocation 401 et (c) jeton d'accès
+    ≤ 1 h dans les limites de `mcp-oauth-cimd.md` ; la nouvelle cause et le cas client croisé dans
+    `mcp-oauth-audits.md`, `security-authentication-audit.md` et `docs/rgpd/registre-traitements.md` ; docblocks
+    `ClientRepository::getClientEntity()`, `LeagueGrantRefusalAudit`, `GrantRefusalAuditInterface::record()`,
+    `GrantRefusal`, `LeagueGrantRefusals` (`CAUSE_OF_HINT`) ; test client croisé. Plus de 4 fichiers → découper :
+    **F-f2a** (tests + docblocks PHP), **F-f2b** (règles `.claude/rules` + registre RGPD).
+  - **Prochaine action** : F-f2a (étape 05, sonnet/high), puis F-f2b, puis relecture `/code-review medium diff
     f749878d...HEAD` + `agent-skills:security-auditor` opus/high (point de jeton OAuth). Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
