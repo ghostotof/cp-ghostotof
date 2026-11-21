@@ -586,7 +586,12 @@
       nom d'attribut journalisé via `previous` (info 6, niveau `info` en prod à vérifier) ; garde
       `collect_extra_attributes_errors` (info 7) ; trois assertions de test (info 10 : message 422 sans URL, `detail`
       du PUT, ordre 404 avant 400) ; frontend S6 : corps exact, jamais de spread de la ressource lue.
-  - **Prochaine action** : tri des faibles n° 1 et 2 avec l'utilisateur
+  - **Décisions de l'utilisateur (2026-11-21, tri F)** : faible n° 1 → **micro-série F-e : A + B** (admission fermée
+    sur une ligne `preregistered` d'un domaine admis, cause dédiée auditée, amendement D-C de `mcp-oauth-cimd.md` ;
+    `PUT` refusé sur un identifiant vérifié) ; faible n° 2 → **test d'architecture en Task 19** ; info n° 5 (audit
+    d'une tentative refusée) → **Task 19, à instruire**.
+  - **Prochaine action** : agent **F-e** (sonnet/high), puis relecture F-e (`diff 05ed78e7...HEAD` + auditeur, admission
+    CIMD)
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
