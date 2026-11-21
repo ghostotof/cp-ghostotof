@@ -43,6 +43,7 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
     private const string HTTP_CLIENT_SERVICE = 'app.mcp.cimd.http_client';
     private const string CIMD_REDIRECT = 'http://localhost:53124/callback';
     private const string REVOKE_PATH = '/api/oauth/revoke';
+    private const string FOREIGN_RESOURCE = 'https://other.example.test/api/mcp';
 
     protected function setUp(): void
     {
@@ -146,6 +147,60 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
         $this->assertOAuthError($this->refresh($tokens['refresh_token'], $this->cimdClient()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
 
         $this->assertAuditedOnce('refresh_token', $tokens['refresh_token']);
+    }
+
+    /**
+     * Une ligne masquante n'est pas un client connu, y compris pour le
+     * contrôle de la ressource : `invalid_client` (comme ClientRepository),
+     * pas `invalid_target` — sinon le refus d'un client déjà jugé inexistant
+     * échapperait à la cause dédiée de l'audit.
+     */
+    public function testTheCodeExchangeOfAMasqueradingRowWithAForeignResourceIsRefusedAsInvalidClientAndAudited(): void
+    {
+        $code = $this->cimdCode();
+        $this->masquerade();
+
+        $tokensBefore = $this->tokenRowCounts();
+        $this->assertOAuthError(
+            $this->exchange($code, [...$this->cimdOverrides(), 'resource' => self::FOREIGN_RESOURCE]),
+            Response::HTTP_UNAUTHORIZED,
+            'invalid_client',
+        );
+
+        self::assertSame($tokensBefore, $this->tokenRowCounts());
+        $this->assertAuditedOnce('authorization_code', $code);
+    }
+
+    public function testTheRefreshOfAMasqueradingRowWithAForeignResourceIsRefusedAsInvalidClientAndAudited(): void
+    {
+        $tokens = $this->json($this->exchange($this->cimdCode(), $this->cimdOverrides()));
+        self::assertIsString($tokens['refresh_token']);
+        $this->masquerade();
+
+        $tokensBefore = $this->tokenRowCounts();
+        $this->assertOAuthError(
+            $this->refresh($tokens['refresh_token'], [...$this->cimdClient(), 'resource' => self::FOREIGN_RESOURCE]),
+            Response::HTTP_UNAUTHORIZED,
+            'invalid_client',
+        );
+
+        self::assertSame($tokensBefore, $this->tokenRowCounts());
+        $this->assertAuditedOnce('refresh_token', $tokens['refresh_token']);
+    }
+
+    /**
+     * Un client CIMD ordinaire (non masqué) garde son `invalid_target` : seule
+     * la ligne masquante change de verdict.
+     */
+    public function testACimdClientWithAForeignResourceStillGetsInvalidTarget(): void
+    {
+        $code = $this->cimdCode();
+
+        $this->assertOAuthError(
+            $this->exchange($code, [...$this->cimdOverrides(), 'resource' => self::FOREIGN_RESOURCE]),
+            Response::HTTP_BAD_REQUEST,
+            'invalid_target',
+        );
     }
 
     /**
