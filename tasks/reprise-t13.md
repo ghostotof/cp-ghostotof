@@ -644,7 +644,17 @@
     `ClientRepository::getClientEntity()`, `LeagueGrantRefusalAudit`, `GrantRefusalAuditInterface::record()`,
     `GrantRefusal`, `LeagueGrantRefusals` (`CAUSE_OF_HINT`) ; test client croisé. Plus de 4 fichiers → découper :
     **F-f2a** (tests + docblocks PHP), **F-f2b** (règles `.claude/rules` + registre RGPD).
-  - **Prochaine action** : F-f2a (étape 05, sonnet/high), puis F-f2b, puis relecture `/code-review medium diff
+  - **F-f2a faite** (`2f8218b1`, 3 fichiers de test) : assertion « aucun code émis » réelle (décompte
+    `mcp_authorization_code` + `Location` nul), cause masquante exclue de `refusalsAfterTheList`, 2 tests client croisé
+    (code, refresh). Mutation prouvée pour l'audit ; pour l'assertion de `CimdAuthorizationTest`, rouge seulement par
+    inversion de l'attendu (muter `admit()` fait échouer le test plus loin, sur l'audit). **Contrôlé** : 1 commit, arbre
+    propre, 3 fichiers relancés `OK (49 tests)` ; suite 6727 verts et `back-quality` vert selon l'agent.
+  - **F-f2b découpée** (8 fichiers PHP de docblocks) : **F-f2b1** côté CIMD (`McpClientAdministrator::revise()`
+    `@throws` en fin, `SecurityAuditLoggerInterface::mcpClientMetadataRefused`, cas de `ClientMetadataRefusal`,
+    `ClientRepository::getClientEntity()`), **F-f2b2** côté jeton (`LeagueGrantRefusalAudit`,
+    `GrantRefusalAuditInterface::record()`, `GrantRefusal`, `LeagueGrantRefusals`/`CAUSE_OF_HINT`) ; puis **F-f2c**
+    (`mcp-oauth-audits.md`, `mcp-oauth-cimd.md`, `security-authentication-audit.md`, `docs/rgpd/registre-traitements.md`).
+  - **Prochaine action** : F-f2b1 (étape 05, sonnet/high), F-f2b2, F-f2c, puis relecture `/code-review medium diff
     f749878d...HEAD` + `agent-skills:security-auditor` opus/high (point de jeton OAuth). Ensuite S6 (F1-F7), Task 19
     (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
