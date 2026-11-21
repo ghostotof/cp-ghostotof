@@ -700,9 +700,13 @@
   - **F-g1b faite** (`6148d69b`, 2 fichiers ; contrôlé : 16 tests verts, suite complète 6745 OK selon l'agent).
     `TokenEndpoint::isKnownClient()` applique `isShadowedBy()` ; rouge vérifié (`invalid_target` 400 au lieu de
     401) ; un client CIMD non masqué avec `resource` étranger garde `invalid_target`.
-  - **Prochaine action** : F-g2 (doc, sonnet/high), puis relecture
-    `/code-review medium diff 25bdc951...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7), Task 19
-    (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
+  - **F-g2 faite** (`73e74d9d`, 4 fichiers doc, aucun PHP, `tools/check-claude-rules.sh` conforme — contrôlé ;
+    audits 17544, cimd 24659, oauth 43917 o). « To revisit with CIMD (#651) » clos par lecture du code (motif
+    `McpClientId` + garde `isVerifiedClientId()`) ; pas de test de bout en bout d'un `presentingClientId` URL dans
+    `mcp-grant-refused` → **PR** (ou Task 19 si on veut la preuve exécutable). Micro-série F-g close (F-g1, F-g1b, F-g2).
+  - **Prochaine action** : relecture de F-g — `/code-review medium diff 25bdc951...HEAD` + security-auditor
+    opus/high, en parallèle ; tri au critère d'arrêt. Ensuite S6 (F1-F7), Task 19 (y noter : extraire le
+    compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
