@@ -401,7 +401,10 @@ final class CimdAuthorizationTest extends WebTestCase
         $response = $this->authorize($this->cimdParameters());
 
         $this->assertInvalidClient($response);
-        self::assertStringNotContainsString('code=', (string) $response->headers->get('Location'), 'Aucun code d\'autorisation n\'est émis.');
+        // Aucune redirection (donc aucun `code=` vers le redirect_uri) et aucun
+        // code d'autorisation écrit en base.
+        self::assertNull($response->headers->get('Location'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'), 'Aucun code d\'autorisation n\'est émis.');
         self::assertSame(0, $this->outboundRequests);
         self::assertSame([], $this->resolver()->resolvedHosts());
         $audited = self::securityAuditEvents('mcp-client-metadata-refused');

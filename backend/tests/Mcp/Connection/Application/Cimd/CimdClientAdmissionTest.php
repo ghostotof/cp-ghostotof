@@ -210,7 +210,10 @@ final class CimdClientAdmissionTest extends TestCase
     public static function refusalsAfterTheList(): iterable
     {
         foreach (ClientMetadataRefusal::cases() as $refusal) {
-            if (ClientMetadataRefusal::DomainNotAllowed !== $refusal) {
+            // Ni l'une ni l'autre n'arrive « après la liste » : la première est le
+            // refus de la liste elle-même, la seconde se décide avant la
+            // résolution (testAPreregisteredRowOfAVerifiedDomainIsRefusedAndAuditedWithoutAnyFetch).
+            if (!\in_array($refusal, [ClientMetadataRefusal::DomainNotAllowed, ClientMetadataRefusal::PreregisteredRowShadowsVerifiedDomain], true)) {
                 yield $refusal->value => [$refusal];
             }
         }

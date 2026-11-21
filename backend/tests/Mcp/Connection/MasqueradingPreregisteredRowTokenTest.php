@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\HostAddressResolverInterface;
 use App\Mcp\Connection\Infrastructure\Cimd\PublicAddressPolicy;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -168,6 +169,55 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
         $this->assertOAuthError($this->exchange('forged-code', $this->cimdOverrides()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
 
         self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+    }
+
+    /**
+     * Client croisé : un code authentique émis pour le client A (hors domaine
+     * vérifié), présenté avec le `client_id` d'une ligne masquante B. Le
+     * comportement actuel est figé : refus 401 `invalid_client`, rien écrit,
+     * une seule ligne d'audit qui désigne A (la connexion) et B (le présentant).
+     */
+    public function testACodeOfAnotherClientPresentedByAMasqueradingRowIsRefusedAndAuditedWithBothClients(): void
+    {
+        $code = $this->grantedCode();
+        $this->aMasqueradingRow();
+
+        $tokensBefore = $this->tokenRowCounts();
+        $this->assertOAuthError($this->exchange($code, $this->cimdClient()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
+        self::assertSame($tokensBefore, $this->tokenRowCounts());
+        $this->assertAuditedAsCrossed('authorization_code', $code);
+    }
+
+    public function testARefreshTokenOfAnotherClientPresentedByAMasqueradingRowIsRefusedAndAuditedWithBothClients(): void
+    {
+        $tokens = $this->json($this->exchange($this->grantedCode()));
+        self::assertIsString($tokens['refresh_token']);
+        $this->aMasqueradingRow();
+
+        $tokensBefore = $this->tokenRowCounts();
+        $this->assertOAuthError($this->refresh($tokens['refresh_token'], $this->cimdClient()), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
+        self::assertSame($tokensBefore, $this->tokenRowCounts());
+        $this->assertAuditedAsCrossed('refresh_token', $tokens['refresh_token']);
+    }
+
+    private function aMasqueradingRow(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(
+            RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', [self::CIMD_REDIRECT]),
+        );
+    }
+
+    private function assertAuditedAsCrossed(string $grantType, string $presented): void
+    {
+        $line = self::singleSecurityAuditEvent('mcp-grant-refused');
+
+        self::assertSame('preregistered-row-shadows-verified-domain', $line['cause']);
+        self::assertSame($grantType, $line['grantType']);
+        self::assertSame(self::CLIENT_ID, $line['clientId'], 'clientId est celui de la connexion (A).');
+        self::assertSame(ClaudeCodeMetadata::CLIENT_ID, $line['presentingClientId'], 'presentingClientId est celui de la ligne masquante (B).');
+        self::assertStringNotContainsString($presented, (string) json_encode($line));
     }
 
     private function assertAuditedOnce(string $grantType, string $presented): void
