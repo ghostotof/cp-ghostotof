@@ -750,8 +750,20 @@
     (4 jeux) ; mutations rouges puis vertes ; back-test 6753 verts. Limite notée : la mutation de `isKnownClient()`
     échoue sur le statut (400 vs 401) avant l'assertion « aucune ligne ». **Décision utilisateur : relecture de F-i par
     `/code-review medium` seul** (doc + tests, pas d'audit sécu).
-  - **Prochaine action** : `/code-review medium diff 0f536f77...HEAD`, tri au critère d'arrêt. Ensuite S6 (F1-F7),
-    Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
+  - **Relecture de F-i faite** (point fixe relu `0f536f77`, HEAD relu `9ec236bd` = **point fixe suivant**,
+    `/code-review medium` seul) : **0 important**, 1 antérieur + 5 nits → **boucle F-f…F-i close**. Écrit, non
+    corrigé — **PR** (antérieur, conf. moyenne) : une ligne `foreign-resource` peut désigner la connexion de A avec
+    un `presentingClientId` B connu, car `refuseForeignResource()` ne lie pas le code à son client (league le
+    ferait) → dire dans la règle que cette ligne ne prouve pas que le présentant détient le code, ou auditer
+    `invalid_target` après la liaison (à trancher). **Task 19** (nits tests/doc) : la règle « mirrors
+    `getClientEntity()` » = forme et existence seulement, pas la liaison code/client ; cas `%FF%FE` et 256 car. du
+    nouveau test non discriminants pour la garde de forme (seuls octets non UTF-8 / NUL le sont) ; le test n'affirme
+    pas l'absence de ligne `foreign-resource` quel que soit le statut ; drapeau `registered` du fournisseur sans
+    pouvoir discriminant (cas redondants) ; `connectionIdsOf()` suppose une seule connexion du client (comparer à la
+    connexion de l'artefact).
+  - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
+    compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
+    (PR vers `feature/379-mcp-paliers`).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
