@@ -789,6 +789,17 @@
     saturé par les règles de la zone `Mcp`, rien d'écrit, arbre propre en `2ce9ac88`). **F1b-1 relancée** au même
     cran (l'échec tient au contexte, pas au modèle), brief qui donne tous les faits d'avance : aucun `Read` dans
     `backend/src/Mcp/` ni `backend/tests/Mcp/`, seulement `sed -n` / `grep -n` à sortie coupée.
+  - **F1b-1 faite** (`032511cb`, 3 fichiers, +41/−1) : `McpClientIdOfVerifiedDomainException` implémente
+    `ProblemExceptionInterface` (`HasProblemType`, `client-id-of-verified-domain`, 422) ; le 422 du `PUT` le vérifie
+    (`BackofficeMcpClientResourceTest`) ; `McpClientExceptionMappingTest::testTheVerifiedDomainRefusalCarriesItsOwnType`.
+    Preuve : rouge vérifié d'abord (agent) ; tests ciblés relancés par le fil principal `OK (270 tests, 3682
+    assertions)` ; `make back-quality` rc 0 et `make back-test` `OK (6754 tests, 128065 assertions)` (agent).
+    **Constats écrits, non corrigés** (faibles) : l'entrée de map à 422 (`api_platform.yaml:178`) fait doublon avec
+    `problemStatus()` (même cas que `McpClientNotFoundException` ; la retirer imposerait de retirer sa ligne de
+    `mappedStatuses()`) ; le docblock de `McpClientExceptionMappingTest` (« une exception à statut porté n'a pas
+    d'entrée de map ») n'est plus vrai en général.
+  - **F1b-2 lancée** (opus/xhigh, même brief anti-saturation) : champ `shadowsVerifiedDomain` (ressource, Provider,
+    Processor `POST`/`PUT`, test fonctionnel), HEAD `032511cb` au lancement. Puis F1c, puis F2.
   - **Prochaine action** : **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
