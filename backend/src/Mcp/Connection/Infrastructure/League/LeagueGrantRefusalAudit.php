@@ -56,13 +56,18 @@ use Symfony\Component\Uid\Uuid;
  * la ligne masquante B présentée ; `clientId` est alors celui de la connexion
  * (A, ce que l'artefact désigne) et `presentingClientId` celui de B.
  *
- * Coût : un déchiffrement de plus que celui de league sur **tout** refus 4xx
- * qui porte un artefact, authentique ou non — il faut déchiffrer pour le
- * savoir, `invalid_client` compris ; une requête SQL native en plus pour un
- * artefact authentique seulement (la nature du client présenté sur un
- * `invalid_client`, puis la référence de la connexion), l'EntityManager étant
- * fermé par la transaction annulée. Le rejeu non prouvé (recordUnprovenReplay(), #726) ne déchiffre
- * rien : sa connexion est celle de la compromission ; sa requête reste.
+ * Coût : sur `invalid_client`, **aucun déchiffrement ni requête SQL** hors
+ * d'un domaine vérifié — la condition est tranchée en mémoire avant tout
+ * (AllowedClientDomains::isVerifiedClientId()), comme league, qui ne
+ * déchiffre rien sur ce refus. Pour un `client_id` d'un domaine vérifié, un
+ * déchiffrement, puis, pour un artefact authentique seulement, une requête
+ * SQL native (la nature du client présenté). Sur tout autre refus 4xx qui
+ * porte un artefact, authentique ou non, c'est un déchiffrement de plus que
+ * celui de league — il faut déchiffrer pour le savoir —, et, pour un artefact
+ * authentique seulement, la requête de la référence de la connexion,
+ * l'EntityManager étant fermé par la transaction annulée. Le rejeu non prouvé
+ * (recordUnprovenReplay(), #726) ne déchiffre rien : sa connexion est celle de
+ * la compromission ; sa requête reste.
  */
 final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterface
 {
@@ -95,6 +100,12 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
      * inauthentique, écrit la ligne du refus : cause classée par
      * LeagueGrantRefusals, ou, sur `invalid_client`, seulement la cause de la
      * ligne masquante — tout autre `invalid_client` ne laisse rien.
+     *
+     * Sur `invalid_client`, trois conditions, dans l'ordre du moins cher au
+     * plus cher : le `client_id` présenté est celui d'un domaine vérifié (en
+     * mémoire), l'artefact est authentique (un déchiffrement), la ligne de ce
+     * client est `preregistered` (une requête SQL). Un `client_id` hors
+     * domaine vérifié sort donc sans déchiffrement ni SQL.
      */
     public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
@@ -117,16 +128,26 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
             return;
         }
 
+        // Sur `invalid_client`, seul le refus d'une ligne pré-enregistrée
+        // masquante (règle D-C, #652) laisse une ligne ; tout autre client
+        // refusé ne désigne rien. Premier critère, en mémoire, sans E/S :
+        // un `client_id` qui n'est pas celui d'un domaine vérifié sort ici,
+        // avant tout déchiffrement et toute requête — comme league, qui ne
+        // déchiffre rien sur `invalid_client`. Il garantit aussi la forme du
+        // `client_id` envoyé ensuite à PostgreSQL (voir isShadowingRow()).
+        if ($clientRefused && !$this->allowedDomains->isVerifiedClientId($presentingClientId)) {
+            return;
+        }
+
         $connectionId = $this->payloadReader->connectionIdOf($artifact);
         if (null === $connectionId) {
             return;
         }
 
         if ($clientRefused) {
-            // Le client n'a pas été authentifié : seul le refus d'une ligne
-            // pré-enregistrée masquante (règle D-C, #652) désigne la
-            // connexion de l'artefact authentique ; tout autre `invalid_client`
-            // (client inconnu) ne désigne rien.
+            // Le client n'a pas été authentifié, l'artefact est authentique :
+            // la ligne n'est écrite que si le `client_id` présenté est celui
+            // d'une ligne masquante (lecture SQL de sa nature).
             if (!$this->isShadowingRow($presentingClientId)) {
                 return;
             }
@@ -143,6 +164,13 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
      * vérifié ? `McpClientRepositoryInterface::registrationOf()` passe par
      * DBAL (SQL natif) et non par l'ORM : la transaction annulée a fermé
      * l'EntityManager. Un client inconnu (aucune ligne) ne masque rien.
+     *
+     * L'appelant a déjà vérifié `isVerifiedClientId()` : le `client_id` a donc
+     * la forme de McpClientId (`CimdClientId::tryFrom()` commence par
+     * `McpClientId::fromString()`, un motif ASCII entièrement ancré), jamais un
+     * UTF-8 invalide ni un octet nul que PostgreSQL rejetterait — ce qui
+     * ferait tomber l'audit en `critical` pour un client_id choisi par
+     * l'appelant. Ne pas appeler sans ce garde-fou.
      */
     private function isShadowingRow(string $presentingClientId): bool
     {

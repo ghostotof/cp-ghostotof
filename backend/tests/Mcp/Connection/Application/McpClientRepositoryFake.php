@@ -39,6 +39,9 @@ final class McpClientRepositoryFake implements McpClientRepositoryInterface
     /** Le nombre de lectures de `isDiscovered()`. */
     public int $discoveryChecks = 0;
 
+    /** Le nombre de lectures de `registrationOf()`, la requête SQL de l'audit du point de jeton (#652). */
+    public int $registrationReads = 0;
+
     /** @var list<McpClient> les clients supprimés par `remove()`, dans l'ordre */
     public array $removed = [];
 
@@ -55,6 +58,8 @@ final class McpClientRepositoryFake implements McpClientRepositoryInterface
 
     public function registrationOf(string $clientId): ?ClientRegistration
     {
+        ++$this->registrationReads;
+
         return null !== $this->existing && $clientId === $this->existing->getClientId() ? $this->existing->registration() : null;
     }
 

@@ -12,7 +12,9 @@ use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\Support\FixedHostAddressResolver;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\NoPrivateNetworkHttpClient;
@@ -34,6 +36,7 @@ use Symfony\Component\HttpFoundation\Response;
 final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
 {
     use HoldsAnMcpConnection;
+    use ReadsAllChannelsLog;
     use ReadsSecurityAuditLog;
     use SpeaksMcp;
 
@@ -156,6 +159,28 @@ final class MasqueradingPreregisteredRowTokenTest extends WebTestCase
         $this->assertOAuthError($this->exchange($code, ['client_id' => 'https://claude.ai/unknown.json', 'redirect_uri' => self::CIMD_REDIRECT]), Response::HTTP_UNAUTHORIZED, 'invalid_client');
 
         self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+    }
+
+    /**
+     * Un `client_id` qui n'est pas de la forme du domaine (octets non UTF-8)
+     * présenté avec un code authentique : league refuse `invalid_client`, et
+     * l'audit tranche en mémoire, sans envoyer la valeur à PostgreSQL, qui la
+     * rejetterait — la panne sortait en `critical` (« Grant refusal not
+     * audited. ») à volonté, pour qui détient un vrai code.
+     */
+    public function testAMalformedClientIdWithAnAuthenticCodeIsRefusedWithoutAnAuditFailure(): void
+    {
+        $code = $this->grantedCode();
+        $this->aMasqueradingRow();
+
+        $this->assertOAuthError($this->exchange($code, ['client_id' => "\xFF\xFE"]), Response::HTTP_UNAUTHORIZED, 'invalid_client');
+
+        self::assertSame([], self::securityAuditEvents('mcp-grant-refused'));
+        $failures = array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+        );
+        self::assertSame([], array_values($failures), 'Un client_id mal formé a atteint PostgreSQL : l\'audit du refus est tombé en panne.');
     }
 
     /**
