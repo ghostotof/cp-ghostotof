@@ -554,7 +554,19 @@
     l'agent F-c (remplace celui de F-a) : à reprendre en Task 19.
     - Constat écrit (Task 19/PR, faible, conf. moyenne) : une future porte d'écriture `preregistered` hors registrar
       contournerait le refus ; garde possible dans `McpClient::register()` ou test d'architecture.
-  - **Prochaine action** : agent **F-b** (sonnet/high), puis relecture F
+  - **F-b faite** (`971e83d5` test caractérisation DELETE pré-enregistré + cascade, prouvé par mutation ; `91e91b95`
+    Provider : `countActiveOfClient` seulement si `$operation instanceof Get` ; `1f10558c` Provider lève
+    `McpClientNotFoundException::forTheCaller()` → un seul 404 typé GET/PUT/DELETE ; `c9530b37` `Put` en
+    `allow_extra_attributes: false` → 400 `MalformedRequestBodyException`, message fixe). Contrôlée : filtre
+    `BackofficeMcp|ApiRouteExposure|RouterScope|ItemRouteRequirement|MalformedRequestBody` 115 verts après restart ;
+    agent : `make back-test` 6706 verts, `make back-quality` propre. Note : `BackofficeMcpClientRemovalTest` portait
+    déjà sur un client **pré-enregistré** (`RegisteredMcpClient::of()`) ; aucun test CIMD de bout en bout avec bearer
+    détenu (écrit, PR). Textes de règle proposés par l'agent F-b (Provider d'item, 404 typé, `allow_extra_attributes`)
+    : à reprendre en Task 19.
+  - **Décisions de l'utilisateur (2026-11-21, après F-b)** : le `activeConnections = 0` non lu de la ressource rendue
+    par le Provider à `PUT`/`DELETE` est **accepté, documenté** ; **F-d** avant la relecture : `allow_extra_attributes:
+    false` aussi sur le `Post` (400, rien d'écrit).
+  - **Prochaine action** : agent **F-d** (sonnet/high), puis relecture F
     (`/code-review medium` sur `diff 139169f0...HEAD` + `agent-skills:security-auditor` opus/high : F-a/F-c touchent
     l'admission CIMD). Point fixe : `139169f0`. (Tasks 16-18, avec l'auditeur), S6 (F1-F7), Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
