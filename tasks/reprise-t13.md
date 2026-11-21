@@ -704,9 +704,33 @@
     audits 17544, cimd 24659, oauth 43917 o). « To revisit with CIMD (#651) » clos par lecture du code (motif
     `McpClientId` + garde `isVerifiedClientId()`) ; pas de test de bout en bout d'un `presentingClientId` URL dans
     `mcp-grant-refused` → **PR** (ou Task 19 si on veut la preuve exécutable). Micro-série F-g close (F-g1, F-g1b, F-g2).
-  - **Prochaine action** : relecture de F-g — `/code-review medium diff 25bdc951...HEAD` + security-auditor
-    opus/high, en parallèle ; tri au critère d'arrêt. Ensuite S6 (F1-F7), Task 19 (y noter : extraire le
-    compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
+  - **Relecture de F-g faite** (point fixe relu `25bdc951`, HEAD relu `1ace7177` = **point fixe suivant** ;
+    `/code-review medium` + security-auditor opus/high) : **0 critique/haut/moyen**, boucle close. Audit : axes 1-4
+    vérifiés (réordonnancement strictement équivalent, motif ASCII sûr, aucun oracle neuf — F-g en ferme un, témoin
+    `OAuthEncryptionKey('')` probant ; 22 + 16 tests verts). **Décision utilisateur : micro-série F-h** (faibles à
+    risque réel) :
+    1. `mcp-oauth-audits.md:150-155` : garantie de forme attribuée à `isKnownClient()` → citer
+       `ClientRepository::getClientEntity()` (league valide le client avant l'artefact), `isKnownClient()` pour
+       l'`invalid_target`, `isVerifiedClientId()` pour `invalid_client` ;
+    2. docblock de `testAForgedArtifactOnAShadowingRowIsNotAudited` (l.307) contraire à l'assertion (0 lecture) ;
+       libellé `'client inconnu'` du jeu de données l.236 (une ligne existe) ;
+    3. `isShadowingRow()` autonome : `isVerifiedClientId($id) && Preregistered === registrationOf($id)` ;
+    4. tests : épingler la `connectionId` désignée (unitaire : UUID gardé et comparé ; fonctionnel : connexion
+       détenue) ; cas manquant « domaine vérifié sans ligne + artefact authentique » → 1 lecture, aucune ligne.
+    Écrit, non corrigé — **Task 19** : 3e copie du prédicat « client connu » (`TokenEndpoint::isKnownClient()` /
+    `ClientRepository::getClientEntity()`, une méthode `findServable()` ou test de parité ; à joindre au prédicat D-C
+    recopié) ; typer `registrationOf(McpClientId|CimdClientId)` + test dépôt avec `"\xFF"` ;
+    `isKnownClient()` juge sur l'id stocké, l'audit sur l'id présenté (même chaîne aujourd'hui) ;
+    `registrationOf()` : `tryFrom()` → null silencieux sur valeur inconnue (antérieur). **PR** : coût de
+    déchiffrement résiduel sur domaine vérifié (documenté, borné nginx) ; course suppression admin / relecture de
+    l'audit (limite) ; 400 → 401 sur `resource` étranger + ligne masquante (notes de release) ; oracle résiduel
+    `cimd` découverte 400 / absente 401 (identifiants publics) ; identifiants proches d'un vérifié
+    (`:443`, majuscules) préenregistrables — à décider ; question : test fonctionnel du `client_id` mal formé vu
+    rouge sur `25bdc951` ? (à confirmer depuis le rapport F-g1).
+  - **Prochaine action** : F-h (agent sonnet/high, 4 fichiers : `mcp-oauth-audits.md`,
+    `LeagueGrantRefusalAudit.php`, `LeagueGrantRefusalAuditTest.php`, `MasqueradingPreregisteredRowTokenTest.php`),
+    puis relecture `/code-review medium diff 1ace7177...HEAD` + security-auditor opus/high. Ensuite S6 (F1-F7),
+    Task 19 (y noter : extraire le compteur de requêtes vers `tests/Support`), relecture complète, étape 08.
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
