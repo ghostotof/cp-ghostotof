@@ -54,11 +54,15 @@ use Symfony\Component\Routing\Requirement\Requirement;
         // `provider:` explicite : sans lui, API Platform ne trouve pas l'élément (404).
         // Le Provider sert de lecture avant écriture (404 d'un client inconnu) ; la
         // sérialisation des écritures est sous le verrou de l'administrateur.
-        // Le corps n'est pas la ressource : un `clientId` ne se révise pas.
+        // Le corps n'est pas la ressource : un `clientId` ne se révise pas, et un
+        // attribut que l'entrée ne porte pas (`clientId` compris) est refusé (400,
+        // MalformedRequestBodyException) au lieu d'être ignoré avec un 200. Ce
+        // contexte est fusionné avec le défaut global (`api_allow_update: false`).
         new Put(
             uriTemplate: '/backoffice/mcp/clients/{id}',
             requirements: ['id' => Requirement::UUID],
             status: 200,
+            denormalizationContext: ['allow_extra_attributes' => false],
             input: BackofficeMcpClientRevisionInput::class,
             provider: BackofficeMcpClientProvider::class,
             processor: BackofficeMcpClientProcessor::class,

@@ -352,6 +352,49 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
     }
 
+    /**
+     * Le `clientId` est immuable (il est celui que les connexions et les
+     * consentements ont vu) : l'envoyer dans un `PUT` n'est pas « ignoré avec
+     * un 200 », c'est un corps mal formé. `allow_extra_attributes: false` sur
+     * l'opération le refuse (`MalformedRequestBodyException`, 400, message fixe) ;
+     * tout autre attribut inconnu l'est de la même façon, à dessein : un corps
+     * qui ne tient pas le contrat échoue au lieu de laisser croire qu'un champ
+     * a été pris en compte. Le refus précède toute écriture : la ligne est
+     * intacte, rien n'est audité, et la valeur saisie n'est jamais recopiée.
+     */
+    #[DataProvider('bodiesWithAnAttributeTheRevisionDoesNotTake')]
+    public function testARevisionBodyWithAnUnknownAttributeIsRefusedAsMalformed(string $attribute, string $value): void
+    {
+        $client = self::createClient();
+        $this->registerAccount($client, self::SUPER_USERNAME, [CpgUser::ROLE_SUPER]);
+        $stored = RegisteredMcpClient::of(self::PREREGISTERED_CLIENT_ID, 'Nom intact', ['https://client.example.test/callback']);
+        $this->clients()->add($stored);
+        $csrf = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/mcp/clients/'.$stored->getId()->toRfc4122(), server: $this->jsonWrite($csrf), content: self::jsonBody([
+            'name' => 'Nom changé',
+            'redirectUris' => ['https://client.example.test/callback'],
+            $attribute => $value,
+        ]));
+
+        self::assertResponseStatusCodeSame(400);
+        $content = (string) $client->getResponse()->getContent();
+        self::assertStringNotContainsString($value, $content, 'La valeur saisie n\'est jamais recopiée dans la réponse.');
+        $reloaded = $this->clients()->findOneByClientId(self::PREREGISTERED_CLIENT_ID);
+        self::assertNotNull($reloaded);
+        self::assertSame('Nom intact', $reloaded->getName(), 'Un corps refusé n\'écrit rien.');
+        self::assertSame([], self::securityAuditEvents('mcp-client-revised'));
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function bodiesWithAnAttributeTheRevisionDoesNotTake(): iterable
+    {
+        yield 'clientId (immuable)' => ['clientId', 'https://autre.example.test/metadata.json'];
+        yield 'attribut inconnu' => ['colour', 'turquoise-value'];
+    }
+
     public function testRevisingAnUnknownClientIs404(): void
     {
         $client = self::createClient();
@@ -660,6 +703,8 @@ final class BackofficeMcpClientResourceTest extends WebTestCase
      * le même problème typé — et non le 404 générique d'API Platform, d'un autre
      * `type` et d'un autre `detail`. Le message est fixe : il ne recopie jamais
      * l'identifiant demandé.
+     *
+     * @param array<string, mixed>|null $body
      */
     #[DataProvider('operationsOnAnUnknownClient')]
     public function testAnUnknownClientAnswersTheSameTypedProblemWhateverTheOperation(string $method, ?array $body): void
