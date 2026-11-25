@@ -820,6 +820,20 @@
     `id-of-verified-domain` ; clé `clientRemoved` avancée en F4 si une garde i18n rougit ; « Échéance prévue » en F6 ;
     ligne `shadowsVerifiedDomain` non révisable en F5, indicateur textuel). Après F7 : S6, Task 19, relecture complète,
     étape 08. **F1c faite** (`15230ca8`, relue : ✅). **F2 faite** (`aee12ff4`, relue : ✅ ; 4e fichier `sessionEndedMapping.spec.ts`, garde voulue). Pour la Task 19 : docblocks de `AdminMcpRepository.ts` (refus 409/422), `frontend-session.md` « 15 dépôts » → 16. Constats préexistants : `noOmittedCredentials.spec.ts` > 5 s sous charge (intermittent) ; `parseProblem` lève `TypeError` sur un corps JSON `null`. **F3 lancée** (HEAD `aee12ff4`).
+  - **F3 à F7 faites et relues (2026-11-25)** : F3 `6b03aa18` (composables), F4 `aa48365e` (table unique des
+    causes), F5 `94794aa1` (page des clients), F6 `2ec1d93e` + `14bfc7ff` (page des connexions ; R13 : la cause
+    `person` vue de l'administrateur, « Révoquée par la personne »), F7 `5a5e09a3` (routes `admin-mcp-clients` /
+    `admin-mcp-connections`, liens, `REVIEWED_PROTECTED_ROUTES` ; R14 : fixture `ADMIN_SECTIONS` de
+    `AdminLayout.sessionEnded.spec.ts`). `make front-test` 2900/2900, lint et build verts (F7). Arbitrages R1-R14 et
+    mineurs parqués : ledger `.superpowers/sdd/plan-t13-backoffice-mcp/progress.md` (non versionné).
+  - **Prochaine action : S6**, `/code-review medium diff 4b07cdd9...HEAD` (HEAD relu = le commit de cette reprise),
+    puis la série de correction avec R9 (clé `ADMIN_MCP_REPOSITORY` dans la couche application), puis la Task 19.
+  - **À relire en navigateur par l'utilisateur** (hors portée de jsdom) : contraste, lecteur d'écran, 320 px des deux
+    pages et de la barre admin à cinq éléments ; focus non rendu après « Modifier »/« Annuler »/suppression (comme les
+    pages voisines). Textes inventés par F6 à relire : `states.revoked`, `revokedOn`, `plannedExpiry`, `noCause`,
+    `causes.clientRemoved`, `caption`, `seo.adminMcpConnections.*` ; texte SEO de F5.
+  - **Pour la Task 19, en plus** : docblocks d'`useAdminMcpClients.ts` (`admin.mcp.errors.*` → `admin.mcpClients.errors.*`),
+    `mcp-oauth-revocation-personne.md:323` (`CAUSE_LABEL_KEYS` → `REVOCATION_CAUSE_LABEL_KEYS`, par sed).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
