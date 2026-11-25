@@ -484,6 +484,11 @@
       "empty": "Aucun client MCP enregistré.",
       "loading": "Chargement des clients MCP…",
       "loadError": "Le chargement des clients MCP a échoué. Réessayez plus tard.",
+      "outcome": {
+        "registered": "Client MCP pré-enregistré.",
+        "revised": "Client MCP modifié.",
+        "removed": "Client MCP supprimé."
+      },
       "errors": {
         "not-found": "Ce client n'existe plus : il a été supprimé depuis la lecture de la liste.",
         "client-id-taken": "Cet identifiant est déjà celui d'un autre client.",

@@ -484,6 +484,11 @@
       "empty": "No MCP client registered.",
       "loading": "Loading MCP clients…",
       "loadError": "Failed to load MCP clients. Please try again later.",
+      "outcome": {
+        "registered": "MCP client pre-registered.",
+        "revised": "MCP client updated.",
+        "removed": "MCP client deleted."
+      },
       "errors": {
         "not-found": "This client no longer exists: it was deleted since the list was read.",
         "client-id-taken": "This identifier already belongs to another client.",

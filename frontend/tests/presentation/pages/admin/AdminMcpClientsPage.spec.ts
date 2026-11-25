@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import AdminMcpClientsPage from '../../../../src/presentation/pages/admin/AdminMcpClientsPage.vue'
 import BaseTextInput from '../../../../src/presentation/ui/BaseTextInput.vue'
@@ -64,8 +64,13 @@ function createStubRepository(overrides: Partial<AdminMcpRepository> = {}): Admi
   }
 }
 
-async function mountPage(repository: AdminMcpRepository = createStubRepository()): Promise<VueWrapper> {
+async function mountPage(
+  repository: AdminMcpRepository = createStubRepository(),
+  attachTo?: HTMLElement,
+): Promise<VueWrapper> {
   const wrapper = mount(AdminMcpClientsPage, {
+    // Attachée au document quand le test juge le focus : `document.activeElement` ne voit pas un arbre détaché.
+    attachTo,
     global: {
       plugins: [createAppI18n()],
       provide: { [ADMIN_MCP_REPOSITORY as symbol]: repository },
@@ -97,6 +102,61 @@ async function fillForm(wrapper: VueWrapper, values: { clientId?: string; name: 
 async function submitForm(wrapper: VueWrapper): Promise<void> {
   await wrapper.get('form').trigger('submit')
   await flushPromises()
+}
+
+/** Une promesse que le test règle à la main : la mutation ou la relecture reste en vol le temps d'une assertion. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+
+  return { promise, resolve }
+}
+
+/**
+ * Ce que fait le navigateur au bouton qui se désactive sous le focus : il le lui ôte, ce que jsdom ne fait pas. Appelé par
+ * une mutation simulée, il oblige la page à rendre le focus elle-même.
+ */
+function dropFocusLikeABrowser(): void {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+}
+
+/** Le titre du formulaire, premier `h2` de la page : « Pré-enregistrer un client MCP » ou « Modifier le client MCP ». */
+function formHeading(wrapper: VueWrapper): DOMWrapper<Element> {
+  const heading = wrapper.findAll('h2')[0]
+  if (!heading) throw new Error('Titre du formulaire introuvable.')
+  return heading
+}
+
+/** Le titre de la liste, lu par son texte. */
+function listHeading(wrapper: VueWrapper): DOMWrapper<Element> {
+  const heading = wrapper.findAll('h2').find((candidate) => candidate.text() === TEXTS.listTitle)
+  if (!heading) throw new Error('Titre de la liste introuvable.')
+  return heading
+}
+
+/** Le texte de la région d'annonce, présente dès le montage et vide tant que rien n'est annoncé. */
+function statusText(wrapper: VueWrapper): string {
+  return wrapper.get('[role="status"]').text()
+}
+
+/** Clique un bouton qui a le focus, comme au clavier : le test juge ensuite où le focus est allé. */
+async function focusAndClick(button: DOMWrapper<HTMLButtonElement>): Promise<void> {
+  button.element.focus()
+  await button.trigger('click')
+  await flushPromises()
+}
+
+/** Laisse passer le délai entre le déplacement du focus et l'annonce (`useFocusThenAnnounce`). */
+async function letTheAnnouncementThrough(): Promise<void> {
+  await vi.runAllTimersAsync()
+  await flushPromises()
+}
+
+/** Les gestes qui écrivent : « Modifier » et « Supprimer » de chaque ligne, « Enregistrer » du formulaire. */
+function mutationButtons(wrapper: VueWrapper): DOMWrapper<HTMLButtonElement>[] {
+  return [...wrapper.findAll<HTMLButtonElement>('tbody button'), buttonLabelled(wrapper, TEXTS.save)]
 }
 
 afterEach(() => {
@@ -231,6 +291,287 @@ describe('AdminMcpClientsPage', () => {
       expect(alerts).toHaveLength(1)
       expect(alerts[0]?.text()).toBe(TEXTS.errors['not-found'])
       expect(wrapper.get('form').find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it('vide aussi le formulaire quand la suppression du client en révision échoue en « n’existe plus »', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const wrapper = await mountPage(
+        createStubRepository({
+          removeClient: vi.fn(async () => {
+            throw new AdminMcpError('not-found', 'x')
+          }),
+        }),
+      )
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      expect(formHeading(wrapper).text()).toBe(TEXTS.edit)
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction).trigger('click')
+      await flushPromises()
+
+      // Le client n'existe plus : une révision partirait sur un 404.
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect((wrapper.get('#admin-mcp-client-name').element as HTMLInputElement).value).toBe('')
+      // L'échec reste dit près du tableau, pas effacé avec le formulaire.
+      const alerts = wrapper.findAll('[role="alert"]')
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]?.text()).toBe(TEXTS.errors['not-found'])
+      expect(wrapper.get('form').find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it('garde la révision quand la suppression du client en révision échoue pour une autre raison', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const wrapper = await mountPage(
+        createStubRepository({
+          removeClient: vi.fn(async () => {
+            throw new AdminMcpError('unknown', 'x')
+          }),
+        }),
+      )
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction).trigger('click')
+      await flushPromises()
+
+      // Le client existe peut-être encore : la saisie en cours n'est pas jetée.
+      expect(formHeading(wrapper).text()).toBe(TEXTS.edit)
+      expect((wrapper.get('#admin-mcp-client-name').element as HTMLInputElement).value).toBe(PREREGISTERED.name)
+      expect(wrapper.get('[role="alert"]').text()).toBe(TEXTS.errors.unknown)
+    })
+  })
+
+  describe('une mutation à la fois', () => {
+    it('pendant une suppression en vol, « Modifier », « Supprimer » et « Enregistrer » sont désactivés', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const pending = deferred<undefined>()
+      const wrapper = await mountPage(createStubRepository({ removeClient: vi.fn(() => pending.promise) }))
+
+      await buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction).trigger('click')
+      await flushPromises()
+
+      // Trois « Supprimer », un « Modifier » (la seule ligne révisable), « Enregistrer ».
+      expect(mutationButtons(wrapper)).toHaveLength(5)
+      for (const button of mutationButtons(wrapper)) expect(button.attributes('disabled'), button.text()).toBeDefined()
+
+      pending.resolve(undefined)
+      await flushPromises()
+
+      for (const button of mutationButtons(wrapper)) expect(button.attributes('disabled'), button.text()).toBeUndefined()
+    })
+
+    it('pendant une révision en vol, les gestes du tableau et « Annuler » sont désactivés', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ reviseClient: vi.fn(() => pending.promise) }))
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await submitForm(wrapper)
+
+      // « Annuler » viderait le formulaire sous la révision, et son échec ne se dirait nulle part.
+      const gestures = [...mutationButtons(wrapper), buttonLabelled(wrapper, TEXTS.cancel)]
+      for (const button of gestures) expect(button.attributes('disabled'), button.text()).toBeDefined()
+
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
+
+      for (const button of mutationButtons(wrapper)) expect(button.attributes('disabled'), button.text()).toBeUndefined()
+    })
+
+    it('un double clic sur « Supprimer » n’envoie qu’une suppression, sans dire que le client n’existe plus', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let calls = 0
+      const repository = createStubRepository({
+        // Le serveur répondrait 404 au second DELETE : le client vient d'être supprimé par le premier.
+        removeClient: vi.fn(async () => {
+          calls += 1
+          if (calls > 1) throw new AdminMcpError('not-found', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository)
+      const button = buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction)
+
+      // Les deux clics partent avant que Vue ne rende le bouton désactivé : seule la garde du code refuse le second.
+      await Promise.all([button.trigger('click'), button.trigger('click')])
+      await flushPromises()
+
+      expect(repository.removeClient).toHaveBeenCalledTimes(1)
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).not.toContain(TEXTS.errors['not-found'])
+    })
+  })
+
+  describe('le focus et l’annonce après un geste', () => {
+    beforeEach(() => {
+      // Seuls `setTimeout` et `clearTimeout` sont simulés : `flushPromises` (setImmediate) reste réel.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('une suppression réussie porte le focus sur le titre de la liste, puis l’annonce', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let reads = 0
+      const repository = createStubRepository({
+        listClients: vi.fn(async () => {
+          reads += 1
+          return 1 === reads ? [PREREGISTERED, DECLARED, SHADOWING] : [PREREGISTERED, SHADOWING]
+        }),
+        removeClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+
+      // La ligne et son bouton ont disparu : le focus va au titre de la liste, jamais sur `body`.
+      expect(wrapper.text()).not.toContain(DECLARED.clientId)
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+      // L'annonce suit le déplacement du focus, pour ne pas être coupée par la lecture du titre.
+      expect(statusText(wrapper)).toBe('')
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+    })
+
+    it('garde le tableau monté, marqué occupé, pendant la relecture qui suit une suppression', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const reread = deferred<readonly AdminMcpClient[]>()
+      let reads = 0
+      const repository = createStubRepository({
+        listClients: vi.fn(() => {
+          reads += 1
+          return 1 === reads ? Promise.resolve([PREREGISTERED, DECLARED, SHADOWING]) : reread.promise
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+
+      expect(wrapper.text()).not.toContain(TEXTS.loading)
+      expect(wrapper.get('table').element.parentElement?.getAttribute('aria-busy')).toBe('true')
+      // Jamais `aria-busy` sur un ancêtre de la région d'annonce : il la ferait taire.
+      expect(wrapper.get('[role="status"]').element.closest('[aria-busy="true"]')).toBeNull()
+
+      reread.resolve([PREREGISTERED, SHADOWING])
+      await flushPromises()
+
+      expect(wrapper.get('table').element.parentElement?.getAttribute('aria-busy')).toBe('false')
+      expect(wrapper.text()).not.toContain(DECLARED.clientId)
+    })
+
+    it('un enregistrement réussi porte le focus sur le titre du formulaire, puis l’annonce', async () => {
+      const repository = createStubRepository({
+        registerClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          return PREREGISTERED
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      expect(statusText(wrapper)).toBe('')
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.registered)
+    })
+
+    it('une révision réussie porte le focus sur le titre du formulaire, revenu à la création, puis l’annonce', async () => {
+      const repository = createStubRepository({
+        reviseClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          return PREREGISTERED
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.revised)
+    })
+
+    it('« Modifier » porte le focus sur le titre du formulaire, devenu celui de la modification', async () => {
+      const wrapper = await mountPage(createStubRepository(), document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction))
+
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      expect(formHeading(wrapper).text()).toBe(TEXTS.edit)
+    })
+
+    it('« Annuler », qui disparaît sous le focus, le rend au titre du formulaire', async () => {
+      const wrapper = await mountPage(createStubRepository(), document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await focusAndClick(buttonLabelled(wrapper, TEXTS.cancel))
+
+      expect(wrapper.findAll('button').map((button) => button.text())).not.toContain(TEXTS.cancel)
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+    })
+
+    it('l’échec d’une suppression rend le focus au bouton cliqué, sans rien annoncer', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const repository = createStubRepository({
+        removeClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          throw new AdminMcpError('unknown', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+      const button = buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction)
+
+      await focusAndClick(button)
+
+      expect(document.activeElement).toBe(button.element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe('')
+    })
+
+    it('l’échec d’un enregistrement rend le focus à « Enregistrer », sans rien annoncer', async () => {
+      const repository = createStubRepository({
+        registerClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          throw new AdminMcpError('unknown', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+      const save = buttonLabelled(wrapper, TEXTS.save)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      save.element.focus()
+      await submitForm(wrapper)
+
+      expect(document.activeElement).toBe(save.element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe('')
+    })
+
+    it('un nouveau geste efface l’annonce du précédent', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const repository = createStubRepository({
+        registerClient: vi.fn(async () => {
+          throw new AdminMcpError('unknown', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      await submitForm(wrapper)
+
+      // Un enregistrement refusé ne laisse pas lire « supprimé » à côté de son alerte.
+      expect(statusText(wrapper)).toBe('')
     })
   })
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminMcpClients } from '../../../application/admin/mcp/useAdminMcpClients'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
+import { useFocusThenAnnounce } from '../../ui/useFocusThenAnnounce'
 import type {
   AdminMcpClient,
   AdminMcpClientRegistration,
@@ -45,11 +46,49 @@ const ERROR_KEYS: Record<AdminMcpErrorReason, string> = {
   unknown: 'admin.mcpClients.errors.unknown',
 }
 
+/** L'issue d'une mutation réussie, dite par la région d'annonce une fois le focus déplacé. */
+type ClientOutcome = 'registered' | 'revised' | 'removed'
+
+/** Une clé par issue, exhaustive par le même `Record`. */
+const OUTCOME_KEYS: Record<ClientOutcome, string> = {
+  registered: 'admin.mcpClients.outcome.registered',
+  revised: 'admin.mcpClients.outcome.revised',
+  removed: 'admin.mcpClients.outcome.removed',
+}
+
 /** L'UUID de la ligne en cours de révision (`AdminMcpClient.id`, jamais `clientId`), `null` en création. */
 const editingId = ref<string | null>(null)
 /** L'identifiant public du client révisé, montré sans être proposé à la saisie. */
 const editingClientId = ref('')
 const isSubmitting = ref(false)
+/** L'UUID du client dont la suppression est en vol, `null` sinon. */
+const removingId = ref<string | null>(null)
+
+/**
+ * Une seule mutation à la fois (C-S6). Les trois partagent l'`errorMessage` du composable, que chacune remet à
+ * `null` en partant : une suppression lancée pendant un envoi effaçait l'erreur du formulaire, ou faisait lire
+ * la 422 d'une révision au-dessus du tableau ; un second clic sur « Supprimer » envoyait un second DELETE, dont
+ * le 404 disait « n'existe plus » d'un client que le premier venait de supprimer. Tant qu'une mutation est en
+ * vol, « Modifier », « Supprimer », « Enregistrer » et « Annuler » sont désactivés, et chaque geste refuse aussi
+ * dans le code : deux clics partis avant le rendu trouvent encore le bouton actif.
+ */
+const isMutating = computed(() => isSubmitting.value || null !== removingId.value)
+
+/** Les deux titres qui reçoivent le focus quand le bouton qui l'avait disparaît. */
+const formHeading = useTemplateRef<HTMLHeadingElement>('formHeading')
+const listHeading = useTemplateRef<HTMLHeadingElement>('listHeading')
+
+/** L'issue que la région d'annonce dit : écrite un court délai après le déplacement du focus (`frontend-a11y.md`). */
+const {
+  announced: announcedOutcome,
+  focusThenAnnounce,
+  cancel: cancelAnnouncement,
+  isUnmounted,
+} = useFocusThenAnnounce<ClientOutcome>()
+
+const outcomeText = computed<string>(() =>
+  null === announcedOutcome.value ? '' : t(OUTCOME_KEYS[announcedOutcome.value]),
+)
 
 /**
  * Le composable n'a qu'un `errorMessage` pour ses trois mutations ; la page retient le geste qui l'a produit,
@@ -86,6 +125,36 @@ const violationsText = computed<string | null>(() => {
 /** `aria-describedby` des champs : l'alerte du formulaire, seulement quand elle est rendue (un IDREF vers rien est une faute). */
 const fieldDescribedBy = computed(() => (formErrorShown.value ? FORM_ERROR_ID : undefined))
 
+/**
+ * « Chargement » tant que rien n'a été lu. La relecture qui suit une mutation garde ce qui est affiché (le
+ * tableau, marqué `aria-busy`) : le remplacer par « Chargement » détruisait le bouton qui avait le focus, et le
+ * focus tombait sur `body` (C-S6). La chaîne `hasError` → `!isLoaded` → vide reste celle du gabarit.
+ */
+const showsLoading = computed(() => isLoading.value && !isLoaded.value)
+
+/** L'élément qui a le focus au départ d'un geste, `null` s'il n'est sur rien (`body`). */
+function focusedElement(): HTMLElement | null {
+  const active = document.activeElement
+
+  return active instanceof HTMLElement && document.body !== active ? active : null
+}
+
+/**
+ * Rend le focus à `element` s'il est tombé sur `body` pendant l'appel : le navigateur le retire d'un bouton qui
+ * devient `disabled`. Jamais pris à un autre élément : la personne a pu aller ailleurs pendant l'attente.
+ */
+function restoreFocusIfLost(element: HTMLElement | null): void {
+  if (null !== focusedElement() || null === element || !element.isConnected) return
+
+  element.focus()
+}
+
+/** Le titre du formulaire, après le rendu : il nomme le mode (création ou révision) où le formulaire vient de passer. */
+async function focusFormHeading(): Promise<void> {
+  await nextTick()
+  formHeading.value?.focus()
+}
+
 /** Le texte du `<textarea>` en liste : une redirection par ligne, blancs autour et lignes vides écartés. */
 function parseRedirectUris(text: string): string[] {
   return text
@@ -114,25 +183,47 @@ function resetForm(): void {
 }
 
 function startEdit(client: AdminMcpClient): void {
+  if (isMutating.value) return
+
+  // Un nouveau geste : l'issue déjà annoncée ne dit plus rien de la page.
+  cancelAnnouncement()
   editingId.value = client.id
   editingClientId.value = client.clientId
   form.clientId = ''
   form.name = client.name
   form.redirectUris = client.redirectUris.join('\n')
   errorPlace.value = null
+  // Le formulaire, plus haut, passe en révision : le focus y va, sans quoi le clavier resterait dans le tableau,
+  // loin des champs à réviser. Son titre plutôt que le premier champ : il dit le mode, et le premier champ n'est
+  // pas le même en création (l'identifiant) et en révision (le nom).
+  void focusFormHeading()
+}
+
+/** « Annuler » disparaît avec la révision : le focus va au titre du formulaire vidé, sans quoi il tomberait sur `body`. */
+function cancelEdit(): void {
+  if (isMutating.value) return
+
+  cancelAnnouncement()
+  resetForm()
+  void focusFormHeading()
 }
 
 async function handleSubmit(): Promise<void> {
-  if (isSubmitting.value) return
+  if (isMutating.value) return
 
+  // Lus avant l'appel : le focus, que le navigateur retire d'« Enregistrer » désactivé, et le mode, que le succès vide.
+  const focused = focusedElement()
+  const outcome: ClientOutcome = isEditing.value ? 'revised' : 'registered'
+  cancelAnnouncement()
   isSubmitting.value = true
   errorPlace.value = 'form'
   const redirectUris = parseRedirectUris(form.redirectUris)
+  let succeeded = false
 
   try {
     // Chaque corps est construit champ par champ, jamais par décomposition du formulaire : le serveur refuse
     // une clé en trop (400), et `clientId` ne se révise pas.
-    const succeeded =
+    succeeded =
       null !== editingId.value
         ? await revise(editingId.value, { name: form.name, redirectUris })
         : await register({ clientId: form.clientId, name: form.name, redirectUris })
@@ -143,9 +234,24 @@ async function handleSubmit(): Promise<void> {
   } finally {
     isSubmitting.value = false
   }
+
+  if (isUnmounted()) return
+  await nextTick()
+
+  if (succeeded) {
+    // Le formulaire vidé repasse en création : le focus va à son titre, puis l'issue est dite.
+    focusThenAnnounce(formHeading.value, outcome)
+  } else {
+    // Échec : l'alerte du formulaire le dit ; le focus revient là où la personne était.
+    restoreFocusIfLost(focused)
+  }
 }
 
-async function handleRemove(client: AdminMcpClient): Promise<void> {
+async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<void> {
+  // Refusé avant la confirmation : un second clic parti avant le rendu trouve « Supprimer » encore actif, et son
+  // DELETE rendrait un 404 (« n'existe plus ») d'un client que le premier vient de supprimer.
+  if (isMutating.value) return
+
   // Le décompte est celui de la dernière lecture : il peut avoir changé depuis, le serveur coupe toutes celles qui restent.
   // Trois formes (aucune, une, n connexions) : le nombre est passé en pluriel explicite, comme ailleurs dans le projet,
   // plutôt que de compter sur vue-i18n, qui le déduirait aussi du paramètre nommé `count`.
@@ -153,18 +259,53 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
   const confirmed = window.confirm(t('admin.mcpClients.confirmRemove', { name: client.name, count }, count))
   if (!confirmed) return
 
+  // Le bouton cliqué, pour lui rendre le focus si la suppression échoue (il est désactivé pendant l'appel).
+  const clicked = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  cancelAnnouncement()
   errorPlace.value = 'remove'
-  const succeeded = await remove(client.id)
+  removingId.value = client.id
+  let succeeded = false
 
-  // Le formulaire ne garde pas en révision un client qui n'existe plus.
-  if (succeeded && editingId.value === client.id) resetForm()
+  try {
+    succeeded = await remove(client.id)
+  } finally {
+    removingId.value = null
+  }
+
+  // Le formulaire ne garde pas en révision un client qui n'existe plus : supprimé à l'instant, ou déjà disparu (404).
+  if (editingId.value === client.id) {
+    if (succeeded) {
+      resetForm()
+    } else if ('not-found' === errorMessage.value?.reason) {
+      resetForm()
+      // `resetForm()` efface la place de l'erreur : le 404 se dit toujours au-dessus du tableau.
+      errorPlace.value = 'remove'
+    }
+  }
+
+  if (isUnmounted()) return
+  await nextTick()
+
+  if (succeeded) {
+    // La ligne et son bouton ont disparu : le focus va au titre de la liste, d'où la lecture reprend, puis l'issue est dite.
+    focusThenAnnounce(listHeading.value, 'removed')
+  } else {
+    // Échec : l'alerte au-dessus du tableau le dit ; le focus revient au bouton cliqué, s'il existe encore.
+    restoreFocusIfLost(null !== clicked && clicked.isConnected ? clicked : listHeading.value)
+  }
 }
 </script>
 
 <template>
   <div class="d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
-      <h2 class="h6 fw-bold text-white mb-3">
+      <!-- `tabindex="-1"` : le titre reçoit le focus quand le formulaire change de mode sous la personne
+           (« Modifier », « Annuler », un envoi réussi), sans entrer dans l'ordre de tabulation. -->
+      <h2
+        ref="formHeading"
+        class="h6 fw-bold text-white mb-3"
+        tabindex="-1"
+      >
         {{ isEditing ? t('admin.mcpClients.edit') : t('admin.mcpClients.create') }}
       </h2>
 
@@ -235,7 +376,7 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
           <button
             type="submit"
             class="btn btn-gradient"
-            :disabled="isSubmitting"
+            :disabled="isMutating"
           >
             {{ t('admin.mcpClients.save') }}
           </button>
@@ -243,7 +384,8 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
             v-if="isEditing"
             type="button"
             class="btn btn-outline-light"
-            @click="resetForm"
+            :disabled="isMutating"
+            @click="cancelEdit"
           >
             {{ t('admin.mcpClients.cancel') }}
           </button>
@@ -252,7 +394,12 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
     </div>
 
     <div class="surface-panel p-3 p-sm-4">
-      <h2 class="h6 fw-bold text-white mb-3">
+      <!-- Reçoit le focus quand la ligne supprimée emporte le bouton qui l'avait. -->
+      <h2
+        ref="listHeading"
+        class="h6 fw-bold text-white mb-3"
+        tabindex="-1"
+      >
         {{ t('admin.mcpClients.listTitle') }}
       </h2>
 
@@ -264,6 +411,15 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
         {{ t('admin.mcpClients.cimdNote') }}
       </p>
 
+      <!-- La seule région d'annonce de la page, présente dès le montage et vide : seul son contenu change, écrit
+           après le déplacement du focus (`useFocusThenAnnounce`). Hors du conteneur `aria-busy`, qui la ferait taire. -->
+      <p
+        role="status"
+        class="text-body-secondary small mb-3"
+      >
+        {{ outcomeText }}
+      </p>
+
       <p
         v-if="removeErrorShown"
         class="text-danger-emphasis small"
@@ -273,7 +429,7 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
       </p>
 
       <p
-        v-if="isLoading"
+        v-if="showsLoading"
         class="text-body-secondary mb-0"
       >
         {{ t('admin.mcpClients.loading') }}
@@ -303,6 +459,7 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
       <div
         v-else
         class="table-responsive position-relative"
+        :aria-busy="isLoading"
       >
         <table class="table table-dark align-middle mb-0">
           <caption class="visually-hidden">
@@ -371,6 +528,7 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
                   v-if="isRevisable(client)"
                   type="button"
                   class="btn btn-sm btn-outline-light me-2"
+                  :disabled="isMutating"
                   @click="startEdit(client)"
                 >
                   {{ t('admin.mcpClients.editAction') }}
@@ -378,7 +536,8 @@ async function handleRemove(client: AdminMcpClient): Promise<void> {
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-danger"
-                  @click="handleRemove(client)"
+                  :disabled="isMutating"
+                  @click="handleRemove(client, $event)"
                 >
                   {{ t('admin.mcpClients.deleteAction') }}
                 </button>
