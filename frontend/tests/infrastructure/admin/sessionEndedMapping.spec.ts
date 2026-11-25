@@ -6,6 +6,7 @@ import { HttpAdminAnonymousCvSectionRepository } from '../../../src/infrastructu
 import { HttpAdminCaseStudyRepository } from '../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
 import { HttpAdminContributionRepository } from '../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { HttpAdminIncidentRepository } from '../../../src/infrastructure/admin/incidents/HttpAdminIncidentRepository'
+import { HttpAdminMcpRepository } from '../../../src/infrastructure/admin/mcp/HttpAdminMcpRepository'
 import { HttpAdminQualityPrincipleRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityPrincipleRepository'
 import { HttpAdminQualityTraitRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityTraitRepository'
 import {
@@ -96,6 +97,14 @@ const cases: readonly RepositoryCase[] = [
       read: () => repository.list(),
       write: () => repository.remove('id'),
       reorder: () => repository.reorder(['a']),
+    }
+  })(),
+  (() => {
+    const repository = new HttpAdminMcpRepository(API_BASE_URL)
+    return {
+      name: 'HttpAdminMcpRepository',
+      read: () => repository.listClients(),
+      write: () => repository.removeClient('id'),
     }
   })(),
   (() => {
