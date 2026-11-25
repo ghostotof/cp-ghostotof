@@ -320,8 +320,9 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
   `revoked` / `already-gone` the focus goes to the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250
   ms later (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a refused request
   (session ended or real refusal) it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new «
-  Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `CAUSE_LABEL_KEYS`
-  (a newer backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
+  Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `REVOCATION_CAUSE_LABEL_KEYS`
+  (`presentation/mcp/revocationCauseLabelKeys.ts`, shared with the backoffice's connections page; a newer backend) reads
+  as the generic label: causes are mapped explicitly, never built by string concatenation.
 - **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with `aria-expanded` and
   `aria-controls`, a list of ordinary links), not a `role="menu"`. It closes on a second click, Escape, a click outside, a navigation, the
   choice of an entry and (#748) **when the focus leaves for an element outside the menu** (`focusout` with a non-null `relatedTarget`

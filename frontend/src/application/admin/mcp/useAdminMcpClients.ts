@@ -22,8 +22,12 @@ export const ADMIN_MCP_REPOSITORY: InjectionKey<AdminMcpRepository> = Symbol('Ad
  * - `declared-by-document` (409) : le client montré comme pré-enregistré, donc révisable, est désormais déclaré par
  *   son document de métadonnées (CIMD), que seul ce document fait évoluer ;
  * - `id-of-verified-domain` (422) : son identifiant est devenu celui d'un domaine vérifié depuis la lecture.
- * Les deux derniers ne tombent que sur une révision. Les autres raisons (`validation`, `client-id-taken`, `unknown`)
- * ne disent rien de la ligne : elle reste juste.
+ * Le 409 ne tombe que sur une révision. Le 422 typé aussi en pratique, mais un enregistrement (`POST`) peut le
+ * recevoir : le serveur y refuse d'ordinaire l'identifiant d'un domaine vérifié par une violation au champ
+ * `clientId` (raison `validation`), et ne rend le type `client-id-of-verified-domain` que si ce refus échappe au
+ * validateur (`McpClientIdOfVerifiedDomainException::cannotBePreregistered()`). La liste est alors relue pour rien,
+ * aucune ligne n'étant visée : une lecture de plus, acceptée plutôt qu'une liste de raisons propre à chaque geste.
+ * Les autres raisons (`validation`, `client-id-taken`, `unknown`) ne disent rien de la ligne : elle reste juste.
  */
 const STALE_ROW_REASONS: ReadonlySet<AdminMcpErrorReason> = new Set<AdminMcpErrorReason>([
   'not-found',
@@ -44,8 +48,8 @@ export interface UseAdminMcpClientsResult extends AdminLoadState {
   /** Les clients MCP, dans l'ordre que le serveur rend : la page ne retrie pas. */
   clients: Ref<readonly AdminMcpClient[]>
   /**
-   * L'échec de la dernière mutation, que la page traduit par sa `reason` (`admin.mcp.errors.*`, clés créées par
-   * les pages) ; `null` après un succès, et pour une session finie ou un refus réel, que le bandeau ou l'alerte
+   * L'échec de la dernière mutation, que la page traduit par sa `reason` (`admin.mcpClients.errors.*`, clés créées
+   * par la page des clients) ; `null` après un succès, et pour une session finie ou un refus réel, que le bandeau ou l'alerte
    * d'`AdminLayout` annoncent seuls (`visibleMutationError`).
    */
   errorMessage: Ref<AdminMcpError | null>

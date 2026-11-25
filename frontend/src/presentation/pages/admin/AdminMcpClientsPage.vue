@@ -464,7 +464,8 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
         />
 
         <!-- Rendu seulement pendant que les champs sont en lecture seule, qui le désignent alors (`isFormFrozen`). Placé
-             sous eux : il apparaît sans les décaler sous la main de la personne qui y tape. -->
+             sous eux : il ne décale pas les champs où la personne tape, mais son `v-if` décale les boutons du
+             formulaire, qui sont alors désactivés (une mutation est en vol), le temps de l'appel. -->
         <p
           v-if="isFormFrozen"
           :id="PENDING_HINT_ID"
