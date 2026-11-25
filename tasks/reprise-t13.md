@@ -819,7 +819,7 @@
     `.superpowers/sdd/plan-t13-backoffice-mcp/progress.md` — pré-vol et rulings R1…R4 (raison
     `id-of-verified-domain` ; clé `clientRemoved` avancée en F4 si une garde i18n rougit ; « Échéance prévue » en F6 ;
     ligne `shadowsVerifiedDomain` non révisable en F5, indicateur textuel). Après F7 : S6, Task 19, relecture complète,
-    étape 08. **F1c lancée** (HEAD `ae8368fc`).
+    étape 08. **F1c faite** (`15230ca8`, relue : ✅). **F2 faite** (`aee12ff4`, relue : ✅ ; 4e fichier `sessionEndedMapping.spec.ts`, garde voulue). Pour la Task 19 : docblocks de `AdminMcpRepository.ts` (refus 409/422), `frontend-session.md` « 15 dépôts » → 16. Constats préexistants : `noOmittedCredentials.spec.ts` > 5 s sous charge (intermittent) ; `parseProblem` lève `TypeError` sur un corps JSON `null`. **F3 lancée** (HEAD `aee12ff4`).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
