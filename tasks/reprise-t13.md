@@ -814,6 +814,12 @@
     Point fixe de la relecture S6 : `4b07cdd9`. Puis **S6** (frontend F1-F7, F10…, voir plus haut). Ensuite Task 19 (y noter : extraire le
     compteur de requêtes vers `tests/Support`), relecture complète avant la PR (`diff <merge-base>...HEAD`), étape 08
     (PR vers `feature/379-mcp-paliers`).
+  - **Bascule en `superpowers:subagent-driven-development`** (2026-11-25, demande de l'utilisateur) pour F1c…F7 :
+    un implémenteur par tâche (opus/xhigh), une relecture de tâche (sonnet) après chacune. Ledger (git-ignoré) :
+    `.superpowers/sdd/plan-t13-backoffice-mcp/progress.md` — pré-vol et rulings R1…R4 (raison
+    `id-of-verified-domain` ; clé `clientRemoved` avancée en F4 si une garde i18n rougit ; « Échéance prévue » en F6 ;
+    ligne `shadowsVerifiedDomain` non révisable en F5, indicateur textuel). Après F7 : S6, Task 19, relecture complète,
+    étape 08. **F1c lancée** (HEAD `ae8368fc`).
   - **C2, contenu** :
     - A1 : dans `ConsentService::grant()`, après `findOneByClientIdForShare()` / `saveDiscovered()`, refuser
       (refus typé, rien écrit) si `!$client->allowsRedirect($summary->redirectUri)` ; test sur le modèle de
