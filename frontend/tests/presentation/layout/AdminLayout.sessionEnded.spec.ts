@@ -83,6 +83,9 @@ const ADMIN_SECTIONS = [
   'case-studies',
   'watch',
   'users',
+  // Le backoffice MCP (#652) : deux onglets de 1er niveau ; seul leur nom compte ici, pas leur chemin réel `mcp/…`.
+  'mcp-clients',
+  'mcp-connections',
 ]
 
 /**

@@ -63,6 +63,8 @@ const AdminCaseStudiesPage = () => import('../pages/admin/AdminCaseStudiesPage.v
 const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
+const AdminMcpClientsPage = () => import('../pages/admin/AdminMcpClientsPage.vue')
+const AdminMcpConnectionsPage = () => import('../pages/admin/AdminMcpConnectionsPage.vue')
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -326,6 +328,22 @@ export const router = createRouter({
               name: 'admin-users',
               component: AdminUsersPage,
               meta: { titleKey: 'seo.adminUsers.title', descriptionKey: 'seo.adminUsers.description' },
+            },
+            {
+              // Backoffice MCP (#652, spec 0007) : les clients autorisés à se connecter au serveur MCP. Comme les
+              // autres enfants, la garde (`requiresAuth`, `ROLE_SUPER`) vient du `meta` du parent, et `seo.ts` en
+              // déduit `noindex` ; l'API est derrière `^/api/backoffice`, cette garde n'est que de l'accueil.
+              path: 'mcp/clients',
+              name: 'admin-mcp-clients',
+              component: AdminMcpClientsPage,
+              meta: { titleKey: 'seo.adminMcpClients.title', descriptionKey: 'seo.adminMcpClients.description' },
+            },
+            {
+              // Backoffice MCP (#652) : les connexions de tous les comptes, en lecture seule. Même garde héritée.
+              path: 'mcp/connections',
+              name: 'admin-mcp-connections',
+              component: AdminMcpConnectionsPage,
+              meta: { titleKey: 'seo.adminMcpConnections.title', descriptionKey: 'seo.adminMcpConnections.description' },
             },
           ],
         },
