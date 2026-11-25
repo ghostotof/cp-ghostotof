@@ -105,8 +105,9 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       `McpAccessTokenRefusalTest` reste à décalage fixe, voulu, son docblock le dit) ; ~~rafraîchissement
       d'une connexion expirée ou d'un compte déchu~~ (refusé, rien d'écrit) ; ~~refus d'un jeton connu non
       audité~~ (`mcp-access-token-refused`). **Restent, portés ailleurs** : la cause `person` et les
-      connexions accumulées visibles et révocables (#650, corps et commentaire) ; l'audit de la
-      suppression en cascade des connexions au retrait d'un client (#652, commentaire). **Portés depuis le
+      connexions accumulées visibles et révocables (#650, corps et commentaire) ; ~~l'audit de la
+      suppression en cascade des connexions au retrait d'un client~~ (#652, fait le 2026-11-25 : un
+      `mcp-connection-revoked` de cause `client-removed` par connexion coupée, puis `mcp-client-removed`). **Portés depuis le
       2026-10-27** : les autres refus OAuth de league non journalisés → #725 ; la connexion jamais utilisée
       d'un double clic sur l'approbation (limite acceptée, à montrer dans #650) → #650, commentaire du
       2026-10-27 ; les quatre limites acceptées du lot C des relectures (deux rafraîchissements légitimes
@@ -210,13 +211,38 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       acceptées** écrites dans la règle et dans l'ADR (dont le plafond épuisable par dix sources et le
       résolveur natif sans délai propre). **Reports inscrits** : sous la tâche 13 (#652) et sous la tâche 14
       (#653), ci-dessous.
-- [ ] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647 — reports de la tâche 8 : audit de
-      l'enregistrement d'un client ; bornes de `register()` et des redirections (longueur, `parse_str`) ;
-      borne du `client_id` (255 à la commande, 512 en base) ; second `findOneByClientId()` du
-      consentement et course de suppression (FK en 500) ; regex de l'index violé dupliquée.
-      **Reports de la tâche 12** : lister, supprimer et révoquer un client **déclaré** (CIMD) ; retirer un
-      domaine de la liste (les connexions déjà accordées survivent au retrait : limite acceptée de l'ADR 0006) ;
-      audit de l'enregistrement d'un client
+- [x] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647 —
+      **faite le 2026-11-25** sur `feature/spec-0007-t13-backoffice-mcp` (plan `tasks/plan-t13-backoffice-mcp.md`), PR
+      vers la mère `feature/379-mcp-paliers` à ouvrir, l'issue #652 se ferme à la main après la fusion ; règle
+      `.claude/rules/mcp-backoffice.md`, glossaire `CONTEXT.md` (« Suppression d'un client MCP »), registre RGPD §6.
+      Pages `/admin/mcp/clients` (enregistrer, réviser, supprimer) et `/admin/mcp/connections` (toutes les connexions
+      vivantes et les 200 dernières terminées). Reports de la tâche 8 : ~~audit de l'enregistrement d'un client~~
+      (`mcp-client-registered`, D-G) ; ~~bornes de `register()` et des redirections (longueur, `parse_str`)~~ (D-F :
+      2 048 octets et 50 paramètres par redirection, 1 à 10 redirections par client) ; ~~borne du `client_id` (255 à
+      la commande, 512 en base)~~ (déjà soldé avant la tâche, 255 partout : `McpClient.php:53/63`,
+      `McpClientId::MAX_LENGTH = 255`, `Version20261023120000.php:41` `VARCHAR(255)` ; le seul 512 du schéma MCP est
+      `mcp_access_token.audience`) ; ~~second `findOneByClientId()` du consentement et course de suppression (FK en
+      500)~~ (D-C : client relu `FOR SHARE`, refus `clientNoLongerRegistered()`) ; ~~regex de l'index violé
+      dupliquée~~ (D-H, `ViolatedUniqueIndex::of()`). **Reports de la tâche 12** : ~~lister, supprimer et révoquer
+      un client **déclaré** (CIMD)~~ (listé, supprimé avec ses connexions coupées ; sa révision est refusée, 409
+      `client-declared-by-document`) ; retirer un domaine de la liste : hors périmètre, limite acceptée 3 de la
+      règle (supprimer n'est pas bannir ; les connexions déjà accordées survivent au retrait, ADR 0006) ;
+      ~~audit de l'enregistrement d'un client~~ (comme ci-dessus). **Notes de la release** : **deux migrations
+      d'index, aucune colonne ni contrainte** (`Version20261120120000`, trois index partiels de la liste
+      d'administration des connexions ; `Version20261120130000`, l'un d'eux remplacé par un index d'expression ;
+      transactionnelles, `CREATE INDEX` non concurrent sur `mcp_connection`, sous le `lock_timeout` de 5 s du Job ;
+      `k8s/base/postgres-roles/verify.sql` les liste), la cause `client-removed` n'en demandant aucune (D-B) ;
+      **aucune variable d'environnement** ; routes nouvelles, `ROLE_SUPER` par `^/api/backoffice` :
+      `/api/backoffice/mcp/clients` (cinq opérations : `GET` de la liste et d'un client, `POST`, `PUT`, `DELETE`)
+      et `GET /api/backoffice/mcp/connections` ; trois événements d'audit (`mcp-client-registered`,
+      `mcp-client-revised`, `mcp-client-removed`), plus la cause `client-removed` de `mcp-connection-revoked`, au
+      journal seulement ; **bornes nouvelles** : une redirection de 2 048 octets et 50 paramètres au plus, un client
+      de 1 à 10 redirections — un client existant hors de ces bornes reste lisible, mais ne se révise qu'en les
+      respectant ; **avant la release, vérifier en préprod par une requête en lecture seule qu'aucune ligne ne les
+      dépasse**. Une ligne pré-enregistrée dont l'identifiant est sur un domaine de
+      `app.mcp.cimd.allowed_domains` est désormais refusée au point d'autorisation et au point de jeton
+      (`invalid_client`, cause d'audit `preregistered-row-shadows-verified-domain`) : la même requête vérifie
+      qu'aucune n'existe, sinon la supprimer au backoffice, le client déclaré prenant sa place
 - [ ] Tâche 14 — Livrer la phase 2 : préprod, page, registre (#653) — bloquée par : #648, #646 —
       reports de la tâche 8 : **Job k8s pour `app:mcp:client:register`** (jamais `kubectl exec`, sans
       lui rien n'est testable en préprod) ; Basic Auth préprod encore sur `/api/oauth` et `/api/mcp` ;
