@@ -1,6 +1,6 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminMcpClient } from '../../../domain/admin/mcp/entities/AdminMcpClient'
-import { AdminMcpError } from '../../../domain/admin/mcp/errors/AdminMcpError'
+import { AdminMcpError, type AdminMcpErrorReason } from '../../../domain/admin/mcp/errors/AdminMcpError'
 import type {
   AdminMcpClientInput,
   AdminMcpClientRevision,
@@ -15,6 +15,30 @@ import { visibleMutationError } from '../shared/visibleMutationError'
  * `main.ts` : l'infrastructure ne fait qu'implémenter le port du domaine.
  */
 export const ADMIN_MCP_REPOSITORY: InjectionKey<AdminMcpRepository> = Symbol('AdminMcpRepository')
+
+/**
+ * Les refus qui prouvent que la ligne affichée n'est plus celle du serveur (C-S6, tours 1 et 2) :
+ * - `not-found` (404) : le client a été supprimé depuis la lecture ;
+ * - `declared-by-document` (409) : le client montré comme pré-enregistré, donc révisable, est désormais déclaré par
+ *   son document de métadonnées (CIMD), que seul ce document fait évoluer ;
+ * - `id-of-verified-domain` (422) : son identifiant est devenu celui d'un domaine vérifié depuis la lecture.
+ * Les deux derniers ne tombent que sur une révision. Les autres raisons (`validation`, `client-id-taken`, `unknown`)
+ * ne disent rien de la ligne : elle reste juste.
+ */
+const STALE_ROW_REASONS: ReadonlySet<AdminMcpErrorReason> = new Set<AdminMcpErrorReason>([
+  'not-found',
+  'declared-by-document',
+  'id-of-verified-domain',
+])
+
+/**
+ * Vrai quand l'échec d'une mutation prouve que la ligne visée est périmée. Le composable s'en sert pour relire la
+ * liste ; la page, pour quitter une révision qui n'a plus d'objet. Exporté pour que les deux lisent la même liste
+ * de raisons, au lieu de la recopier dans chaque geste.
+ */
+export function refusalProvesStaleRow(error: AdminMcpError | null): boolean {
+  return null !== error && STALE_ROW_REASONS.has(error.reason)
+}
 
 export interface UseAdminMcpClientsResult extends AdminLoadState {
   /** Les clients MCP, dans l'ordre que le serveur rend : la page ne retrie pas. */
@@ -72,12 +96,14 @@ export function useAdminMcpClients(): UseAdminMcpClientsResult {
    * Exécute une mutation puis relit la liste. `load()` ne rejette jamais (`useAdminLoad` absorbe l'échec dans
    * `hasError`) : une relecture ratée ne change pas le `true` d'une mutation que le serveur a acceptée.
    *
-   * Un échec « n'existe plus » (404) relit la liste lui aussi (C-S6, tour 1) : il dit que la ligne montrée n'est plus
-   * celle du serveur, et sans relecture elle garderait « Modifier » et « Supprimer », dont chaque clic recevrait le
-   * même 404. La raison est posée avant la relecture, que `load()` ne touche pas : la page dit l'échec pendant et
-   * après, la mutation rend toujours `false`. Relu ici plutôt que par la page : le composable tient déjà « le serveur,
-   * seule source de l'état affiché », et la règle vaut pour la révision comme pour la suppression, écrite une fois au
-   * lieu d'un appel à `load()` dans chaque geste. Les autres échecs ne relisent rien : rien ne dit que la liste a changé.
+   * Un refus qui prouve que la ligne est périmée relit la liste lui aussi (`refusalProvesStaleRow` : le 404 au
+   * tour 1, le 409 « déclaré par son document » et le 422 « identifiant d'un domaine vérifié » au tour 2 de C-S6) :
+   * la ligne montrée n'est plus celle du serveur, et sans relecture elle garderait « Modifier » ou « Supprimer », dont
+   * chaque clic recevrait le même refus. La raison est posée avant la relecture, que `load()` ne touche pas : la page
+   * dit l'échec pendant et après, la mutation rend toujours `false`. Relu ici plutôt que par la page : le composable
+   * tient déjà « le serveur, seule source de l'état affiché », et la règle vaut pour la révision comme pour la
+   * suppression, écrite une fois au lieu d'un appel à `load()` dans chaque geste. Les autres échecs ne relisent rien :
+   * rien ne dit que la liste a changé.
    */
   const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
@@ -90,7 +116,7 @@ export function useAdminMcpClients(): UseAdminMcpClientsResult {
     } catch (error) {
       errorMessage.value = visibleMutationError(error, AdminMcpError, () => new AdminMcpError('unknown', 'Unknown error'))
 
-      if ('not-found' === errorMessage.value?.reason) await load()
+      if (refusalProvesStaleRow(errorMessage.value)) await load()
 
       return false
     }

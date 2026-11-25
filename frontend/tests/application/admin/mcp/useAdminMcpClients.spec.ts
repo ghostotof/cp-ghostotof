@@ -166,20 +166,41 @@ describe('useAdminMcpClients', () => {
       expect(composable.errorMessage.value).toBeNull()
     })
 
-    it.each(['declared-by-document', 'id-of-verified-domain', 'validation'] as const)(
-      'rend faux et garde la raison %s pour que la page la traduise',
+    it('rend faux et garde la raison validation pour que la page la traduise, sans relire la liste', async () => {
+      const repository = createStubRepository({
+        reviseClient: vi.fn(async () => Promise.reject(new AdminMcpError('validation', 'Refusé'))),
+      })
+      const composable = mountWithComposable(repository)
+      await flushPromises()
+
+      const succeeded = await composable.revise(CLIENT_ID, REVISION)
+
+      // Une saisie invalide ne dit rien de la ligne affichée : elle reste juste, nul besoin de la relire.
+      expect(succeeded).toBe(false)
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+      expect(repository.listClients).toHaveBeenCalledTimes(1)
+    })
+
+    // Le 409 « déclaré par son document » et le 422 « identifiant d'un domaine vérifié » ne tombent que sur une
+    // révision : le client affiché comme pré-enregistré, et révisable, a changé depuis la lecture. Comme le 404, ils
+    // prouvent que la ligne est périmée ; sans relecture, le tableau proposerait encore « Modifier » sur elle.
+    it.each(['declared-by-document', 'id-of-verified-domain'] as const)(
+      'relit la liste quand le refus %s prouve que la ligne affichée est périmée, garde la raison et rend faux',
       async (reason) => {
         const repository = createStubRepository({
+          listClients: vi.fn(async () => [CLIENT, OTHER_CLIENT]),
           reviseClient: vi.fn(async () => Promise.reject(new AdminMcpError(reason, 'Refusé'))),
         })
         const composable = mountWithComposable(repository)
         await flushPromises()
+        vi.mocked(repository.listClients).mockResolvedValue([OTHER_CLIENT])
 
         const succeeded = await composable.revise(CLIENT_ID, REVISION)
 
         expect(succeeded).toBe(false)
+        expect(repository.listClients).toHaveBeenCalledTimes(2)
+        expect(composable.clients.value).toEqual([OTHER_CLIENT])
         expect(composable.errorMessage.value?.reason).toBe(reason)
-        expect(repository.listClients).toHaveBeenCalledTimes(1)
       },
     )
 
