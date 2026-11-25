@@ -4,6 +4,13 @@
 
 ## Où en est la tâche
 
+- **État au 2026-11-25** : étapes 05 et 07 closes. Toutes les tâches du plan sont faites (1-18, F1-F7, 19),
+  S6 close, relecture complète avant la PR faite sur `bd61b215...6fc1a6be` (`/code-review medium`, axes
+  Standards en deux passes et Spec) : aucun constat critique, haut ni moyen confirmé ; correction finale
+  `7d00fc0b` (règle `mcp-backoffice.md`). **Prochaine action : étape 08**, PR vers `feature/379-mcp-paliers`
+  (jamais `develop`), après accord de l'utilisateur pour le push ; #652 se ferme à la main après la fusion.
+  Base de diff : `origin/feature/379-mcp-paliers` (`bd61b215`), la branche locale du même nom est périmée.
+
 - Branche : `feature/spec-0007-t13-backoffice-mcp`, coupée le 2026-11-19 de la mère
   `feature/379-mcp-paliers` à jour (tête `bd61b215`, fusion de la T12, PR #777). Non poussée.
 - Étape : **04 close** — plan `tasks/plan-t13-backoffice-mcp.md` commité (`32c9fb3e`, 28 tâches :
@@ -1047,3 +1054,19 @@ Relecture S5 (2026-11-20, `2dd76a7c...139169f0`, revue + audit ; F-a/F-b → mic
 - PHPStan, Rector, PHPUnit dans le conteneur en `-u dev`.
 - Pas de secret en dur dans un test (`TestKeys` / `TestCredentials`) ; une commande qui pose un secret ne se lance
   jamais dans la session.
+
+Relecture complète avant la PR (2026-11-25, pour la description de la PR) :
+- (faible, conf. moyenne) `McpClientRepository::registrationOf()` passe par `tryFrom()` : une valeur inconnue
+  devient `null`, indiscernable d'un client absent.
+- (faible, conf. haute) noms de tables `mcp_connection` / `mcp_client` en dur dans quatre requêtes natives, alors
+  que `findExchangedExpiredForAdministration` les lit des métadonnées.
+- (faible) `McpConnectionRepository` grossit (~600 lignes : lectures d'administration, révocations, verrous).
+- (faible, conf. haute) `REGISTRATION_LABEL_KEYS` dupliqué dans les deux pages du backoffice MCP.
+- (faible) script d'`AdminMcpClientsPage.vue` long (~400 lignes) ; la gestion du focus irait dans un composable.
+- (faible) `McpClientAdministrator::revise()` / `remove()` rendent des tuples ; comparateurs `usort` au départage
+  dupliqué ; `BackofficeMcpClientProcessor` lit le repository pour le compteur.
+- (faible) cellule « Dernier usage » vide sans libellé quand `lastUsedAt` est `null` (la page personnelle dit
+  « Pas encore renouvelée ») ; `<p>` de chargement de la page des connexions sans `role="status"` ; un 404/409
+  sur la liste des connexions prendrait un message « client » (`toError`).
+- Limites acceptées ajoutées à la règle (n° 12 à 14) : interblocage suppression/purge, lectures vivantes non
+  bornées, compteur « Connexions actives » qui inclut les échues non marquées.
