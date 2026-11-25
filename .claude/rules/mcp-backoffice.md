@@ -36,7 +36,8 @@ paths:
   `mcp-connection-revoked` per cut connection, then `mcp-client-removed`, through `FailSafeAudit`.
 - **D-B — The cause `client-removed` lives in the log only** (`McpClientAdministrator::REMOVAL_CAUSE`). The rows it
   would describe are deleted (D-A), so no row ever carries it: no case of `RevocationCause`, no widening of
-  `chk_mcp_connection_revocation_cause`, **no migration** for #652.
+  `chk_mcp_connection_revocation_cause`, **no migration for this cause** (#652's two migrations,
+  `Version20261120120000` and `Version20261120130000`, only add the partial indexes of D-D's reads).
 - **D-C — The consent reads a pre-registered client under a shared lock.** `ConsentService::grant()` re-reads it by
   `McpClientRepositoryInterface::findOneByClientIdForShare()` (`LockMode::PESSIMISTIC_READ`, `FOR SHARE`, with
   `HINT_REFRESH`) and re-checks `allowsRedirect()` on that instance; a client removed meanwhile is refused
@@ -44,8 +45,14 @@ paths:
   client being deleted. `FOR SHARE`, not `RereadUnderLock` (which only takes `FOR UPDATE`): two consents never wait
   on each other, only the removal waits. A CIMD client goes through `saveDiscovered()` (`ON CONFLICT`) instead.
 - **D-D — No API Platform pagination.** `AdministeredMcpConnections::list()` returns every live connection plus the
-  `TERMINATED_LIMIT` (200) most recently ended, read in one snapshot (`ReadSnapshotInterface`): two queries
-  (`findTerminatedForAdministration()`, `findAbandonedForAdministration()`), merged on their real end, cut at 200.
+  `TERMINATED_LIMIT` (200) most recently ended, read in one snapshot (`ReadSnapshotInterface`): three reads of the
+  ended ones, each on its partial index — `findTerminatedForAdministration()`, `findAbandonedForAdministration()`, and
+  the paged `findExchangedExpiredForAdministration()` (pages of `EXCHANGED_PAGE_SIZE`, keyset cursor
+  `ExchangedExpiredCursor` on the activity `COALESCE(last_used_at, granted_at)` then `id`) — merged on their real end,
+  cut at 200. An expired connection's real end is computed in PHP, not stored, so the paged read stops early only
+  once 200 are held and the next page's best possible end (`idleDeadline(activity) + P1D`, the invariant told in
+  `AdministeredMcpConnections`' docblock) is older than the 200th: a change to any of the three reads, to the cursor or
+  to `ConnectionLifetimes::idleDeadline()` is judged against that bound.
   The state (`active`, `expired`, `revoked`) is computed in one place, `McpConnectionStatus`, on the deadlines of
   `ConnectionLifetimes` (`mcp-oauth-cycle-de-vie.md`); « Mes connexions MCP » keeps its own bound of 50 (`OwnMcpConnections`).
 - **D-E — `PUT` replaces the name and the redirections; the identifier is immutable.** `McpClient::revise()` applies
@@ -109,6 +116,17 @@ connexions MCP » nor the backoffice ever display it — the connections it name
     list and leaves the revision, at the cost of one more `GET` — a `POST` receiving the typed 422 re-reads it for
     nothing, accepted. A row that shadows a verified domain (`shadowsVerifiedDomain`) carries a text marker and offers
     no « Modifier », its removal stays offered.
+12. **Removing a client can deadlock with the daily purge** (`app:mcp:purge`, `mcp-oauth-purge.md`): `remove()`
+    locks only the client's *active* connections by id; the `ON DELETE CASCADE` then takes its revoked connections,
+    codes and tokens in its plan's order, while the purge deletes old revoked connections, then tokens, in its own.
+    PostgreSQL aborts one: `remove()` retries once (D-A), a second `40P01` answers 500 and nothing is removed — the
+    administrator retries; the purge's Job retries on its side. The same limit the purge accepts against an
+    account's cascade. Locking the revoked rows too was not done: the window is the purge's run, once a day.
+13. **The live connections and the clients are read without a bound** (D-D bounds only the ended ones): a portfolio's
+    volume; a client with thousands of live connections would make `GET /api/backoffice/mcp/connections` heavy.
+14. **« Connexions actives » on the clients page counts the non-revoked connections** (D-A's « active »), an expired
+    one the purge has not marked yet included, while the connections page already shows it « Échue »
+    (`McpConnectionStatus`): the two pages can disagree until the next purge.
 
 Three more limits of #652 concern the token endpoint, not this backoffice, and are written where that code lives:
 `.claude/rules/mcp-oauth-cycle-de-vie.md`, « Accepted limits of #649 … tracked by issue #726 », points 2 to 4 (the
