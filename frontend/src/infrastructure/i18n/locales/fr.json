@@ -76,7 +76,8 @@
       "anonymousCv": "CV sans identité",
       "caseStudies": "Études de cas",
       "watch": "Veille",
-      "mcpClients": "Clients MCP"
+      "mcpClients": "Clients MCP",
+      "mcpConnections": "Connexions MCP"
     },
     "order": {
       "moveHandle": "Déplacer : {label}",
@@ -491,6 +492,31 @@
         "validation": "Le serveur a refusé la saisie :",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "mcpConnections": {
+      "listTitle": "Connexions MCP",
+      "terminatedBound": "Les connexions terminées affichées sont les 200 plus récentes.",
+      "loading": "Chargement des connexions MCP…",
+      "loadError": "Le chargement des connexions MCP a échoué. Réessayez plus tard.",
+      "empty": "Aucune connexion MCP.",
+      "caption": "Les connexions MCP de tous les comptes, avec leur client, leurs dates, leur état et leur cause",
+      "columns": {
+        "account": "Compte",
+        "client": "Client",
+        "grantedAt": "Accordée le",
+        "lastUsedAt": "Dernier usage",
+        "expiresAt": "Échéance",
+        "state": "État",
+        "cause": "Cause"
+      },
+      "states": {
+        "active": "Active",
+        "expired": "Échue",
+        "revoked": "Révoquée"
+      },
+      "revokedOn": "Révoquée le",
+      "plannedExpiry": "Échéance prévue",
+      "noCause": "Sans cause"
     }
   },
   "forbidden": {
@@ -710,6 +736,10 @@
     "adminMcpClients": {
       "title": "Administration — Clients MCP",
       "description": "Gestion des clients MCP, pré-enregistrés ou déclarés, autorisés à se connecter au serveur MCP."
+    },
+    "adminMcpConnections": {
+      "title": "Administration — Connexions MCP",
+      "description": "Consultation des connexions MCP de tous les comptes, avec leur client, leurs dates, leur état et leur cause."
     },
     "mcpConnections": {
       "title": "Mes connexions MCP",
@@ -936,6 +966,7 @@
       "expired": "Échue",
       "passwordChanged": "Coupée au changement de mot de passe",
       "trustedTierWithdrawn": "Coupée : le palier de confiance a été retiré",
+      "clientRemoved": "Coupée : le client a été supprimé",
       "unknown": "Révoquée (cause non reconnue)"
     },
     "revoke": "Révoquer",

@@ -76,7 +76,8 @@
       "anonymousCv": "CV without identity",
       "caseStudies": "Case studies",
       "watch": "Watch",
-      "mcpClients": "MCP clients"
+      "mcpClients": "MCP clients",
+      "mcpConnections": "MCP connections"
     },
     "order": {
       "moveHandle": "Move: {label}",
@@ -491,6 +492,31 @@
         "validation": "The server refused the input:",
         "unknown": "An error occurred. Please try again later."
       }
+    },
+    "mcpConnections": {
+      "listTitle": "MCP connections",
+      "terminatedBound": "The ended connections shown are the 200 most recent.",
+      "loading": "Loading MCP connections…",
+      "loadError": "Failed to load MCP connections. Please try again later.",
+      "empty": "No MCP connection.",
+      "caption": "The MCP connections of every account, with their client, dates, state and cause",
+      "columns": {
+        "account": "Account",
+        "client": "Client",
+        "grantedAt": "Granted on",
+        "lastUsedAt": "Last used",
+        "expiresAt": "Expires",
+        "state": "State",
+        "cause": "Cause"
+      },
+      "states": {
+        "active": "Active",
+        "expired": "Expired",
+        "revoked": "Revoked"
+      },
+      "revokedOn": "Revoked on",
+      "plannedExpiry": "Planned expiry",
+      "noCause": "No cause"
     }
   },
   "forbidden": {
@@ -710,6 +736,10 @@
     "adminMcpClients": {
       "title": "Administration — MCP clients",
       "description": "Manage the MCP clients, pre-registered or declared, allowed to connect to the MCP server."
+    },
+    "adminMcpConnections": {
+      "title": "Administration — MCP connections",
+      "description": "View the MCP connections of every account, with their client, dates, state and cause."
     },
     "mcpConnections": {
       "title": "My MCP connections",
@@ -936,6 +966,7 @@
       "expired": "Expired",
       "passwordChanged": "Cut when the password changed",
       "trustedTierWithdrawn": "Cut: the trusted tier was withdrawn",
+      "clientRemoved": "Cut: the client was deleted",
       "unknown": "Revoked (unrecognized cause)"
     },
     "revoke": "Revoke",
