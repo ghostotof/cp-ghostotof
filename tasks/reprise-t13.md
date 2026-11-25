@@ -826,7 +826,12 @@
     `admin-mcp-connections`, liens, `REVIEWED_PROTECTED_ROUTES` ; R14 : fixture `ADMIN_SECTIONS` de
     `AdminLayout.sessionEnded.spec.ts`). `make front-test` 2900/2900, lint et build verts (F7). Arbitrages R1-R14 et
     mineurs parqués : ledger `.superpowers/sdd/plan-t13-backoffice-mcp/progress.md` (non versionné).
-  - **Prochaine action : S6**, `/code-review medium diff 4b07cdd9...HEAD` (HEAD relu = le commit de cette reprise),
+  - **S6 faite et close (2026-11-25)** : relecture `4b07cdd9...862f37c1` (2 importants : focus perdu, mutations
+    concurrentes) → C-S6 `b03ca35f` + `a70e0670` (R9 soldé), tour 1 `c4d48123`, tour 2 `f0f7f561` + `667d368b` ; dernière
+    relecture sans moyen. **Point fixe suivant : `667d368b`.** Arbitrages R15-R19 au ledger (focus laissé à la personne,
+    relecture sur refus prouvant la ligne périmée, gel `readonly` des champs). **Prochaine action : Task 19** (docs, brief
+    `task-19-brief.md` + compléments), puis relecture complète avant la PR.
+  - (historique) **Prochaine action : S6**, `/code-review medium diff 4b07cdd9...HEAD` (HEAD relu = le commit de cette reprise),
     puis la série de correction avec R9 (clé `ADMIN_MCP_REPOSITORY` dans la couche application), puis la Task 19.
   - **À relire en navigateur par l'utilisateur** (hors portée de jsdom) : contraste, lecteur d'écran, 320 px des deux
     pages et de la barre admin à cinq éléments ; focus non rendu après « Modifier »/« Annuler »/suppression (comme les
