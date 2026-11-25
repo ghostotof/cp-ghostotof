@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAdminMcpClients } from '../../../application/admin/mcp/useAdminMcpClients'
+import { refusalProvesStaleRow, useAdminMcpClients } from '../../../application/admin/mcp/useAdminMcpClients'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import { useFocusThenAnnounce } from '../../ui/useFocusThenAnnounce'
@@ -26,6 +26,8 @@ const { clients, isLoading, hasError, isLoaded, errorMessage, register, revise, 
 
 /** L'id de l'alerte du formulaire, que désignent les champs pendant qu'elle est affichée. */
 const FORM_ERROR_ID = 'admin-mcp-client-error'
+/** L'id de l'indice d'attente, que désignent les champs pendant qu'ils sont en lecture seule. */
+const PENDING_HINT_ID = 'admin-mcp-client-pending'
 
 /**
  * Les libellés des deux modes, par des clés littérales : la règle `no-missing-keys` du lint les vérifie, et
@@ -56,6 +58,16 @@ const OUTCOME_KEYS: Record<ClientOutcome, string> = {
   removed: 'admin.mcpClients.outcome.removed',
 }
 
+/**
+ * Ce que dit la région d'annonce (C-S6, tour 2) : l'issue d'une mutation réussie (`null` pour un échec, que son alerte
+ * dit déjà), et le retour du formulaire à la création quand il s'est fait loin du focus de la personne — aucun titre
+ * qu'elle lit ne le lui dit alors (`followModeChange`).
+ */
+interface Announcement {
+  readonly outcome: ClientOutcome | null
+  readonly backToCreation: boolean
+}
+
 /** L'UUID de la ligne en cours de révision (`AdminMcpClient.id`, jamais `clientId`), `null` en création. */
 const editingId = ref<string | null>(null)
 /** L'identifiant public du client révisé, montré sans être proposé à la saisie. */
@@ -74,23 +86,42 @@ const removingId = ref<string | null>(null)
  */
 const isMutating = computed(() => isSubmitting.value || null !== removingId.value)
 
+/**
+ * Les champs du formulaire en lecture seule tant que l'issue en vol peut le vider (C-S6, tour 2) : un envoi, dont le
+ * succès vide le formulaire, ou la suppression du client en révision. Le focus reste dans le champ où la personne tape
+ * pendant l'appel (tour 1) : sans ce gel, sa saisie disparaissait en silence avec le succès.
+ * - `readonly` plutôt que `disabled` : un champ désactivé perd le focus, sort de l'ordre de tabulation et se lit mal ;
+ *   en lecture seule, il garde le focus, se lit et se copie, et refuse seulement la frappe. L'indice que désigne
+ *   `aria-describedby` dit pourquoi, comme `TranslationReadonlyHint` pendant une traduction.
+ * - Plus étroit qu'`isMutating` : la suppression d'un autre client ne touche pas au formulaire, et la personne peut y
+ *   saisir le client suivant pendant l'appel ; geler ce cas aussi refuserait une saisie qu'aucune issue n'efface.
+ */
+const isFormFrozen = computed(
+  () => isSubmitting.value || (null !== removingId.value && removingId.value === editingId.value),
+)
+
 /** Les deux titres qui reçoivent le focus quand le bouton qui l'avait disparaît. */
 const formHeading = useTemplateRef<HTMLHeadingElement>('formHeading')
 const listHeading = useTemplateRef<HTMLHeadingElement>('listHeading')
 /** Les boutons du formulaire, qu'un envoi remplace (« Annuler » disparaît avec la révision) : le focus qui y reste est perdu. */
 const formActions = useTemplateRef<HTMLDivElement>('formActions')
+/** Le formulaire : un focus qui y est quand il change de mode va à son titre (`followModeChange`). */
+const formElement = useTemplateRef<HTMLFormElement>('formElement')
 
-/** L'issue que la région d'annonce dit : écrite un court délai après le déplacement du focus (`frontend-a11y.md`). */
-const {
-  announced: announcedOutcome,
-  focusThenAnnounce,
-  cancel: cancelAnnouncement,
-  isUnmounted,
-} = useFocusThenAnnounce<ClientOutcome>()
+/** Ce que la région d'annonce dit : écrit un court délai après le déplacement du focus (`frontend-a11y.md`). */
+const { announced, focusThenAnnounce, cancel: cancelAnnouncement, isUnmounted } = useFocusThenAnnounce<Announcement>()
 
-const outcomeText = computed<string>(() =>
-  null === announcedOutcome.value ? '' : t(OUTCOME_KEYS[announcedOutcome.value]),
-)
+/** L'issue, puis le retour à la création, en deux phrases du catalogue ; `''` tant que rien n'est annoncé. */
+const outcomeText = computed<string>(() => {
+  const announcement = announced.value
+  if (null === announcement) return ''
+
+  const sentences: string[] = []
+  if (null !== announcement.outcome) sentences.push(t(OUTCOME_KEYS[announcement.outcome]))
+  if (announcement.backToCreation) sentences.push(t('admin.mcpClients.backToCreation'))
+
+  return sentences.join(' ')
+})
 
 /**
  * Le composable n'a qu'un `errorMessage` pour ses trois mutations ; la page retient le geste qui l'a produit,
@@ -124,8 +155,17 @@ const violationsText = computed<string | null>(() => {
   return null !== error && 'validation' === error.reason ? error.message : null
 })
 
-/** `aria-describedby` des champs : l'alerte du formulaire, seulement quand elle est rendue (un IDREF vers rien est une faute). */
-const fieldDescribedBy = computed(() => (formErrorShown.value ? FORM_ERROR_ID : undefined))
+/**
+ * `aria-describedby` des champs : l'alerte du formulaire et l'indice d'attente, chacun seulement quand il est rendu (un
+ * IDREF vers rien est une faute) ; `undefined` quand aucun ne l'est, pour ne pas rendre un attribut vide.
+ */
+const fieldDescribedBy = computed<string | undefined>(() => {
+  const ids = [formErrorShown.value ? FORM_ERROR_ID : null, isFormFrozen.value ? PENDING_HINT_ID : null].filter(
+    (id): id is string => null !== id,
+  )
+
+  return 0 === ids.length ? undefined : ids.join(' ')
+})
 
 /**
  * « Chargement » tant que rien n'a été lu. La relecture qui suit une mutation garde ce qui est affiché (le
@@ -143,14 +183,17 @@ function focusedElement(): HTMLElement | null {
 
 /**
  * Vrai si le focus n'est plus là où la personne l'a mis : sur `body` (le navigateur le retire d'un bouton qui devient
- * `disabled`), sur un élément sorti du document, ou dans `vanished`, ce que le geste vient de faire disparaître ou
- * de remplacer (la ligne supprimée, les boutons du formulaire). Partout ailleurs, la personne y est allée pendant
- * l'attente — saisir le nom d'un autre client, par exemple — et la page ne le lui reprend pas (C-S6, tour 1).
+ * `disabled`), sur un élément sorti du document, ou dans l'une des zones `vanished`, ce que le geste vient de faire
+ * disparaître ou de remplacer (la ligne supprimée, les boutons du formulaire, le formulaire qui change de mode). Partout
+ * ailleurs, la personne y est allée pendant l'attente — saisir le nom d'un autre client, par exemple — et la page ne le
+ * lui reprend pas (C-S6, tour 1).
  */
-function focusIsLost(vanished: HTMLElement | null = null): boolean {
+function focusIsLost(...vanished: readonly (HTMLElement | null)[]): boolean {
   const active = focusedElement()
 
-  return null === active || !active.isConnected || (null !== vanished && vanished.contains(active))
+  return (
+    null === active || !active.isConnected || vanished.some((zone) => null !== zone && zone.contains(active))
+  )
 }
 
 /**
@@ -167,6 +210,26 @@ function restoreFocusIfLost(element: HTMLElement | null): void {
 async function focusFormHeading(): Promise<void> {
   await nextTick()
   formHeading.value?.focus()
+}
+
+/**
+ * Le formulaire vient de repasser de la révision à la création sous la personne, sans qu'elle l'ait demandé : une
+ * révision réussie, un refus qui prouve la ligne périmée, la suppression du client révisé (C-S6, tour 2). Appelé
+ * après le rendu.
+ * - Un focus perdu, resté dans le formulaire (ses champs vidés, « Annuler » disparu) ou dans une zone `vanished` (la
+ *   ligne supprimée) va au titre du formulaire, qui nomme le nouveau mode ; l'issue, s'il y en a une, est dite ensuite.
+ * - Un focus parti ailleurs pendant l'attente (le tableau, le titre de la liste) y reste : l'annonce dit l'issue et le
+ *   retour à la création, qu'aucun titre lu ne lui dit.
+ * Un échec (`outcome` à `null`) ne s'annonce pas : son alerte le dit ; seul le retour à la création peut l'être.
+ */
+function followModeChange(outcome: ClientOutcome | null, ...vanished: readonly (HTMLElement | null)[]): void {
+  if (!focusIsLost(formElement.value, ...vanished)) {
+    focusThenAnnounce(null, { outcome, backToCreation: true })
+  } else if (null !== outcome) {
+    focusThenAnnounce(formHeading.value, { outcome, backToCreation: false })
+  } else {
+    formHeading.value?.focus()
+  }
 }
 
 /** Le texte du `<textarea>` en liste : une redirection par ligne, blancs autour et lignes vides écartés. */
@@ -225,10 +288,9 @@ function cancelEdit(): void {
 async function handleSubmit(): Promise<void> {
   if (isMutating.value) return
 
-  // Lus avant l'appel : le focus, que le navigateur retire d'« Enregistrer » désactivé, le mode, que le succès vide,
-  // et le client révisé, que la suite compare à celui du formulaire.
+  // Lus avant l'appel : le focus, que le navigateur retire d'« Enregistrer » désactivé, et le client révisé (`null` en
+  // création), que le succès efface du formulaire.
   const focused = focusedElement()
-  const outcome: ClientOutcome = isEditing.value ? 'revised' : 'registered'
   const editing = editingId.value
   cancelAnnouncement()
   isSubmitting.value = true
@@ -251,11 +313,13 @@ async function handleSubmit(): Promise<void> {
     isSubmitting.value = false
   }
 
-  // Une révision « n'existe plus » (404) quitte la révision (C-S6, tour 1) : chaque nouvel essai recevrait le même
-  // 404, et le composable a déjà relu la liste, d'où la ligne est partie. L'échec reste dit dans le formulaire, que
-  // `resetForm()` aurait vidé de son alerte — comme la suppression d'un client en révision le fait au-dessus du tableau.
-  const leftRevision =
-    !succeeded && null !== editing && editingId.value === editing && 'not-found' === errorMessage.value?.reason
+  // Un refus qui prouve la ligne périmée (le 404, le 409 « déclaré par son document », le 422 « identifiant d'un
+  // domaine vérifié » : `refusalProvesStaleRow`) quitte la révision (C-S6, tours 1 et 2) : chaque nouvel essai recevrait
+  // le même refus, et le composable a déjà relu la liste, où la ligne n'est plus révisable. L'échec reste dit dans le
+  // formulaire, que `resetForm()` aurait vidé de son alerte — comme la suppression d'un client en révision le fait
+  // au-dessus du tableau. `editingId` n'a pas pu changer pendant l'appel : « Modifier », « Annuler » et « Supprimer »
+  // refusent tant qu'une mutation est en vol.
+  const leftRevision = !succeeded && null !== editing && refusalProvesStaleRow(errorMessage.value)
   if (leftRevision) {
     resetForm()
     errorPlace.value = 'form'
@@ -264,14 +328,16 @@ async function handleSubmit(): Promise<void> {
   if (isUnmounted()) return
   await nextTick()
 
-  if (succeeded) {
-    // Le formulaire vidé repasse en création : le focus va à son titre, puis l'issue est dite — sauf si la personne
-    // est allée ailleurs pendant l'attente (saisir dans un champ, lire la liste) : l'issue est dite sans le lui prendre.
-    focusThenAnnounce(focusIsLost(formActions.value) ? formHeading.value : null, outcome)
-  } else if (leftRevision) {
-    // Le formulaire a changé de mode, « Annuler » a disparu : un focus perdu va au titre, qui dit le nouveau mode ;
-    // l'alerte du formulaire dit l'échec, rien n'est annoncé de plus.
-    if (focusIsLost(formActions.value)) formHeading.value?.focus()
+  if (null !== editing && (succeeded || leftRevision)) {
+    // La révision est finie, réussie ou sans objet : le formulaire repasse en création sous la personne.
+    followModeChange(succeeded ? 'revised' : null)
+  } else if (succeeded) {
+    // Une création réussie ne change pas de mode : le focus resté sur les boutons du formulaire va à son titre, puis
+    // l'issue est dite ; un focus parti ailleurs pendant l'attente, un champ compris, y reste (R15).
+    focusThenAnnounce(focusIsLost(formActions.value) ? formHeading.value : null, {
+      outcome: 'registered',
+      backToCreation: false,
+    })
   } else {
     // Échec : l'alerte du formulaire le dit ; le focus revient là où la personne était.
     restoreFocusIfLost(focused)
@@ -305,25 +371,27 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
     removingId.value = null
   }
 
-  // Le formulaire ne garde pas en révision un client qui n'existe plus : supprimé à l'instant, ou déjà disparu (404).
-  if (editingId.value === client.id) {
-    if (succeeded) {
-      resetForm()
-    } else if ('not-found' === errorMessage.value?.reason) {
-      resetForm()
-      // `resetForm()` efface la place de l'erreur : le 404 se dit toujours au-dessus du tableau.
-      errorPlace.value = 'remove'
-    }
+  // Le formulaire ne garde pas en révision un client qui n'existe plus : supprimé à l'instant, ou déjà disparu (404,
+  // `refusalProvesStaleRow`). `editingId` n'a pas pu changer pendant l'appel : une mutation à la fois.
+  const leftRevision = editingId.value === client.id && (succeeded || refusalProvesStaleRow(errorMessage.value))
+  if (leftRevision) {
+    resetForm()
+    // `resetForm()` efface la place de l'erreur : un échec se dit toujours au-dessus du tableau.
+    if (!succeeded) errorPlace.value = 'remove'
   }
 
   if (isUnmounted()) return
   await nextTick()
 
-  if (succeeded) {
+  if (leftRevision) {
+    // Le formulaire a changé de mode sous la personne : son titre ou l'annonce le dit (`followModeChange`), la ligne
+    // supprimée comptant parmi les endroits où le focus est perdu.
+    followModeChange(succeeded ? 'removed' : null, row)
+  } else if (succeeded) {
     // La ligne et son bouton ont disparu : un focus perdu, ou resté dans la ligne, va au titre de la liste, d'où la
     // lecture reprend, puis l'issue est dite. Un focus parti ailleurs pendant l'attente — la personne saisit déjà le
     // client suivant dans le formulaire — reste où il est : l'issue est dite sans le déplacer.
-    focusThenAnnounce(focusIsLost(row) ? listHeading.value : null, 'removed')
+    focusThenAnnounce(focusIsLost(row) ? listHeading.value : null, { outcome: 'removed', backToCreation: false })
   } else {
     // Échec : l'alerte au-dessus du tableau le dit ; le focus revient au bouton cliqué, s'il existe encore.
     restoreFocusIfLost(null !== clicked && clicked.isConnected ? clicked : listHeading.value)
@@ -334,8 +402,9 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
 <template>
   <div class="d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
-      <!-- `tabindex="-1"` : le titre reçoit le focus quand le formulaire change de mode sous la personne
-           (« Modifier », « Annuler », un envoi réussi), sans entrer dans l'ordre de tabulation. -->
+      <!-- `tabindex="-1"` : le titre reçoit le focus quand le formulaire change de mode sous la personne (« Modifier »,
+           « Annuler », une révision réussie ou sans objet, la suppression du client révisé : `followModeChange`), sans
+           entrer dans l'ordre de tabulation. -->
       <h2
         ref="formHeading"
         class="h6 fw-bold text-white mb-3"
@@ -345,6 +414,7 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
       </h2>
 
       <form
+        ref="formElement"
         novalidate
         @submit.prevent="handleSubmit"
       >
@@ -370,6 +440,7 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
           v-model="form.clientId"
           :label="t('admin.mcpClients.clientIdLabel')"
           :aria-describedby="fieldDescribedBy"
+          :readonly="isFormFrozen"
           required
         />
 
@@ -378,6 +449,7 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
           v-model="form.name"
           :label="t('admin.mcpClients.nameLabel')"
           :aria-describedby="fieldDescribedBy"
+          :readonly="isFormFrozen"
           required
         />
 
@@ -386,9 +458,20 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
           v-model="form.redirectUris"
           :label="t('admin.mcpClients.redirectUrisLabel')"
           :aria-describedby="fieldDescribedBy"
+          :readonly="isFormFrozen"
           :rows="3"
           required
         />
+
+        <!-- Rendu seulement pendant que les champs sont en lecture seule, qui le désignent alors (`isFormFrozen`). Placé
+             sous eux : il apparaît sans les décaler sous la main de la personne qui y tape. -->
+        <p
+          v-if="isFormFrozen"
+          :id="PENDING_HINT_ID"
+          class="form-text mb-3"
+        >
+          {{ t('admin.mcpClients.pendingReadonly') }}
+        </p>
 
         <div
           v-if="formErrorShown"

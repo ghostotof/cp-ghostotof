@@ -123,15 +123,15 @@ function dropFocusLikeABrowser(): void {
 }
 
 /** Le titre du formulaire, premier `h2` de la page : « Pré-enregistrer un client MCP » ou « Modifier le client MCP ». */
-function formHeading(wrapper: VueWrapper): DOMWrapper<Element> {
-  const heading = wrapper.findAll('h2')[0]
+function formHeading(wrapper: VueWrapper): DOMWrapper<HTMLHeadingElement> {
+  const heading = wrapper.findAll<HTMLHeadingElement>('h2')[0]
   if (!heading) throw new Error('Titre du formulaire introuvable.')
   return heading
 }
 
-/** Le titre de la liste, lu par son texte. */
-function listHeading(wrapper: VueWrapper): DOMWrapper<Element> {
-  const heading = wrapper.findAll('h2').find((candidate) => candidate.text() === TEXTS.listTitle)
+/** Le titre de la liste, lu par son texte ; un test y pose le focus pour figurer une personne partie hors du formulaire. */
+function listHeading(wrapper: VueWrapper): DOMWrapper<HTMLHeadingElement> {
+  const heading = wrapper.findAll<HTMLHeadingElement>('h2').find((candidate) => candidate.text() === TEXTS.listTitle)
   if (!heading) throw new Error('Titre de la liste introuvable.')
   return heading
 }
@@ -152,6 +152,32 @@ async function focusAndClick(button: DOMWrapper<HTMLButtonElement>): Promise<voi
 async function letTheAnnouncementThrough(): Promise<void> {
   await vi.runAllTimersAsync()
   await flushPromises()
+}
+
+/**
+ * Ce que fait le navigateur à une frappe dans un champ en lecture seule ou désactivé : il la refuse, ce que `setValue` de
+ * VTU ne fait pas (il écrit `value` quoi qu'il arrive). Rend `true` si la frappe est acceptée : un test juge ainsi qu'une
+ * saisie faite pendant une mutation est refusée sur le moment, au lieu d'être effacée en silence par le succès.
+ */
+async function typeLikeABrowser<T extends HTMLInputElement | HTMLTextAreaElement>(
+  // `Pick` : `wrapper.get()` rend un `DOMWrapper` privé d'`exists`, que le helper n'emploie pas.
+  field: Pick<DOMWrapper<T>, 'element' | 'setValue'>,
+  text: string,
+): Promise<boolean> {
+  if (field.element.readOnly || field.element.disabled) return false
+  await field.setValue(text)
+  return true
+}
+
+/** Le texte de ce que désigne l'`aria-describedby` d'un champ (des ids séparés par des blancs), `''` s'il ne désigne rien. */
+function describedByText(wrapper: VueWrapper, field: Pick<DOMWrapper<Element>, 'attributes'>): string {
+  const ids = (field.attributes('aria-describedby') ?? '').split(/\s+/).filter((id) => '' !== id)
+  return ids.map((id) => wrapper.get(`#${id}`).text()).join(' ')
+}
+
+/** Les champs de saisie du formulaire : trois en création, deux en révision (l'identifiant n'y est qu'un texte). */
+function formFields(wrapper: VueWrapper): DOMWrapper<HTMLInputElement | HTMLTextAreaElement>[] {
+  return wrapper.get('form').findAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
 }
 
 /** Les gestes qui écrivent : « Modifier » et « Supprimer » de chaque ligne, « Enregistrer » du formulaire. */
@@ -616,10 +642,13 @@ describe('AdminMcpClientsPage', () => {
       const wrapper = await mountPage(createStubRepository({ removeClient: vi.fn(() => pending.promise) }), document.body)
 
       await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
-      // Pendant l'attente, la personne saisit le nom d'un nouveau client : les champs du formulaire restent actifs.
+      // Pendant l'attente, la personne saisit le nom d'un nouveau client : la suppression d'un autre client ne touche pas
+      // au formulaire, ses champs restent ouverts à la saisie, sans indice d'attente (C-S6, tour 2).
       const name = wrapper.get<HTMLInputElement>('#admin-mcp-client-name')
       name.element.focus()
-      await name.setValue('Client en cours de sai')
+      expect(name.attributes('readonly')).toBeUndefined()
+      expect(name.attributes('aria-describedby')).toBeUndefined()
+      expect(await typeLikeABrowser(name, 'Client en cours de sai')).toBe(true)
       pending.resolve(undefined)
       await flushPromises()
 
@@ -711,6 +740,259 @@ describe('AdminMcpClientsPage', () => {
       expect(repository.listClients).toHaveBeenCalledTimes(2)
       expect(wrapper.findAll('tbody tr').some((row) => row.text().includes(PREREGISTERED.clientId))).toBe(false)
       // Le formulaire a changé de mode sous la personne : son titre le dit, jamais `body`.
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe('')
+    })
+  })
+
+  // C-S6, tour 2. Point 1 : le focus reste dans le champ où la personne tape pendant l'appel (tour 1), mais le succès
+  // vide le formulaire ; les champs passent en lecture seule, jamais désactivés, tant que l'issue peut le vider. Point 2 :
+  // quand le formulaire repasse de la révision à la création sous la personne, un focus perdu ou resté dans le
+  // formulaire va à son titre ; un focus parti ailleurs y reste, et l'annonce dit le retour à la création.
+  describe('la saisie pendant une mutation et le retour à la création', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('pendant un enregistrement en vol, les champs passent en lecture seule, gardent le focus et disent d’attendre', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ registerClient: vi.fn(() => pending.promise) }), document.body)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+      // Pendant l'attente, la personne retourne au nom et commence le client suivant.
+      const name = wrapper.get<HTMLInputElement>('#admin-mcp-client-name')
+      name.element.focus()
+
+      expect(formFields(wrapper)).toHaveLength(3)
+      for (const field of formFields(wrapper)) {
+        const id = field.attributes('id') ?? ''
+        // `readonly` et jamais `disabled` : un champ désactivé perdrait le focus, et se lirait moins bien.
+        expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
+        expect(field.attributes('disabled'), `#${id} : jamais disabled`).toBeUndefined()
+        expect(describedByText(wrapper, field), `#${id} : l'indice d'attente`).toBe(TEXTS.pendingReadonly)
+      }
+      // La frappe est refusée sur le moment, au lieu d'être effacée en silence par le succès.
+      expect(await typeLikeABrowser(name, 'Client suiv')).toBe(false)
+      expect(document.activeElement).toBe(name.element)
+
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
+
+      for (const field of formFields(wrapper)) {
+        expect(field.attributes('readonly'), field.attributes('id')).toBeUndefined()
+        expect(field.attributes('aria-describedby'), field.attributes('id')).toBeUndefined()
+      }
+      expect(wrapper.text()).not.toContain(TEXTS.pendingReadonly)
+      // Une création réussie ne change pas de mode : le focus reste dans le champ (R15), rouvert à la saisie.
+      expect(document.activeElement).toBe(name.element)
+      expect(await typeLikeABrowser(name, 'Client suivant')).toBe(true)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.registered)
+    })
+
+    it('pendant une révision en vol, les champs passent en lecture seule ; le succès, revenu à la création, porte au titre le focus resté dans un champ', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ reviseClient: vi.fn(() => pending.promise) }), document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await submitForm(wrapper)
+      const redirects = wrapper.get<HTMLTextAreaElement>('#admin-mcp-client-redirects')
+      redirects.element.focus()
+
+      expect(formFields(wrapper)).toHaveLength(2)
+      for (const field of formFields(wrapper)) {
+        expect(field.attributes('readonly'), field.attributes('id')).toBeDefined()
+        expect(field.attributes('disabled'), field.attributes('id')).toBeUndefined()
+        expect(describedByText(wrapper, field), field.attributes('id')).toBe(TEXTS.pendingReadonly)
+      }
+      expect(await typeLikeABrowser(redirects, 'https://autre.example/callback')).toBe(false)
+
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
+
+      // Le formulaire a changé de mode sous la personne, qui était dans un de ses champs : son titre le dit.
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      expect(statusText(wrapper)).toBe('')
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.revised)
+    })
+
+    it('une révision réussie laisse le focus à la personne partie hors du formulaire, et dit le retour à la création', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ reviseClient: vi.fn(() => pending.promise) }), document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await submitForm(wrapper)
+      // Pendant l'attente, la personne part relire la liste.
+      listHeading(wrapper).element.focus()
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(`${TEXTS.outcome.revised} ${TEXTS.backToCreation}`)
+    })
+
+    it('une révision en échec « n’existe plus » laisse le focus à la personne partie hors du formulaire, et dit le retour à la création', async () => {
+      const gate = deferred<undefined>()
+      const wrapper = await mountPage(
+        createStubRepository({
+          reviseClient: vi.fn(async () => {
+            await gate.promise
+            throw new AdminMcpError('not-found', 'x')
+          }),
+        }),
+        document.body,
+      )
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await submitForm(wrapper)
+      listHeading(wrapper).element.focus()
+      gate.resolve(undefined)
+      await flushPromises()
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(wrapper.get('form').get('[role="alert"]').text()).toBe(TEXTS.errors['not-found'])
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      // L'alerte dit l'échec ; la région d'annonce, seulement ce que l'alerte ne dit pas : le formulaire a changé de mode.
+      expect(statusText(wrapper)).toBe(TEXTS.backToCreation)
+    })
+
+    // Point 3 : comme un 404, ces deux refus typés ne tombent que sur une ligne périmée. La relecture la montre telle que
+    // le serveur la tient désormais : déclarée par son document, ou masquant un domaine vérifié, sans « Modifier ».
+    const STALE_ROWS: Record<'declared-by-document' | 'id-of-verified-domain', AdminMcpClient> = {
+      'declared-by-document': { ...PREREGISTERED, registration: 'cimd' },
+      'id-of-verified-domain': { ...PREREGISTERED, shadowsVerifiedDomain: true },
+    }
+
+    it.each(['declared-by-document', 'id-of-verified-domain'] as const)(
+      'une révision refusée en %s quitte la révision, relit la liste, garde l’échec dit dans le formulaire et porte le focus perdu au titre',
+      async (reason) => {
+        let reads = 0
+        const repository = createStubRepository({
+          listClients: vi.fn(async () => {
+            reads += 1
+            return 1 === reads ? [PREREGISTERED, DECLARED, SHADOWING] : [STALE_ROWS[reason], DECLARED, SHADOWING]
+          }),
+          reviseClient: vi.fn(async () => {
+            dropFocusLikeABrowser()
+            throw new AdminMcpError(reason, 'x')
+          }),
+        })
+        const wrapper = await mountPage(repository, document.body)
+
+        await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+        buttonLabelled(wrapper, TEXTS.save).element.focus()
+        await submitForm(wrapper)
+
+        // Chaque nouvel essai recevrait le même refus : le formulaire revient à la création.
+        expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+        expect(wrapper.find('#admin-mcp-client-id').exists()).toBe(true)
+        expect(wrapper.get<HTMLInputElement>('#admin-mcp-client-name').element.value).toBe('')
+        // L'échec reste dit dans le formulaire, désigné par ses champs.
+        const alert = wrapper.get('form').get('[role="alert"]')
+        expect(alert.text()).toBe(TEXTS.errors[reason])
+        expect(describedByText(wrapper, wrapper.get('#admin-mcp-client-name'))).toBe(alert.text())
+        // La liste relue ne propose plus « Modifier » sur la ligne.
+        expect(repository.listClients).toHaveBeenCalledTimes(2)
+        expect(buttonTextsOf(rowFor(wrapper, PREREGISTERED.clientId))).not.toContain(TEXTS.editAction)
+        expect(document.activeElement).toBe(formHeading(wrapper).element)
+        await letTheAnnouncementThrough()
+        expect(statusText(wrapper)).toBe('')
+      },
+    )
+
+    it('pendant la suppression du client en révision, les champs passent en lecture seule ; le succès porte au titre du formulaire le focus resté dans un champ', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const pending = deferred<undefined>()
+      const wrapper = await mountPage(createStubRepository({ removeClient: vi.fn(() => pending.promise) }), document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await focusAndClick(buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction))
+      // Pendant l'attente, la personne revient au nom du client qu'elle révisait : le succès viderait sa saisie.
+      const name = wrapper.get<HTMLInputElement>('#admin-mcp-client-name')
+      name.element.focus()
+
+      for (const field of formFields(wrapper)) {
+        expect(field.attributes('readonly'), field.attributes('id')).toBeDefined()
+        expect(describedByText(wrapper, field), field.attributes('id')).toBe(TEXTS.pendingReadonly)
+      }
+      expect(await typeLikeABrowser(name, 'Nom corrigé')).toBe(false)
+
+      pending.resolve(undefined)
+      await flushPromises()
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+    })
+
+    it('une suppression réussie du client en révision porte au titre du formulaire, revenu à la création, le focus perdu', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const wrapper = await mountPage(
+        createStubRepository({
+          removeClient: vi.fn(async () => {
+            dropFocusLikeABrowser()
+          }),
+        }),
+        document.body,
+      )
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await focusAndClick(buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction))
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+    })
+
+    it('une suppression réussie du client en révision laisse le focus à la personne partie hors du formulaire, et dit l’issue et le retour à la création', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const pending = deferred<undefined>()
+      const wrapper = await mountPage(createStubRepository({ removeClient: vi.fn(() => pending.promise) }), document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await focusAndClick(buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction))
+      listHeading(wrapper).element.focus()
+      pending.resolve(undefined)
+      await flushPromises()
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(`${TEXTS.outcome.removed} ${TEXTS.backToCreation}`)
+    })
+
+    it('une suppression du client en révision en échec « n’existe plus » porte au titre du formulaire le focus perdu, sans rien annoncer', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const wrapper = await mountPage(
+        createStubRepository({
+          removeClient: vi.fn(async () => {
+            dropFocusLikeABrowser()
+            throw new AdminMcpError('not-found', 'x')
+          }),
+        }),
+        document.body,
+      )
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      await focusAndClick(buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.deleteAction))
+
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      // L'échec reste dit au-dessus du tableau ; le titre du formulaire dit le nouveau mode.
+      expect(wrapper.get('[role="alert"]').text()).toBe(TEXTS.errors['not-found'])
       expect(document.activeElement).toBe(formHeading(wrapper).element)
       await letTheAnnouncementThrough()
       expect(statusText(wrapper)).toBe('')
@@ -951,6 +1233,20 @@ describe('AdminMcpClientsPage', () => {
       await submitForm(wrapper)
 
       await expectNoAccessibilityViolation(wrapper)
+    })
+
+    it('ne présente aucune violation, champs en lecture seule pendant un envoi en vol', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ registerClient: vi.fn(() => pending.promise) }))
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      await submitForm(wrapper)
+
+      // L'indice désigné par les champs existe : un IDREF vers rien serait une faute.
+      expect(wrapper.get('#admin-mcp-client-name').attributes('readonly')).toBeDefined()
+      await expectNoAccessibilityViolation(wrapper)
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
     })
   })
 })

@@ -463,6 +463,7 @@
       "clientIdImmutableHelp": "Non modifiable : c'est lui que nomment les connexions et les consentements. Pour un autre identifiant, supprimez ce client et enregistrez-en un nouveau.",
       "nameLabel": "Nom affiché",
       "redirectUrisLabel": "Redirections autorisées, une par ligne",
+      "pendingReadonly": "Opération en cours : les champs restent en lecture seule jusqu'à la réponse du serveur.",
       "columns": {
         "clientId": "Identifiant",
         "name": "Nom",
@@ -489,6 +490,7 @@
         "revised": "Client MCP modifié.",
         "removed": "Client MCP supprimé."
       },
+      "backToCreation": "Le formulaire est revenu au pré-enregistrement d'un nouveau client MCP.",
       "errors": {
         "not-found": "Ce client n'existe plus : il a été supprimé depuis la lecture de la liste.",
         "client-id-taken": "Cet identifiant est déjà celui d'un autre client.",

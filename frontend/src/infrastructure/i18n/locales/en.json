@@ -463,6 +463,7 @@
       "clientIdImmutableHelp": "Cannot be changed: it is the one connections and consents refer to. For another identifier, delete this client and register a new one.",
       "nameLabel": "Display name",
       "redirectUrisLabel": "Allowed redirections, one per line",
+      "pendingReadonly": "Operation in progress: the fields stay read-only until the server responds.",
       "columns": {
         "clientId": "Identifier",
         "name": "Name",
@@ -489,6 +490,7 @@
         "revised": "MCP client updated.",
         "removed": "MCP client deleted."
       },
+      "backToCreation": "The form is back to pre-registering a new MCP client.",
       "errors": {
         "not-found": "This client no longer exists: it was deleted since the list was read.",
         "client-id-taken": "This identifier already belongs to another client.",
