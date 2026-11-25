@@ -1,4 +1,3 @@
-import type { InjectionKey } from 'vue'
 import {
   ADMIN_MCP_CLIENT_REGISTRATIONS,
   type AdminMcpClient,
@@ -17,13 +16,6 @@ import type {
 } from '../../../domain/admin/mcp/repositories/AdminMcpRepository'
 import { hasProblemType } from '../../http/problemJson'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
-
-/**
- * Clé d'injection du dépôt, fournie par `main.ts`. Déclarée ici pour que
- * l'adaptateur soit livrable seul (#652, F2) ; le composable du backoffice MCP
- * (F3) la réexporte, et c'est par lui que la couche application l'injecte.
- */
-export const ADMIN_MCP_REPOSITORY: InjectionKey<AdminMcpRepository> = Symbol('AdminMcpRepository')
 
 const CLIENTS_PATH = '/api/backoffice/mcp/clients'
 const CONNECTIONS_PATH = '/api/backoffice/mcp/connections'

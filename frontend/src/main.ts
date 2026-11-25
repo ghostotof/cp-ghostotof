@@ -51,8 +51,8 @@ import { ADMIN_QUALITY_TRAIT_REPOSITORY } from './application/admin/quality/useA
 import { HttpAdminQualityTraitRepository } from './infrastructure/admin/quality/HttpAdminQualityTraitRepository'
 import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
-// La clé vient de l'adaptateur le temps de F2 (#652) : le composable du backoffice MCP (F3) la réexportera.
-import { ADMIN_MCP_REPOSITORY, HttpAdminMcpRepository } from './infrastructure/admin/mcp/HttpAdminMcpRepository'
+import { ADMIN_MCP_REPOSITORY } from './application/admin/mcp/useAdminMcpClients'
+import { HttpAdminMcpRepository } from './infrastructure/admin/mcp/HttpAdminMcpRepository'
 import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
 import { HttpAccountRepository } from './infrastructure/account/HttpAccountRepository'
 import { CASE_STUDY_REPOSITORY } from './application/caseStudies/useCaseStudies'

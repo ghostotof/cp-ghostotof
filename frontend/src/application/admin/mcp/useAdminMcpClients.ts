@@ -1,17 +1,20 @@
-import { inject, ref, type Ref } from 'vue'
+import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminMcpClient } from '../../../domain/admin/mcp/entities/AdminMcpClient'
 import { AdminMcpError } from '../../../domain/admin/mcp/errors/AdminMcpError'
-import type { AdminMcpClientInput, AdminMcpClientRevision } from '../../../domain/admin/mcp/repositories/AdminMcpRepository'
-// Seule importation de la couche application vers l'infrastructure : la clé d'injection est déclarée par
-// l'adaptateur (#652, F2, pour qu'il soit livrable seul). Elle est réexportée ici, et c'est d'ici que la couche
-// application l'injecte (`useAdminMcpConnections` comprise). Un symbole déclaré une seconde fois ne serait pas celui
-// que `main.ts` fournit : l'injection échouerait. La ramener ici (l'adaptateur ne la déclarant plus, `main.ts`
-// l'important d'ici comme les autres clés) touche deux fichiers hors de la tâche F3.
-import { ADMIN_MCP_REPOSITORY } from '../../../infrastructure/admin/mcp/HttpAdminMcpRepository'
+import type {
+  AdminMcpClientInput,
+  AdminMcpClientRevision,
+  AdminMcpRepository,
+} from '../../../domain/admin/mcp/repositories/AdminMcpRepository'
 import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
 import { visibleMutationError } from '../shared/visibleMutationError'
 
-export { ADMIN_MCP_REPOSITORY }
+/**
+ * Clé d'injection du dépôt du backoffice MCP, fournie une fois par `main.ts` et injectée par les deux composables
+ * (`useAdminMcpConnections` l'importe d'ici). Déclarée dans la couche application, comme les autres clés de
+ * `main.ts` : l'infrastructure ne fait qu'implémenter le port du domaine.
+ */
+export const ADMIN_MCP_REPOSITORY: InjectionKey<AdminMcpRepository> = Symbol('AdminMcpRepository')
 
 export interface UseAdminMcpClientsResult extends AdminLoadState {
   /** Les clients MCP, dans l'ordre que le serveur rend : la page ne retrie pas. */

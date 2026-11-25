@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { ADMIN_MCP_REPOSITORY, useAdminMcpClients } from '../../../../src/application/admin/mcp/useAdminMcpClients'
-import { ADMIN_MCP_REPOSITORY as ADAPTER_KEY } from '../../../../src/infrastructure/admin/mcp/HttpAdminMcpRepository'
 import type { AdminMcpClient } from '../../../../src/domain/admin/mcp/entities/AdminMcpClient'
 import type {
   AdminMcpClientInput,
@@ -89,10 +88,6 @@ describe('useAdminMcpClients', () => {
     })
 
     expect(() => mount(Probe)).toThrow(/AdminMcpRepository/)
-  })
-
-  it("réexporte la clé d'injection de l'adaptateur : celle que main.ts fournit est celle que le composable injecte", () => {
-    expect(ADMIN_MCP_REPOSITORY).toBe(ADAPTER_KEY)
   })
 
   it('isLoaded reste faux tant que la lecture du montage n’a pas répondu, puis la liste est posée', async () => {
