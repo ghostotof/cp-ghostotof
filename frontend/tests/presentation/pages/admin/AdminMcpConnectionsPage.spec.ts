@@ -78,7 +78,15 @@ const CLIENT_REMOVED: AdminMcpConnection = {
   revocationCause: 'client-removed',
 }
 
-const CONNECTIONS = [ACTIVE, NEVER_COMPLETED, NOT_RENEWED, REVOKED, UNKNOWN_CAUSE, CLIENT_REMOVED]
+/** Révoquée par la personne elle-même : la table partagée lui parle (« par vous »), la page parle à l'administrateur (R13). */
+const REVOKED_BY_PERSON: AdminMcpConnection = {
+  ...REVOKED,
+  id: '019968a0-0000-7000-8000-000000000307',
+  account: 'compte-revoque-par-la-personne',
+  revocationCause: 'person',
+}
+
+const CONNECTIONS = [ACTIVE, NEVER_COMPLETED, NOT_RENEWED, REVOKED, UNKNOWN_CAUSE, CLIENT_REMOVED, REVOKED_BY_PERSON]
 
 const TEXTS = fr.admin.mcpConnections
 
@@ -242,6 +250,15 @@ describe('AdminMcpConnectionsPage', () => {
 
       expect(cellOf(wrapper, REVOKED.account, 'cause').text()).toBe(fr.mcpConnections.causes.passwordChanged)
       expect(cellOf(wrapper, CLIENT_REMOVED.account, 'cause').text()).toBe(fr.mcpConnections.causes.clientRemoved)
+    })
+
+    it('nomme la révocation par la personne du point de vue de l’administrateur, pas « par vous » (R13)', async () => {
+      const wrapper = await mountPage()
+
+      const cell = cellOf(wrapper, REVOKED_BY_PERSON.account, 'cause')
+      expect(cell.text()).toBe(TEXTS.causes.person)
+      // La garde négative lit la clé de la table partagée : celle-ci reformulée, la garde suivrait.
+      expect(cell.text()).not.toBe(fr.mcpConnections.causes.person)
     })
 
     it('tombe sur le libellé générique pour une cause inconnue, jamais sur la cause brute', async () => {

@@ -46,8 +46,16 @@ function date(iso: string): string {
  * La cause d'une révocation, par la table partagée avec « Mes connexions MCP » (F4). Une cause qu'un backend
  * plus récent écrirait tombe sur le libellé générique : jamais la cause brute, jamais une clé construite.
  * `Object.hasOwn` écarte les clés héritées (`constructor`…) qu'un simple accès indexé trouverait.
+ *
+ * Une exception, `person` (R13) : la table partagée parle à la personne (« Révoquée par vous »), qui lit ses propres
+ * connexions ; ici l'administrateur lit celles des autres comptes, la page nomme donc la personne. Les autres causes
+ * se lisent pareil des deux côtés et restent sur la table partagée, sans copie.
  */
 function causeLabel(cause: string): string {
+  if ('person' === cause) {
+    return t('admin.mcpConnections.causes.person')
+  }
+
   const key = Object.hasOwn(REVOCATION_CAUSE_LABEL_KEYS, cause) ? REVOCATION_CAUSE_LABEL_KEYS[cause] : undefined
 
   return t(key ?? 'mcpConnections.causes.unknown')

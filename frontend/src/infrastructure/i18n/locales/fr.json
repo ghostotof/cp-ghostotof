@@ -516,7 +516,10 @@
       },
       "revokedOn": "Révoquée le",
       "plannedExpiry": "Échéance prévue",
-      "noCause": "Sans cause"
+      "noCause": "Sans cause",
+      "causes": {
+        "person": "Révoquée par la personne"
+      }
     }
   },
   "forbidden": {

@@ -516,7 +516,10 @@
       },
       "revokedOn": "Revoked on",
       "plannedExpiry": "Planned expiry",
-      "noCause": "No cause"
+      "noCause": "No cause",
+      "causes": {
+        "person": "Revoked by the person"
+      }
     }
   },
   "forbidden": {
