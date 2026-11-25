@@ -77,6 +77,8 @@ const isMutating = computed(() => isSubmitting.value || null !== removingId.valu
 /** Les deux titres qui reçoivent le focus quand le bouton qui l'avait disparaît. */
 const formHeading = useTemplateRef<HTMLHeadingElement>('formHeading')
 const listHeading = useTemplateRef<HTMLHeadingElement>('listHeading')
+/** Les boutons du formulaire, qu'un envoi remplace (« Annuler » disparaît avec la révision) : le focus qui y reste est perdu. */
+const formActions = useTemplateRef<HTMLDivElement>('formActions')
 
 /** L'issue que la région d'annonce dit : écrite un court délai après le déplacement du focus (`frontend-a11y.md`). */
 const {
@@ -140,11 +142,23 @@ function focusedElement(): HTMLElement | null {
 }
 
 /**
- * Rend le focus à `element` s'il est tombé sur `body` pendant l'appel : le navigateur le retire d'un bouton qui
- * devient `disabled`. Jamais pris à un autre élément : la personne a pu aller ailleurs pendant l'attente.
+ * Vrai si le focus n'est plus là où la personne l'a mis : sur `body` (le navigateur le retire d'un bouton qui devient
+ * `disabled`), sur un élément sorti du document, ou dans `vanished`, ce que le geste vient de faire disparaître ou
+ * de remplacer (la ligne supprimée, les boutons du formulaire). Partout ailleurs, la personne y est allée pendant
+ * l'attente — saisir le nom d'un autre client, par exemple — et la page ne le lui reprend pas (C-S6, tour 1).
+ */
+function focusIsLost(vanished: HTMLElement | null = null): boolean {
+  const active = focusedElement()
+
+  return null === active || !active.isConnected || (null !== vanished && vanished.contains(active))
+}
+
+/**
+ * Rend le focus à `element` s'il est perdu après l'appel. Jamais pris à un autre élément : la personne a pu aller
+ * ailleurs pendant l'attente.
  */
 function restoreFocusIfLost(element: HTMLElement | null): void {
-  if (null !== focusedElement() || null === element || !element.isConnected) return
+  if (!focusIsLost() || null === element || !element.isConnected) return
 
   element.focus()
 }
@@ -211,9 +225,11 @@ function cancelEdit(): void {
 async function handleSubmit(): Promise<void> {
   if (isMutating.value) return
 
-  // Lus avant l'appel : le focus, que le navigateur retire d'« Enregistrer » désactivé, et le mode, que le succès vide.
+  // Lus avant l'appel : le focus, que le navigateur retire d'« Enregistrer » désactivé, le mode, que le succès vide,
+  // et le client révisé, que la suite compare à celui du formulaire.
   const focused = focusedElement()
   const outcome: ClientOutcome = isEditing.value ? 'revised' : 'registered'
+  const editing = editingId.value
   cancelAnnouncement()
   isSubmitting.value = true
   errorPlace.value = 'form'
@@ -224,8 +240,8 @@ async function handleSubmit(): Promise<void> {
     // Chaque corps est construit champ par champ, jamais par décomposition du formulaire : le serveur refuse
     // une clé en trop (400), et `clientId` ne se révise pas.
     succeeded =
-      null !== editingId.value
-        ? await revise(editingId.value, { name: form.name, redirectUris })
+      null !== editing
+        ? await revise(editing, { name: form.name, redirectUris })
         : await register({ clientId: form.clientId, name: form.name, redirectUris })
 
     // Vidé sur le seul succès de la mutation, même si la relecture qui suit a échoué (R10) : le client est
@@ -235,12 +251,27 @@ async function handleSubmit(): Promise<void> {
     isSubmitting.value = false
   }
 
+  // Une révision « n'existe plus » (404) quitte la révision (C-S6, tour 1) : chaque nouvel essai recevrait le même
+  // 404, et le composable a déjà relu la liste, d'où la ligne est partie. L'échec reste dit dans le formulaire, que
+  // `resetForm()` aurait vidé de son alerte — comme la suppression d'un client en révision le fait au-dessus du tableau.
+  const leftRevision =
+    !succeeded && null !== editing && editingId.value === editing && 'not-found' === errorMessage.value?.reason
+  if (leftRevision) {
+    resetForm()
+    errorPlace.value = 'form'
+  }
+
   if (isUnmounted()) return
   await nextTick()
 
   if (succeeded) {
-    // Le formulaire vidé repasse en création : le focus va à son titre, puis l'issue est dite.
-    focusThenAnnounce(formHeading.value, outcome)
+    // Le formulaire vidé repasse en création : le focus va à son titre, puis l'issue est dite — sauf si la personne
+    // est allée ailleurs pendant l'attente (saisir dans un champ, lire la liste) : l'issue est dite sans le lui prendre.
+    focusThenAnnounce(focusIsLost(formActions.value) ? formHeading.value : null, outcome)
+  } else if (leftRevision) {
+    // Le formulaire a changé de mode, « Annuler » a disparu : un focus perdu va au titre, qui dit le nouveau mode ;
+    // l'alerte du formulaire dit l'échec, rien n'est annoncé de plus.
+    if (focusIsLost(formActions.value)) formHeading.value?.focus()
   } else {
     // Échec : l'alerte du formulaire le dit ; le focus revient là où la personne était.
     restoreFocusIfLost(focused)
@@ -259,8 +290,10 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
   const confirmed = window.confirm(t('admin.mcpClients.confirmRemove', { name: client.name, count }, count))
   if (!confirmed) return
 
-  // Le bouton cliqué, pour lui rendre le focus si la suppression échoue (il est désactivé pendant l'appel).
+  // Le bouton cliqué, pour lui rendre le focus si la suppression échoue (il est désactivé pendant l'appel), et sa
+  // ligne, qu'une suppression réussie fait disparaître avec le focus qui y était resté.
   const clicked = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  const row = clicked?.closest('tr') ?? null
   cancelAnnouncement()
   errorPlace.value = 'remove'
   removingId.value = client.id
@@ -287,8 +320,10 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
   await nextTick()
 
   if (succeeded) {
-    // La ligne et son bouton ont disparu : le focus va au titre de la liste, d'où la lecture reprend, puis l'issue est dite.
-    focusThenAnnounce(listHeading.value, 'removed')
+    // La ligne et son bouton ont disparu : un focus perdu, ou resté dans la ligne, va au titre de la liste, d'où la
+    // lecture reprend, puis l'issue est dite. Un focus parti ailleurs pendant l'attente — la personne saisit déjà le
+    // client suivant dans le formulaire — reste où il est : l'issue est dite sans le déplacer.
+    focusThenAnnounce(focusIsLost(row) ? listHeading.value : null, 'removed')
   } else {
     // Échec : l'alerte au-dessus du tableau le dit ; le focus revient au bouton cliqué, s'il existe encore.
     restoreFocusIfLost(null !== clicked && clicked.isConnected ? clicked : listHeading.value)
@@ -372,7 +407,10 @@ async function handleRemove(client: AdminMcpClient, event: MouseEvent): Promise<
           </p>
         </div>
 
-        <div class="d-flex gap-2">
+        <div
+          ref="formActions"
+          class="d-flex gap-2"
+        >
           <button
             type="submit"
             class="btn btn-gradient"

@@ -71,6 +71,13 @@ export function useAdminMcpClients(): UseAdminMcpClientsResult {
   /**
    * Exécute une mutation puis relit la liste. `load()` ne rejette jamais (`useAdminLoad` absorbe l'échec dans
    * `hasError`) : une relecture ratée ne change pas le `true` d'une mutation que le serveur a acceptée.
+   *
+   * Un échec « n'existe plus » (404) relit la liste lui aussi (C-S6, tour 1) : il dit que la ligne montrée n'est plus
+   * celle du serveur, et sans relecture elle garderait « Modifier » et « Supprimer », dont chaque clic recevrait le
+   * même 404. La raison est posée avant la relecture, que `load()` ne touche pas : la page dit l'échec pendant et
+   * après, la mutation rend toujours `false`. Relu ici plutôt que par la page : le composable tient déjà « le serveur,
+   * seule source de l'état affiché », et la règle vaut pour la révision comme pour la suppression, écrite une fois au
+   * lieu d'un appel à `load()` dans chaque geste. Les autres échecs ne relisent rien : rien ne dit que la liste a changé.
    */
   const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
@@ -82,6 +89,8 @@ export function useAdminMcpClients(): UseAdminMcpClientsResult {
       return true
     } catch (error) {
       errorMessage.value = visibleMutationError(error, AdminMcpError, () => new AdminMcpError('unknown', 'Unknown error'))
+
+      if ('not-found' === errorMessage.value?.reason) await load()
 
       return false
     }

@@ -337,6 +337,42 @@ describe('AdminMcpClientsPage', () => {
       expect((wrapper.get('#admin-mcp-client-name').element as HTMLInputElement).value).toBe(PREREGISTERED.name)
       expect(wrapper.get('[role="alert"]').text()).toBe(TEXTS.errors.unknown)
     })
+
+    it('relit la liste quand la suppression échoue en « n’existe plus » : la ligne fantôme disparaît, l’échec reste dit', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const reread = deferred<readonly AdminMcpClient[]>()
+      let reads = 0
+      const repository = createStubRepository({
+        listClients: vi.fn(() => {
+          reads += 1
+          return 1 === reads ? Promise.resolve([PREREGISTERED, DECLARED, SHADOWING]) : reread.promise
+        }),
+        removeClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          throw new AdminMcpError('not-found', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+
+      // Le 404 dit que la liste montrée n'est plus celle du serveur : elle est relue, sans quoi la ligne fantôme
+      // garderait ses boutons et chaque nouveau clic recevrait le même 404.
+      expect(repository.listClients).toHaveBeenCalledTimes(2)
+      // Pendant la relecture, le tableau reste monté et marqué occupé (jamais « Chargement »), l'échec déjà dit.
+      expect(wrapper.text()).not.toContain(TEXTS.loading)
+      expect(wrapper.get('table').element.parentElement?.getAttribute('aria-busy')).toBe('true')
+      expect(wrapper.get('[role="alert"]').text()).toBe(TEXTS.errors['not-found'])
+
+      reread.resolve([PREREGISTERED, SHADOWING])
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain(DECLARED.clientId)
+      // La relecture n'efface pas l'échec : il reste dit au-dessus du tableau.
+      expect(wrapper.get('[role="alert"]').text()).toBe(TEXTS.errors['not-found'])
+      // Le bouton cliqué est parti avec sa ligne : le focus va au titre de la liste, jamais sur `body`.
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+    })
   })
 
   describe('une mutation à la fois', () => {
@@ -571,6 +607,112 @@ describe('AdminMcpClientsPage', () => {
       await submitForm(wrapper)
 
       // Un enregistrement refusé ne laisse pas lire « supprimé » à côté de son alerte.
+      expect(statusText(wrapper)).toBe('')
+    })
+
+    it('une suppression réussie laisse le focus à la personne partie saisir dans le formulaire, et l’annonce quand même', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const pending = deferred<undefined>()
+      const wrapper = await mountPage(createStubRepository({ removeClient: vi.fn(() => pending.promise) }), document.body)
+
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+      // Pendant l'attente, la personne saisit le nom d'un nouveau client : les champs du formulaire restent actifs.
+      const name = wrapper.get<HTMLInputElement>('#admin-mcp-client-name')
+      name.element.focus()
+      await name.setValue('Client en cours de sai')
+      pending.resolve(undefined)
+      await flushPromises()
+
+      // Le focus ne lui est pas repris au milieu d'un mot : l'issue est dite sans le déplacer.
+      expect(document.activeElement).toBe(name.element)
+      expect(name.element.value).toBe('Client en cours de sai')
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+    })
+
+    it('une suppression réussie porte au titre de la liste le focus resté dans la ligne disparue', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let reads = 0
+      const repository = createStubRepository({
+        listClients: vi.fn(async () => {
+          reads += 1
+          return 1 === reads ? [PREREGISTERED, DECLARED, SHADOWING] : [PREREGISTERED, SHADOWING]
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      // Un navigateur qui laisse le focus au bouton désactivé : il part avec la ligne supprimée.
+      await focusAndClick(buttonLabelled(rowFor(wrapper, DECLARED.clientId), TEXTS.deleteAction))
+
+      expect(wrapper.text()).not.toContain(DECLARED.clientId)
+      expect(document.activeElement).toBe(listHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.removed)
+    })
+
+    it('un enregistrement réussi laisse le focus à la personne partie ailleurs pendant l’attente, et l’annonce quand même', async () => {
+      const pending = deferred<AdminMcpClient>()
+      const wrapper = await mountPage(createStubRepository({ registerClient: vi.fn(() => pending.promise) }), document.body)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+      // Pendant l'attente, la personne retourne au champ des redirections.
+      const redirects = wrapper.get<HTMLTextAreaElement>('#admin-mcp-client-redirects')
+      redirects.element.focus()
+      pending.resolve(PREREGISTERED)
+      await flushPromises()
+
+      expect(document.activeElement).toBe(redirects.element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.registered)
+    })
+
+    it('un enregistrement réussi porte au titre du formulaire le focus resté sur « Enregistrer »', async () => {
+      const wrapper = await mountPage(createStubRepository(), document.body)
+
+      await fillForm(wrapper, { clientId: 'client-neuf', name: 'Client neuf', redirects: 'https://neuf.example/callback' })
+      // Un navigateur qui laisse le focus au bouton désactivé : il est sur les boutons du formulaire, que le succès remplace.
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      await letTheAnnouncementThrough()
+      expect(statusText(wrapper)).toBe(TEXTS.outcome.registered)
+    })
+
+    it('une révision en échec « n’existe plus » quitte la révision, dit l’échec dans le formulaire et porte le focus à son titre', async () => {
+      let reads = 0
+      const repository = createStubRepository({
+        listClients: vi.fn(async () => {
+          reads += 1
+          return 1 === reads ? [PREREGISTERED, DECLARED, SHADOWING] : [DECLARED, SHADOWING]
+        }),
+        reviseClient: vi.fn(async () => {
+          dropFocusLikeABrowser()
+          throw new AdminMcpError('not-found', 'x')
+        }),
+      })
+      const wrapper = await mountPage(repository, document.body)
+
+      await buttonLabelled(rowFor(wrapper, PREREGISTERED.clientId), TEXTS.editAction).trigger('click')
+      buttonLabelled(wrapper, TEXTS.save).element.focus()
+      await submitForm(wrapper)
+
+      // Le client a disparu : le formulaire revient à la création, sans quoi chaque essai recevrait le même 404.
+      expect(formHeading(wrapper).text()).toBe(TEXTS.create)
+      expect(wrapper.find('#admin-mcp-client-id').exists()).toBe(true)
+      expect((wrapper.get('#admin-mcp-client-name').element as HTMLInputElement).value).toBe('')
+      // L'échec reste dit dans le formulaire, désigné par ses champs.
+      const alert = wrapper.get('form').get('[role="alert"]')
+      expect(alert.text()).toBe(TEXTS.errors['not-found'])
+      expect(wrapper.get('#admin-mcp-client-name').attributes('aria-describedby')).toBe(alert.attributes('id'))
+      // La liste relue ne montre plus la ligne fantôme.
+      expect(repository.listClients).toHaveBeenCalledTimes(2)
+      expect(wrapper.findAll('tbody tr').some((row) => row.text().includes(PREREGISTERED.clientId))).toBe(false)
+      // Le formulaire a changé de mode sous la personne : son titre le dit, jamais `body`.
+      expect(document.activeElement).toBe(formHeading(wrapper).element)
+      await letTheAnnouncementThrough()
       expect(statusText(wrapper)).toBe('')
     })
   })

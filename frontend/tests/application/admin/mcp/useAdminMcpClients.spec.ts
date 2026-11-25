@@ -182,6 +182,24 @@ describe('useAdminMcpClients', () => {
         expect(repository.listClients).toHaveBeenCalledTimes(1)
       },
     )
+
+    it('relit la liste quand le client révisé n’existe plus, garde la raison et rend faux', async () => {
+      const repository = createStubRepository({
+        listClients: vi.fn(async () => [CLIENT, OTHER_CLIENT]),
+        reviseClient: vi.fn(async () => Promise.reject(new AdminMcpError('not-found', 'Client inconnu'))),
+      })
+      const composable = mountWithComposable(repository)
+      await flushPromises()
+      vi.mocked(repository.listClients).mockResolvedValue([OTHER_CLIENT])
+
+      const succeeded = await composable.revise(CLIENT_ID, REVISION)
+
+      // La ligne existe encore dans le tableau : sans relecture, « Modifier » la proposerait toujours.
+      expect(succeeded).toBe(false)
+      expect(repository.listClients).toHaveBeenCalledTimes(2)
+      expect(composable.clients.value).toEqual([OTHER_CLIENT])
+      expect(composable.errorMessage.value?.reason).toBe('not-found')
+    })
   })
 
   describe('remove()', () => {
@@ -200,9 +218,9 @@ describe('useAdminMcpClients', () => {
       expect(composable.errorMessage.value).toBeNull()
     })
 
-    it('rend faux et pose errorMessage quand la suppression échoue, sans relire la liste', async () => {
+    it('rend faux et pose errorMessage quand la suppression échoue pour une autre raison qu’« n’existe plus », sans relire la liste', async () => {
       const repository = createStubRepository({
-        removeClient: vi.fn(async () => Promise.reject(new AdminMcpError('not-found', 'Client inconnu'))),
+        removeClient: vi.fn(async () => Promise.reject(new AdminMcpError('unknown', 'Erreur serveur'))),
       })
       const composable = mountWithComposable(repository)
       await flushPromises()
@@ -211,9 +229,67 @@ describe('useAdminMcpClients', () => {
 
       expect(succeeded).toBe(false)
       expect(composable.errorMessage.value).toBeInstanceOf(AdminMcpError)
-      expect(composable.errorMessage.value?.reason).toBe('not-found')
+      expect(composable.errorMessage.value?.reason).toBe('unknown')
       expect(repository.listClients).toHaveBeenCalledTimes(1)
       expect(composable.clients.value).toEqual([CLIENT])
+    })
+
+    it('relit la liste quand le client n’existe plus, garde la raison et rend faux', async () => {
+      const repository = createStubRepository({
+        listClients: vi.fn(async () => [CLIENT, OTHER_CLIENT]),
+        removeClient: vi.fn(async () => Promise.reject(new AdminMcpError('not-found', 'Client inconnu'))),
+      })
+      const composable = mountWithComposable(repository)
+      await flushPromises()
+      vi.mocked(repository.listClients).mockResolvedValue([OTHER_CLIENT])
+
+      const succeeded = await composable.remove(CLIENT_ID)
+
+      // Le 404 dit que la liste montrée n'est plus celle du serveur : la ligne disparue n'y reste pas.
+      expect(succeeded).toBe(false)
+      expect(repository.listClients).toHaveBeenCalledTimes(2)
+      expect(composable.clients.value).toEqual([OTHER_CLIENT])
+      // La relecture n'efface pas l'échec : la page dit toujours que le client n'existe plus.
+      expect(composable.errorMessage.value?.reason).toBe('not-found')
+    })
+
+    it('pendant la relecture qui suit un « n’existe plus », la liste reste lue et l’échec est déjà posé', async () => {
+      const reread = deferred<readonly AdminMcpClient[]>()
+      const repository = createStubRepository({
+        removeClient: vi.fn(async () => Promise.reject(new AdminMcpError('not-found', 'Client inconnu'))),
+      })
+      const composable = mountWithComposable(repository)
+      await flushPromises()
+      vi.mocked(repository.listClients).mockReturnValue(reread.promise)
+
+      const pending = composable.remove(CLIENT_ID)
+      await flushPromises()
+
+      // La chaîne de la page reste `isLoading` sur une liste lue (le tableau, marqué occupé), jamais « non lue ».
+      expect(composable.isLoading.value).toBe(true)
+      expect(composable.isLoaded.value).toBe(true)
+      expect(composable.hasError.value).toBe(false)
+      expect(composable.errorMessage.value?.reason).toBe('not-found')
+
+      reread.resolve([])
+      expect(await pending).toBe(false)
+      expect(composable.isLoading.value).toBe(false)
+      expect(composable.clients.value).toEqual([])
+    })
+
+    it('une relecture ratée après un « n’existe plus » lève hasError sans effacer l’échec de la mutation', async () => {
+      const repository = createStubRepository({
+        removeClient: vi.fn(async () => Promise.reject(new AdminMcpError('not-found', 'Client inconnu'))),
+      })
+      const composable = mountWithComposable(repository)
+      await flushPromises()
+      vi.mocked(repository.listClients).mockRejectedValue(new Error('unavailable'))
+
+      const succeeded = await composable.remove(CLIENT_ID)
+
+      expect(succeeded).toBe(false)
+      expect(composable.hasError.value).toBe(true)
+      expect(composable.errorMessage.value?.reason).toBe('not-found')
     })
 
     it('ramène un échec étranger au contexte à la raison unknown', async () => {
