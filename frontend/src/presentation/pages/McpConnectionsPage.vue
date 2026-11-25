@@ -6,6 +6,7 @@ import { useMcpConnections, type McpRevocationOutcome } from '../../application/
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import { useCurrentLocale } from '../../application/shared/useCurrentLocale'
 import { formatInstant } from '../format/instant'
+import { REVOCATION_CAUSE_LABEL_KEYS } from '../mcp/revocationCauseLabelKeys'
 import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
@@ -60,25 +61,9 @@ const currentLocale = useCurrentLocale()
 // pourquoi, et rien ne la déplace pendant qu'elle lit.
 const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
-/**
- * Correspondances explicites plutôt qu'une clé construite à la volée : une
- * `t('mcpConnections.causes.' + cause)` échapperait à la vérification d'usage
- * des clés, et une cause ajoutée par un backend plus récent afficherait une clé
- * brute. Une cause absente de cette table tombe sur le libellé générique.
- */
-const CAUSE_LABEL_KEYS: Readonly<Record<string, string>> = {
-  person: 'mcpConnections.causes.person',
-  client: 'mcpConnections.causes.client',
-  'refresh-token-reuse': 'mcpConnections.causes.refreshTokenReuse',
-  'code-replay': 'mcpConnections.causes.codeReplay',
-  superseded: 'mcpConnections.causes.superseded',
-  expired: 'mcpConnections.causes.expired',
-  'password-changed': 'mcpConnections.causes.passwordChanged',
-  'trusted-tier-withdrawn': 'mcpConnections.causes.trustedTierWithdrawn',
-}
-
+/** Une cause absente de la table partagée tombe sur le libellé générique. */
 function causeLabel(cause: string | null): string {
-  const key = null === cause ? undefined : Object.hasOwn(CAUSE_LABEL_KEYS, cause) ? CAUSE_LABEL_KEYS[cause] : undefined
+  const key = null === cause ? undefined : Object.hasOwn(REVOCATION_CAUSE_LABEL_KEYS, cause) ? REVOCATION_CAUSE_LABEL_KEYS[cause] : undefined
 
   return t(key ?? 'mcpConnections.causes.unknown')
 }
