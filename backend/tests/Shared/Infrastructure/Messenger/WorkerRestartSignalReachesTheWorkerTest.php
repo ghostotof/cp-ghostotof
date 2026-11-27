@@ -31,7 +31,8 @@ use Symfony\Component\Messenger\Worker;
  *
  * Les deux derniers reproduisent l'écriture refusée de l'issue, une session
  * PostgreSQL en `default_transaction_read_only` (mesurée en dev pour #521 par
- * `PGOPTIONS`) : la nôtre échoue, celle de Symfony répond toujours `[OK]`.
+ * `PGOPTIONS`) : la nôtre échoue, et celle de Symfony aussi depuis 8.1.12
+ * (elle répondait `[OK]` jusqu'en 8.1.11).
  */
 final class WorkerRestartSignalReachesTheWorkerTest extends KernelTestCase
 {
@@ -90,17 +91,21 @@ final class WorkerRestartSignalReachesTheWorkerTest extends KernelTestCase
     }
 
     /**
-     * Le constat de l'issue, épinglé : si ce test rougit, Symfony a corrigé sa
-     * commande, et le Job pourra y revenir — à décider en relisant #528.
+     * Le constat de l'issue, corrigé par Symfony 8.1.12 : sa commande teste
+     * désormais le retour de `save()` et échoue quand la base refuse
+     * l'écriture. Épinglé dans ce sens : si ce test rougit, la commande de
+     * Symfony est revenue au `[OK]` sans signal, et le Job de #521 doit rester
+     * sur la nôtre. Revenir à la commande de Symfony dans le Job se décide en
+     * relisant #528 ; la nôtre garde son message en français.
      */
-    public function testSymfonysOwnCommandStillReportsSuccessWhenTheWriteIsRefused(): void
+    public function testSymfonysOwnCommandFailsWhenTheWriteIsRefused(): void
     {
         $this->connection()->executeStatement('SET SESSION default_transaction_read_only = on');
 
         $tester = $this->command('messenger:stop-workers');
 
-        self::assertSame(Command::SUCCESS, $tester->execute([]));
-        self::assertStringContainsString('[OK]', $tester->getDisplay());
+        self::assertSame(Command::FAILURE, $tester->execute([]));
+        self::assertStringNotContainsString('[OK]', $tester->getDisplay());
         $this->connection()->executeStatement('SET SESSION default_transaction_read_only = off');
         self::assertFalse($this->signalPool()->getItem(StopWorkerOnRestartSignalListener::RESTART_REQUESTED_TIMESTAMP_KEY)->isHit());
     }
