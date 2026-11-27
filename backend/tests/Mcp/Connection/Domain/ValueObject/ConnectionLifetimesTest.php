@@ -387,6 +387,42 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
+     * L'inactivité (#652) : en jours et en temps écoulé seulement, jamais en
+     * mois ni en années. Une échéance en mois n'est pas monotone selon
+     * l'activité (`P1M` : une activité au 31/01 donne le 03/03, une activité
+     * plus récente au 01/02 donne le 01/03), et l'arrêt anticipé de la liste
+     * d'administration majore la fin d'une expirée par l'échéance de son
+     * activité plus un jour : il suppose une échéance croissante.
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function idleDurationsByKind(): iterable
+    {
+        yield 'trente jours' => ['P30D', true];
+        yield 'trente et un jours et deux heures' => ['P31DT2H', true];
+        yield 'quatre semaines' => ['P4W', true];
+        yield 'un mois' => ['P1M', false];
+        yield 'une année' => ['P1Y', false];
+        yield 'un mois et deux jours' => ['P1M2D', false];
+        yield 'une année, un mois et un jour' => ['P1Y1M1D', false];
+    }
+
+    #[DataProvider('idleDurationsByKind')]
+    public function testTheIdleLifetimeHasNoMonthNorYear(string $value, bool $accepted): void
+    {
+        if ($accepted) {
+            self::assertSame($this->seconds(new DateInterval($value)), $this->seconds($this->lifetimes(['idleLifetime' => $value, 'maximumLifetime' => 'P90D'])->idle()));
+
+            return;
+        }
+
+        $this->expectException(InvalidConnectionLifetimeException::class);
+        $this->expectExceptionMessage(InvalidConnectionLifetimeException::notMonotonicInActivity('idleLifetime')->getMessage());
+
+        $this->lifetimes(['idleLifetime' => $value, 'maximumLifetime' => 'P400D']);
+    }
+
+    /**
      * Le plancher de la durée des connexions jamais échangées (#730, CR1 de
      * #726 préservé) : la durée dépasse celle d'un code **plus deux fois la
      * minute de jeu**, exclu. La présélection recule d'une minute (candidate ⇒
@@ -472,6 +508,35 @@ final class ConnectionLifetimesTest extends TestCase
         self::assertSame(3600, $lifetimes->unexchangedDeadline($beforeTheChange)->getTimestamp() - $beforeTheChange->getTimestamp());
         self::assertSame('2026-10-25T02:30:00+01:00', $lifetimes->unexchangedDeadline($beforeTheChange)->format(DATE_ATOM), 'Une heure écoulée après 02:30 CEST : 02:30 CET, l\'heure répétée.');
         self::assertSame(3600, $lifetimes->unexchangedDeadline($afterTheChange)->getTimestamp() - $afterTheChange->getTimestamp());
+    }
+
+    /**
+     * Le seuil des accords abandonnés (#652) : `maintenant − durée`, du temps
+     * écoulé et **sans marge** (celle de la purge n'a rien à faire dans une
+     * lecture qui doit répondre comme `McpConnectionStatus::stateOf()`).
+     * Équivalence épinglée à la seconde, bornes incluses : `octroi <= seuil`
+     * ⇔ `unexchangedDeadline(octroi) <= maintenant`, y compris autour du
+     * passage à l'heure d'hiver.
+     */
+    public function testTheAbandonedThresholdIsNowMinusTheLifetimeAndMatchesTheDeadlineRule(): void
+    {
+        $lifetimes = $this->lifetimes();
+        $paris = new DateTimeZone('Europe/Paris');
+
+        foreach (['2026-06-15 10:00:00+00:00', '2026-10-25 02:30:00+02:00', '2026-10-25 02:30:00+01:00', '2026-03-29 03:30:00+02:00'] as $instant) {
+            $now = new DateTimeImmutable($instant)->setTimezone($paris);
+            $threshold = $lifetimes->abandonedBefore($now);
+
+            self::assertSame($now->getTimestamp() - 3600, $threshold->getTimestamp(), 'Pas du temps écoulé, ou une marge : '.$instant);
+            $second = new DateInterval('PT1S');
+            foreach ([$threshold->sub($second), $threshold, $threshold->add($second)] as $grantedAt) {
+                self::assertSame(
+                    $lifetimes->unexchangedDeadline($grantedAt) <= $now,
+                    $grantedAt <= $threshold,
+                    'Le seuil ne répond pas à la règle de l\'échéance : '.$instant.' '.$grantedAt->format(DATE_ATOM),
+                );
+            }
+        }
     }
 
     /**

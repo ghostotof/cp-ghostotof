@@ -232,11 +232,35 @@ final readonly class ConsentService implements ConsentServiceInterface
             // ici, dans la transaction et avant la connexion qui la référence
             // (ordre des verrous : mcp_client avant mcp_connection). Un
             // identifiant pris entre-temps par une ligne pré-enregistrée refuse
-            // l'accord. Sinon, la ligne pré-enregistrée est relue comme avant.
+            // l'accord.
+            //
+            // Un client pré-enregistré est relu **sous `FOR SHARE`** (#652) :
+            // sans ce verrou, l'administrateur qui le supprime entre cette
+            // lecture et l'INSERT de la connexion fait échouer celui-ci sur la
+            // clé étrangère (une 500 au lieu d'un refus). Verrouillée, la
+            // ligne ne peut plus être supprimée avant notre COMMIT : son DELETE
+            // attend, puis balaie la connexion par cascade. Un `FOR SHARE`
+            // et non `FOR UPDATE` : deux consentements du même client ne
+            // doivent pas s'attendre. Une ligne déjà supprimée rend `null` :
+            // « plus enregistré ».
+            //
+            // La branche déclarée n'en a pas besoin : `saveDiscovered()`
+            // verrouille la ligne qu'il met à jour ou la recrée, dans cette
+            // même transaction. L'ordre reste celui du modèle : le client
+            // (ici) avant la connexion (`add()`, plus bas), jamais l'inverse.
             $client = (null !== $discovered
                 ? $this->clients->saveDiscovered($discovered)
-                : $this->clients->findOneByClientId($summary->clientId))
+                : $this->clients->findOneByClientIdForShare($summary->clientId))
                 ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
+
+            // La redirection validée plus haut l'a été sur une lecture sans
+            // verrou : une révision du client entre-temps a pu la retirer. Le
+            // verrou ne couvre que ce qui suit sa prise ; la relecture
+            // (`HINT_REFRESH`) rend l'état courant, et c'est ici qu'on s'en
+            // sert. Refus avant toute écriture : ni connexion ni code.
+            if (!$client->allowsRedirect($summary->redirectUri)) {
+                throw AuthorizationRequestRejectedException::redirectNoLongerRegistered();
+            }
 
             $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
             $this->connections->add($connection);

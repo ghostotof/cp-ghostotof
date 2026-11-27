@@ -321,7 +321,7 @@ final class CodeExchangeSupersessionTest extends TestCase
     {
         return McpConnection::grant(
             new CpgUser('jane', 'hashed-password'),
-            RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', []),
+            RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['https://client.example.test/callback']),
             McpConnection::SCOPE_NOMINATIVE_READ,
             new DateTimeImmutable(self::NOW),
         );

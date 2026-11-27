@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Security\User\Infrastructure\Doctrine;
+namespace App\Shared\Infrastructure\Doctrine;
 
-use App\Security\User\Application\DeadlockRetryInterface;
+use App\Shared\Application\DeadlockRetryInterface;
 use Closure;
 use Doctrine\DBAL\Exception\DeadlockException;
 use Doctrine\Persistence\ManagerRegistry;

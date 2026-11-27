@@ -75,7 +75,9 @@
       "incidents": "Incidents",
       "anonymousCv": "CV without identity",
       "caseStudies": "Case studies",
-      "watch": "Watch"
+      "watch": "Watch",
+      "mcpClients": "MCP clients",
+      "mcpConnections": "MCP connections"
     },
     "order": {
       "moveHandle": "Move: {label}",
@@ -449,6 +451,82 @@
         "loading": "Loading vulnerabilities…",
         "loadError": "Failed to load vulnerabilities. Please try again later."
       }
+    },
+    "mcpClients": {
+      "create": "Pre-register an MCP client",
+      "edit": "Edit the MCP client",
+      "listTitle": "MCP clients",
+      "caption": "The MCP clients, pre-registered or declared, with their active connections",
+      "save": "Save",
+      "cancel": "Cancel",
+      "clientIdLabel": "Client identifier",
+      "clientIdImmutableHelp": "Cannot be changed: it is the one connections and consents refer to. For another identifier, delete this client and register a new one.",
+      "nameLabel": "Display name",
+      "redirectUrisLabel": "Allowed redirections, one per line",
+      "pendingReadonly": "Operation in progress: the fields stay read-only until the server responds.",
+      "columns": {
+        "clientId": "Identifier",
+        "name": "Name",
+        "registration": "Mode",
+        "redirectUris": "Redirections",
+        "activeConnections": "Active connections",
+        "actions": "Actions"
+      },
+      "registrations": {
+        "preregistered": "Pre-registered",
+        "cimd": "Declared (CIMD)"
+      },
+      "shadowsVerifiedDomain": "Shadows a verified domain: this client can no longer be edited, delete it so that the domain's document prevails.",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "removalWarning": "Deleting a client cuts all its connections: their tokens no longer open anything, and they disappear from their person's “My MCP connections”.",
+      "cimdNote": "A deleted CIMD client comes back at the next authorization as long as its domain stays allowed. Its redirections come from its document: they cannot be edited here.",
+      "confirmRemove": "Delete the client {name}, which has no active connection? | Delete the client {name} and cut its active connection? | Delete the client {name} and cut its {count} active connections?",
+      "empty": "No MCP client registered.",
+      "loading": "Loading MCP clients…",
+      "loadError": "Failed to load MCP clients. Please try again later.",
+      "outcome": {
+        "registered": "MCP client pre-registered.",
+        "revised": "MCP client updated.",
+        "removed": "MCP client deleted."
+      },
+      "backToCreation": "The form is back to pre-registering a new MCP client.",
+      "errors": {
+        "not-found": "This client no longer exists: it was deleted since the list was read.",
+        "client-id-taken": "This identifier already belongs to another client.",
+        "declared-by-document": "This client is declared by its metadata document: it cannot be edited here, only deleted.",
+        "id-of-verified-domain": "This client shadows a verified domain: it cannot be edited, only deleted.",
+        "validation": "The server refused the input:",
+        "unknown": "An error occurred. Please try again later."
+      }
+    },
+    "mcpConnections": {
+      "listTitle": "MCP connections",
+      "terminatedBound": "The ended connections shown are the 200 most recent.",
+      "loading": "Loading MCP connections…",
+      "loadError": "Failed to load MCP connections. Please try again later.",
+      "empty": "No MCP connection.",
+      "caption": "The MCP connections of every account, with their client, dates, state and cause",
+      "columns": {
+        "account": "Account",
+        "client": "Client",
+        "grantedAt": "Granted on",
+        "lastUsedAt": "Last used",
+        "expiresAt": "Expires",
+        "state": "State",
+        "cause": "Cause"
+      },
+      "states": {
+        "active": "Active",
+        "expired": "Expired",
+        "revoked": "Revoked"
+      },
+      "revokedOn": "Revoked on",
+      "plannedExpiry": "Planned expiry",
+      "noCause": "No cause",
+      "causes": {
+        "person": "Revoked by the person"
+      }
     }
   },
   "forbidden": {
@@ -664,6 +742,14 @@
     "adminWatch": {
       "title": "Administration — Watch",
       "description": "Manage the products whose lifecycle is tracked."
+    },
+    "adminMcpClients": {
+      "title": "Administration — MCP clients",
+      "description": "Manage the MCP clients, pre-registered or declared, allowed to connect to the MCP server."
+    },
+    "adminMcpConnections": {
+      "title": "Administration — MCP connections",
+      "description": "View the MCP connections of every account, with their client, dates, state and cause."
     },
     "mcpConnections": {
       "title": "My MCP connections",
@@ -890,6 +976,7 @@
       "expired": "Expired",
       "passwordChanged": "Cut when the password changed",
       "trustedTierWithdrawn": "Cut: the trusted tier was withdrawn",
+      "clientRemoved": "Cut: the client was deleted",
       "unknown": "Revoked (unrecognized cause)"
     },
     "revoke": "Revoke",

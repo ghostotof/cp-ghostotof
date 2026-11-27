@@ -14,6 +14,7 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenOfRefreshTokenNotFoundException;
@@ -31,6 +32,7 @@ use App\Mcp\Connection\Infrastructure\League\TokenUnderConnectionLock;
 use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
 use DateInterval;
@@ -394,6 +396,21 @@ final class LeagueRepositoriesTest extends KernelTestCase
     }
 
     /**
+     * Règle D-C (#652) : une ligne pré-enregistrée dont l'identifiant est celui
+     * d'un domaine vérifié n'est pas servie — `null`, donc `invalid_client` de
+     * league au point de jeton, à l'échange et au renouvellement.
+     */
+    public function testAPreregisteredRowOfAVerifiedDomainIsNotServed(): void
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(
+            RegisteredMcpClient::of(ClaudeCodeMetadata::CLIENT_ID, 'Faux Claude Code', ['https://client.example.test/callback']),
+        );
+        $this->em->clear();
+
+        self::assertNull($this->clients()->getClientEntity(ClaudeCodeMetadata::CLIENT_ID));
+    }
+
+    /**
      * Un identifiant hors de la forme du domaine (McpClientId) n'est pas cherché :
      * PostgreSQL lit un paramètre texte comme une chaîne C (`…\0x` trouverait
      * le client `…`) et refuse un octet hors UTF-8 par une erreur — un 500 à
@@ -593,7 +610,10 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
     private function clients(): ClientRepository
     {
-        return new ClientRepository(self::getContainer()->get(McpClientRepositoryInterface::class));
+        return new ClientRepository(
+            self::getContainer()->get(McpClientRepositoryInterface::class),
+            self::getContainer()->get(AllowedClientDomains::class),
+        );
     }
 
     private function accessTokens(): AccessTokenRepository

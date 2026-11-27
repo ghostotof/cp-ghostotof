@@ -15,8 +15,10 @@ use Throwable;
  * l'appelant rend (le refus de league, les jetons émis, la purge menée à son
  * terme, le refus d'une admission — 401 `invalid_client` s'il est définitif,
  * 429 ou 503 `temporarily_unavailable` s'il est passager —, le 401 d'un
- * garde, la révocation). La liste exacte des sites (sept appels) se relève,
- * depuis `backend/`, par `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'`.
+ * garde, la révocation, l'inscription, la révision et la suppression d'un
+ * client, la supersession d'une connexion). La liste exacte des sites se
+ * relève, depuis `backend/`, par
+ * `grep -rn -- '->attempt(' src | grep -v '^src/Mcp/Connection/Application/FailSafeAudit.php'`.
  *
  * La ligne est tentée ; une panne, quelle qu'elle soit (`Throwable` : une
  * erreur du pilote, du chiffrement, du journal lui-même), sort en `critical`
@@ -42,7 +44,7 @@ use Throwable;
  * encore bloqué dans l'écriture : le `critical` et la trace sont perdus, et
  * l'issue n'est plus celle que l'appelant rend.
  *
- * Un des sept sites, `McpConnectionPurger`, tourne en ligne de commande
+ * Un des sites, `McpConnectionPurger`, tourne en ligne de commande
  * (`app:mcp:purge`, CronJob `k8s/base/messenger-purge-cronjob.yaml`), sans
  * maître ni borne de 65 s. Sa seule borne est `activeDeadlineSeconds: 300` du
  * Job, qui couvre le Job entier et non la purge : les trois commandes enchaînées
@@ -80,7 +82,7 @@ final readonly class FailSafeAudit
             } catch (Throwable $loggerFailure) {
                 // Le journal lui-même en panne : l'issue reste celle que
                 // l'appelant va rendre, jamais un 500 né de l'audit.
-                // Ce chemin vaut pour TOUS les appelants (les sept sites
+                // Ce chemin vaut pour TOUS les appelants (les sites
                 // d'appel, que la commande `grep` de la docblock de la classe
                 // énumère). Dernier recours,
                 // sans contexte : un message constant et la classe de la panne

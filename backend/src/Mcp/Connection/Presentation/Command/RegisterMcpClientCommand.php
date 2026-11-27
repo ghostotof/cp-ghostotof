@@ -7,11 +7,14 @@ namespace App\Mcp\Connection\Presentation\Command;
 use App\Mcp\Connection\Application\McpClientRegistrarInterface;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientNameException;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
+use App\Security\Authentication\Application\AuditOrigin;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -76,8 +79,8 @@ final class RegisterMcpClientCommand extends Command
         }
 
         try {
-            $client = $this->registrar->register($clientId, $name, $redirectUris);
-        } catch (McpClientAlreadyRegisteredException $exception) {
+            $client = $this->registrar->register($clientId, $name, $redirectUris, AuditOrigin::Console);
+        } catch (McpClientAlreadyRegisteredException|McpClientIdOfVerifiedDomainException|InvalidMcpClientRedirectsException $exception) {
             $io->error($exception->getMessage());
 
             return Command::FAILURE;

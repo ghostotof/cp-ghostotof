@@ -26,7 +26,7 @@ const IS_LOADED = /\bisLoaded\b|\bis[A-Z][A-Za-z]*Loaded\b/g
  * Une égalité, non un plancher : un fichier qui perd son état vide, ou que l'expression ne reconnaît plus, rougit au lieu de sortir
  * en silence, et un fichier qui en gagne un aussi, lu alors par la garde ; le message dit les fichiers lus.
  */
-const FILES_WITH_EMPTY_STATE = 10
+const FILES_WITH_EMPTY_STATE = 12
 
 describe('un état vide ne se dit que d\'une liste lue (#748, R4)', () => {
   it('chaque fichier qui compose un état vide lit isLoaded au moins autant de fois', () => {

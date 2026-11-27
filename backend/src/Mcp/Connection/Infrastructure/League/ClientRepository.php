@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use SensitiveParameter;
@@ -20,6 +21,7 @@ final readonly class ClientRepository implements ClientRepositoryInterface
 {
     public function __construct(
         private McpClientRepositoryInterface $clients,
+        private AllowedClientDomains $allowedDomains,
     ) {
     }
 
@@ -30,6 +32,18 @@ final readonly class ClientRepository implements ClientRepositoryInterface
      * `…`, le piège de #418 côté comptes) et refuse un octet hors UTF-8 par
      * une erreur — un 500 à la main de quiconque appelle le point
      * d'autorisation.
+     *
+     * Une ligne pré-enregistrée dont l'identifiant est celui d'un domaine
+     * vérifié (règle D-C : sur ce domaine, c'est le document CIMD qui fait
+     * foi, jamais une ligne saisie) n'est **pas** servie : `null`, donc
+     * `invalid_client` de league. C'est le refus à la source pour le point de
+     * jeton, l'échange du code et le renouvellement — une connexion née d'une
+     * telle ligne ne se renouvelle plus, un code en vol ne s'échange plus. Ce
+     * refus alimente aussi une ligne d'audit `mcp-grant-refused`, écrite par
+     * LeagueGrantRefusalAudit (même prédicat, `isShadowedBy()`) et seulement
+     * quand le grant présenté est authentique. Le
+     * refus à l'autorisation et au consentement reste celui de
+     * CimdClientAdmission.
      */
     public function getClientEntity(string $clientIdentifier): ?OAuthClient
     {
@@ -41,7 +55,15 @@ final readonly class ClientRepository implements ClientRepositoryInterface
 
         $client = $this->clients->findOneByClientId((string) $clientId);
 
-        return null === $client ? null : new OAuthClient($client);
+        if (null === $client) {
+            return null;
+        }
+
+        if ($this->allowedDomains->isShadowedBy($client->registration(), $client->getClientId())) {
+            return null;
+        }
+
+        return new OAuthClient($client);
     }
 
     /**

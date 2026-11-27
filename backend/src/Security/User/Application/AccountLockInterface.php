@@ -6,6 +6,7 @@ namespace App\Security\User\Application;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use App\Shared\Application\DeadlockRetryInterface;
 use Closure;
 
 /**

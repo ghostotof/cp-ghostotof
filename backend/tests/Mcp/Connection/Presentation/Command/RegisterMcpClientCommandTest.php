@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException;
+use App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -22,6 +25,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 final class RegisterMcpClientCommandTest extends KernelTestCase
 {
+    use ReadsSecurityAuditLog;
+
     /** Les tables du modèle, des feuilles vers la racine. */
     private const array TABLES = ['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client'];
 
@@ -61,6 +66,25 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertSame('Claude Code', $client->getName());
         self::assertSame(['http://localhost/callback', 'https://app.example/cb'], $client->redirectUris());
         self::assertTrue($client->allowsRedirect('http://localhost:53412/callback'));
+    }
+
+    /**
+     * Le câblage réel, du conteneur au canal `security_audit` : la commande
+     * déclare `Console`, l'acteur est `console` (hors requête, le jeton n'existe
+     * pas), l'enregistrement est celui d'un client pré-enregistré.
+     */
+    public function testTheRegistrationIsAuditedAsAConsoleAction(): void
+    {
+        $this->commandTester()->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        $event = self::singleSecurityAuditEvent('mcp-client-registered');
+        self::assertSame('console', $event['actor']);
+        self::assertSame(self::CLIENT_ID, $event['clientId']);
+        self::assertSame('preregistered', $event['registration']);
     }
 
     /**
@@ -185,6 +209,78 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertSame(255, \strlen($clientId));
         self::assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
         self::assertSame(1, $this->clientCount());
+    }
+
+    /**
+     * Le nom reçu est affiché tel quel : une balise de mise en forme saisie
+     * (<error>…</error>) ne doit pas être interprétée par le formateur de
+     * la console. La sortie est décorée pour que l'interprétation se voie.
+     */
+    public function testAClientNameWithFormattingTagsIsPrintedLiterally(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => '<error>x</error>',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false, 'decorated' => true]);
+
+        self::assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
+        self::assertStringContainsString('<error>x</error>', $tester->getDisplay());
+    }
+
+    /**
+     * Onze redirections distinctes passent la saisie, mais pas la borne de
+     * l'entité : le refus est un message lisible, pas une trace, et rien
+     * n'est enregistré.
+     */
+    public function testElevenRedirectsAreRefusedWithAReadableError(): void
+    {
+        $redirects = [];
+        for ($i = 1; $i <= 11; ++$i) {
+            $redirects[] = \sprintf('https://app.example/cb%d', $i);
+        }
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => $redirects,
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertStringContainsString('[ERROR]', $tester->getDisplay());
+        // La sortie cite la borne : le message de la fabrique, celui que le refus d'un client à onze redirections porte.
+        self::assertStringContainsString(InvalidMcpClientRedirectsException::tooMany()->getMessage(), $tester->getDisplay());
+        self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
+        self::assertSame(0, $this->clientCount());
+    }
+
+    /**
+     * Le CLI n'a pas le validateur du backoffice : le refus vient du
+     * registrar. Un échec propre, un message qui ne cite pas l'URL, rien
+     * d'écrit et rien d'audité.
+     */
+    public function testTheMetadataUrlOfAVerifiedDomainIsRefusedWithoutQuotingIt(): void
+    {
+        $clientId = 'https://claude.ai/oauth/claude-code-client-metadata';
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => $clientId,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertStringContainsString('[ERROR]', $tester->getDisplay());
+        // L'encadré de SymfonyStyle replie le message sur plusieurs lignes : on compare blancs réduits.
+        self::assertStringContainsString(McpClientIdOfVerifiedDomainException::cannotBePreregistered()->getMessage(), (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertStringNotContainsString($clientId, $tester->getDisplay());
+        self::assertStringNotContainsString('Stack trace', $tester->getDisplay());
+        self::assertSame(0, $this->clientCount());
+        self::assertSame([], self::securityAuditEvents('mcp-client-registered'));
     }
 
     private function commandTester(): CommandTester

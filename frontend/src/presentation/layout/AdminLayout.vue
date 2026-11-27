@@ -133,6 +133,28 @@ onBeforeUnmount(() => {
         {{ t('admin.nav.users') }}
       </RouterLink>
 
+      <!--
+        Backoffice MCP (#652) : deux onglets de 1er niveau, sur le motif d'« Utilisateurs ». Hors du menu « Contenu » :
+        ils n'éditent aucun contenu publié, ils administrent l'accès au serveur MCP.
+      -->
+      <RouterLink
+        :to="{ name: 'admin-mcp-clients' }"
+        class="btn btn-sm"
+        :class="'admin-mcp-clients' === route.name ? 'btn-gradient' : 'btn-outline-light'"
+        :aria-current="'admin-mcp-clients' === route.name ? 'page' : undefined"
+      >
+        {{ t('admin.nav.mcpClients') }}
+      </RouterLink>
+
+      <RouterLink
+        :to="{ name: 'admin-mcp-connections' }"
+        class="btn btn-sm"
+        :class="'admin-mcp-connections' === route.name ? 'btn-gradient' : 'btn-outline-light'"
+        :aria-current="'admin-mcp-connections' === route.name ? 'page' : undefined"
+      >
+        {{ t('admin.nav.mcpConnections') }}
+      </RouterLink>
+
       <!-- Action, pas une section : à droite, hors des onglets. -->
       <button
         type="button"

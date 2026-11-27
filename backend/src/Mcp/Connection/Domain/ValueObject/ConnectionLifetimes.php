@@ -150,7 +150,10 @@ final readonly class ConnectionLifetimes
      *         maximale, si le jeton d'accès survit à son jeton de
      *         rafraîchissement, ou si la durée des connexions jamais échangées
      *         compte un jour, un mois ou une année, ne dépasse pas la durée
-     *         d'un code de deux minutes de jeu, ou atteint l'inactivité
+     *         d'un code de deux minutes de jeu, ou atteint l'inactivité, ou si
+     *         l'inactivité compte un mois ou une année (#652 : son échéance
+     *         ne serait pas croissante avec l'activité, et l'arrêt anticipé de
+     *         la liste d'administration en dépend ; les jours restent permis)
      */
     public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime, string $unexchangedLifetime): self
     {
@@ -169,6 +172,17 @@ final readonly class ConnectionLifetimes
             if ($reference->add($duration) <= $reference) {
                 throw InvalidConnectionLifetimeException::notPositive($parameter);
             }
+        }
+
+        // L'inactivité sans mois ni année (#652), avant les planchers : une
+        // échéance en mois n'est pas croissante avec l'activité (PHP déborde le
+        // mois : `P1M` donne le 03/03 pour le 31/01 et le 01/03 pour le 01/02),
+        // et l'arrêt anticipé de la liste d'administration majore la fin d'une
+        // expirée par l'échéance de son activité plus un jour. Les jours restent
+        // permis. La durée maximale n'a pas cette contrainte : `deadline()` vaut
+        // `min(inactivité, maximum)` et ne dépasse jamais l'inactivité.
+        if (0 !== $durations['idleLifetime']->y || 0 !== $durations['idleLifetime']->m) {
+            throw InvalidConnectionLifetimeException::notMonotonicInActivity('idleLifetime');
         }
 
         // Les deux planchers, après la positivité (le second lit la durée du
@@ -253,7 +267,7 @@ final readonly class ConnectionLifetimes
         return clone $this->refreshToken;
     }
 
-    /** Délai d'inactivité : une connexion inutilisée aussi longtemps expire. */
+    /** Délai d'inactivité : une connexion inutilisée aussi longtemps expire. Sans mois ni année (#652, échéance croissante avec l'activité). */
     public function idle(): DateInterval
     {
         return clone $this->idle;
@@ -309,6 +323,24 @@ final readonly class ConnectionLifetimes
     public function unexchangedDeadline(DateTimeImmutable $grantedAt): DateTimeImmutable
     {
         return $grantedAt->add($this->unexchanged);
+    }
+
+    /**
+     * Le seuil d'octroi des accords abandonnés à `$now` (#652) : `$now − durée
+     * des non échangées`, du temps écoulé et **sans marge** — la marge de
+     * {@see self::preselectionBoundsAt()} est faite pour la purge, qui
+     * présélectionne large ; une lecture doit répondre exactement comme
+     * `McpConnectionStatus::stateOf()`.
+     *
+     * Équivalence, borne incluse des deux côtés : `octroi <= seuil` ⇔
+     * `unexchangedDeadline(octroi) <= $now` ⇔ la règle `$now >= échéance` de
+     * `McpConnectionStatus::stateOf()`. Une connexion dont le code n'a jamais
+     * été échangé et dont l'octroi est à ce seuil ou avant est donc morte, que
+     * la purge l'ait marquée ou non.
+     */
+    public function abandonedBefore(DateTimeImmutable $now): DateTimeImmutable
+    {
+        return $now->sub($this->unexchanged);
     }
 
     /**

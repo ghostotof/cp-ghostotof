@@ -31,6 +31,9 @@ function createTestRouter(): Router {
       { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage },
       { path: '/:locale(fr|en)/admin/watch', name: 'admin-watch', component: StubPage },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: StubPage },
+      // Le backoffice MCP (#652) : mêmes chemins que les routes de l'application (`mcp/clients`, `mcp/connections`).
+      { path: '/:locale(fr|en)/admin/mcp/clients', name: 'admin-mcp-clients', component: StubPage },
+      { path: '/:locale(fr|en)/admin/mcp/connections', name: 'admin-mcp-connections', component: StubPage },
     ],
   })
 }
@@ -167,6 +170,58 @@ describe('AdminLayout', () => {
     expect(contentToggle(wrapper).classes()).toContain('btn-outline-light')
 
     wrapper.unmount()
+  })
+
+  /**
+   * Le backoffice MCP (#652, spec 0007) : deux onglets de 1er niveau à côté de « Utilisateurs », sur le même motif
+   * (`btn-gradient` et `aria-current="page"` sur la route courante, `btn-outline-light` sinon). Ils ne vont pas dans le
+   * menu « Contenu » : ni l'un ni l'autre n'édite un contenu publié.
+   */
+  describe('backoffice MCP', () => {
+    /** Les onglets de 1er niveau : les liens enfants directs de la navigation (le menu « Contenu » est fermé). */
+    function topLevelLinks(wrapper: Awaited<ReturnType<typeof mountLayout>>) {
+      return wrapper.findAll('nav > a')
+    }
+
+    it('« Clients MCP » et « Connexions MCP » suivent « Utilisateurs », chacun vers sa route', async () => {
+      const wrapper = await mountLayout('/fr/admin/technologies')
+
+      const links = topLevelLinks(wrapper)
+      expect(links.map((link) => link.text())).toEqual([
+        fr.admin.nav.users,
+        fr.admin.nav.mcpClients,
+        fr.admin.nav.mcpConnections,
+      ])
+      expect(links.map((link) => link.attributes('href'))).toEqual([
+        '/fr/admin/users',
+        '/fr/admin/mcp/clients',
+        '/fr/admin/mcp/connections',
+      ])
+
+      wrapper.unmount()
+    })
+
+    it.each([
+      { path: '/fr/admin/mcp/clients', current: fr.admin.nav.mcpClients },
+      { path: '/fr/admin/mcp/connections', current: fr.admin.nav.mcpConnections },
+    ])('sur $path : seul son onglet est courant et actif', async ({ path, current }) => {
+      const wrapper = await mountLayout(path)
+
+      // Un seul lien courant dans toute la navigation, et c'est celui de la route.
+      const currentLinks = wrapper.findAll('a[aria-current="page"]')
+      expect(currentLinks).toHaveLength(1)
+      expect(currentLinks[0]?.text()).toBe(current)
+
+      // Le style actif suit le même lien ; les autres onglets, et « Contenu », restent au style de repos.
+      for (const link of topLevelLinks(wrapper)) {
+        const isCurrent = link.text() === current
+        expect(link.classes()).toContain(isCurrent ? 'btn-gradient' : 'btn-outline-light')
+        expect(link.classes()).not.toContain(isCurrent ? 'btn-outline-light' : 'btn-gradient')
+      }
+      expect(contentToggle(wrapper).classes()).toContain('btn-outline-light')
+
+      wrapper.unmount()
+    })
   })
 
   /**

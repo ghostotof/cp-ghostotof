@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\McpClientName;
+use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\ReadsSecurityAuditLog;
@@ -152,6 +154,27 @@ final class TokenControllerTest extends WebTestCase
         $response = $this->exchange($this->grantedCode(), ['redirect_uri' => $redirectUri]);
 
         $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
+        $this->assertNoTokenIssued();
+    }
+
+    /**
+     * Une redirection retirée du client entre l'accord et l'échange (#652, T6) :
+     * le code reste lié à une redirection que le client n'admet plus, l'échange
+     * est refusé `invalid_grant` (RFC 6749 §5.2) et aucun jeton n'est émis.
+     */
+    public function testACodeWhoseRedirectUriWasRemovedFromTheClientIsInvalidGrant(): void
+    {
+        $code = $this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']);
+
+        $clients = self::getContainer()->get(McpClientRepositoryInterface::class);
+        $registered = $clients->findOneByClientId(self::CLIENT_ID);
+        self::assertNotNull($registered);
+        $registered->revise(McpClientName::fromString(self::CLIENT_NAME), [RedirectUri::fromString('http://localhost/callback')]);
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
+
+        $response = $this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']);
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_grant');
         $this->assertNoTokenIssued();
     }
 

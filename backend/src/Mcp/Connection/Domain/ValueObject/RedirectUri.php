@@ -37,6 +37,25 @@ use Stringable;
  */
 final readonly class RedirectUri implements Stringable
 {
+    /**
+     * La plus longue redirection admise, en octets (`strlen`). Une redirection
+     * OAuth réelle en compte une centaine ; 2 048 est la borne usuelle des URL
+     * (navigateurs, serveurs) et reste très au-dessus. Vérifiée **avant**
+     * `Uri::parse()`, par `fromString()` (refus) comme par `matches()` (réponse
+     * `false`, jamais d'exception) : l'analyseur n'a pas à lire ce qu'un
+     * enregistrement ou une demande ne peut pas porter (T8 de #652).
+     */
+    public const int MAX_LENGTH = 2048;
+
+    /**
+     * Le plus grand nombre de paramètres de requête admis. Une redirection
+     * OAuth réelle en porte rarement plus de quelques-uns : 50 laisse une marge
+     * large. Compté **avant** `parse_str()` — qui, au-delà de `max_input_vars`
+     * (1 000), émet un avertissement que dev et test changent en exception —,
+     * jamais après : l'ordre est compte, puis analyse.
+     */
+    public const int MAX_QUERY_PARAMETERS = 50;
+
     /** Les seuls hôtes admis en `http`, tels que League\Uri les rend. */
     private const array LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
@@ -54,6 +73,11 @@ final readonly class RedirectUri implements Stringable
      */
     public static function fromString(string $value): self
     {
+        // Avant toute analyse : la longueur ne coûte rien, l'analyse si.
+        if (\strlen($value) > self::MAX_LENGTH) {
+            throw InvalidRedirectUriException::tooLong();
+        }
+
         $uri = Uri::parse($value) ?? throw InvalidRedirectUriException::unparsable();
 
         if ($uri->toString() !== $value) {
@@ -84,6 +108,12 @@ final readonly class RedirectUri implements Stringable
             throw InvalidRedirectUriException::withFragment();
         }
 
+        // Le compte précède l'analyse : `parse_str()` (dans `carriesIss()`) avertit
+        // au-delà de `max_input_vars`.
+        if (self::exceedsQueryParameterBound($uri)) {
+            throw InvalidRedirectUriException::tooManyQueryParameters();
+        }
+
         if (self::carriesIss($uri)) {
             throw InvalidRedirectUriException::withIssParameter();
         }
@@ -95,11 +125,20 @@ final readonly class RedirectUri implements Stringable
         return new self($value, $uri);
     }
 
+    /** La requête compte-t-elle plus de `MAX_QUERY_PARAMETERS` paramètres ? Sans l'analyser. */
+    private static function exceedsQueryParameterBound(Uri $uri): bool
+    {
+        $query = $uri->getQuery();
+
+        return null !== $query && \count(explode('&', $query)) > self::MAX_QUERY_PARAMETERS;
+    }
+
     /**
      * La requête porte-t-elle un `iss` ? Le serveur ajoute le sien (RFC 9207)
      * à toute redirection vers le client : une redirection qui en porterait
      * déjà un en aurait deux, et le client lirait peut-être le mauvais. Lu
-     * comme PHP le lit (`parse_str()` : `%69ss`, `iss[]` comptent aussi).
+     * comme PHP le lit (`parse_str()` : `%69ss`, `iss[]` comptent aussi). Le
+     * nombre de paramètres est borné par l'appelant, avant cette analyse.
      */
     private static function carriesIss(Uri $uri): bool
     {
@@ -119,11 +158,17 @@ final readonly class RedirectUri implements Stringable
      * demande illisible, pas écrite sous sa forme normalisée (hors casse du
      * schéma et de l'hôte ; un port vide, `localhost:/`, est donc refusé), qui
      * porte un fragment ou des identifiants (même vides : `#`, `@`) ou un port
-     * hors de 1 à 65535 n'en désigne aucune — jamais d'exception ici, le point
+     * hors de 1 à 65535, ou de plus de `MAX_LENGTH` octets, n'en désigne aucune — jamais d'exception ici, le point
      * d'autorisation répond par un refus.
      */
     public function matches(string $requested): bool
     {
+        // Avant toute analyse, comme à l'enregistrement : le corps de `POST /token`
+        // n'a pas de borne propre, l'analyseur n'a pas à le lire.
+        if (\strlen($requested) > self::MAX_LENGTH) {
+            return false;
+        }
+
         $candidate = Uri::parse($requested);
 
         if (null === $candidate

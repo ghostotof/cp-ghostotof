@@ -29,7 +29,7 @@ const REPOSITORY_CALLS = new Set(['list', 'get', 'fetch', 'translate'])
  * Une égalité, non un plancher : un fichier qui sort d'un dossier (déplacé, renommé) sort de la garde, un fichier qui entre y
  * entre, et dans les deux cas la garde rougit au lieu de changer de périmètre en silence ; le message dit la constante à changer.
  */
-const PAGES_FILES = 15
+const PAGES_FILES = 17
 const UI_FILES = 12
 
 function isGuarded(path: string): boolean {

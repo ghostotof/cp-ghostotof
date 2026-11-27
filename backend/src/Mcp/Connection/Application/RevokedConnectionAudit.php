@@ -48,7 +48,11 @@ final readonly class RevokedConnectionAudit
      * À appeler **après** le COMMIT de la révocation, une fois par connexion
      * que l'appel a effectivement révoquée.
      *
-     * @param string $cause la valeur de la {@see \App\Mcp\Connection\Domain\ValueObject\RevocationCause}
+     * @param string $cause la valeur de la {@see \App\Mcp\Connection\Domain\ValueObject\RevocationCause},
+     *                      ou `client-removed` (#652) : la suppression d'un client n'est pas une révocation
+     *                      (la connexion disparaît par la cascade de la clé étrangère, jamais écrite en base),
+     *                      cette cause n'est donc pas dans l'énuméré, et la contrainte CHECK de la colonne
+     *                      la refuserait ; elle ne vit que dans le journal d'audit
      */
     public function record(McpConnectionReference $connection, string $cause): void
     {

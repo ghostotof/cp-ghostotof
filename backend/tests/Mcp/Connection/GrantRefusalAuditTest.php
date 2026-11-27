@@ -86,6 +86,20 @@ final class GrantRefusalAuditTest extends WebTestCase
     }
 
     /**
+     * Une redirection retirée du client par une révision entre l'accord et
+     * l'échange (#652) : refusée `invalid_grant`, avec sa propre cause.
+     */
+    public function testACodeWhoseRedirectWasRemovedByARevisionIsAudited(): void
+    {
+        $code = $this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']);
+        $this->executeStatement("UPDATE mcp_client SET redirect_uris = '[\"http://localhost/callback\"]'::jsonb WHERE client_id = '".self::CLIENT_ID."'");
+
+        $this->assertRefused($this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']));
+
+        $this->assertAudited('redirect-no-longer-registered', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
      * Un code présenté après ses dix minutes : league le juge sur sa charge,
      * avant le dépôt — le rejeu tardif d'un code intercepté, que le rejeu
      * sous verrou ne voit pas (limite acceptée de #649, « A replayed code is
@@ -98,6 +112,38 @@ final class GrantRefusalAuditTest extends WebTestCase
         $this->assertRefused($this->exchange($code));
 
         $this->assertAudited('code-expired', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
+     * Un code échu dont la redirection a été retirée du client (#652) : league
+     * juge l'échéance avant le contrôle de la redirection, la cause reste
+     * `code-expired`, jamais `redirect-no-longer-registered`.
+     */
+    public function testAnExpiredCodeWhoseRedirectWasRemovedIsAuditedAsExpired(): void
+    {
+        $code = $this->reencrypted($this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']), ['expire_time' => time() - 60]);
+        $this->executeStatement("UPDATE mcp_client SET redirect_uris = '[\"http://localhost/callback\"]'::jsonb WHERE client_id = '".self::CLIENT_ID."'");
+
+        $this->assertRefused($this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']));
+
+        $this->assertAudited('code-expired', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
+     * Un code mort (connexion révoquée avant l'échange) dont la redirection a
+     * été retirée (#652) : `isAuthCodeRevoked()` le juge mort avant que le refus
+     * de la redirection ne s'exerce, la cause reste celle de league
+     * (`code-refused`), jamais `redirect-no-longer-registered`.
+     */
+    public function testADeadCodeWhoseRedirectWasRemovedKeepsLeaguesCause(): void
+    {
+        $code = $this->grantedCode(['redirect_uri' => 'https://client.example.test/callback']);
+        $this->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'");
+        $this->executeStatement("UPDATE mcp_client SET redirect_uris = '[\"http://localhost/callback\"]'::jsonb WHERE client_id = '".self::CLIENT_ID."'");
+
+        $this->assertRefused($this->exchange($code, ['redirect_uri' => 'https://client.example.test/callback']));
+
+        $this->assertAudited('code-refused', 'authorization_code', self::CLIENT_ID, $code);
     }
 
     /**

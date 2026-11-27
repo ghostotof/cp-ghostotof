@@ -25,6 +25,13 @@ interface GrantRefusalAuditInterface
      * quelconques n'écrit aucune ligne. La cause est classée d'après
      * l'indication de league.
      *
+     * Un `invalid_client` n'est tracé que pour une ligne pré-enregistrée
+     * masquante d'un domaine vérifié (règle D-C, #652), présentée avec un
+     * artefact authentique : cause `preregistered-row-shadows-verified-domain`,
+     * `clientId` celui de la connexion de l'artefact, `presentingClientId`
+     * celui de la ligne présentée (distincts pour un client croisé). Un
+     * client inconnu ne laisse aucune ligne.
+     *
      * Appelée après la transaction du point de jeton, annulée : la lecture de
      * la connexion vaut EntityManager fermé.
      */

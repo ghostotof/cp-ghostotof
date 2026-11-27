@@ -127,6 +127,22 @@ framework:
         # restée ouverte sur une connexion que la purge a supprimée).
         App\Mcp\Connection\Domain\Exception\McpConnectionNotFoundException:
             log_level: info
+        # Révision d'un client MCP déclaré par son document CIMD (#652) : un 409
+        # typé, une erreur du client (le document fait foi), pas une alerte.
+        App\Mcp\Connection\Domain\Exception\McpClientDeclaredByDocumentException:
+            log_level: info
+        # Révision ou suppression d'un client MCP inconnu (#652) : un 404 typé, une
+        # erreur du client (une liste restée ouverte sur un client déjà supprimé).
+        App\Mcp\Connection\Domain\Exception\McpClientNotFoundException:
+            log_level: info
+        # Enregistrement d'un client MCP déjà enregistré (409), redirections ou
+        # identifiant de domaine vérifié refusés par le domaine (422) (#652) : des erreurs du client.
+        App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException:
+            log_level: info
+        App\Mcp\Connection\Domain\Exception\InvalidMcpClientRedirectsException:
+            log_level: info
+        App\Mcp\Connection\Domain\Exception\McpClientIdOfVerifiedDomainException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

@@ -111,7 +111,7 @@ final class McpTokenEntitiesTest extends TestCase
     {
         return McpConnection::grant(
             new CpgUser('jane', 'hashed-password'),
-            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', []),
+            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', ['https://client.example.test/callback']),
             'nominative:read',
             new DateTimeImmutable(),
         );

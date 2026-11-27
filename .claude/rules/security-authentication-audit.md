@@ -48,7 +48,7 @@ paths:
   connection of an account, through the `Shared` port, audited by its caller **after the COMMIT** that holds the
   password or the role; the actor of `password-changed` is the administrator on the backoffice `PUT` and `anonymous`
   when an invitation link *replaces* a password, `PasswordSetupService`; `trusted-tier-withdrawn`'s is the
-  administrator demoting — `.claude/rules/mcp-oauth-revocation-personne.md`); `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
+  administrator demoting — `.claude/rules/mcp-oauth-revocation-personne.md`); `client-removed` (#652, removing a client from the backoffice: an **audit-only** cause, never written to the database — the connection is deleted by the foreign-key cascade, not revoked, and `RevocationCause` and its CHECK constraint do not know it —, one line per connection written **after the COMMIT** of the client's deletion, `RevokedConnectionAudit`); `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
   plus `supersededBy`, the RFC 4122 UUID of the connection that replaces it (#726, audit B3: nothing else ties the
   line, written at the exchange, to the grant that caused it); `expired` through `mcpConnectionExpired()`, actor `system`
   like `user-purged`, the purge being a scheduled command; never the token or code presented),
@@ -58,7 +58,9 @@ paths:
   `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-audits.md`;
   never the token nor its hash), `mcp-grant-refused` (#725, `TokenEndpoint` after the ROLLBACK, through
   `GrantRefusalAuditInterface`, for every refusal of a code or refresh token the server **decrypts** — never an
-  unreadable one, an unknown client, a vanished connection, nor a compromise, which writes `mcp-connection-revoked`:
+  unreadable one, an unknown client, a vanished connection, nor a compromise, which writes `mcp-connection-revoked`;
+  the one `invalid_client` it audits is a `preregistered` row masking a verified domain (#652, cause
+  `preregistered-row-shadows-verified-domain`), and only for an authentic grant:
   `userId`, `connectionId`, `clientId`, `cause` = the `GrantRefusal` value, `grantType`, `presentingClientId` (the
   registered client that presented it, named in the body — the token endpoint refuses any other), actor `anonymous`;
   never for a 5xx, and an audit failure leaves league's refusal unchanged (`critical` on the main channel); bounded by
@@ -81,7 +83,10 @@ paths:
   `clientHost`, `cause`; **only a host of the allowed list** (the contract of the caller, the method checks
   nothing), never the URL, the `client_id` nor the body; the `cause` is a `ClientMetadataRefusal` value:
   `throttled`, `unresolvable`, `address-blocked`, `unreachable`, `redirected`, `unexpected-status`,
-  `upstream-error`, `unexpected-content-type`, `too-large`, `invalid-document` — **never `domain-not-allowed`**
+  `upstream-error`, `unexpected-content-type`, `too-large`, `invalid-document`, and, since #652,
+  `preregistered-row-shadows-verified-domain` (a `preregistered` row whose id is on an allowed domain, refused at the
+  authorization point and at the consent **before any outbound request**, bounded by the nginx `oauth` zone alone, not
+  by the quota) — **never `domain-not-allowed`**
   (an unlisted host is chosen by an anonymous caller: it is refused without a trace); the usual `ip` is the
   **requester's** (`getMainRequest()->getClientIp()`) and `actor` is anonymous at the authorization point, the
   `userId` when the consent revalidates; written through `FailSafeAudit`, so an audit failure never replaces the
@@ -197,9 +202,14 @@ paths:
   grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
   failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
   `Assert\Email` whose value ends up in an e-mail.
+  **The three events of the MCP clients** (#652): `mcp-client-registered` (`mcpClientRegistered($clientId, $registration, AuditOrigin)`),
+  `mcp-client-revised` (`redirectUriCount`, `addedRedirectCount`, `removedRedirectCount`: counts over deduplicated sets, so swapping a redirect leaves a trace; never the URIs, not even a digest) and `mcp-client-removed` (`registration`, `cutConnections`), each carrying the
+  `clientId` (the public identifier, no secret) and never a redirect URI nor the client's name. `AuditOrigin`
+  (`Application/`, `Request` or `Console`) is the one argument that changes the actor: `Console` records `console` like
+  `userCreated()`, `Request` reads the token; the two others have no console path and read the token.
   `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
   sentinel values run through every method (login identifiers of the actor and the subject included; it counts the
-  records, 32 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+  records, 36 today, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
   every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
   activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
   per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,

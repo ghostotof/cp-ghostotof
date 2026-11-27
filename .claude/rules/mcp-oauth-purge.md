@@ -102,3 +102,31 @@ paths:
   clock across the autumn change; `testThePurgeAndIsExpiredAtAgreeAtTheBoundary`: each threshold and one second after,
   marked ⇔ `isExpiredAt()` re-read — red when every candidate is revoked unjudged, measured),
   `PurgeMcpConnectionsCommandTest`.
+
+**The administration's early stop reads by activity, and the purge still fixes what the list displays** (#652). `AdministeredMcpConnections::readTerminated()`
+reads the exchanged expired connections by activity descending (`COALESCE(last_used_at, granted_at) DESC, id DESC`), in pages
+resumed by a key (`ExchangedExpiredCursor`), and stops once it holds 200 ends and `endUpperBound()` — `idleDeadline(the cursor's
+activity, brought back into PHP's zone)` plus one calendar day — is **strictly** earlier than the 200th end (on a tie it keeps
+reading). A row not read yet has an activity at most the cursor's, hence an end at most that bound: the end of an exchanged
+expired connection is `min(deadline(), revoked_at)`, and `deadline()` never exceeds the idle deadline of that same activity.
+**The day's margin is not a PHP/PostgreSQL margin** (the comparison is PHP against PHP; PostgreSQL only orders absolute instants):
+it covers the non-monotonicity of PHP's own calendar, a day added across a clock change (missing or repeated wall time). The
+invariant is, for two activities `a <= b`, `idleDeadline(a) <= idleDeadline(b) + P1D`; it holds because
+`ConnectionLifetimes::fromConfiguration()` refuses years and months in the idle duration (`notMonotonicInActivity()`, judged right
+after positivity, before the two orderings: 31 January + `P1M` is 3 March, later than 1 March for 1 February, by several days, PHP
+overflowing the month). Days stay allowed. `connection_maximum` has no such constraint: `deadline()` being `min(idle, maximum)`, it
+never exceeds the idle deadline. One method, `endedOf()`, decides each terminated row's end
+and its displayed deadline (`EndedMcpConnection::$displayedDeadline`, `null` = `McpConnectionStatus::expiresAt()`); `list()` holds
+no predicate on the cause. **A generated migration proposes `DROP INDEX idx_mcp_connection_admin_exchanged_expired_activity`**
+(`doctrine:schema:update --dump-sql`, `make:migration`, `doctrine:migrations:diff`): that expression index can only be declared in the
+migration, not on the entity, so remove that line from every generated migration; `McpConnectionAdministrationIndexesTest` turns red
+if the index disappears (its plan no longer scans it). It no
+longer assumes anything about the purge to stop. What still depends on it is the **displayed** end: on a connection the purge marked,
+`deadline() <= revoked_at` (the purge only writes `revoked_at = $now` for a candidate `isExpiredAt($now)` judged in PHP, never from
+the SQL pre-selection alone: PHP and PostgreSQL count a calendar day over a clock change, and a month at a month's end, differently),
+under the durations in force when it marked, so the `revoked_at` bound is a no-op and the list shows the real expiry, not the
+marking. It bites when an `app.mcp.lifetime.*` duration is lengthened after the purge: the recomputed `deadline()` passes
+`revoked_at`, and the list shows the marking, the real end under the old durations
+(`AdministeredMcpConnectionsTest::testAnExpiredExchangedConnectionDisplaysItsBoundedEndWhenLifetimesWereLengthened`).
+`McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` pins `deadline() <= revoked_at` at marking. A purge that marked in SQL, or any other writer of
+cause `expired`, makes the list show the marking instead of the expiry (the early stop stays exact).

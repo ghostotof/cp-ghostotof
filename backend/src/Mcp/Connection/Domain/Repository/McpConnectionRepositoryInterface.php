@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
@@ -61,6 +62,91 @@ interface McpConnectionRepositoryInterface
      * @return list<McpConnection>
      */
     public function findTerminatedOfAccount(Uuid $accountId, int $limit): array;
+
+    /**
+     * Pour l'administration (#652, T13) : **toutes** les connexions non révoquées
+     * (`revoked_at` nul), de **tous** les comptes et de tous les clients, la plus
+     * récemment octroyée d'abord, l'identifiant décroissant départageant deux
+     * octrois de la même seconde. Le client et le compte arrivent avec elles,
+     * par jointure : lire leur nom n'envoie aucune requête de plus. Comme pour
+     * {@see self::findNotRevokedOfAccount()}, « non révoquée » est l'état de la
+     * ligne — une connexion échue que la purge n'a pas encore marquée en est —
+     * et la liste n'a **aucune borne de code** (ni limite ni pagination) : le
+     * volume non borné restant est celui des connexions **vivantes**. Les
+     * accords abandonnés — non révoqués, code jamais échangé, octroyés à
+     * `$abandonedBefore` ou avant (voir
+     * {@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::abandonedBefore()}) —
+     * en sortent, en SQL : un compte de confiance peut en laisser de l'ordre de
+     * 14 000 par jour, par adresse et par pod (constat de la relecture de la
+     * T13 : la zone nginx `oauth` est le seul plafond du consentement), et la
+     * purge de nuit ne les marque qu'à son passage. Ils sont lus à part,
+     * bornés, par {@see self::findAbandonedForAdministration()}. Un accord dont
+     * le code a été échangé n'est jamais écarté par ce seuil, quel que soit
+     * son âge. Une lecture, sans verrou.
+     *
+     * @return list<McpConnection>
+     */
+    public function findNotRevokedForAdministration(DateTimeImmutable $abandonedBefore): array;
+
+    /**
+     * Les `$limit` accords **jamais échangés** (code jamais échangé) qui ont pris
+     * fin ou sont abandonnés, de tous les comptes et de tous les clients, le plus
+     * récemment octroyé d'abord (l'identifiant décroissant départage deux octrois
+     * égaux) : soit non révoqués et octroyés à `$abandonedBefore` ou avant (les
+     * abandonnés que la purge n'a pas encore marqués), soit **marqués expirés** par
+     * la purge. Pour les uns comme pour les autres la fin réelle vaut l'octroi plus
+     * une durée constante ({@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::unexchangedDeadline()}) :
+     * l'ordre par octroi est l'ordre par instant de fin, et la limite garde les
+     * bonnes lignes. Le `revoked_at` d'une expirée est l'instant de la **purge**,
+     * pas sa fin : il ne sert jamais à les classer. Même jointure que
+     * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
+     * que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findAbandonedForAdministration(DateTimeImmutable $abandonedBefore, int $limit): array;
+
+    /**
+     * Les `$limit` connexions **terminées par une autre cause que l'expiration**
+     * (`revoked_at` posé, cause différente de `expired`), de tous les comptes et de
+     * tous les clients, **choisies par instant de fin** : pour elles la fin est
+     * `revoked_at` — la personne, le client, le rejeu ou la supplantation y ont mis
+     * fin. Les dernièrement terminées d'abord (l'identifiant décroissant départage
+     * deux instants égaux), quelle que soit leur date d'octroi (spec 0007, S4). Les
+     * expirées en sont exclues : leur `revoked_at` est celui de la purge, jamais
+     * leur fin ({@see self::findAbandonedForAdministration()} et
+     * {@see self::findExchangedExpiredForAdministration()}). L'ordre d'affichage
+     * par octroi est laissé au service. Même jointure que
+     * {@see self::findNotRevokedForAdministration()}. Demander une ligne de plus
+     * que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findTerminatedForAdministration(int $limit): array;
+
+    /**
+     * Les expirées dont le code **a été échangé**, par pages : activité
+     * décroissante — `last_used_at`, à défaut `granted_at` —, l'identifiant
+     * décroissant départageant deux activités au même instant, **strictement après**
+     * `$after` (la dernière ligne de la page précédente, rendue par
+     * {@see ExchangedExpiredCursor::after()} ; `null` pour la première page). Leur
+     * fin réelle — la plus proche des échéances d'inactivité et de plafond — ne se
+     * range pas en SQL (PHP et PostgreSQL ne comptent pas de la même façon un jour
+     * sur un changement d'heure, ni un mois sur une fin de mois) : le service la
+     * calcule avec le domaine. L'ordre par activité, plutôt que par `revoked_at`
+     * (que la purge pose identique sur tout un lot), est celui que le service sait
+     * borner : la fin réelle ne dépasse jamais l'échéance d'inactivité de
+     * l'activité. Même jointure que {@see self::findNotRevokedForAdministration()}.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array;
 
     /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,
@@ -160,6 +246,53 @@ interface McpConnectionRepositoryInterface
      * @return list<RevokedConnection> ce qui a été révoqué, une entrée par connexion
      */
     public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array;
+
+    /**
+     * Verrouille les connexions **actives** d'un client (#652, la suppression
+     * d'un client pré-enregistré) et les désigne, de quoi auditer chacune
+     * (`RevokedConnectionAudit::record()` prend une référence et la cause, que
+     * l'appelant connaît ; rien n'étant encore révoqué, un `RevokedConnection`
+     * n'aurait pas de cause à porter) :
+     * `FOR UPDATE` sur les lignes de `mcp_connection` seules, **dans l'ordre
+     * des identifiants** comme toute révocation ({@see self::revokeAllActiveOfAccount()}).
+     * L'appelant tient déjà la ligne du client (`mcp_client`) : l'ordre des
+     * verrous est client, puis connexions, jamais l'inverse. Une connexion
+     * révoquée, ou d'un autre client, n'est ni verrouillée ni rendue. Aucune
+     * écriture : l'appelant révoque ou supprime ensuite, dans la même
+     * transaction.
+     *
+     * **Dans la transaction de l'appelant, exigée** : hors transaction le
+     * verrou serait relâché avec l'instruction, avant l'écriture qu'il doit
+     * protéger — `RevocationOutsideTransactionException`, avant de lire.
+     *
+     * @return list<ConnectionReference> les connexions actives du client, par identifiant croissant
+     */
+    public function lockActiveOfClient(Uuid $client): array;
+
+    /**
+     * Le nombre de connexions **actives** (`revoked_at` nul) de chaque client,
+     * **en une seule requête** `GROUP BY` — jamais une par client — pour la
+     * liste du backoffice (#652). Clé : l'UUID RFC 4122 de la ligne
+     * `mcp_client` ; un client sans connexion active est **absent** du
+     * tableau (l'appelant lit `?? 0`). Une lecture, sans verrou. « Active »
+     * est l'état de la ligne : une connexion échue que la purge n'a pas
+     * encore marquée compte encore, comme dans {@see self::findNotRevokedOfAccount()}.
+     *
+     * @return array<string, int>
+     */
+    public function countActiveByClient(): array;
+
+    /**
+     * Le nombre de connexions **actives** d'**un seul** client, en une requête
+     * (#652, le détail du backoffice) : la même définition que
+     * {@see self::countActiveByClient()} — `revoked_at` nul, état de la ligne,
+     * une connexion échue que la purge n'a pas encore marquée compte encore —,
+     * sans lire les autres clients. Une lecture, sans verrou. Un client sans
+     * connexion active, ou inconnu, vaut `0` : la méthode ne juge pas de son
+     * existence. L'argument est la clé de la ligne `mcp_client`, comme
+     * {@see self::lockActiveOfClient()}.
+     */
+    public function countActiveOfClient(Uuid $client): int;
 
     /**
      * Révoque toute **autre** connexion active du même couple compte/client

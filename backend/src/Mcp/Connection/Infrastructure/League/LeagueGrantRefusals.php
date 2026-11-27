@@ -18,6 +18,11 @@ use League\OAuth2\Server\Exception\OAuthServerException;
  * en change une fait tomber son refus dans GrantRefusal::Unrecognised, et
  * `GrantRefusalAuditTest`, qui produit chaque cause par le vrai league,
  * rougit.
+ *
+ * Deux causes n'y passent pas : ReplayUnproven, nommée par le point de jeton,
+ * et PreregisteredRowShadowsVerifiedDomain, nommée par LeagueGrantRefusalAudit
+ * pour un `invalid_client` (#652) : record() n'appelle causeOf() que pour un
+ * refus qui n'est pas un `invalid_client`, d'où aucune entrée ci-dessous.
  */
 final class LeagueGrantRefusals
 {
@@ -32,6 +37,8 @@ final class LeagueGrantRefusals
         'Authorization code was not issued to this client' => GrantRefusal::ForeignClient,
         'Check the `redirect_uri` parameter' => GrantRefusal::RedirectMismatch,
         'Invalid redirect URI' => GrantRefusal::RedirectMismatch,
+        // Une redirection retirée du client depuis l'accord, refusée par ce dépôt.
+        LoopbackAwareAuthCodeGrant::REDIRECT_NO_LONGER_REGISTERED_HINT => GrantRefusal::RedirectNoLongerRegistered,
         'Token has expired' => GrantRefusal::TokenExpired,
         'Token has been revoked' => GrantRefusal::TokenRefused,
         'Token is not linked to client' => GrantRefusal::ForeignClient,

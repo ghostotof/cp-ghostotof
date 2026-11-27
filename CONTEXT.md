@@ -210,8 +210,9 @@ Logiciel d'une personne (Claude, un IDE…) qui se branche sur le serveur MCP po
 _À éviter_ : application, connecteur (le connecteur est le nom que lui donne un client particulier)
 
 **Client pré-enregistré** :
-Client MCP qu'une personne a saisi à la main (commande `app:mcp:client:register`, futur backoffice) : sa
-ligne existe avant toute demande, et elle l'emporte toujours sur un document de métadonnées.
+Client MCP qu'une personne a saisi à la main (commande `app:mcp:client:register`, backoffice
+`/admin/mcp/clients`) : sa ligne existe avant toute demande, et elle l'emporte toujours sur un document de
+métadonnées.
 
 **Client déclaré** :
 Client MCP dont l'identifiant est l'adresse d'un document de métadonnées public (CIMD, *Client ID Metadata
@@ -223,6 +224,10 @@ Autorisation qu'une personne du palier de confiance accorde à un client MCP de 
 son nom. Elle se révoque, par cette personne, par un changement de mot de passe du compte ou par la perte du
 palier de confiance, avec effet immédiat ; la cause de la révocation reste lisible par la personne.
 _À éviter_ : session MCP, jeton (le jeton est le support technique d'une connexion)
+
+**Suppression d'un client MCP** :
+Retrait d'un client du site par un compte `ROLE_SUPER` ; ses connexions sont coupées et effacées, l'audit en
+garde la trace ; un client CIMD revient à la prochaine autorisation tant que son domaine est autorisé.
 
 **Accord abandonné** :
 Approbation d'une personne dont le client MCP ne mène jamais le parcours à son terme : la connexion existe,

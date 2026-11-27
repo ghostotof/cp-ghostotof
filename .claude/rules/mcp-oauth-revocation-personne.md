@@ -15,8 +15,8 @@ paths:
   - "backend/src/Security/User/Application/CpgUserRoleAdministrator.php"
   - "backend/src/Security/User/Application/PasswordSetupService.php"
   - "backend/src/Security/User/Application/RoleChangeOutcome.php"
-  - "backend/src/Security/User/Application/DeadlockRetryInterface.php"
-  - "backend/src/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetry.php"
+  - "backend/src/Shared/Application/DeadlockRetryInterface.php"
+  - "backend/src/Shared/Infrastructure/Doctrine/DoctrineDeadlockRetry.php"
   - "backend/src/Mcp/Connection/Application/ReadSnapshotInterface.php"
   - "backend/src/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshot.php"
   - "backend/src/Mcp/Connection/Infrastructure/Doctrine/ReadSnapshotInsideTransactionException.php"
@@ -31,8 +31,8 @@ paths:
   - "backend/tests/Migrations/Version20261028180000Test.php"
   - "backend/tests/Migrations/Version20261028200000Test.php"
   - "backend/tests/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshotTest.php"
-  - "backend/tests/Security/User/Application/DeadlockRetryIntegrationTest.php"
-  - "backend/tests/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetryTest.php"
+  - "backend/tests/Shared/Application/DeadlockRetryIntegrationTest.php"
+  - "backend/tests/Shared/Infrastructure/Doctrine/DoctrineDeadlockRetryTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationTest.php"
   - "backend/tests/Mcp/Connection/AbandonedGrantsTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationDeadlockTest.php"
@@ -320,8 +320,9 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
   `revoked` / `already-gone` the focus goes to the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250
   ms later (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a refused request
   (session ended or real refusal) it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new «
-  Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `CAUSE_LABEL_KEYS`
-  (a newer backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
+  Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `REVOCATION_CAUSE_LABEL_KEYS`
+  (`presentation/mcp/revocationCauseLabelKeys.ts`, shared with the backoffice's connections page; a newer backend) reads
+  as the generic label: causes are mapped explicitly, never built by string concatenation.
 - **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with `aria-expanded` and
   `aria-controls`, a list of ordinary links), not a `role="menu"`. It closes on a second click, Escape, a click outside, a navigation, the
   choice of an entry and (#748) **when the focus leaves for an element outside the menu** (`focusout` with a non-null `relatedTarget`
@@ -368,8 +369,8 @@ The first delivery listed three; review R1, R1b and R2 **lifted two of them** an
    endpoint, outside the OAuth format (no OAuth layer catches a `DriverException`), its code is left unexchanged
    (not revoked, `code_exchanged_at` null) and it presents it again; the revocation then ends with C1 and C2 both
    `password-changed`, two audit lines, no retry. No `NOWAIT`, no pair lock before league. **Where the retry lives**: a
-   port `Security/User/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)` and its adapter
-   `Infrastructure/Doctrine/DoctrineDeadlockRetry`, asked for by each service
+   port `Shared/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)` and its adapter
+   `Shared/Infrastructure/Doctrine/DoctrineDeadlockRetry`, asked for by each service
    (`CpgUserAdministrator::changePassword()`, `CpgUserRoleAdministrator::setSuperAdmin()`,
    `PasswordSetupService::complete()`), **never inside the account locks** nor `PostgresLockedTransaction`: their other
    callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only

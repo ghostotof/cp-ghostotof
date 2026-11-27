@@ -51,6 +51,8 @@ import { ADMIN_QUALITY_TRAIT_REPOSITORY } from './application/admin/quality/useA
 import { HttpAdminQualityTraitRepository } from './infrastructure/admin/quality/HttpAdminQualityTraitRepository'
 import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
+import { ADMIN_MCP_REPOSITORY } from './application/admin/mcp/useAdminMcpClients'
+import { HttpAdminMcpRepository } from './infrastructure/admin/mcp/HttpAdminMcpRepository'
 import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
 import { HttpAccountRepository } from './infrastructure/account/HttpAccountRepository'
 import { CASE_STUDY_REPOSITORY } from './application/caseStudies/useCaseStudies'
@@ -104,6 +106,7 @@ app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(a
 app.provide(ADMIN_QUALITY_PRINCIPLE_REPOSITORY, new HttpAdminQualityPrincipleRepository(apiUrl))
 app.provide(ADMIN_QUALITY_TRAIT_REPOSITORY, new HttpAdminQualityTraitRepository(apiUrl))
 app.provide(ADMIN_USER_REPOSITORY, new HttpAdminUserRepository(apiUrl))
+app.provide(ADMIN_MCP_REPOSITORY, new HttpAdminMcpRepository(apiUrl))
 app.provide(ACCOUNT_REPOSITORY, new HttpAccountRepository(apiUrl))
 
 app.use(i18n)

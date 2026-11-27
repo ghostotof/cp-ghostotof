@@ -115,7 +115,7 @@ paths:
   PKCE, scope); then **`resource` (RFC 8707), required and equal to `<public base>/api/mcp`**, else
   `invalid_target` sent back on the validated redirect with `state`. At the token endpoint `resource` may
   be omitted but, present, must be the same (`invalid_target`, JSON) — **the client authenticated first**, as
-  at the revocation: a foreign `resource` from an unknown client, or with no `client_id` in the body (a public
+  at the revocation: a foreign `resource` from an unknown client (a `preregistered` row masked by a verified domain, #652, counts as unknown: `TokenEndpoint::isKnownClient()` applies `AllowedClientDomains::isShadowedBy()` as `ClientRepository` does), or with no `client_id` in the body (a public
   client's `none` method), is `invalid_client`, never an `invalid_target` judging an unauthenticated request; an
   absent or own `resource` leaves league to authenticate the client. **Since #725 the token endpoint requires the
   `client_id` in the body whatever the `resource`** (`TokenEndpoint::refuseClientOutsideTheBody()`, `invalid_client`

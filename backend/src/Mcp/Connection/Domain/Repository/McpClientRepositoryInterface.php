@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Les clients MCP enregistrés. L'implémentation vit dans
@@ -52,4 +54,71 @@ interface McpClientRepositoryInterface
      * (ClientMetadataFetchQuotaInterface::consumeForKnownClient()).
      */
     public function isDiscovered(McpClientId $clientId): bool;
+
+    /**
+     * Tous les clients, pré-enregistrés et déclarés par document (#652), le
+     * plus récemment enregistré d'abord ; à date égale, l'identifiant (UUID
+     * v7) décroissant, pour un ordre stable d'une lecture à l'autre.
+     *
+     * Aucune pagination : la liste est celle de l'administration, bornée par
+     * le nombre de clients qu'une personne saisit ou que le quota de
+     * récupération des documents (#651) laisse déclarer.
+     *
+     * @return list<McpClient>
+     */
+    public function all(): array;
+
+    /**
+     * Le client désigné par sa clé UUID (jamais par son identifiant public :
+     * {@see self::findOneByClientId()}), en **lecture simple** : aucun verrou,
+     * aucune transaction exigée. C'est la lecture du détail du backoffice
+     * (#652), et de tout appelant qui se contente de **regarder** le client.
+     * Rend `null` si aucune ligne ne porte cette clé.
+     *
+     * Qui va **écrire** sur le client (révision, suppression) n'utilise pas
+     * celle-ci mais {@see self::findOneByIdForUpdate()}, dans sa transaction :
+     * une lecture simple suivie d'une écriture laisse la ligne changer ou
+     * disparaître entre les deux, et le verrou est aussi ce qui fixe l'ordre
+     * `mcp_client` avant `mcp_connection`.
+     */
+    public function findOneById(Uuid $id): ?McpClient;
+
+    /**
+     * La ligne du client relue et verrouillée en écriture (`FOR UPDATE`), pour
+     * le restant de la transaction de l'appelant — qui doit l'avoir ouverte.
+     * Pour une simple lecture, voir {@see self::findOneById()}.
+     * Rend `null` si la ligne a disparu depuis qu'elle a été lue (l'instance
+     * périmée est alors détachée). **Ordre des verrous** : `mcp_client` avant
+     * `mcp_connection`, comme partout.
+     */
+    public function findOneByIdForUpdate(Uuid $id): ?McpClient;
+
+    /**
+     * Le client désigné par son identifiant public, relu sous un verrou
+     * **partagé** (`FOR SHARE`) pour le restant de la transaction de
+     * l'appelant — qui doit l'avoir ouverte. Le consentement s'y appuie : tant
+     * qu'il court, ni la suppression ni la révision du client (`FOR UPDATE`)
+     * ne passent, et deux consentements ne s'attendent pas. Le verrou ne
+     * couvre que ce qui suit sa prise : une révision commise avant elle est
+     * lue (l'instance rendue est l'état courant), et l'appelant revérifie sur
+     * elle ce qu'il avait validé plus tôt, la redirection demandée en tête.
+     */
+    public function findOneByClientIdForShare(string $clientId): ?McpClient;
+
+    /**
+     * La nature de l'enregistrement du client désigné par son identifiant
+     * public, par une instruction SQL hors de l'unité de travail : valable
+     * après une transaction annulée qui a fermé l'EntityManager (l'audit d'un
+     * refus au point de jeton, #652).
+     *
+     * @return ClientRegistration|null `null` si aucun client n'a cet identifiant
+     */
+    public function registrationOf(string $clientId): ?ClientRegistration;
+
+    /**
+     * Supprime le client **pour de bon** : les clés étrangères portent
+     * `ON DELETE CASCADE`, la base emporte ses connexions, et par elles leurs
+     * codes, jetons d'accès et jetons de rafraîchissement.
+     */
+    public function remove(McpClient $client): void;
 }

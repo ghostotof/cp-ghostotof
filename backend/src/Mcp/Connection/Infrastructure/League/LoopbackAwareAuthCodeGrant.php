@@ -8,6 +8,7 @@ use App\Mcp\Connection\Application\Cimd\CimdClientAdmissionInterface;
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use DateInterval;
@@ -18,6 +19,8 @@ use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
 use League\OAuth2\Server\RequestEvent;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
+use League\OAuth2\Server\ResponseTypes\ResponseTypeInterface;
+use LogicException;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -60,6 +63,13 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
      */
     private const string AUTHORIZATION_POINT_ATTRIBUTE = 'mcp.authorization_point';
 
+    /**
+     * L'indication du refus d'un code dont la redirection n'est plus admise
+     * par son client (#652), constante : aucune URL, aucun identifiant.
+     * Écrite ici seule, LeagueGrantRefusals la lit pour classer le refus.
+     */
+    public const string REDIRECT_NO_LONGER_REGISTERED_HINT = 'The redirect URI of the authorization code is no longer registered for this client.';
+
     /** Le message d'une panne de l'audit du refus d'une ligne `cimd` non admise, constant (#651). */
     private const string STALE_ROW_REFUSAL_NOT_AUDITED = 'Refused stored CIMD client row not audited.';
 
@@ -75,6 +85,97 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
         private readonly FailSafeAudit $failSafeAudit,
     ) {
         parent::__construct($authCodeRepository, $refreshTokenRepository, $authCodeTTL);
+    }
+
+    /**
+     * Refuse, à l'échange, un code dont la redirection n'est plus admise par
+     * son client (#652) : la révision des redirections ne coupe aucune
+     * connexion ouverte, elle ne doit pas non plus laisser aboutir un code déjà
+     * accordé pour une redirection retirée. Le client est relu en base ici,
+     * et la règle est celle de l'accord (`McpClient::allowsRedirect()`, tolérance
+     * loopback comprise), jamais une égalité de chaînes.
+     *
+     * **League juge d'abord** : l'échéance, puis le rejeu, sont ceux de son
+     * `validateAuthorizationCode()`. Le refus n'est donc levé ici que pour un
+     * code **non échu** (`time()`, l'horloge de league, la charge chiffrée
+     * étant la sienne) et **non consommé** (`isAuthCodeRevoked()`, qui lève
+     * elle-même `AuthorizationCodeReplayedException` sur un code déjà échangé,
+     * laissée remonter : le point de jeton révoque ou audite le rejeu comme
+     * avant). Sinon la main revient au parent, qui refuse sous sa propre cause.
+     * Le second appel de `isAuthCodeRevoked()` par league n'a lieu que pour un
+     * code que le premier a déjà jugé mort (sinon ce refus a levé avant) : il ne
+     * verrouille que si le premier l'a fait, et n'écrit rien.
+     *
+     * Le contrôle ne s'exerce que sur un code lisible, émis à ce client et lié
+     * à une redirection : tout autre cas (illisible, autre client, redirection
+     * absente) reste jugé par league, sous sa propre cause. Une charge dont
+     * `expire_time` n'est pas un entier ou `auth_code_id` pas une chaîne, avec
+     * une redirection retirée, est refusée `invalid_request` « Authorization
+     * code malformed » (le message de league) : jamais échangée.
+     *
+     * @throws OAuthServerException `invalid_grant` ; les refus de league sinon
+     */
+    public function respondToAccessTokenRequest(
+        ServerRequestInterface $request,
+        ResponseTypeInterface $responseType,
+        DateInterval $accessTokenTTL,
+    ): ResponseTypeInterface {
+        $client = $this->validateClient($request);
+        $payload = $this->payloadOfTheCode($request, $client);
+
+        if (null !== $payload
+            && \is_string($payload->redirect_uri ?? null)
+            && (!$client instanceof OAuthClient || !$client->mcpClient()->allowsRedirect($payload->redirect_uri))) {
+            $this->refuseTheRemovedRedirect($payload);
+        }
+
+        return parent::respondToAccessTokenRequest($request, $responseType, $accessTokenTTL);
+    }
+
+    /**
+     * Le code dont la redirection n'est plus admise : refusé ici s'il est vivant,
+     * sinon la main revient à league (qui le refuse sous sa propre cause).
+     *
+     * @throws OAuthServerException `invalid_request` (charge mal typée) ou `invalid_grant`
+     * @throws AuthorizationCodeReplayedException quand un code déjà échangé revient sur une connexion active (levée par `isAuthCodeRevoked()`, laissée remonter)
+     */
+    private function refuseTheRemovedRedirect(object $payload): void
+    {
+        // Une charge dont l'échéance ou l'identifiant sont mal typés ne peut être
+        // jugée ni échue ni consommée : refusée comme league refuse un code
+        // illisible, jamais laissée aboutir sur une redirection retirée.
+        if (!\is_int($payload->expire_time ?? null) || !\is_string($payload->auth_code_id ?? null)) {
+            throw OAuthServerException::invalidRequest('code', 'Authorization code malformed');
+        }
+
+        if (time() <= $payload->expire_time && !$this->authCodeRepository->isAuthCodeRevoked($payload->auth_code_id)) {
+            throw OAuthServerException::invalidGrant(self::REDIRECT_NO_LONGER_REGISTERED_HINT);
+        }
+    }
+
+    /**
+     * La charge du code présenté, ou `null` quand le code est illisible ou émis
+     * à un autre client : league en juge.
+     */
+    private function payloadOfTheCode(ServerRequestInterface $request, ClientEntityInterface $client): ?object
+    {
+        $encrypted = $this->getRequestParameter('code', $request);
+
+        if (null === $encrypted) {
+            return null;
+        }
+
+        try {
+            $payload = json_decode($this->decrypt($encrypted));
+        } catch (LogicException) {
+            return null;
+        }
+
+        if (!\is_object($payload) || ($payload->client_id ?? null) !== $client->getIdentifier()) {
+            return null;
+        }
+
+        return $payload;
     }
 
     /**

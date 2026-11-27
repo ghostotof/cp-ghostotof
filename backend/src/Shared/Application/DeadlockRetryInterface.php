@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Security\User\Application;
+namespace App\Shared\Application;
 
 use Closure;
 use Throwable;
 
 /**
- * Relance **une fois** une opération de compte que la base a annulée pour
+ * Relance **une fois** une opération transactionnelle que la base a annulée pour
  * interblocage (`40P01`), la première fois (S3 de la seconde relecture de #650,
  * CR4).
  *
@@ -31,6 +31,14 @@ use Throwable;
  * ferme alors (issue #549) et les entités chargées sont périmées. L'implémentation
  * le remet à neuf avant le second essai ; l'essai, lui, **relit** ce qu'il tient
  * d'avant (`$isRetry`) — un compte, un jeton — au lieu de le réutiliser.
+ *
+ * **Le service n'est pas propre aux comptes** : `McpClientAdministrator::remove()`
+ * s'en sert aussi (#652). Contraintes de l'appelant, que rien ne garde dans le
+ * code : (1) **aucune entité gérée n'est réutilisée après l'appel**, l'EntityManager
+ * étant remis à neuf à la relance, toute instance chargée avant est détachée
+ * de fait ; (2) **jamais `retryOnce()` dans une transaction englobante** : la
+ * relance rejoue la transaction de l'essai, qu'une transaction extérieure
+ * laisserait ouverte et annulée (`40P01` l'abandonne tout entière).
  */
 interface DeadlockRetryInterface
 {

@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\AllowedClientDomains;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -119,6 +120,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private ReplayProofInterface $replayProof,
         private CodeExchangeSupersessionInterface $supersession,
         private FailSafeAudit $failSafeAudit,
+        private AllowedClientDomains $allowedDomains,
     ) {
     }
 
@@ -290,8 +292,12 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
 
     /**
      * Une ressource reçue autrement qu'en chaîne (`resource[]=…`) n'est pas
-     * celle du site non plus. Le client est authentifié d'abord ; une
-     * ressource absente ou celle du site laisse league l'authentifier
+     * celle du site non plus. Le client est authentifié d'abord, **comme le
+     * fait ClientRepository** : une ligne préenregistrée masquée par un domaine
+     * vérifié (règle D-C, #652) n'est pas un client connu, donc `invalid_client`
+     * (puis la cause d'audit `preregistered-row-shadows-verified-domain`), et
+     * jamais un `invalid_target` qui jugerait une requête non authentifiée.
+     * Une ressource absente ou celle du site laisse league l'authentifier
      * lui-même, sans requête de plus ici.
      *
      * @throws OAuthServerException `invalid_client`, puis `invalid_target`
@@ -314,7 +320,11 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
     /**
      * Un identifiant hors de la forme du domaine (McpClientId) ne désigne
      * aucun client : il n'est pas cherché (un octet nul ou un UTF-8 invalide
-     * n'atteignent pas PostgreSQL).
+     * n'atteignent pas PostgreSQL). Une ligne préenregistrée masquée par un
+     * domaine vérifié n'en désigne pas non plus : le jugement est celui de
+     * ClientRepository::getClientEntity() (`AllowedClientDomains::isShadowedBy()`,
+     * écrit une fois), pour que le point de jeton et league s'accordent sur ce
+     * qu'est un client connu (#652).
      */
     private function isKnownClient(?string $clientId): bool
     {
@@ -323,9 +333,12 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         }
 
         try {
-            return null !== $this->clients->findOneByClientId((string) McpClientId::fromString($clientId));
+            $client = $this->clients->findOneByClientId((string) McpClientId::fromString($clientId));
         } catch (InvalidMcpClientIdException) {
             return false;
         }
+
+        return null !== $client
+            && !$this->allowedDomains->isShadowedBy($client->registration(), $client->getClientId());
     }
 }

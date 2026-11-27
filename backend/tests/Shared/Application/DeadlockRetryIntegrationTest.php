@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Security\User\Application;
+namespace App\Tests\Shared\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\AccountAdministrationLockInterface;
 use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\CpgUserAdministrator;
 use App\Security\User\Application\CpgUserRoleAdministrator;
-use App\Security\User\Application\DeadlockRetryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Application\DeadlockRetryInterface;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Tests\Security\User\Support\ReadsStoredSuperAdmins;
 use App\Tests\Support\DeadlockingOnceRevoker;

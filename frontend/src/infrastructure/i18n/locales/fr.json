@@ -75,7 +75,9 @@
       "incidents": "Incidents",
       "anonymousCv": "CV sans identité",
       "caseStudies": "Études de cas",
-      "watch": "Veille"
+      "watch": "Veille",
+      "mcpClients": "Clients MCP",
+      "mcpConnections": "Connexions MCP"
     },
     "order": {
       "moveHandle": "Déplacer : {label}",
@@ -449,6 +451,82 @@
         "loading": "Chargement des vulnérabilités…",
         "loadError": "Le chargement des vulnérabilités a échoué. Réessayez plus tard."
       }
+    },
+    "mcpClients": {
+      "create": "Pré-enregistrer un client MCP",
+      "edit": "Modifier le client MCP",
+      "listTitle": "Clients MCP",
+      "caption": "Les clients MCP, pré-enregistrés ou déclarés, avec leurs connexions actives",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "clientIdLabel": "Identifiant du client",
+      "clientIdImmutableHelp": "Non modifiable : c'est lui que nomment les connexions et les consentements. Pour un autre identifiant, supprimez ce client et enregistrez-en un nouveau.",
+      "nameLabel": "Nom affiché",
+      "redirectUrisLabel": "Redirections autorisées, une par ligne",
+      "pendingReadonly": "Opération en cours : les champs restent en lecture seule jusqu'à la réponse du serveur.",
+      "columns": {
+        "clientId": "Identifiant",
+        "name": "Nom",
+        "registration": "Mode",
+        "redirectUris": "Redirections",
+        "activeConnections": "Connexions actives",
+        "actions": "Actions"
+      },
+      "registrations": {
+        "preregistered": "Pré-enregistré",
+        "cimd": "Déclaré (CIMD)"
+      },
+      "shadowsVerifiedDomain": "Masque un domaine vérifié : ce client ne se modifie plus, supprimez-le pour que le document du domaine fasse foi.",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "removalWarning": "Supprimer un client coupe toutes ses connexions : leurs jetons n'ouvrent plus rien, et elles disparaissent de « Mes connexions MCP » de leur personne.",
+      "cimdNote": "Un client CIMD supprimé revient à la prochaine autorisation tant que son domaine reste autorisé. Ses redirections viennent de son document : elles ne se modifient pas ici.",
+      "confirmRemove": "Supprimer le client {name}, qui n'a aucune connexion active ? | Supprimer le client {name} et couper sa connexion active ? | Supprimer le client {name} et couper ses {count} connexions actives ?",
+      "empty": "Aucun client MCP enregistré.",
+      "loading": "Chargement des clients MCP…",
+      "loadError": "Le chargement des clients MCP a échoué. Réessayez plus tard.",
+      "outcome": {
+        "registered": "Client MCP pré-enregistré.",
+        "revised": "Client MCP modifié.",
+        "removed": "Client MCP supprimé."
+      },
+      "backToCreation": "Le formulaire est revenu au pré-enregistrement d'un nouveau client MCP.",
+      "errors": {
+        "not-found": "Ce client n'existe plus : il a été supprimé depuis la lecture de la liste.",
+        "client-id-taken": "Cet identifiant est déjà celui d'un autre client.",
+        "declared-by-document": "Ce client est déclaré par son document de métadonnées : il ne se modifie pas ici, il se supprime seulement.",
+        "id-of-verified-domain": "Ce client masque un domaine vérifié : il ne se modifie pas, il se supprime.",
+        "validation": "Le serveur a refusé la saisie :",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    },
+    "mcpConnections": {
+      "listTitle": "Connexions MCP",
+      "terminatedBound": "Les connexions terminées affichées sont les 200 plus récentes.",
+      "loading": "Chargement des connexions MCP…",
+      "loadError": "Le chargement des connexions MCP a échoué. Réessayez plus tard.",
+      "empty": "Aucune connexion MCP.",
+      "caption": "Les connexions MCP de tous les comptes, avec leur client, leurs dates, leur état et leur cause",
+      "columns": {
+        "account": "Compte",
+        "client": "Client",
+        "grantedAt": "Accordée le",
+        "lastUsedAt": "Dernier usage",
+        "expiresAt": "Échéance",
+        "state": "État",
+        "cause": "Cause"
+      },
+      "states": {
+        "active": "Active",
+        "expired": "Échue",
+        "revoked": "Révoquée"
+      },
+      "revokedOn": "Révoquée le",
+      "plannedExpiry": "Échéance prévue",
+      "noCause": "Sans cause",
+      "causes": {
+        "person": "Révoquée par la personne"
+      }
     }
   },
   "forbidden": {
@@ -664,6 +742,14 @@
     "adminWatch": {
       "title": "Administration — Veille",
       "description": "Gestion des produits dont le cycle de vie est suivi."
+    },
+    "adminMcpClients": {
+      "title": "Administration — Clients MCP",
+      "description": "Gestion des clients MCP, pré-enregistrés ou déclarés, autorisés à se connecter au serveur MCP."
+    },
+    "adminMcpConnections": {
+      "title": "Administration — Connexions MCP",
+      "description": "Consultation des connexions MCP de tous les comptes, avec leur client, leurs dates, leur état et leur cause."
     },
     "mcpConnections": {
       "title": "Mes connexions MCP",
@@ -890,6 +976,7 @@
       "expired": "Échue",
       "passwordChanged": "Coupée au changement de mot de passe",
       "trustedTierWithdrawn": "Coupée : le palier de confiance a été retiré",
+      "clientRemoved": "Coupée : le client a été supprimé",
       "unknown": "Révoquée (cause non reconnue)"
     },
     "revoke": "Révoquer",

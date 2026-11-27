@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query\ResultSetMappingBuilder;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -98,6 +102,157 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Sans limite ni pagination : ce qui reste non borné par le code, ce sont
+     * les connexions vivantes (voir l'interface). Les accords abandonnés — le
+     * volume que la zone nginx `oauth` laisse s'accumuler — sont exclus ici en
+     * SQL et lus à part, bornés, par {@see self::findAbandonedForAdministration()}.
+     */
+    public function findNotRevokedForAdministration(DateTimeImmutable $abandonedBefore): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.revokedAt IS NULL')
+            // Un accord échangé n'est jamais abandonné, quel que soit son âge.
+            ->andWhere('(connection.codeExchangedAt IS NOT NULL OR connection.grantedAt > :abandonedBefore)')
+            ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findAbandonedForAdministration(DateTimeImmutable $abandonedBefore, int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.codeExchangedAt IS NULL')
+            // Abandonnée non marquée, ou marquée expirée par la purge : dans les deux
+            // cas la fin réelle est l'octroi + le délai du code non échangé.
+            ->andWhere('((connection.revokedAt IS NULL AND connection.grantedAt <= :abandonedBefore) OR connection.revocationCause = '.$this->expiredLiteral().')')
+            ->setParameter('abandonedBefore', $abandonedBefore, Types::DATETIMETZ_IMMUTABLE)
+            // L'octroi décide quelles lignes la limite garde : la fin vaut
+            // octroi + une durée constante, c'est donc l'ordre par instant de fin.
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findTerminatedForAdministration(int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->forAdministration()
+            ->where('connection.revokedAt IS NOT NULL')
+            // `IS DISTINCT FROM 'expired'` : la cause est nullable au mapping (la
+            // contrainte SQL la lie à `revoked_at`, mais une ligne sans cause ne doit
+            // pas disparaître sur une comparaison inconnue).
+            // La cause est un littéral, pas un paramètre : voir {@see expiredLiteral()}.
+            // Le texte reprend, mot pour mot, le prédicat de `idx_mcp_connection_admin_terminated`.
+            ->andWhere('(connection.revocationCause IS NULL OR connection.revocationCause <> '.$this->expiredLiteral().')')
+            // L'instant de fin décide quelles terminées la limite garde (spec 0007,
+            // S4) : trier par octroi chasserait une ancienne connexion qu'on vient
+            // de révoquer au profit de terminées octroyées plus récemment. L'ordre
+            // d'affichage par octroi est l'affaire du service, pas du dépôt.
+            ->orderBy('connection.revokedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findExchangedExpiredForAdministration(?ExchangedExpiredCursor $after, int $limit): array
+    {
+        $em = $this->getEntityManager();
+        $connections = $em->getClassMetadata(McpConnection::class)->getTableName();
+        $clients = $em->getClassMetadata(McpClient::class)->getTableName();
+        $accounts = $em->getClassMetadata(CpgUser::class)->getTableName();
+
+        // Le client et le compte sont joints et hydratés par la même requête (pas de
+        // N+1), comme dans `forAdministration()`.
+        // `COLUMN_RENAMING_INCREMENT` renomme *toutes* les colonnes de chaque entité,
+        // champs **et** colonnes de jointure (`getColumnAliasMap()` de Doctrine) :
+        // `id`, `created_at`… se retrouvent dans les trois tables, et le mappeur
+        // refuse deux colonnes de même nom. Les alias (`id0`, `id1`…) ne valent que
+        // par `generateSelectClause()`, qui produit le SELECT correspondant.
+        $rsm = new ResultSetMappingBuilder($em, ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT);
+        $rsm->addRootEntityFromClassMetadata(McpConnection::class, 'c');
+        $rsm->addJoinedEntityFromClassMetadata(McpClient::class, 'k', 'c', 'client');
+        $rsm->addJoinedEntityFromClassMetadata(CpgUser::class, 'u', 'c', 'account');
+
+        // SQL natif, parce que DQL n'a pas de constructeur de ligne : la reprise
+        // `(activité, id) < (:activité, :id)` doit être une *Index Cond* de l'index
+        // d'expression partiel, là où la forme `a < x OR (a = x AND id < y)` se lit
+        // en filtre et coûte un balayage quadratique. Les trois termes (cause en
+        // littéral, `code_exchanged_at IS NOT NULL`, expression `COALESCE`) reprennent
+        // mot pour mot le prédicat et l'expression de l'index.
+        $sql = \sprintf(
+            'SELECT %s FROM %s c INNER JOIN %s k ON k.id = c.mcp_client_id INNER JOIN %s u ON u.id = c.account_id '
+            .'WHERE c.revocation_cause = %s AND c.code_exchanged_at IS NOT NULL%s '
+            .'ORDER BY COALESCE(c.last_used_at, c.granted_at) DESC, c.id DESC LIMIT %d',
+            $rsm->generateSelectClause(['c' => 'c', 'k' => 'k', 'u' => 'u']),
+            $connections,
+            $clients,
+            $accounts,
+            $this->expiredLiteral(),
+            null === $after ? '' : ' AND (COALESCE(c.last_used_at, c.granted_at), c.id) < (:afterActivity, :afterId)',
+            $limit,
+        );
+
+        $query = $em->createNativeQuery($sql, $rsm);
+        if (null !== $after) {
+            // Typés comme les colonnes : un instant sans type serait lu dans le fuseau de la session.
+            $query
+                ->setParameter('afterActivity', $after->activity, Types::DATETIMETZ_IMMUTABLE)
+                ->setParameter('afterId', $after->id, UuidType::NAME);
+        }
+
+        /** @var list<McpConnection> */
+        return $query->getResult();
+    }
+
+    /**
+     * La cause `expired` écrite **en clair dans le SQL** des lectures de
+     * l'administration (#652, S4), au lieu d'un paramètre lié.
+     *
+     * Pourquoi : PostgreSQL ne retient un index partiel que s'il prouve que le
+     * `WHERE` de la requête implique le prédicat de l'index. Avec `= $1`, la
+     * preuve manque dans un plan **générique** (mesuré : `Sort` sur toute la
+     * table, l'index partiel ignoré), et un énoncé préparé passe au plan
+     * générique à sa sixième exécution — le cas d'un processus long, le worker.
+     * Un littéral rend la preuve valable dans les deux plans.
+     *
+     * Sûreté : la valeur vient de l'enum du domaine, jamais d'une entrée ; aucun
+     * caractère à échapper dans `expired`. `McpConnectionAdministrationIndexesTest`
+     * épingle le résultat (l'index est lu sous un plan générique).
+     */
+    private function expiredLiteral(): string
+    {
+        return "'".RevocationCause::Expired->value."'";
+    }
+
+    /**
+     * Le socle des lectures DQL de l'administration (#652) : le client **et** le
+     * compte joints et sélectionnés (jointures explicites, jamais une requête
+     * par ligne). Il sert les vivantes, les abandonnées et les terminées d'une
+     * autre cause que l'expiration ; la requête native des expirées échangées
+     * (`findExchangedExpiredForAdministration()`) ne l'utilise pas, DQL n'ayant
+     * pas de constructeur de ligne, mais reprend les mêmes jointures. **Sans
+     * ordre** : l'ordre décide *quelles* lignes une limite garde et diffère d'une
+     * lecture à l'autre (l'octroi pour les vivantes et les abandonnées, l'instant
+     * de fin pour les terminées, l'activité décroissante pour les expirées
+     * échangées) ; chaque appelant fixe donc le sien (jamais `resetDQLPart()`
+     * pour défaire celui d'un socle).
+     */
+    private function forAdministration(): QueryBuilder
+    {
+        return $this->createQueryBuilder('connection')
+            ->addSelect('client', 'account')
+            ->innerJoin('connection.client', 'client')
+            ->innerJoin('connection.account', 'account');
     }
 
     /**
@@ -256,6 +411,69 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             $cause,
             $at,
         );
+    }
+
+    public function lockActiveOfClient(Uuid $client): array
+    {
+        $database = $this->getEntityManager()->getConnection();
+        if (!$database->isTransactionActive()) {
+            throw RevocationOutsideTransactionException::forClient($client);
+        }
+
+        // `FOR UPDATE OF c` : les seules lignes de `mcp_connection` sont
+        // verrouillées, celle du client (déjà tenue par l'appelant) et la
+        // jointure restent libres. Le tri par identifiant fixe l'ordre des
+        // verrous, comme les cinq révocations.
+        $rows = $database->fetchAllAssociative(
+            'SELECT c.id, c.account_id, cl.client_id'
+            .' FROM mcp_connection c'
+            .' INNER JOIN mcp_client cl ON cl.id = c.mcp_client_id'
+            .' WHERE c.mcp_client_id = :client AND c.revoked_at IS NULL'
+            .' ORDER BY c.id FOR UPDATE OF c',
+            ['client' => $client],
+            ['client' => UuidType::NAME],
+        );
+
+        // Pas de cause ici : rien n'est encore révoqué, la cause vient de
+        // l'écriture de l'appelant.
+        return array_map(fn (array $row): ConnectionReference => $this->referenceInRow($row), $rows);
+    }
+
+    public function countActiveByClient(): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT mcp_client_id, COUNT(*) AS active FROM mcp_connection WHERE revoked_at IS NULL GROUP BY mcp_client_id',
+        );
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $active = $row['active'] ?? null;
+            if (!\is_int($active)) {
+                throw UnexpectedRevocationRowException::forColumn('active');
+            }
+            $counts[Uuid::fromString($this->text($row, 'mcp_client_id'))->toRfc4122()] = $active;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Un `COUNT(*)` filtré sur le client, servi comme `countActiveByClient()`
+     * par la colonne `mcp_client_id` ; le paramètre est typé `uuid`, comme la
+     * colonne.
+     */
+    public function countActiveOfClient(Uuid $client): int
+    {
+        $active = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM mcp_connection WHERE mcp_client_id = :client AND revoked_at IS NULL',
+            ['client' => $client],
+            ['client' => UuidType::NAME],
+        );
+        if (!\is_int($active)) {
+            throw UnexpectedRevocationRowException::forColumn('active');
+        }
+
+        return $active;
     }
 
     /**

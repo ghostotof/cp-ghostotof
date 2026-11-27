@@ -14,15 +14,20 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\ExchangedExpiredCursor;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\TestDatabase;
+use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -476,6 +481,135 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Le verrou des actives d'un client (#652) : celles de ce client seulement
+     * — ni une révoquée, ni celle d'un autre client —, dans l'ordre des
+     * identifiants, chacune désignée comme `RevokedConnectionAudit::record()`
+     * la consomme (compte, client public). Aucune ligne n'est écrite.
+     */
+    public function testLockActiveOfClientReturnsOnlyItsActiveConnectionsInIdOrder(): void
+    {
+        $client = $this->registerClient('https://client.example.test/one.json');
+        $other = $this->registerClient('https://client.example.test/two.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $first = McpConnection::grant($jane, $client, self::SCOPE, new DateTimeImmutable());
+        $second = McpConnection::grant($john, $client, self::SCOPE, new DateTimeImmutable());
+        $revoked = McpConnection::grant($jane, $client, self::SCOPE, new DateTimeImmutable());
+        $foreign = McpConnection::grant($jane, $other, self::SCOPE, new DateTimeImmutable());
+        foreach ([$second, $first, $revoked, $foreign] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $locked = $this->connections()->lockActiveOfClient($client->getId());
+        } finally {
+            $database->commit();
+        }
+
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        sort($expected);
+        self::assertSame($expected, array_map(static fn (ConnectionReference $connection): string => $connection->connectionId()->toRfc4122(), $locked), 'Les deux actives du client, par identifiant croissant.');
+        foreach ($locked as $connection) {
+            self::assertSame('https://client.example.test/one.json', $connection->clientId());
+        }
+        $accountOf = [$first->getId()->toRfc4122() => $jane->getId()->toRfc4122(), $second->getId()->toRfc4122() => $john->getId()->toRfc4122()];
+        foreach ($locked as $connection) {
+            self::assertSame($accountOf[$connection->connectionId()->toRfc4122()], $connection->accountId());
+        }
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($first), 'Le verrou ne révoque rien.');
+    }
+
+    /**
+     * Hors transaction, `FOR UPDATE` ne tiendrait que le temps de
+     * l'instruction : le verrou n'existerait pas pour l'écriture qui le suit.
+     * Même garde, même exception que `revokeAllActiveOfAccount()`.
+     */
+    public function testLockActiveOfClientOutsideATransactionIsRefused(): void
+    {
+        $connection = $this->grantConnection();
+        $client = $connection->client()->getId();
+
+        $this->expectException(RevocationOutsideTransactionException::class);
+        // Le message cite l'UUID du client (RFC 4122), mis en forme par la fabrique.
+        $this->expectExceptionMessage($client->toRfc4122());
+        $this->connections()->lockActiveOfClient($client);
+    }
+
+    /**
+     * Le décompte de la liste des clients (#652) : les actives de chaque
+     * client, **en une seule requête** (jamais une par client), une révoquée
+     * ne comptant pas et un client sans connexion active étant absent du
+     * tableau (l'appelant lit `?? 0`). Clé : l'UUID RFC 4122 de la ligne
+     * `mcp_client`.
+     */
+    public function testCountActiveByClientCountsActiveConnectionsInOneQuery(): void
+    {
+        $busy = $this->registerClient('https://client.example.test/busy.json');
+        $single = $this->registerClient('https://client.example.test/single.json');
+        $idle = $this->registerClient('https://client.example.test/idle.json');
+        $onlyRevoked = $this->registerClient('https://client.example.test/revoked.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $revoked = McpConnection::grant($jane, $onlyRevoked, self::SCOPE, new DateTimeImmutable());
+        foreach ([
+            McpConnection::grant($jane, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($jane, $single, self::SCOPE, new DateTimeImmutable()),
+            $revoked,
+        ] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $queries = $this->queriesDuring(fn (): array => $this->connections()->countActiveByClient());
+
+        self::assertSame(1, $queries['count'], 'Une seule requête pour tous les clients.');
+        // L'ordre d'un GROUP BY n'est pas garanti : les deux tableaux sont triés par clé.
+        $counts = $queries['result'];
+        $expected = [$busy->getId()->toRfc4122() => 2, $single->getId()->toRfc4122() => 1];
+        ksort($counts);
+        ksort($expected);
+        self::assertSame($expected, $counts, 'Un client sans connexion active, ou dont toutes sont révoquées, est absent.');
+        self::assertArrayNotHasKey($idle->getId()->toRfc4122(), $counts);
+    }
+
+    /**
+     * Le décompte du détail d'un client (#652) : les connexions actives **de ce
+     * client seul**, en une requête. Une révoquée ne compte pas, ni celle d'un
+     * autre client ; un client sans connexion active vaut 0 (l'entier, pas
+     * une clé absente : il n'y a pas de tableau à lire `?? 0`).
+     */
+    public function testCountActiveOfClientCountsOnlyTheActiveConnectionsOfThatClient(): void
+    {
+        $busy = $this->registerClient('https://client.example.test/busy.json');
+        $other = $this->registerClient('https://client.example.test/other.json');
+        $idle = $this->registerClient('https://client.example.test/idle.json');
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $revoked = McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable());
+        foreach ([
+            McpConnection::grant($jane, $busy, self::SCOPE, new DateTimeImmutable()),
+            McpConnection::grant($john, $busy, self::SCOPE, new DateTimeImmutable()),
+            $revoked,
+            McpConnection::grant($jane, $other, self::SCOPE, new DateTimeImmutable()),
+        ] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        $queries = $this->queriesDuring(fn (): int => $this->connections()->countActiveOfClient($busy->getId()));
+
+        self::assertSame(1, $queries['count'], 'Une seule requête.');
+        self::assertSame(2, $queries['result'], 'Deux actives ; la révoquée et celle de l\'autre client ne comptent pas.');
+        self::assertSame(1, $this->connections()->countActiveOfClient($other->getId()));
+        self::assertSame(0, $this->connections()->countActiveOfClient($idle->getId()), 'Aucune connexion : 0.');
+        self::assertSame(0, $this->connections()->countActiveOfClient(Uuid::v7()), 'Un client inconnu : 0 aussi, la lecture ne juge pas son existence.');
+    }
+
+    /**
      * Un nouvel accord remplace l'accord actif du même couple compte/client
      * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
      * instruction, toute autre connexion active de ce couple — et rien
@@ -867,6 +1001,467 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertSame([$highest], array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found));
     }
 
+    /**
+     * Les listes de l'administration (#652, T13) ne se limitent à aucun compte
+     * ni à aucun client : deux comptes, deux clients, et chaque moitié rend
+     * les connexions de tous, la plus récemment octroyée d'abord. La moitié
+     * non révoquée ne rend jamais une révoquée, la terminée jamais une active.
+     */
+    public function testAdministrationListsSpanEveryAccount(): void
+    {
+        $jane = $this->persistAccount('jane');
+        $john = $this->persistAccount('john');
+        $first = $this->registerClient('https://client.example.test/metadata.json');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        $janeOnFirst = McpConnection::grant($jane, $first, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        $johnOnSecond = McpConnection::grant($john, $second, self::SCOPE, new DateTimeImmutable('2026-10-03T10:00:00+02:00'));
+        $janeRevoked = McpConnection::grant($jane, $second, self::SCOPE, new DateTimeImmutable('2026-10-02T10:00:00+02:00'));
+        $johnRevoked = McpConnection::grant($john, $first, self::SCOPE, new DateTimeImmutable('2026-10-04T10:00:00+02:00'));
+        foreach ([$janeOnFirst, $johnOnSecond, $janeRevoked, $johnRevoked] as $connection) {
+            $this->connections()->add($connection);
+        }
+        foreach ([$janeRevoked, $johnRevoked] as $connection) {
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        }
+        $this->em->clear();
+
+        self::assertSame(
+            [$johnOnSecond->getId()->toRfc4122(), $janeOnFirst->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findNotRevokedForAdministration($this->abandonedThreshold(new DateTimeImmutable('2026-09-01T00:00:00+02:00')))),
+        );
+        self::assertSame(
+            [$johnRevoked->getId()->toRfc4122(), $janeRevoked->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findTerminatedForAdministration(10)),
+        );
+    }
+
+    /** La moitié terminée de l'administration est bornée par `$limit` : les plus récentes d'abord, les plus anciennes sortent. */
+    public function testTerminatedForAdministrationIsBoundedAndMostRecentFirst(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $terminated = [];
+        foreach (range(1, 3) as $day) {
+            $terminated[$day] = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-10-%02dT10:00:00+02:00', $day)));
+            $this->connections()->add($terminated[$day]);
+            $this->connections()->revokeActive($terminated[$day]->getId(), RevocationCause::Client, new DateTimeImmutable(\sprintf('2026-10-25T10:%02d:00+02:00', $day)));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedForAdministration(2);
+
+        self::assertSame(
+            [$terminated[3]->getId()->toRfc4122(), $terminated[2]->getId()->toRfc4122()],
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+        );
+    }
+
+    /**
+     * Spec 0007, S4 : la limite garde les terminées **dernièrement terminées**,
+     * pas les dernièrement octroyées (même invariant que
+     * {@see self::testFindTerminatedOfAccountKeepsTheLatestTerminatedNotTheLatestGranted()}).
+     * Ici l'ordre d'octroi et l'ordre de révocation sont inverses : la plus
+     * anciennement octroyée est la plus récemment révoquée. Triée par octroi,
+     * la borne la chasserait de la liste au profit d'une terminée plus ancienne.
+     * L'ordre rendu est celui de l'instant de fin ; l'ordre d'affichage par
+     * octroi revient au service.
+     */
+    public function testTerminatedForAdministrationKeepsTheMostRecentlyTerminated(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedLongAgo = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-05-01T10:00:00+02:00'));
+        $grantedMiddle = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-01T10:00:00+02:00'));
+        $grantedRecently = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        // Révoquées dans l'ordre inverse de l'octroi : la plus ancienne octroyée en dernier.
+        $revocations = [
+            [$grantedRecently, '2026-10-20T10:00:00+02:00'],
+            [$grantedMiddle, '2026-10-25T10:00:00+02:00'],
+            [$grantedLongAgo, '2026-10-28T10:00:00+01:00'],
+        ];
+        foreach ($revocations as [$connection, $revokedAt]) {
+            $this->connections()->add($connection);
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Person, new DateTimeImmutable($revokedAt));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedForAdministration(2);
+
+        self::assertSame(
+            [$grantedLongAgo->getId()->toRfc4122(), $grantedMiddle->getId()->toRfc4122()],
+            $this->idsOf($found),
+            'Les deux dernièrement terminées, la plus récente d\'abord, quelle que soit leur date d\'octroi.',
+        );
+    }
+
+    /**
+     * Un accord abandonné (#652) quitte les non révoquées **en SQL**, à
+     * l'instant où le délai des non échangées est atteint : à 59 minutes il est
+     * encore vivant, à 61 il passe dans la requête bornée à part. Un accord dont
+     * le code a été échangé n'est jamais filtré par ce seuil, quel que soit son
+     * âge. Le seuil vient de {@see ConnectionLifetimes}, jamais d'une durée
+     * recopiée ici.
+     */
+    public function testAnAbandonedGrantLeavesTheNotRevokedAndTheExchangedOneNever(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $unit = $this->lifetimesFromContainer()->unexchanged();
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $young = McpConnection::grant($account, $client, self::SCOPE, $threshold->add(new DateInterval('PT1M')));
+        $abandoned = McpConnection::grant($account, $client, self::SCOPE, $threshold->sub(new DateInterval('PT1M')));
+        $exchangedOld = McpConnection::grant($account, $client, self::SCOPE, $now->sub($unit)->sub($unit)->sub($unit));
+        foreach ([$young, $abandoned, $exchangedOld] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->exchangeCodeOf($exchangedOld, $exchangedOld->grantedAt()->add(new DateInterval('PT1M')));
+        $this->em->clear();
+
+        $alive = $this->idsOf($this->connections()->findNotRevokedForAdministration($threshold));
+        $apart = $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10));
+
+        self::assertEqualsCanonicalizing([$young->getId()->toRfc4122(), $exchangedOld->getId()->toRfc4122()], $alive);
+        self::assertSame([$abandoned->getId()->toRfc4122()], $apart, 'Ni la jeune ni l\'échangée, même très ancienne.');
+    }
+
+    /** Le seuil est inclus : un octroi exactement à `maintenant − durée` est abandonné, comme `stateOf()` le dit. */
+    public function testAGrantExactlyAtTheThresholdIsAbandoned(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $connection = McpConnection::grant($this->persistAccount('jane'), $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, $threshold);
+        $this->connections()->add($connection);
+        $this->em->clear();
+
+        self::assertSame([], $this->connections()->findNotRevokedForAdministration($threshold));
+        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+    }
+
+    /**
+     * Un abandonné que la purge a marqué expiré reste dans les abandonnées, rangé à
+     * son octroi (sa fin vaut octroi + délai du code), jamais dans les terminées
+     * par une autre cause : son `revoked_at` est l'instant de la purge, pas sa fin.
+     */
+    public function testAnAbandonedGrantMarkedExpiredStaysWithTheNeverExchanged(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $connection = McpConnection::grant($this->persistAccount('jane'), $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, $threshold->sub(new DateInterval('PT5M')));
+        $this->connections()->add($connection);
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Expired, $now);
+        $this->em->clear();
+
+        self::assertSame([$connection->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+        self::assertSame([], $this->connections()->findNotRevokedForAdministration($threshold));
+        self::assertSame([], $this->connections()->findTerminatedForAdministration(10));
+        self::assertSame([], $this->connections()->findExchangedExpiredForAdministration(null, 10));
+    }
+
+    /**
+     * Les trois lectures de la liste terminée se partagent les lignes sans en
+     * perdre ni en doubler : révoquée par une personne (terminées), expirée
+     * jamais échangée (abandonnées), expirée échangée (pages), vivante échangée
+     * (ni l'une ni l'autre).
+     */
+    public function testTheThreeTerminatedReadsPartitionTheRows(): void
+    {
+        $now = new DateTimeImmutable('2026-11-20T12:00:00+01:00');
+        $threshold = $this->abandonedThreshold($now);
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $person = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-01T10:00:00+02:00'));
+        $neverExchanged = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-02T10:00:00+02:00'));
+        $exchangedExpired = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-09-03T10:00:00+02:00'));
+        $alive = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-11-19T10:00:00+01:00'));
+        foreach ([$person, $neverExchanged, $exchangedExpired, $alive] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->exchangeCodeOf($exchangedExpired, $exchangedExpired->grantedAt()->add(new DateInterval('PT1M')));
+        $this->exchangeCodeOf($alive, $alive->grantedAt()->add(new DateInterval('PT1M')));
+        $this->connections()->revokeActive($person->getId(), RevocationCause::Person, new DateTimeImmutable('2026-10-05T10:00:00+02:00'));
+        $this->connections()->revokeExpired([$neverExchanged->getId(), $exchangedExpired->getId()], new DateTimeImmutable('2026-11-19T03:00:00+01:00'));
+        $this->em->clear();
+
+        self::assertSame([$person->getId()->toRfc4122()], $this->idsOf($this->connections()->findTerminatedForAdministration(10)));
+        self::assertSame([$neverExchanged->getId()->toRfc4122()], $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+        self::assertSame([$exchangedExpired->getId()->toRfc4122()], $this->idsOf($this->connections()->findExchangedExpiredForAdministration(null, 10)));
+        self::assertSame([$alive->getId()->toRfc4122()], $this->idsOf($this->connections()->findNotRevokedForAdministration($threshold)));
+    }
+
+    /**
+     * Les expirées échangées se lisent par activité décroissante : `last_used_at`,
+     * à défaut `granted_at`, quel que soit l'instant de la purge (#652, S4d). Une
+     * connexion jamais rafraîchie prend son octroi ; l'ordre de purge n'y est pour rien.
+     */
+    public function testExchangedExpiredForAdministrationIsOrderedByActivity(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        // Octroi le plus ancien mais utilisée le 10 ; jamais utilisée octroyée le 5 ; utilisée le 4, octroyée le 3.
+        $usedLate = $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', '2026-09-10T10:00:00+02:00');
+        $neverUsed = $this->expiredExchanged($account, $client, '2026-09-05T10:00:00+02:00', null);
+        $usedEarly = $this->expiredExchanged($account, $client, '2026-09-03T10:00:00+02:00', '2026-09-04T10:00:00+02:00');
+        $this->em->clear();
+
+        $ids = $this->idsOf($this->connections()->findExchangedExpiredForAdministration(null, 10));
+
+        self::assertSame([$usedLate->getId()->toRfc4122(), $neverUsed->getId()->toRfc4122(), $usedEarly->getId()->toRfc4122()], $ids);
+    }
+
+    /**
+     * Reprise stricte sur `(activité, id)` : aucune ligne omise ni doublée, y
+     * compris quand un lot de lignes de même activité (une jamais utilisée
+     * octroyée à l'instant où une autre a été utilisée) chevauche la limite de page.
+     */
+    public function testExchangedExpiredForAdministrationResumesExactlyAcrossTiedActivities(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $x = '2026-09-10T10:00:00+02:00';
+        $y = '2026-09-08T10:00:00+02:00';
+        $created = [
+            $this->expiredExchanged($account, $client, $x, null),
+            $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', $x),
+            $this->expiredExchanged($account, $client, $x, null),
+            $this->expiredExchanged($account, $client, $y, null),
+            $this->expiredExchanged($account, $client, '2026-09-02T10:00:00+02:00', $y),
+            $this->expiredExchanged($account, $client, '2026-09-06T10:00:00+02:00', null),
+            $this->expiredExchanged($account, $client, '2026-09-01T10:00:00+02:00', $x),
+        ];
+        $this->em->clear();
+
+        // Attendu : activité décroissante, puis identifiant décroissant.
+        $expected = array_map(static fn (McpConnection $c): array => [($c->lastUsedAt() ?? $c->grantedAt())->getTimestamp(), $c->getId()->toRfc4122()], $created);
+        usort($expected, static fn (array $a, array $b): int => [$b[0], $b[1]] <=> [$a[0], $a[1]]);
+        $expectedIds = array_column($expected, 1);
+
+        $read = [];
+        $cursor = null;
+        $pages = 0;
+        do {
+            $page = $this->connections()->findExchangedExpiredForAdministration($cursor, 2);
+            $read = [...$read, ...$this->idsOf($page)];
+            $cursor = [] === $page ? null : ExchangedExpiredCursor::after($page[\count($page) - 1]);
+            ++$pages;
+        } while ([] !== $page && $pages < 10);
+
+        // Quatre pages pleines ou partielles, puis une vide.
+        self::assertSame($expectedIds, $read);
+        self::assertCount(\count($created), array_unique($read));
+        self::assertSame(5, $pages);
+    }
+
+    /** Les abandonnées sont bornées par `$limit` et rendues par octroi décroissant : la fin vaut octroi + une durée constante. */
+    public function testAbandonedForAdministrationIsBoundedAndMostRecentlyGrantedFirst(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $abandoned = [];
+        foreach ([1, 3, 2] as $hours) {
+            $abandoned[$hours] = McpConnection::grant($account, $client, self::SCOPE, $threshold->sub(new DateInterval('PT'.$hours.'H')));
+            $this->connections()->add($abandoned[$hours]);
+        }
+        $this->em->clear();
+
+        self::assertSame(
+            [$abandoned[1]->getId()->toRfc4122(), $abandoned[2]->getId()->toRfc4122()],
+            $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 2)),
+        );
+    }
+
+    /** Deux octrois au même instant : l'identifiant décroissant les départage. */
+    public function testAbandonedForAdministrationBreaksTiesByDescendingId(): void
+    {
+        $threshold = $this->abandonedThreshold(new DateTimeImmutable('2026-11-20T12:00:00+01:00'));
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedAt = $threshold->sub(new DateInterval('PT1H'));
+        $first = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $second = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $this->connections()->add($first);
+        $this->connections()->add($second);
+        $this->em->clear();
+
+        $ids = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        rsort($ids);
+        self::assertSame($ids, $this->idsOf($this->connections()->findAbandonedForAdministration($threshold, 10)));
+    }
+
+    private function abandonedThreshold(DateTimeImmutable $now): DateTimeImmutable
+    {
+        return $this->lifetimesFromContainer()->abandonedBefore($now);
+    }
+
+    private function lifetimesFromContainer(): ConnectionLifetimes
+    {
+        return self::getContainer()->get(ConnectionLifetimes::class);
+    }
+
+    /** Une connexion échangée puis marquée expirée par la purge, d'octroi et de dernier usage donnés. */
+    private function expiredExchanged(CpgUser $account, McpClient $client, string $grantedAt, ?string $lastUsedAt): McpConnection
+    {
+        $connection = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable($grantedAt));
+        $this->connections()->add($connection);
+        $this->exchangeCodeOf($connection, $connection->grantedAt()->add(new DateInterval('PT1M')));
+        if (null !== $lastUsedAt) {
+            $this->em->getConnection()->executeStatement(
+                'UPDATE mcp_connection SET last_used_at = :at WHERE id = :id',
+                ['at' => new DateTimeImmutable($lastUsedAt), 'id' => $connection->getId()],
+                ['at' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+            );
+        }
+        // Un même instant de purge pour toutes : l'ordre ne doit pas en dépendre.
+        $this->connections()->revokeExpired([$connection->getId()], new DateTimeImmutable('2026-11-19T03:00:00+01:00'));
+        $this->em->refresh($connection);
+
+        return $connection;
+    }
+
+    /** Note l'échange du code de `$connection` à `$at`, par la voie de production. */
+    private function exchangeCodeOf(McpConnection $connection, DateTimeImmutable $at): void
+    {
+        $codeHash = hash('sha256', 'code-'.$connection->getId()->toRfc4122());
+        $this->authorizationCodes()->add(new McpAuthorizationCode($connection, $codeHash, $at->add(new DateInterval('PT10M'))));
+        $this->connections()->recordCodeExchangeOf($codeHash, $at);
+    }
+
+    /**
+     * Le client et le compte arrivent avec chaque connexion, par jointure :
+     * lire leur nom ensuite n'envoie aucune requête de plus que la lecture
+     * elle-même (une seule), sur une identity map vidée — sans quoi un client
+     * déjà géré masquerait le chargement paresseux d'une N+1.
+     */
+    public function testAdministrationListsHydrateClientAndAccountWithoutFurtherQueries(): void
+    {
+        $first = $this->registerClient('https://client.example.test/metadata.json');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json');
+        $revoked = McpConnection::grant($this->persistAccount('jane'), $first, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        $active = McpConnection::grant($this->persistAccount('john'), $second, self::SCOPE, new DateTimeImmutable('2026-10-02T10:00:00+02:00'));
+        $this->connections()->add($revoked);
+        $this->connections()->add($active);
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        $this->em->clear();
+
+        $read = function (): array {
+            $names = [];
+            foreach ([...$this->connections()->findNotRevokedForAdministration($this->abandonedThreshold(new DateTimeImmutable('2026-09-01T00:00:00+02:00'))), ...$this->connections()->findTerminatedForAdministration(10)] as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        };
+
+        $queries = $this->queriesDuring($read);
+
+        self::assertSame(2, $queries['count'], 'Une requête par moitié, aucune de plus pour le client ni pour le compte.');
+        self::assertCount(2, $queries['result']);
+    }
+
+    /**
+     * La lecture des expirées échangées (SQL natif + `ResultSetMappingBuilder`)
+     * hydrate elle aussi le client et le compte par la même requête : une seule
+     * requête, puis aucune de plus en lisant leur nom, sur une identity map vidée
+     * (#652). Une jointure mal déclarée dans le mappage laisserait des proxys
+     * que la lecture du nom chargerait un à un.
+     */
+    public function testExchangedExpiredReadHydratesClientAndAccountWithoutFurtherQueries(): void
+    {
+        // Deux clients de noms distincts : sans cela, une jointure croisée
+        // (le client de l'autre connexion) passerait inaperçue.
+        $first = $this->registerClient('https://client.example.test/metadata.json', 'Client Jane');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json', 'Client John');
+        $this->expiredExchanged($this->persistAccount('jane'), $first, '2026-09-01T10:00:00+02:00', null);
+        $this->expiredExchanged($this->persistAccount('john'), $second, '2026-09-02T10:00:00+02:00', null);
+        $this->em->clear();
+
+        $queries = $this->queriesDuring(function (): array {
+            $names = [];
+            foreach ($this->connections()->findExchangedExpiredForAdministration(null, 10) as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        });
+
+        self::assertSame(1, $queries['count'], 'Une requête pour la lecture, aucune de plus pour le client ni pour le compte.');
+        // Activité décroissante : la connexion de john (2 septembre) vient d'abord,
+        // chacune avec SON client et SON compte.
+        self::assertSame(['Client John/john', 'Client Jane/jane'], $queries['result']);
+    }
+
+    /**
+     * Même garde sur la page reprise : la branche à curseur ajoute une
+     * condition au SQL natif, et c'est celle que la console parcourt dès la
+     * deuxième page (#652). Le curseur vient de la dernière connexion d'une
+     * première page de taille 1, l'identity map est vidée, puis la page
+     * suivante coûte une requête et porte son client et son compte.
+     */
+    public function testExchangedExpiredResumedPageHydratesClientAndAccountWithoutFurtherQueries(): void
+    {
+        $first = $this->registerClient('https://client.example.test/metadata.json', 'Client Jane');
+        $second = $this->registerClient('https://other-client.example.test/metadata.json', 'Client John');
+        $this->expiredExchanged($this->persistAccount('jane'), $first, '2026-09-01T10:00:00+02:00', null);
+        $this->expiredExchanged($this->persistAccount('john'), $second, '2026-09-02T10:00:00+02:00', null);
+        $this->em->clear();
+
+        $firstPage = $this->connections()->findExchangedExpiredForAdministration(null, 1);
+        self::assertCount(1, $firstPage);
+        $cursor = ExchangedExpiredCursor::after($firstPage[0]);
+        $this->em->clear();
+
+        $queries = $this->queriesDuring(function () use ($cursor): array {
+            $names = [];
+            foreach ($this->connections()->findExchangedExpiredForAdministration($cursor, 1) as $connection) {
+                $names[] = $connection->client()->getName().'/'.$connection->account()->getUsername();
+            }
+
+            return $names;
+        });
+
+        self::assertSame(1, $queries['count'], 'Une requête pour la page reprise, aucune de plus pour le client ni pour le compte.');
+        self::assertSame(['Client Jane/jane'], $queries['result']);
+    }
+
+    /**
+     * Exécute `$action` et compte les requêtes que la connexion DBAL du
+     * conteneur de test a envoyées pendant ce temps : le service
+     * `doctrine.debug_data_holder` de DoctrineBundle (le middleware de
+     * profilage) les consigne, `DebugStack` n'existant plus en DBAL 4. Le
+     * relevé est remis à zéro avant l'appel ; un relevé vide après un appel
+     * qui a lu la base fait échouer le test, plutôt que de laisser un compte
+     * à zéro passer pour une preuve.
+     *
+     * @template T
+     *
+     * @param callable(): T $action
+     *
+     * @return array{count: int, result: T}
+     */
+    private function queriesDuring(callable $action): array
+    {
+        // Service privé, mais le conteneur de test l'expose.
+        $holder = self::getContainer()->get('doctrine.debug_data_holder');
+        $holder->reset();
+
+        $result = $action();
+
+        $count = \count($holder->getData()['default'] ?? []);
+        self::assertGreaterThan(0, $count, 'Le relevé des requêtes est vide : le profilage DBAL est inactif, le compteur ne prouverait rien.');
+
+        return ['count' => $count, 'result' => $result];
+    }
+
+    /**
+     * @param list<McpConnection> $connections
+     *
+     * @return list<string> les identifiants RFC 4122, dans l'ordre reçu
+     */
+    private function idsOf(array $connections): array
+    {
+        return array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $connections);
+    }
+
     private function purge(): void
     {
         $connection = $this->em->getConnection();
@@ -915,9 +1510,9 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         return $account;
     }
 
-    private function registerClient(string $clientId): McpClient
+    private function registerClient(string $clientId, string $name = 'Client de test'): McpClient
     {
-        $client = RegisteredMcpClient::of($clientId, 'Client de test', ['https://client.example.test/callback', 'http://127.0.0.1/callback']);
+        $client = RegisteredMcpClient::of($clientId, $name, ['https://client.example.test/callback', 'http://127.0.0.1/callback']);
         $this->clients()->add($client);
 
         return $client;

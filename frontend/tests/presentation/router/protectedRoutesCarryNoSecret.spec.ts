@@ -33,6 +33,9 @@ const REVIEWED_PROTECTED_ROUTES: Record<string, string> = {
   'admin-case-studies': ADMIN_REASON,
   'admin-watch': ADMIN_REASON,
   'admin-users': ADMIN_REASON,
+  // Le backoffice MCP (#652) : deux listes lues par la session, sans filtre ni pagination dans l'URL.
+  'admin-mcp-clients': 'aucune requête, aucun fragment : la liste se lit par la session',
+  'admin-mcp-connections': 'aucune requête, aucun fragment : la liste se lit par la session',
 }
 
 /** Les routes nommées dont la correspondance résolue (méta fusionnée du parent) exige une session. */

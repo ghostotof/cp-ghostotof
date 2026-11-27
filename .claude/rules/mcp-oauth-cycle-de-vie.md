@@ -47,7 +47,9 @@ paths:
   2026-03-29, 2026-03-30 and 2026-10-26, replayed by `testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges`.
   The minute (`SECOND_TRUNCATION_AND_SKEW_MARGIN`): `granted_at` truncated to the second, league's `expire_time`
   computed after it and accepted up to 0.999 s past, clock skew between nodes. Judged per parameter, idle first,
-  after positivity and before the two orderings), an
+  after positivity and before the two orderings; **the idle duration carries no month nor year** (#652,
+  `notMonotonicInActivity`, judged right after positivity: `.claude/rules/mcp-oauth-purge.md`, « The administration's
+  early stop… »), an
   idle delay beyond the maximum and an access token outliving its refresh token — compared on one fixed
   instant (`2026-01-01T00:00:00+00:00`), so the verdict never depends on the day the container is built. Each
   getter returns a **copy** (`DateInterval` is mutable). `AuthorizationServerFactory` reads league's three
@@ -260,7 +262,7 @@ paths:
   `AuthorizationCodeReplayedException`** (a `CompromisedMcpConnectionException`, cause `code-replay`) — a code is only
   ever revoked by its exchange, which league does **last**, after both tokens (a failed exchange leaves it exchangeable,
   `TokenControllerTest::testAFailedExchangeLeavesNoTokenAndTheCodeExchangeable`), so a revoked code coming back has been
-  exchanged. **It is raised whatever the request**: league judges the revocation before the client binding and
+  exchanged. **It is raised whatever the request** (and, since #652, whatever the client's registered redirections: see below): league judges the revocation before the client binding and
   before PKCE, so at that point nothing proves the replay comes from the code's holder. **`TokenEndpoint` revokes
   only on a PKCE proof** (#726, the author's decision of 2026-10-27, lifting #649's accepted limit 3):
   `Application/ReplayProofInterface::provesPossession($request)` (`Infrastructure/League/PkceReplayProof`) is true
@@ -304,10 +306,23 @@ paths:
   one), and the refusal is the one league gave before the revocation, word for word; the audit line names the
   connection's client, never the replayer's. **The proof judges the verifier alone** (#726, audit I2):
   at the token endpoint league compares the presented `redirect_uri` only with the code's own, after the repository
-  (`validateAuthorizationCode()`; never with the client's registered list, and `TokenEndpoint` adds no check), so a
+  (`validateAuthorizationCode()`; never with the client's registered list), so a
   proven replay revokes under another `client_id` **or another `redirect_uri`, registered or not**, alike
   (`testAReplayUnderAnotherRedirectRevokesTheConnectionToo`, both cases; red under a proof also requiring the code's
-  `redirect_uri`, measured). A code
+  `redirect_uri`, measured). **The one comparison with the client's list is `LoopbackAwareAuthCodeGrant`'s, and it comes
+  after league's judgements** (#652, `respondToAccessTokenRequest()`): a code whose redirection the client no longer admits
+  (`McpClient::allowsRedirect()`, loopback tolerance included) is refused `invalid_grant`, cause `redirect-no-longer-registered`,
+  only when league would have accepted it so far — unexpired (`time()`, league's own clock on the encrypted payload) and
+  unconsumed (`isAuthCodeRevoked()` called there, which raises `AuthorizationCodeReplayedException` itself: the replay
+  is then revoked or audited `replay-unproven` by the token endpoint as above). An expired code stays `code-expired`.
+  League's own second call of `isAuthCodeRevoked()` happens only when this check made the first one (redirect removed); it
+  locks only if the first did, writes nothing (`GrantRefusalAuditTest::testADeadCodeWhoseRedirectWasRemovedKeepsLeaguesCause`).
+  A payload with `expire_time` not an integer or `auth_code_id` not a string (mistyped or absent), redirect removed, is refused
+  `invalid_request` « Authorization code malformed » (league's message), never exchanged
+  (`LoopbackAwareAuthCodeGrantTest::testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed`).
+  `CodeReplayTest::testAProvenReplayAfterTheRedirectWasRemovedRevokesTheConnection` and its unproven twin,
+  `GrantRefusalAuditTest::testAnExpiredCodeWhoseRedirectWasRemovedIsAuditedAsExpired` (red before #652's correction, measured).
+  A code
   presented **first** by another client is refused by
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
@@ -431,3 +446,11 @@ paths:
      `refresh-token-reuse` once phase 2 is out. A grace window handing out a new pair is rejected: an attacker
      refreshing just before the legitimate client would keep the connection; « handing back the same pair » is
      impossible, only the hashes are stored.
+  2. **The code exchange reads the client without a lock** (#652): a revision committed while an exchange is in flight
+     lets that code through (a window of a few milliseconds). The revision cuts no connection by decision, and a code
+     exchanged a millisecond earlier would have the same effect; no `FOR SHARE` at the token endpoint.
+  3. **The redirection refusal precedes the PKCE check** (#652): the holder of a stolen code, without the verifier,
+     learns from `redirect-no-longer-registered` that the client was revised. Written, not worked around: the code is
+     still useless to them, and league's own order (revocation before PKCE) already tells as much.
+  4. **A code refused `redirect-no-longer-registered` is not consumed** (#652): if the administrator restores the
+     redirect within the code's ten minutes of life, it can be exchanged again. A deliberate restoration, minimal impact.

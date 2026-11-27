@@ -8,18 +8,24 @@ use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ClientRegistration;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<McpClient>
  */
 class McpClientRepository extends ServiceEntityRepository implements McpClientRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly RereadUnderLock $rereadUnderLock,
+    ) {
         parent::__construct($registry, McpClient::class);
     }
 
@@ -31,6 +37,16 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
             ->setParameter('clientId', $clientId)
             ->getQuery()
             ->getOneOrNullResult();
+    }
+
+    public function registrationOf(string $clientId): ?ClientRegistration
+    {
+        $registration = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT registration FROM mcp_client WHERE client_id = :clientId',
+            ['clientId' => $clientId],
+        );
+
+        return \is_string($registration) ? ClientRegistration::tryFrom($registration) : null;
     }
 
     public function add(McpClient $client): void
@@ -97,5 +113,80 @@ class McpClientRepository extends ServiceEntityRepository implements McpClientRe
             'SELECT 1 FROM mcp_client WHERE client_id = :clientId AND registration = :registration',
             ['clientId' => (string) $clientId, 'registration' => ClientRegistration::Cimd->value],
         );
+    }
+
+    /**
+     * Les deux modes d'enregistrement, sans jointure : un client n'en porte
+     * aucune ici. Le tri est total (la date, puis la clé) et l'index de la clé
+     * primaire départage les égalités sans dépendre du plan de la base.
+     */
+    public function all(): array
+    {
+        /** @var list<McpClient> */
+        return $this->createQueryBuilder('client')
+            ->orderBy('client.registeredAt', 'DESC')
+            ->addOrderBy('client.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Lecture simple par la clé : un `QueryBuilder` plutôt que `find()`.
+     * `find()` répond sans requête quand l'instance est déjà dans l'unité de
+     * travail, ce qui rendrait le coût de l'appelant dépendant de ce qui a été
+     * chargé avant lui — le détail du backoffice s'engage à deux requêtes, et
+     * le prouve. Le `QueryBuilder` est aussi le style du reste du dépôt. Le
+     * paramètre est typé comme la colonne (`uuid`). Aucun verrou, aucune
+     * transaction : la sœur verrouillée est {@see self::findOneByIdForUpdate()}.
+     */
+    public function findOneById(Uuid $id): ?McpClient
+    {
+        /** @var McpClient|null */
+        return $this->createQueryBuilder('client')
+            ->where('client.id = :id')
+            ->setParameter('id', $id, UuidType::NAME)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * La relecture sous verrou du projet ({@see RereadUnderLock::row()}) avec
+     * `FOR UPDATE` : l'instance déjà gérée est rafraîchie sur place, une
+     * ligne disparue rend `null` et détache l'instance périmée. Sans
+     * transaction ouverte, Doctrine refuse le verrou (`TransactionRequiredException`).
+     */
+    public function findOneByIdForUpdate(Uuid $id): ?McpClient
+    {
+        return $this->rereadUnderLock->row($this->getEntityManager(), McpClient::class, $id, forUpdate: true);
+    }
+
+    /**
+     * Une requête DQL à `PESSIMISTIC_READ` (`FOR SHARE`) : {@see RereadUnderLock}
+     * ne sait prendre que `FOR UPDATE`, trop fort ici — deux consentements du
+     * même client ne doivent pas s'attendre. Le verrou ne sert qu'à **bloquer
+     * la suppression** (et toute écriture de la ligne) jusqu'au COMMIT de
+     * l'appelant : il n'apporte aucune garantie sur ce qui a été validé avant
+     * sa prise. `HINT_REFRESH` rend l'état courant de la ligne (jamais la copie
+     * périmée de la carte d'identité) ; **la redirection demandée est donc à
+     * revérifier par l'appelant sur l'instance relue** (`allowsRedirect()`), une
+     * révision validée entre sa validation et ce verrou l'ayant pu retirer.
+     * Sans transaction ouverte, Doctrine refuse le verrou.
+     */
+    public function findOneByClientIdForShare(string $clientId): ?McpClient
+    {
+        /** @var McpClient|null */
+        return $this->createQueryBuilder('client')
+            ->where('client.clientId = :clientId')
+            ->setParameter('clientId', $clientId)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_READ)
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+    }
+
+    public function remove(McpClient $client): void
+    {
+        $this->getEntityManager()->remove($client);
+        $this->getEntityManager()->flush();
     }
 }

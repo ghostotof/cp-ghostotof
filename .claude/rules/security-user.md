@@ -134,8 +134,9 @@ paths:
     a new grant's code (account then connections by id, against a connection then the pair's others; PostgreSQL
     aborts one, both stay atomic, #650 F1): the « no cycle » below is about the advisory key and the account
     row locks alone. **The revocation side is retried once** (S3 of the second review, CR4):
-    `Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)`, implemented by
-    `Infrastructure/Doctrine/DoctrineDeadlockRetry`, **opt-in and never inside the account locks**: a service whose
+    `Shared/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)`, implemented by
+    `Shared/Infrastructure/Doctrine/DoctrineDeadlockRetry` (moved to `Shared` by #652: `Mcp/Connection` uses it too,
+    in `McpClientAdministrator::remove()`), **opt-in and never inside the account locks**: a service whose
     operation can be replayed asks for it and replays its **whole** locked transaction — `changePassword()`,
     `setSuperAdmin()`, `PasswordSetupService::complete()` (so `activate()`). The locks do not retry on their own, their
     other callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only

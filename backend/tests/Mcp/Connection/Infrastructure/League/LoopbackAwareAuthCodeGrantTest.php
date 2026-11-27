@@ -8,17 +8,22 @@ use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Infrastructure\League\LoopbackAwareAuthCodeGrant;
 use App\Mcp\Connection\Infrastructure\League\OAuthClient;
+use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Tests\Mcp\Connection\Fixtures\ClaudeCodeMetadata;
+use App\Tests\Support\TestKeys;
 use DateInterval;
+use Defuse\Crypto\Crypto;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
+use League\OAuth2\Server\ResponseTypes\BearerTokenResponse;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Nyholm\Psr7\ServerRequest;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -87,20 +92,86 @@ final class LoopbackAwareAuthCodeGrantTest extends TestCase
         self::assertSame(['unreadable'], $received);
     }
 
-    private function grant(SecurityAuditLoggerInterface $audit, Logger $logger, ?McpClient $stored = null): LoopbackAwareAuthCodeGrant
+    /**
+     * Les quatre formes de charge que le contrôle ne sait pas juger : l'échéance
+     * ou l'identifiant du code mal typés ou absents (chaque cas ne corrompt que
+     * son champ, le reste de la charge est valide).
+     *
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function malformedPayloads(): iterable
+    {
+        yield '`expire_time` en chaîne' => [['expire_time' => (string) (time() + 600)]];
+        yield '`expire_time` absent' => [['expire_time' => null]];
+        yield '`auth_code_id` entier' => [['auth_code_id' => 42]];
+        yield '`auth_code_id` absent' => [['auth_code_id' => null]];
+    }
+
+    /**
+     * Une redirection retirée et une charge mal typée ou incomplète : le code
+     * n'est ni jugé échu ni consommé sur une charge dont le contrôle ne peut rien
+     * dire, il est refusé comme un code illisible (message de league,
+     * « Authorization code malformed ») et jamais échangé.
+     *
+     * @param array<string, mixed> $corruption les champs de la charge à écraser ; `null` retire le champ
+     */
+    #[DataProvider('malformedPayloads')]
+    public function testACodeWithAMistypedPayloadAndARemovedRedirectIsRefusedAsMalformed(array $corruption): void
+    {
+        $codes = $this->createMock(AuthCodeRepositoryInterface::class);
+        // Ni le repli ni league ne doivent atteindre le dépôt : refusé avant tout échange.
+        $codes->expects(self::never())->method('isAuthCodeRevoked');
+        $grant = $this->grant(self::createStub(SecurityAuditLoggerInterface::class), new Logger('app', [new TestHandler()]), null, $codes);
+        // Charge valide, puis un seul champ corrompu : un champ à `null` est retiré.
+        $payload = array_filter(
+            $corruption + [
+                'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+                'redirect_uri' => 'https://client.example.test/callback',
+                'auth_code_id' => 'identifiant-du-code',
+                'expire_time' => time() + 600,
+                'user_id' => '0199f0a4-5c3e-7a2b-8d1e-2f3a4b5c6d7e',
+                'scopes' => [],
+            ],
+            static fn (mixed $value): bool => null !== $value,
+        );
+        $code = Crypto::encrypt(json_encode($payload, \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret($this->keyMaterial()));
+        $request = new ServerRequest('POST', 'http://localhost/api/oauth/token')->withParsedBody([
+            'grant_type' => 'authorization_code',
+            'client_id' => ClaudeCodeMetadata::CLIENT_ID,
+            'redirect_uri' => 'https://client.example.test/callback',
+            'code' => $code,
+            'code_verifier' => str_repeat('a', 64),
+        ]);
+
+        try {
+            $grant->respondToAccessTokenRequest($request, new BearerTokenResponse(), new DateInterval('PT1H'));
+            self::fail('Le code à charge mal typée aurait dû être refusé.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_request', $exception->getErrorType());
+            self::assertStringContainsString('Authorization code malformed', $exception->getHint() ?? '');
+        }
+    }
+
+    private function keyMaterial(): string
+    {
+        return TestKeys::material('grant-test');
+    }
+
+    private function grant(SecurityAuditLoggerInterface $audit, Logger $logger, ?McpClient $stored = null, ?AuthCodeRepositoryInterface $codes = null): LoopbackAwareAuthCodeGrant
     {
         $row = new OAuthClient($stored ?? ClaudeCodeMetadata::storedRow());
         $clients = self::createStub(ClientRepositoryInterface::class);
         $clients->method('getClientEntity')->willReturn($row);
 
         $grant = new LoopbackAwareAuthCodeGrant(
-            self::createStub(AuthCodeRepositoryInterface::class),
+            $codes ?? self::createStub(AuthCodeRepositoryInterface::class),
             self::createStub(RefreshTokenRepositoryInterface::class),
             new DateInterval('PT1M'),
             $audit,
             new FailSafeAudit($logger),
         );
         $grant->setClientRepository($clients);
+        $grant->setEncryptionKey(OAuthEncryptionKey::fromSecret($this->keyMaterial()));
 
         return $grant;
     }
