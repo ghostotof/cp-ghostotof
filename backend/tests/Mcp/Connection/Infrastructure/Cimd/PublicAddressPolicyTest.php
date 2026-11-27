@@ -41,7 +41,6 @@ final class PublicAddressPolicyTest extends TestCase
         '2001::/23' => '2001:5::1',
         '3fff::/20' => '3fff::1',
         '5f00::/16' => '5f00::1',
-        'fec0::/10' => 'fec0::1',
     ];
 
     /**
@@ -115,7 +114,7 @@ final class PublicAddressPolicyTest extends TestCase
     }
 
     /**
-     * La politique ajoute le multicast et huit autres plages à usage spécial
+     * La politique ajoute le multicast et sept autres plages à usage spécial
      * à la liste de Symfony parce que celle-ci ne les couvre pas. Si une
      * montée de Symfony en couvre une, ce test le dit : l'entrée locale de
      * PublicAddressPolicy se retire alors.

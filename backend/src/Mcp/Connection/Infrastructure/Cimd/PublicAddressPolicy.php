@@ -18,7 +18,8 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * - le bouclage (`127.0.0.0/8`, `::1`) et l'adresse non spécifiée
  *   (`0.0.0.0/8`, `::`) ;
  * - les réseaux privés (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) et
- *   les adresses locales uniques (`fc00::/7`) ;
+ *   les adresses locales uniques (`fc00::/7`), et l'ancien site local
+ *   (`fec0::/10`, déprécié par la RFC 3879) ;
  * - le lien local (`169.254.0.0/16`, `fe80::/10`), où vit l'adresse des
  *   métadonnées d'un hébergeur (`169.254.169.254`) ;
  * - l'espace partagé des opérateurs, CGNAT (`100.64.0.0/10`) ;
@@ -36,7 +37,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *   protocoles de l'IETF (`192.0.0.0/24`, `2001::/23`, qui contient ORCHID),
  *   relais 6to4 (`192.88.99.0/24`), préfixe de rejet (`100::/64`), préfixe
  *   factice (`100:0:0:1::/64`), documentation (`3fff::/20`), identifiants de
- *   segment SRv6 (`5f00::/16`), site local déprécié (`fec0::/10`).
+ *   segment SRv6 (`5f00::/16`).
  *
  * Un bloc d'affectations de protocoles est refusé en entier, y compris les
  * exceptions que le registre de l'IANA dit joignables : `192.0.0.9` et
@@ -49,7 +50,8 @@ use Symfony\Component\HttpFoundation\IpUtils;
  * La liste de Symfony, IpUtils::PRIVATE_SUBNETS, couvre tout cela sauf les
  * deux derniers points, que cette classe ajoute (MULTICAST_SUBNETS,
  * UNLISTED_SPECIAL_PURPOSE_SUBNETS). Le test le dit le jour où Symfony
- * couvre l'une de ces plages : l'entrée locale se retire alors.
+ * couvre l'une de ces plages : l'entrée locale se retire alors — ainsi de
+ * `fec0::/10`, couvert par Symfony depuis 8.1.12.
  *
  * La liste complète, {@see self::SUBNETS}, est la source unique : la couche 3
  * (`isPublic()`) et la couche 5 (`NoPrivateNetworkHttpClient`, câblé dans
@@ -71,7 +73,7 @@ final readonly class PublicAddressPolicy
     /**
      * Les autres plages à usage spécial ou réservées, absentes elles aussi de
      * la liste de Symfony (registres d'adresses à usage spécial de l'IANA,
-     * RFC 6890, et l'ancien site local).
+     * RFC 6890).
      */
     private const array UNLISTED_SPECIAL_PURPOSE_SUBNETS = [
         '192.0.0.0/24',   // affectations de protocoles de l'IETF (RFC 6890), en entier
@@ -81,7 +83,6 @@ final readonly class PublicAddressPolicy
         '2001::/23',      // affectations de protocoles de l'IETF (RFC 2928), en entier
         '3fff::/20',      // documentation (RFC 9637)
         '5f00::/16',      // identifiants de segment SRv6 (RFC 9602)
-        'fec0::/10',      // site local, déprécié (RFC 3879)
     ];
 
     /**
